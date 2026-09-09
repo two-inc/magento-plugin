@@ -120,7 +120,7 @@ beforeEach(() => {
         '</div></div></form>';
 });
 
-describe('below-threshold hint (element 4)', () => {
+describe('below-threshold hint', () => {
     test('the panel quotes the shared threshold, not a remaining count', async () => {
         openPanel(loadCompanySearchWithWrongThreshold());
         const expected = 'Enter ' + WRONG_THRESHOLD + ' or more characters';

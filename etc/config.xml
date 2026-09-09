@@ -74,8 +74,8 @@
             change is purely additive on production. A follow-up PR
             flips the default to 1 in lockstep with a brand overlay's
             data-only release (which deletes the overlay's renderer-bootstrap
-            JS). Design v6 §16.3 specifies these as per-layer debugging
-            knobs, not a rollback mechanism.
+            JS). These are per-layer debugging knobs, not a rollback
+            mechanism.
 
             Admin-form synthesis deliberately has NO flag here: its
             gate was removed in magento-plugin PR #181 (the admin-tab-

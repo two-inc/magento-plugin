@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §2 / TWO-25554 — each panel's address writes reach ITS OWN form.
+ * TWO-25461 / TWO-25554 — each panel's address writes reach ITS OWN form.
  *
  * Magento renders a shipping address form (always present) and a billing form
  * (one per payment method, shown once the buyer unchecks "My billing and

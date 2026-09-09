@@ -63,11 +63,10 @@ use Two\Gateway\Model\Brand\Loader;
  * with static overlays for any brand that later opts into a stub
  * system.xml.
  *
- * Design v6 §3.5 verified: `brand_code` survives Converter conversion
- * at section / group / field levels (PR #160's probe). Synthesised
- * elements carry `brand_code="{code}"` so downstream code can
- * discriminate by brand when iterating Structure (e.g. brand-aware
- * admin-block headers).
+ * `brand_code` survives Converter conversion at section / group /
+ * field levels (PR #160's probe). Synthesised elements carry
+ * `brand_code="{code}"` so downstream code can discriminate by brand
+ * when iterating Structure (e.g. brand-aware admin-block headers).
  */
 class SynthesiseBrandAdminForm
 {

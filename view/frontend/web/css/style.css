@@ -292,7 +292,7 @@
 }
 
 /*
- * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) — the
+ * Anchors the in-field sole-trader lookup spinner below (TWO-25461) — the
  * same role `.two-company-dropdown__search` plays for the search spinner.
  */
 .two-sole-trader-field-control {
@@ -320,7 +320,7 @@
     background-size: 16px 16px;
 }
 
-/* Typography and alignment come from `.two-field-action-link` (TWO-25461 §7). */
+/* Typography and alignment come from `.two-field-action-link` (TWO-25461). */
 .two-select-different-sole-trader {
     margin-top: 6px;
 }
@@ -416,13 +416,12 @@
 }
 
 /*
- * TWO-25326 §7.3 (2026-08-03 ruling): the "not approved" counterpart to
- * `.approved` above, added when the standalone company label was removed
- * and its name/number folded into this sentence instead. Recoloured
- * 2026-08-05 to PrestaShop's danger red for cross-platform convergence
- * (see the note on `.approved`); it is still this box's own styling and
- * not Magento's `.message-error`, because a business decline is not an
- * error the buyer caused.
+ * TWO-25326: the "not approved" counterpart to `.approved` above, added
+ * when the standalone company label was removed and its name/number folded
+ * into this sentence instead. Recoloured 2026-08-05 to PrestaShop's danger
+ * red for cross-platform convergence (see the note on `.approved`); it is
+ * still this box's own styling and not Magento's `.message-error`,
+ * because a business decline is not an error the buyer caused.
  */
 .two-order-intent-message.declined {
     border-color: #dc3545;
@@ -477,9 +476,9 @@
 }
 
 /*
- * TWO-25326 §5, 2026-08-04 ruling, Bug B. `text-align: end` rather than
- * `right` so it follows the writing direction on RTL store views; this block
- * spans the input's containing box, so its end edge lines up exactly.
+ * TWO-25326. `text-align: end` rather than `right` so it follows the
+ * writing direction on RTL store views; this block spans the input's
+ * containing box, so its end edge lines up exactly.
  */
 .two-company-id-text {
     display: block;

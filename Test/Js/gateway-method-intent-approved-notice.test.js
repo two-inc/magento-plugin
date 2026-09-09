@@ -137,7 +137,7 @@ function makeContext(noticeCopy, declinedCopy) {
 
     component.initOrderIntentApprovedNotice.call(ctx, {
         orderIntentApprovedNotice: noticeCopy,
-        // TWO-25326 §7.3: the "not approved" business outcome now renders
+        // TWO-25326: the "not approved" business outcome now renders
         // via the SAME persistent-notice mechanism, with its own copy —
         // undefined here defaults to '' if the individual test doesn't
         // supply it, matching a caller that never wired the key.

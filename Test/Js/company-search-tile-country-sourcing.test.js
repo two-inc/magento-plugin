@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 / TWO-25461 §1(a.3): which country the company search and the
+ * TWO-25326 / TWO-25461: which country the company search and the
  * sole-trader registry run against.
  *
  * The reported failure was Fire Checkout only: the search ran against the API's
@@ -275,7 +275,7 @@ describe('a country read is scoped to ONE form, never document-wide (TWO-25554)'
     });
 });
 
-describe('with no control mounted, the quote\'s BILLING address decides (TWO-25461 §1(a.3))', () => {
+describe('with no control mounted, the quote\'s BILLING address decides (TWO-25461)', () => {
     test.each([
         ['NO', 'GB', 'no', 'billing beats a country select the control is not mounted beside'],
         ['no', 'GB', 'no', 'an already-lower-cased billing country is unchanged'],

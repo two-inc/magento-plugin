@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §1, the two wording/opening defects that are shared by all three
+ * TWO-25326, the two wording/opening defects that are shared by all three
  * Magento checkout surfaces (Luma, Amasty OneStepCheckout, Fire Checkout —
  * one code path, three renderings):
  *
@@ -85,7 +85,7 @@ function messageText() {
     return node ? node.textContent : null;
 }
 
-describe('TWO-25326 §1: any character opens the panel', () => {
+describe('TWO-25326: any character opens the panel', () => {
     let panel;
     let searched;
 
@@ -151,7 +151,7 @@ describe('TWO-25326 §1: any character opens the panel', () => {
         expect(searched).toEqual(['e']);
     });
 
-    test('Tab is never intercepted — §1 excludes it explicitly, and §4 needs it to navigate', () => {
+    test('Tab is never intercepted, so it still moves focus out of the field', () => {
         const tab = pressKey(field(), 'Tab');
 
         expect(tab.defaultPrevented).toBe(false);
@@ -203,7 +203,7 @@ describe('TWO-25326 §1: any character opens the panel', () => {
     });
 });
 
-describe('TWO-25326 §1: zero-result wording', () => {
+describe('TWO-25326: zero-result wording', () => {
     test('the message is "No matches found", not select2\'s "No results found"', () => {
         const model = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
 

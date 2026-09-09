@@ -62,8 +62,8 @@ describe('address step: company-number field is CSS-hidden, not removed', () => 
     });
 
     /**
-     * TWO-25326 §5/§7. The rule above EXISTED and the field was visible on
-     * Luma anyway, which is why the ticket lists it as a live defect on three
+     * TWO-25326. The rule above EXISTED and the field was visible on Luma
+     * anyway, which is why the ticket lists it as a live defect on three
      * separate Magento checkout surfaces — this test is the one that would
      * have caught it, and its absence is why the previous test read as
      * passing while the buyer saw an editable "Company Number" box.
@@ -89,10 +89,10 @@ describe('address step: company-number field is CSS-hidden, not removed', () => 
     });
 
     /**
-     * The replacement surface: a plain-text company number, which §5 requires
-     * to sit under the name field and align to its end edge. `text-align:
-     * end` rather than `right` so RTL store views follow the writing
-     * direction — the ticket calls that out explicitly.
+     * The replacement surface: a plain-text company number, which TWO-25326
+     * requires to sit under the name field and align to its end edge.
+     * `text-align: end` rather than `right` so RTL store views follow the
+     * writing direction — the ticket calls that out explicitly.
      */
     test('the company-number text label is end-aligned rather than physically right-aligned', () => {
         const css = readRepoFile(STYLE);

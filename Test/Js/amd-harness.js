@@ -180,7 +180,7 @@ function defaultMocks() {
             minInputLengthMessage: function () {
                 return 'Enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
-            // TWO-25326 §1 wording, mirrored here so a call site that reads it
+            // TWO-25326 wording, mirrored here so a call site that reads it
             // through the mock gets the same string the real module returns.
             noResultsMessage: function () {
                 return 'No matches found';

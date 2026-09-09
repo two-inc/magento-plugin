@@ -139,17 +139,16 @@ across modules). Elements may appear in any order (`xs:all`).
 ### The intent notices — a switch and a wording override per outcome
 
 The notices are buyer-facing "order intent approved" / "order intent not
-approved" lines rendered inline in the checkout payment tile — as of the
-2026-08-03 ruling (TWO-25326 §7.3), this is the ONLY place the buyer's
-captured company NAME is displayed in the tile; the earlier standalone
-`.two-company-label` element is gone, not relocated. The company NUMBER
-renders separately, independent of these notices, in the
-`.two-company-id-text` label each capture panel paints under its own
-company field (2026-08-04 ruling, TWO-25326 §5/§7 follow-up).
-Each outcome has its **own** on/off switch and its **own** wording
-override, and the four elements are four independent
-decisions: a brand may reword the declined notice, suppress it, or leave
-it on the platform default, whatever it did with the approved one.
+approved" lines rendered inline in the checkout payment tile — as of
+TWO-25326, this is the ONLY place the buyer's captured company NAME is
+displayed in the tile; the earlier standalone `.two-company-label`
+element is gone, not relocated. The company NUMBER renders separately,
+independent of these notices, in the `.two-company-id-text` label each
+capture panel paints under its own company field. Each outcome has its
+**own** on/off switch and its **own** wording override, and the four
+elements are four independent decisions: a brand may reword the declined
+notice, suppress it, or leave it on the platform default, whatever it did
+with the approved one.
 
 The switches govern the buyer-facing COPY only. A not-approved order intent
 also blocks placement — the renderer records the verdict against the
@@ -218,12 +217,12 @@ return `null` for the first two rows and the template for the third; they
 never return `''`.
 
 **Every white-label brand overlay is expected to declare
-`intent_approved_notice`** with brand-specific copy (2026-08-04 ruling) —
-falling through to the platform default here for a live overlay is a
-bug, not a valid "no opinion" state. `intent_declined_notice` carries no
-such expectation: rewording or suppressing the declined outcome are
-choices an overlay makes or declines to make, and the platform default
-is a valid resting state.
+`intent_approved_notice`** with brand-specific copy — falling through to
+the platform default here for a live overlay is a bug, not a valid "no
+opinion" state. `intent_declined_notice` carries no such expectation:
+rewording or suppressing the declined outcome are choices an overlay
+makes or declines to make, and the platform default is a valid resting
+state.
 
 #### Deploy order
 

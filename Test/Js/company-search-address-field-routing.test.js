@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §2.6: where each part of an external address payload lands in the
+ * TWO-25461: where each part of an external address payload lands in the
  * checkout address form.
  *
  * `applyAddress()` used to write three fields — city, postcode and the FIRST

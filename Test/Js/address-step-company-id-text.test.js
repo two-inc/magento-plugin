@@ -2,8 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §5 and §7, address step (Luma / Amasty OneStepCheckout / Fire
- * Checkout — one code path).
+ * TWO-25326, address step (Luma / Amasty OneStepCheckout / Fire Checkout —
+ * one code path).
  *
  * The captured organisation number must appear as PLAIN TEXT under the
  * company-name field once a search result has been selected, and must appear
@@ -121,7 +121,7 @@ beforeEach(() => {
     $(document).off('.twoCompanyCaptureMount');
 });
 
-describe('TWO-25326 §5: the company number is a plain text label, and only after selection', () => {
+describe('TWO-25326: the company number is a plain text label, and only after selection', () => {
     test('nothing is rendered before a result has been selected', () => {
         load();
 
@@ -137,9 +137,10 @@ describe('TWO-25326 §5: the company number is a plain text label, and only afte
         const label = labels()[0];
         expect(label.textContent).toBe('919300894');
         // Under the NAME field specifically — inside that field's own
-        // `.control`, after the input. §5 pins the position, not just the
-        // existence, because a number rendered somewhere else on the form is
-        // exactly the "visible in the address area" defect §7 forbids.
+        // `.control`, after the input. TWO-25326 pins the position, not just
+        // the existence, because a number rendered somewhere else on the form
+        // is exactly the "visible in the address area" defect the ticket
+        // forbids.
         const nameControl = document.querySelector(NAME_SELECTOR).closest('.control');
         expect(label.closest('.control')).toBe(nameControl);
         expect(
@@ -162,8 +163,8 @@ describe('TWO-25326 §5: the company number is a plain text label, and only afte
     });
 
     test('it has an accessible name, since the visible text is a bare number', () => {
-        // §7 forbids an extra VISIBLE caption in the address area, so the
-        // caption has to be an accessible one — a bare number with no
+        // TWO-25326 forbids an extra VISIBLE caption in the address area, so
+        // the caption has to be an accessible one — a bare number with no
         // accessible name is unreadable to a screen reader.
         const { panel } = load();
 

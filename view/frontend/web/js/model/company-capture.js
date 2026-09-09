@@ -374,7 +374,7 @@ define([
      * soleAddressForm() refuses while either core form exists, so the write
      * cannot reach a second panel's fields (TWO-25554). The sole-trader address
      * and phone write-back is owed to the buyer wherever the control is mounted
-     * (TWO-25461 §5), so refusing outright there fills nothing in and says
+     * (TWO-25461), so refusing outright there fills nothing in and says
      * nothing.
      *
      * @returns {?object} jQuery set, or null
@@ -389,7 +389,7 @@ define([
     /**
      * shippingWriteRoot(), and a notice on the shipping identity when there is
      * none — a pick that fills nothing in and says nothing reads to the buyer
-     * as the picker having done nothing (TWO-25461 §5).
+     * as the picker having done nothing (TWO-25461).
      *
      * @returns {?object} jQuery set, or null
      */
