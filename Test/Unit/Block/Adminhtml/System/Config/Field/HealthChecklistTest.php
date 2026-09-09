@@ -310,13 +310,13 @@ class HealthChecklistTest extends TestCase
                 'a definitive rejection names both key and environment',
             ],
             'key unverifiable, service down' => [
-                true, ApiKeyStatus::SERVICE_ERROR, true, $unrestricted, null, null, false, false,
-                'could not be verified just now',
-                'a transient verdict must not be reported as the method being withheld (ABN-533)',
+                true, ApiKeyStatus::SERVICE_ERROR, true, $unrestricted, null, null, false, true,
+                'Shown at checkout',
+                'ABN-533: a transient verdict falls through to the cached record, so nothing is withheld',
             ],
             'key unverifiable, unreachable' => [
-                true, ApiKeyStatus::UNREACHABLE, true, $unrestricted, null, null, false, false,
-                'could not be verified just now',
+                true, ApiKeyStatus::UNREACHABLE, true, $unrestricted, null, null, false, true,
+                'Shown at checkout',
                 'the same for a store that cannot reach us at all',
             ],
             'stored surcharge method unknown' => [
@@ -429,14 +429,22 @@ class HealthChecklistTest extends TestCase
         );
         $this->configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)
             ->willReturn(false);
-        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        // The checkout row's own verdict read judges the page's scope. The
+        // panel's separate "API key" row is unscoped and predates this.
+        $scopesAsked = [];
+        $this->apiKeyStatus->method('getStatus')
+            ->willReturnCallback(function ($storeId = null) use (&$scopesAsked) {
+                $scopesAsked[] = $storeId;
+                return ['status' => ApiKeyStatus::OK];
+            });
         $this->configRepository->method('getMode')->willReturn('sandbox');
 
         $row = $this->block->getChecklistRows()[4];
 
-        // The scope assertion is the mock's own `with($expectedStoreId)`; this
-        // proves the read reached the row rather than being swallowed.
+        // The scope assertion is `isActive()`'s own `with($expectedStoreId)`;
+        // this proves the read reached the row rather than being swallowed.
         $this->assertStringContainsString('Check Enable payment method', $row['value'], $description);
+        $this->assertContains($expectedStoreId, $scopesAsked, $description);
     }
 
     /**

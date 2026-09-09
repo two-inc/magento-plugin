@@ -125,7 +125,7 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
-            $this->checkoutVisibilityRow($status),
+            $this->checkoutVisibilityRow(),
         ];
     }
 
@@ -134,12 +134,12 @@ class HealthChecklist extends Field
      * reasons decidable without a basket are judged; a basket-dependent one is
      * named as a constraint instead.
      *
-     * @param array{status: string, code: int|null} $apiKeyStatus
      * @return array{label: string, ok: bool, value: string}
      */
-    private function checkoutVisibilityRow(array $apiKeyStatus): array
+    private function checkoutVisibilityRow(): array
     {
         $storeId = $this->resolveScopeStoreId();
+        $apiKeyStatus = $this->apiKeyStatus->getStatus($storeId);
         $label = (string)__('Payment method at checkout');
         $notShown = (string)__('Not shown at checkout');
         $reason = null;
@@ -150,15 +150,6 @@ class HealthChecklist extends Field
             $reason = (string)__('no API key is saved. Check API key.');
         } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
             $reason = (string)__('the API key was rejected. Check API key and Environment.');
-        } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
-            // ABN-533: only invalid_key and not_configured withhold, so a
-            // transient verdict is never reported as the method being hidden.
-            return [
-                'label' => $label,
-                'ok' => false,
-                'state' => 'unknown',
-                'value' => (string)__('Cannot be checked — the API key could not be verified just now.'),
-            ];
         }
         if ($reason === null) {
             try {
@@ -187,10 +178,10 @@ class HealthChecklist extends Field
             );
         }
         if ($reason !== null) {
-            return ['label' => $label, 'ok' => false, 'state' => 'bad', 'value' => $notShown . ' — ' . $reason];
+            return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
         }
 
-        return ['label' => $label, 'ok' => true, 'state' => 'good', 'value' => $this->offeredValue($storeId)];
+        return ['label' => $label, 'ok' => true, 'value' => $this->offeredValue($storeId)];
     }
 
     /**
@@ -282,8 +273,6 @@ class HealthChecklist extends Field
      */
     protected function resolveScopeStoreId(): ?int
     {
-        // A stale or hand-edited scope param must degrade to the default
-        // scope, never take the whole configuration page down.
         try {
             $store = (string)$this->getRequest()->getParam('store');
             if ($store !== '') {
