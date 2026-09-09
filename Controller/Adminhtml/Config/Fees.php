@@ -29,8 +29,9 @@ use Two\Gateway\Service\Merchant\FeeRatesProvider;
  * A failed fetch falls back to the last fee set retrieved for this identity
  * and says so through `stale` + `fetched_at`, so the screen can tell the
  * merchant the figures are not current. With nothing cached at all the
- * response is {success:false, error:'upstream'} and the screen says that
- * instead of leaving the fee area blank (ABN-512).
+ * response carries no fees and names why — 'upstream' for a service that could
+ * not answer, 'not_configured' for a scope with no API key saved — and the
+ * screen says that instead of leaving the fee area blank (ABN-512).
  */
 class Fees extends Action
 {

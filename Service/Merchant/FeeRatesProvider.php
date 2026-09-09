@@ -99,7 +99,7 @@ class FeeRatesProvider
         if ($cacheKey === null) {
             // Its own category: nothing here will change until a key is saved,
             // so the screen says that rather than blaming the service.
-            return ['success' => false, 'error' => 'not_configured'];
+            return ['success' => false, 'error' => ApiKeyStatus::NOT_CONFIGURED];
         }
         $cooling = $this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false;
 

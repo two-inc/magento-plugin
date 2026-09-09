@@ -26,6 +26,10 @@ function render() {
         + '    <input type="checkbox" class="two-term-checkboxes__input" value="30"/>'
         + '    <span class="two-term-checkboxes__fee" data-term="30"></span>'
         + '  </div>'
+        + '  <div class="two-term-checkboxes__item">'
+        + '    <input type="checkbox" class="two-term-checkboxes__input" value="60"/>'
+        + '    <span class="two-term-checkboxes__fee" data-term="60"></span>'
+        + '  </div>'
         + '</div>';
 }
 
@@ -139,6 +143,17 @@ describe('inline merchant fees, when the pricing service cannot answer', () => {
         loaded.requests[0].settleDone(STALE);
 
         expect(jq(NOTICE).text()).toBe('');
+        expect(jq('.two-term-checkboxes__fee[data-term="30"]').text()).toContain('1.50%');
+    });
+
+    it('marks a term the answer did not price, rather than leaving it blank', () => {
+        // A blank span reads as "this term carries no fee".
+        const loaded = load();
+
+        loaded.requests[0].settleDone(FRESH);
+
+        expect(jq('.two-term-checkboxes__fee[data-term="30"]').text()).toContain('1.50%');
+        expect(jq('.two-term-checkboxes__fee[data-term="60"]').text()).toContain('no figure');
     });
 
     it('names when the figures it is showing were retrieved', () => {

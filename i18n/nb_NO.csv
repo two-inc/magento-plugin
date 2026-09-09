@@ -409,3 +409,4 @@
 "Fees could not be refreshed, so the figures last retrieved are shown.","Gebyrene kunne ikke oppdateres, så tallene som sist ble hentet vises."
 "Fees could not be refreshed, so the figures retrieved on %1 are shown.","Gebyrene kunne ikke oppdateres, så tallene som ble hentet %1 vises."
 "Fees cannot be shown until an API key is saved for this scope.","Gebyrene kan ikke vises før en API-nøkkel er lagret for dette omfanget."
+"no figure","ingen sats"

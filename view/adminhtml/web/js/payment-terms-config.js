@@ -372,10 +372,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 } else {
                     setFeeNotice('');
                 }
-                // Currency MUST come from the API response — the fee
-                // values do too, and we don't get to guess what currency
-                // they're in. If the API omits it, we cannot safely
-                // render any fixed amount.
+                // Currency comes from the API response, never guessed: the fee
+                // values are its too. A set without one is refused server-side
+                // rather than drawn.
                 var currency = String(response.currency || '').toUpperCase().trim();
                 var suffix = currency !== '' ? ' ' + currency : '';
                 // Admin locale's decimal separator, sourced server-side
@@ -392,7 +391,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var term = String($span.data('term'));
                     var fee = response.fees[term];
                     if (!fee) {
-                        $span.text('');
+                        // An empty span reads as "no fee for this term", so a
+                        // term the answer did not price says so instead.
+                        $span.text(' (' + $t('no figure') + ')');
                         return;
                     }
                     var pctStr = formatAmount(fee.percentage || 0);
@@ -400,18 +401,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var zero = formatAmount(0);
                     var pctZero = pctStr === zero;
                     var fixedZero = fixedStr === zero;
-                    // Without an API-supplied currency, any fixed
-                    // component would be ambiguous. Drop the fixed
-                    // portion entirely in that case; percentage can
-                    // stand alone since it carries its own unit (%).
-                    if (currency === '') {
-                        if (pctZero) {
-                            $span.text('');
-                            return;
-                        }
-                        $span.text(' (' + pctStr + '%)');
-                        return;
-                    }
                     var inner;
                     if (pctZero && fixedZero) {
                         inner = zero + suffix;
