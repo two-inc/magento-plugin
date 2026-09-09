@@ -24,6 +24,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         var $defaultTerm    = $('#' + prefix + 'default_payment_term');
         var $surchargeType  = $('#' + prefix + 'surcharge_type');
         var $differential   = $('#' + prefix + 'surcharge_differential');
+        var $termsInherit   = $('#' + prefix + 'payment_terms_inherit');
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -125,10 +126,19 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
         // ── Custom payment terms visibility ──────────────────────────────
 
-        function hideCustomDaysIfItFoldsIn() {
+        // The marker carries what the server settles before the post; the sibling's inherit box is
+        // the rest of it, and an inheriting sibling makes the save keep the value (ABN-522).
+        function customDaysFoldsIn() {
+            return $customDays.closest('tr').find('.two-legacy-term-folds-in').length > 0
+                && !$termsInherit.is(':checked');
+        }
+
+        function updateCustomDaysVisibility() {
             // Hidden, not removed: the row must still post for the fold-in save to happen.
-            if ($customDays.closest('tr').find('.two-legacy-term-folds-in').length) {
+            if (customDaysFoldsIn()) {
                 hideField('payment_terms_duration_days');
+            } else {
+                showField('payment_terms_duration_days');
             }
         }
 
@@ -167,6 +177,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
         $('#' + prefix + 'surcharge_type_inherit').on('change', onSurchargeChanged);
+        $termsInherit.on('change', updateCustomDaysVisibility);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
@@ -415,7 +426,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         updateDefaultTermOptions();
         updateDifferentialOptionLabel();
         updateSurchargeVisibility();
-        hideCustomDaysIfItFoldsIn();
+        updateCustomDaysVisibility();
         initInheritResetBehavior();
         initTermCheckboxInherit();
         loadFees();

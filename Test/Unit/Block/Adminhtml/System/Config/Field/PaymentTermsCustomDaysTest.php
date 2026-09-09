@@ -6,9 +6,11 @@ namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 use DOMDocument;
 use DOMElement;
 use Magento\Backend\Block\Template\Context;
+use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Api\Data\StoreInterface;
+use Magento\Store\Api\Data\WebsiteInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays;
@@ -24,6 +26,8 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {
+    private const STRUCTURE_PATH = 'two_payment/payment_terms';
+
     /**
      * @param int[] $offered
      * @param array<string, string> $params the admin page's own request params
@@ -31,7 +35,8 @@ class PaymentTermsCustomDaysTest extends TestCase
     private function block(
         array $offered = [],
         array $params = [],
-        ?SettingsProvider $settingsProvider = null
+        ?SettingsProvider $settingsProvider = null,
+        bool $siblingEnvLocked = false
     ): PaymentTermsCustomDays {
         if ($settingsProvider === null) {
             $settingsProvider = $this->createMock(SettingsProvider::class);
@@ -49,8 +54,12 @@ class PaymentTermsCustomDaysTest extends TestCase
         $storeManager->method('getStore')->willReturnCallback(
             static fn ($code) => $code === 'broken' ? throw new \RuntimeException('no such store') : $store
         );
+        $storeManager->method('getWebsite')->willReturn($this->createMock(WebsiteInterface::class));
 
-        return new class ($context, new OfferedTermsGuard($settingsProvider), $storeManager)
+        $settingChecker = $this->createMock(SettingChecker::class);
+        $settingChecker->method('isReadOnly')->willReturn($siblingEnvLocked);
+
+        return new class ($context, new OfferedTermsGuard($settingsProvider), $storeManager, $settingChecker)
             extends PaymentTermsCustomDays {
             public function renderForTest(AbstractElement $element): string
             {
@@ -60,12 +69,18 @@ class PaymentTermsCustomDaysTest extends TestCase
     }
 
     /** @param int[] $offered */
-    private function render(array $elementData, array $offered = [], array $params = []): string
-    {
-        return $this->block($offered, $params)->renderForTest(new AbstractElement($elementData + [
-            'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
-            'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
-        ]));
+    private function render(
+        array $elementData,
+        array $offered = [],
+        array $params = [],
+        bool $siblingEnvLocked = false
+    ): string {
+        return $this->block($offered, $params, null, $siblingEnvLocked)
+            ->renderForTest(new AbstractElement($elementData + [
+                'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
+                'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
+                'field_config' => ['path' => self::STRUCTURE_PATH],
+            ]));
     }
 
     private function parse(string $html): DOMDocument
@@ -176,9 +191,14 @@ class PaymentTermsCustomDaysTest extends TestCase
      * @param int[] $offered
      * @dataProvider foldsInProvider
      */
-    public function testTheFoldInMarker(string $stored, array $offered, bool $expected, string $case): void
-    {
-        $markers = $this->parse($this->render(['value' => $stored], $offered))
+    public function testTheFoldInMarker(
+        string $stored,
+        array $offered,
+        bool $siblingEnvLocked,
+        bool $expected,
+        string $case
+    ): void {
+        $markers = $this->parse($this->render(['value' => $stored], $offered, [], $siblingEnvLocked))
             ->getElementsByTagName('span');
 
         $this->assertSame($expected, $markers->length === 1, $case);
@@ -187,13 +207,26 @@ class PaymentTermsCustomDaysTest extends TestCase
     public static function foldsInProvider(): array
     {
         return [
-            ['30', [14, 30], true, 'a term the record offers folds in, so the row hides'],
-            ['030', [14, 30], true, 'a leading-zero value folds into the same term'],
-            ['37', [14, 30], false, 'a term the record does not offer keeps the row visible'],
-            ['30', [], false, 'an unresolvable offered set folds nothing in'],
-            ['abc', [14, 30], false, 'an unusable value has no term to fold into'],
-            ['1e2', [100], false, 'an unusable value is not the term a cast would read it as'],
+            ['30', [14, 30], false, true, 'a term the record offers folds in, so the row hides'],
+            ['030', [14, 30], false, true, 'a leading-zero value folds into the same term'],
+            ['37', [14, 30], false, false, 'a term the record does not offer keeps the row visible'],
+            ['30', [], false, false, 'an unresolvable offered set folds nothing in'],
+            ['abc', [14, 30], false, false, 'an unusable value has no term to fold into'],
+            ['1e2', [100], false, false, 'an unusable value is not the term a cast would read it as'],
+            ['30', [14, 30], true, false, 'an env.php-locked sibling cannot take the tick, so the row stays visible'],
         ];
+    }
+
+    /** The backend model refuses on a missing structure path too, so the marker must not claim one. */
+    public function testAnUnknownStructurePathClaimsNoFoldIn(): void
+    {
+        $html = $this->block([30])->renderForTest(new AbstractElement([
+            'value' => '30',
+            'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
+            'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
+        ]));
+
+        $this->assertSame(0, $this->parse($html)->getElementsByTagName('span')->length);
     }
 
     public function testNoFreeTextEntryIsOffered(): void
@@ -252,6 +285,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             'value' => '30',
             'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
             'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
+            'field_config' => ['path' => self::STRUCTURE_PATH],
         ]));
 
         $this->assertSame(1, $this->parse($html)->getElementsByTagName('span')->length, $case);
@@ -293,6 +327,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             'value' => '30',
             'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
             'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
+            'field_config' => ['path' => self::STRUCTURE_PATH],
             'form' => $form,
         ]));
 

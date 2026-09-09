@@ -33,6 +33,11 @@ namespace Magento\Store\Model {
                 return null;
             }
 
+            public function getCode()
+            {
+                return null;
+            }
+
             public function getBaseCurrencyCode()
             {
                 return null;

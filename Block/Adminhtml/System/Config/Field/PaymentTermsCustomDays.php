@@ -9,6 +9,7 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
+use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
@@ -20,21 +21,38 @@ use Two\Gateway\Model\Config\StoredTerm;
  */
 class PaymentTermsCustomDays extends Field
 {
+    /** Sibling holding the term checkboxes, whose tick is the other half of the fold-in. */
+    private const SIBLING = 'payment_terms';
+
     /** @var OfferedTermsGuard */
     private $offeredTerms;
 
     /** @var StoreManagerInterface */
     private $storeManager;
 
+    /** @var SettingChecker */
+    private $settingChecker;
+
+    /** @var string|null */
+    private $scope;
+
+    /** @var string|null */
+    private $scopeCode;
+
+    /** @var int|null */
+    private $storeId;
+
     public function __construct(
         Context $context,
         OfferedTermsGuard $offeredTerms,
         StoreManagerInterface $storeManager,
+        SettingChecker $settingChecker,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->offeredTerms = $offeredTerms;
         $this->storeManager = $storeManager;
+        $this->settingChecker = $settingChecker;
     }
 
     /**
@@ -65,13 +83,13 @@ class PaymentTermsCustomDays extends Field
             $this->escapeHtmlAttr((string)$element->getName()),
             $element->getDisabled() ? ' disabled="disabled"' : '',
             $optionsHtml
-        ) . $this->foldsInMarker($days);
+        ) . $this->foldsInMarker($element, $days);
     }
 
-    /** Marks the row the save will fold into an offered term's checkbox; it stays posted, hidden. */
-    private function foldsInMarker(?int $days): string
+    /** Marks the row the save may fold into an offered term's checkbox; it stays posted, hidden. */
+    private function foldsInMarker(AbstractElement $element, ?int $days): string
     {
-        if ($days === null) {
+        if ($days === null || !$this->siblingCanTakeTheTerm($element)) {
             return '';
         }
         $offered = $this->offeredTerms->offered($this->resolveStoreId());
@@ -82,22 +100,61 @@ class PaymentTermsCustomDays extends Field
     }
 
     /**
-     * Store id for the scope being edited, or null for website/default — the offered-terms lookup
-     * resolves the per-store API key from it.
-     *
-     * @see SurchargeGrid::resolveScope() for why the request param and not the form object.
+     * Env.php-locking the sibling stops it reaching its backend model; its inherit state is only
+     * known in the browser, so the JS composes that half with this marker.
      */
+    private function siblingCanTakeTheTerm(AbstractElement $element): bool
+    {
+        $structurePath = $element->getData('field_config')['path'] ?? null;
+        if (!is_string($structurePath) || $structurePath === '') {
+            return false;
+        }
+        $this->resolveScope();
+
+        return !$this->settingChecker->isReadOnly(
+            $structurePath . '/' . self::SIBLING,
+            (string)$this->scope,
+            $this->scopeCode
+        );
+    }
+
+    /** Store id for the scope being edited, or null for website/default — resolves the API key. */
     private function resolveStoreId(): ?int
     {
-        $store = $this->getRequest()->getParam('store');
-        if ($store === null || $store === '') {
-            return null;
+        $this->resolveScope();
+
+        return $this->storeId;
+    }
+
+    /**
+     * Scope being edited, named as the config save pipeline names it.
+     *
+     * @see SurchargeGrid::resolveScope() for why the request params and not the form object.
+     */
+    private function resolveScope(): void
+    {
+        if ($this->scope !== null) {
+            return;
         }
 
+        $this->scope = 'default';
+        $store = (string)$this->getRequest()->getParam('store');
+        $website = (string)$this->getRequest()->getParam('website');
+
         try {
-            return (int)$this->storeManager->getStore($store)->getId() ?: null;
+            if ($store !== '') {
+                $resolved = $this->storeManager->getStore($store);
+                $this->scope = 'stores';
+                $this->scopeCode = (string)$resolved->getCode();
+                $this->storeId = (int)$resolved->getId() ?: null;
+            } elseif ($website !== '') {
+                $this->scope = 'websites';
+                $this->scopeCode = (string)$this->storeManager->getWebsite($website)->getCode();
+            }
         } catch (\Exception $e) {
-            return null;
+            $this->scope = 'default';
+            $this->scopeCode = null;
+            $this->storeId = null;
         }
     }
 }

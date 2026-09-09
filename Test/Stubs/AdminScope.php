@@ -22,6 +22,8 @@ namespace Magento\Store\Api\Data {
         {
             public function getId();
 
+            public function getCode();
+
             public function getWebsiteId();
         }
     }
@@ -29,6 +31,8 @@ namespace Magento\Store\Api\Data {
         interface WebsiteInterface
         {
             public function getId();
+
+            public function getCode();
 
             public function getDefaultGroupId();
         }

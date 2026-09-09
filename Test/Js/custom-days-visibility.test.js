@@ -2,8 +2,9 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-522. The deprecated custom-term row hides on the server-emitted fold-in marker alone, and
- * the term it contributes comes from the server-emitted data-two-term, never from the raw value.
+ * ABN-522. The deprecated custom-term row hides only where the save will fold the value away:
+ * the server-emitted marker plus the live inherit state of the Payment terms sibling. The term the
+ * row contributes comes from the server-emitted data-two-term, never from the raw value.
  *
  * The row is hidden, NOT removed: it still posts, which is what lets the fold-in save happen.
  */
@@ -17,10 +18,15 @@ const SECTION = 'two_payment';
 const PREFIX = SECTION + '_payment_terms_';
 const CUSTOM_ROW = '#row_' + PREFIX + 'payment_terms_duration_days';
 
-function buildForm(storedValue, foldsIn, term) {
+function buildForm(storedValue, foldsIn, term, inherit) {
+    const inheritBox = inherit === undefined
+        ? ''
+        : '<input type="checkbox" id="' + PREFIX + 'payment_terms_inherit"' +
+          (inherit ? ' checked="checked"' : '') + ' />';
     document.body.innerHTML =
         '<table><tbody>' +
-        '<tr><td><div class="two-term-checkboxes" id="' + PREFIX + 'payment_terms_checkboxes">' +
+        '<tr><td>' + inheritBox +
+        '<div class="two-term-checkboxes" id="' + PREFIX + 'payment_terms_checkboxes">' +
         '<input class="two-term-checkboxes__input" type="checkbox" value="14" checked />' +
         '<input class="two-term-checkboxes__input" type="checkbox" value="30" />' +
         '</div></td></tr>' +
@@ -38,8 +44,8 @@ function buildForm(storedValue, foldsIn, term) {
         '</tbody></table>';
 }
 
-function initWith(storedValue, foldsIn, term) {
-    buildForm(storedValue, foldsIn, term);
+function initWith(storedValue, foldsIn, term, inherit) {
+    buildForm(storedValue, foldsIn, term, inherit);
     const mocks = defaultMocks();
     mocks.jquery = $;
     loadAmdModule('view/adminhtml/web/js/payment-terms-config.js', mocks).init();
@@ -62,6 +68,27 @@ describe('deprecated custom-term row visibility', () => {
         ['30', false, 30, false, 'a value that looks foldable is still shown without the marker']
     ])('value %s, marker %s -> hidden=%s — %s', (storedValue, foldsIn, term, expectedHidden) => {
         expect(initWith(storedValue, foldsIn, term).css('display') === 'none').toBe(expectedHidden);
+    });
+
+    it.each([
+        [undefined, true, 'no inherit box at all is an editable sibling, so the row hides'],
+        [false, true, 'an unticked inherit box is an editable sibling, so the row hides'],
+        [true, false, 'a ticked inherit box means the save keeps the value, so the row stays visible']
+    ])('marker present, inherit %s -> hidden=%s — %s', (inherit, expectedHidden) => {
+        expect(initWith('30', true, 30, inherit).css('display') === 'none').toBe(expectedHidden);
+    });
+
+    it('follows the sibling inherit box as the merchant toggles it', () => {
+        const $row = initWith('30', true, 30, true);
+        const $inherit = $('#' + PREFIX + 'payment_terms_inherit');
+
+        expect($row.css('display')).not.toBe('none');
+
+        $inherit.prop('checked', false).trigger('change');
+        expect($row.css('display')).toBe('none');
+
+        $inherit.prop('checked', true).trigger('change');
+        expect($row.css('display')).not.toBe('none');
     });
 
     it('keeps the hidden row in the form so its value still posts', () => {
