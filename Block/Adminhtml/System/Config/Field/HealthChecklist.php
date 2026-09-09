@@ -151,8 +151,8 @@ class HealthChecklist extends Field
         } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
             $reason = (string)__('the API key was rejected. Check API key and Environment.');
         } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
-            // ABN-533 will stop transient verdicts withholding at all, so this
-            // row must not report one as the method being hidden.
+            // ABN-533: only invalid_key and not_configured withhold, so a
+            // transient verdict is never reported as the method being hidden.
             return [
                 'label' => $label,
                 'ok' => false,
