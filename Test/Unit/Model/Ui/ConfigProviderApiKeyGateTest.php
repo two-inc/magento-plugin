@@ -8,6 +8,7 @@ use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Repository as ConfigRepositoryImpl;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
@@ -30,6 +31,9 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class ConfigProviderApiKeyGateTest extends TestCase
 {
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /**
      * @param array<string,mixed>|null $merchantRecord what the never-expiring record holds
      */
@@ -80,6 +84,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
             'storeManager' => $this->storeManager(),
             'supportedCompanyTypes' => $this->createMock(SupportedCompanyTypes::class),
             'checkoutTileCopy' => $this->createMock(CheckoutTileCopy::class),
+            'logRepository' => $this->logRepository ?? $this->createMock(LogRepository::class),
         ];
         foreach ($properties as $name => $value) {
             $reflection->getProperty($name)->setValue($provider, $value);
@@ -263,6 +268,90 @@ class ConfigProviderApiKeyGateTest extends TestCase
                 'a shop with no record has no identity to relay',
             ],
         ];
+    }
+
+    /**
+     * ABN-518: the category and HTTP status, never a response body.
+     *
+     * @dataProvider definitiveFailureCategories
+     */
+    public function testEveryDefinitiveFailureIsLogged(string $status, ?int $code): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->once())->method('addDebugLog')
+            ->with(
+                sprintf(
+                    'two_payment checkout config withheld (tile and company search): API key verdict "%s"',
+                    $status
+                ),
+                ['status' => $status, 'http_status' => $code]
+            );
+
+        $this->build($this->statusService($status, $code))->getConfig();
+    }
+
+    /**
+     * Only these two withhold the subtree (ABN-533), so only these two have a
+     * withholding to record.
+     *
+     * @return array<string, array{0: string, 1: int|null}>
+     */
+    public static function definitiveFailureCategories(): array
+    {
+        return [
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null],
+        ];
+    }
+
+    /**
+     * A transient verdict leaves the subtree in place, so there is nothing to
+     * record about it here (ABN-533).
+     *
+     * @dataProvider transientVerdicts
+     */
+    public function testATransientVerdictIsNotLoggedAsAWithholding(string $status, ?int $code): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->never())->method('addDebugLog');
+
+        $this->build($this->statusService($status, $code))->getConfig();
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int|null}>
+     */
+    public static function transientVerdicts(): array
+    {
+        return [
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, null],
+            'other error' => [ApiKeyStatus::ERROR, 404],
+            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null],
+        ];
+    }
+
+    /**
+     * getConfig() is evaluated several times per checkout render; one broken
+     * key is one log line, not one per evaluation.
+     */
+    public function testTheWithholdingIsLoggedOncePerRequest(): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $provider = $this->build($this->statusService(ApiKeyStatus::INVALID_KEY, 401));
+        $provider->getConfig();
+        $provider->getConfig();
+        $provider->getConfig();
+    }
+
+    public function testNothingIsLoggedWhenTheKeyVerifies(): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->never())->method('addDebugLog');
+
+        $this->build($this->statusService(ApiKeyStatus::OK, 200, ['id' => 'abc-123']))->getConfig();
     }
 
     public function testTheSubtreeAndItsSentinelArePresentOnSuccess(): void

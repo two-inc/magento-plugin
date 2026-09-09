@@ -51,6 +51,9 @@ namespace Magento\Store\Model {
         {
             public function getStore($storeId = null);
 
+            /** Core's own accessor for the default store view, used at default config scope. */
+            public function getDefaultStoreView();
+
             public function getStores($withDefault = false, $codeKey = false);
 
             public function getWebsite($websiteId = null);

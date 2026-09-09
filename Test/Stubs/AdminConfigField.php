@@ -97,6 +97,21 @@ namespace Magento\Config\Block\System\Config\Form {
             /** @var array */
             protected $data;
 
+            /**
+             * Declared by core's AbstractBlock, not by Two — a subclass that
+             * reads them outside the framework would otherwise create dynamic
+             * properties.
+             *
+             * @var mixed
+             */
+            protected $_storeManager;
+
+            /** @var mixed */
+            protected $_scopeConfig;
+
+            /** @var mixed */
+            protected $_localeDate;
+
             /** @var mixed the config Form block, bound via setForm() at render time */
             private $form;
 
