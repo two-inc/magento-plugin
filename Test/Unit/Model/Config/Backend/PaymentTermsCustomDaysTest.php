@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Config\Backend;
 
+use Magento\Config\Model\Config\Loader;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Config\Model\Config\Structure;
 use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
@@ -29,6 +30,11 @@ class PaymentTermsCustomDaysTest extends TestCase
     public const SIBLING_STRUCTURE_PATH = 'two_payment/payment_terms/payment_terms';
 
     public const SIBLING_CONFIG_PATH = 'payment/two_payment/payment_terms';
+
+    /** Public: the anonymous Loader subclass below reads them. */
+    public const OWN_PATH = 'payment/two_payment/payment_terms_duration_days';
+
+    public const GROUP_PATH = 'payment/two_payment';
     /** @var MessageManager|MockObject */
     private $messageManager;
 
@@ -45,13 +51,15 @@ class PaymentTermsCustomDaysTest extends TestCase
      * @param int[] $offered terms the merchant record offers; empty means it did not resolve
      * @param array<string, mixed> $data extra model data, e.g. the scope being saved
      * @param array|null $sibling posted shape of the checkboxes field; null means absent from the post
+     * @param string|null $row config table row at this scope; null means the scope holds none
      */
     private function buildModel(
         string $posted,
         ?string $stored,
         array $offered = [],
         array $data = [],
-        ?array $sibling = ['value' => '']
+        ?array $sibling = ['value' => ''],
+        ?string $row = null
     ): PaymentTermsCustomDays {
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturn($stored);
@@ -73,6 +81,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             $this->messageManager,
             $this->settingChecker,
             self::structure(),
+            self::configLoader($row),
             null,
             null,
             $data + [
@@ -107,6 +116,31 @@ class PaymentTermsCustomDaysTest extends TestCase
                         return $this->configPath;
                     }
                 };
+            }
+            // phpcs:enable
+        };
+    }
+
+    /**
+     * Rows at the scope queried, keyed by path as Magento\Config\Model\Config\Loader keys them.
+     * Any other scope answers with a value nothing expects, so a mis-scoped read shows up.
+     */
+    private static function configLoader(?string $row, string $scope = 'default', int $scopeId = 0): Loader
+    {
+        return new class ($row, [$scope, $scopeId]) extends Loader {
+            // phpcs:disable
+            public function __construct(private ?string $row, private array $scope)
+            {
+            }
+            public function getConfigByPath($path, $scope, $scopeId, $full = true)
+            {
+                if ($this->row === null) {
+                    return [];
+                }
+                $queried = [$path, $scope, $scopeId]
+                    === [PaymentTermsCustomDaysTest::GROUP_PATH, $this->scope[0], $this->scope[1]];
+
+                return [PaymentTermsCustomDaysTest::OWN_PATH => $queried ? $this->row : 'wrong-scope'];
             }
             // phpcs:enable
         };
@@ -289,6 +323,47 @@ class PaymentTermsCustomDaysTest extends TestCase
     }
 
     /**
+     * The renderer offers the config table row as the keep option, so the guard has to judge the
+     * post against that row rather than getOldValue()'s cached resolution of the same path
+     * (ABN-531).
+     *
+     * @param int[] $offered
+     * @dataProvider rowVersusCacheProvider
+     */
+    public function testThePostIsJudgedAgainstTheRowTheFormRendered(
+        string $posted,
+        ?string $row,
+        ?string $cached,
+        array $offered,
+        ?string $expected,
+        string $case
+    ): void {
+        $model = $this->buildModel($posted, $cached, $offered, [], ['value' => ['14']], $row);
+
+        if ($expected === null) {
+            $this->expectException(LocalizedException::class);
+            $this->expectExceptionMessage('Custom payment terms (days) can only be removed, not changed.');
+        }
+
+        $model->beforeSave();
+
+        $this->assertSame($expected, $model->getValue(), $case);
+    }
+
+    public static function rowVersusCacheProvider(): array
+    {
+        return [
+            ['45', '45', '30', [], '45', 'a stale cache no longer blocks a save that keeps the row'],
+            ['  45  ', '45', '30', [], '45', 'whitespace around the kept row is not a change'],
+            ['', '45', '30', [], '', 'removal still clears the term while the two readings differ'],
+            ['30', '45', '30', [], null, 'the cached reading is not on offer, so posting it is a change'],
+            ['45', null, '45', [], '45', 'no row at this scope falls back to the resolved reading'],
+            ['45', null, '30', [], null, 'no row and a value matching neither reading is refused'],
+            ['30', '30', null, [14, 30], '', 'the row drives the fold-in with nothing cached'],
+        ];
+    }
+
+    /**
      * The message queue is session-backed, so a notice emitted before the transaction commits
      * would survive a later field's refusal and report a clearing that rolled back.
      */
@@ -332,6 +407,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             $this->messageManager,
             $this->settingChecker,
             self::structure(),
+            self::configLoader(null),
             null,
             null,
             [
@@ -349,5 +425,37 @@ class PaymentTermsCustomDaysTest extends TestCase
         $model->beforeSave();
 
         $this->assertSame('', $model->getValue(), 'the store-scope offered set drives the fold-in');
+    }
+
+    /** The row is read at the scope being saved; a wider scope's row is not what the page showed. */
+    public function testTheRowIsReadAtTheScopeBeingSaved(): void
+    {
+        $model = new PaymentTermsCustomDays(
+            $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
+            $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
+            $this->createMock(ScopeConfigInterface::class),
+            $this->createMock(TypeListInterface::class),
+            new OfferedTermsGuard($this->createMock(SettingsProvider::class)),
+            $this->messageManager,
+            $this->settingChecker,
+            self::structure(),
+            self::configLoader('45', 'stores', 5),
+            null,
+            null,
+            [
+                'value' => '45',
+                'path' => self::OWN_PATH,
+                'scope' => 'stores',
+                'scope_id' => 5,
+                'scope_code' => 'de',
+                'group_id' => 'payment_terms',
+                'field_config' => ['path' => 'two_payment/payment_terms'],
+                'groups' => ['payment_terms' => ['fields' => ['payment_terms' => ['value' => ['14']]]]],
+            ]
+        );
+
+        $model->beforeSave();
+
+        $this->assertSame('45', $model->getValue());
     }
 }

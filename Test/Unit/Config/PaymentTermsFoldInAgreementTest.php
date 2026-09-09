@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Config;
 
 use Magento\Backend\Block\Template\Context as BlockContext;
+use Magento\Config\Model\Config\Loader;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Config\Model\Config\Structure;
 use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
@@ -34,6 +35,9 @@ class PaymentTermsFoldInAgreementTest extends TestCase
     public const SIBLING_STRUCTURE_PATH = 'two_payment/payment_terms/payment_terms';
 
     public const SIBLING_CONFIG_PATH = 'payment/two_payment/payment_terms';
+
+    /** Public: the anonymous Loader subclass below reads it. */
+    public const OWN_CONFIG_PATH = 'payment/two_payment/payment_terms_duration_days';
 
     /** @param int[] $offered */
     private function markerIsRendered(string $stored, array $offered, bool $envLocked): bool
@@ -83,6 +87,7 @@ class PaymentTermsFoldInAgreementTest extends TestCase
             $this->createMock(MessageManager::class),
             $this->settingChecker($envLocked),
             self::structure(),
+            self::configLoader($stored),
             null,
             null,
             [
@@ -120,6 +125,22 @@ class PaymentTermsFoldInAgreementTest extends TestCase
         );
 
         return $settingChecker;
+    }
+
+    /** The row the form rendered from, keyed by path as Magento\Config\Model\Config\Loader keys it. */
+    private static function configLoader(string $row): Loader
+    {
+        return new class ($row) extends Loader {
+            // phpcs:disable
+            public function __construct(private string $row)
+            {
+            }
+            public function getConfigByPath($path, $scope, $scopeId, $full = true)
+            {
+                return [PaymentTermsFoldInAgreementTest::OWN_CONFIG_PATH => $this->row];
+            }
+            // phpcs:enable
+        };
     }
 
     /** Declares the sibling's config path, as etc/adminhtml/system.xml does. */
