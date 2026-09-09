@@ -46,14 +46,6 @@ class Surcharge extends AbstractTotal
         $baseAlreadyRefunded = (float)$order->getBaseTwoSurchargeRefunded();
         $baseMaxRefundable = $baseOrderSurcharge - $baseAlreadyRefunded;
 
-        // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
-        // creditmemo from request data. hasData() distinguishes "explicit
-        // merchant override" (including 0) from "never set, use default".
-        // Normalise to 6dp on entry — admin input is parsed by
-        // CreditmemoFeeOverride at locale precision (often 2dp,
-        // potentially more) and we keep 6dp internally so the refund
-        // line gross matches what ComposeOrder declared at placement.
-        // See Model/Total/Surcharge for the 6dp invariant rationale.
         // The proportional default is the surcharge net Magento's native tax
         // collector has ALREADY refunded VAT for on this credit memo (it
         // prorates order tax by subtotal). Compute it regardless of any
@@ -68,7 +60,10 @@ class Surcharge extends AbstractTotal
         // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
         // creditmemo from request data. hasData() distinguishes "explicit
         // merchant override" (including 0) from "never set, use proportional
-        // default".
+        // default". It parses admin input at locale precision (often 2dp), so
+        // normalise to 6dp here to keep the refund line gross matching what
+        // ComposeOrder declared at placement — see Model/Total/Surcharge for
+        // the 6dp invariant rationale.
         $hasOverride = $creditmemo->hasData('two_surcharge_amount')
             && $creditmemo->getData('two_surcharge_amount') !== null
             && $creditmemo->getData('two_surcharge_amount') !== '';
