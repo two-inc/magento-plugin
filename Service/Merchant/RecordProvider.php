@@ -37,15 +37,14 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class RecordProvider
 {
-    // TEMP(live-verify): compressed timings, observable on a dev shop. Revert to 93600/86400/3600.
     /** Eviction ceiling; must exceed MAX_AGE + CRON_INTERVAL so a refresh one run late still beats eviction. */
-    public const CACHE_LIFETIME = 300;
+    public const CACHE_LIFETIME = 93600;
 
     /** Age at which the hourly cron refreshes the record. */
-    public const MAX_AGE = 120;
+    public const MAX_AGE = 86400;
 
     /** Must match the two_gateway_refresh_merchant_record schedule in etc/crontab.xml. */
-    public const CRON_INTERVAL = 60;
+    public const CRON_INTERVAL = 3600;
 
     private const CACHE_KEY_PREFIX = 'two_gateway_merchant_record_';
 
@@ -55,9 +54,8 @@ class RecordProvider
 
     private const FAILURE_COOLDOWN_SUFFIX = '_cooldown';
 
-    // TEMP(live-verify): revert to 60.
     /** Seconds before a failed fetch is retried, so an outage is not a fetch per read. */
-    private const FAILURE_COOLDOWN = 10;
+    private const FAILURE_COOLDOWN = 60;
 
     /**
      * Per-call ceiling on the two GETs below. The callers that bound their own
@@ -282,13 +280,6 @@ class RecordProvider
         ?array $surviving
     ): ?array {
         $record = $this->fetchRecord($mode, $apiKey, $storeId);
-        // TEMP(live-verify)
-        $this->logRepository->addDebugLog('LIVEVERIFY RecordProvider: fetch outcome', [
-            'cache_key' => $cacheKey,
-            'fetched' => $record !== null,
-            'surviving_kept' => $record === null && $surviving !== null,
-            'store_id' => $storeId,
-        ]);
 
         // Memoize either way so a single request never pays the
         // verify+fetch round-trip twice.

@@ -27,9 +27,8 @@ class RefreshMerchantRecordTest extends TestCase
         $crontab = simplexml_load_file(__DIR__ . '/../../../etc/crontab.xml');
         $schedule = (string)$crontab->xpath('//job[@name="two_gateway_refresh_merchant_record"]/schedule')[0];
 
-        // TEMP(live-verify): revert to '0 * * * *' / 3600.
-        $this->assertSame('* * * * *', $schedule);
-        $this->assertSame(60, RecordProvider::CRON_INTERVAL);
+        $this->assertSame('0 * * * *', $schedule);
+        $this->assertSame(3600, RecordProvider::CRON_INTERVAL);
     }
 
     public function testTheRecordIsNeverEvictedWhileTheCronRunsOnSchedule(): void

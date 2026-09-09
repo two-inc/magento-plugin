@@ -75,11 +75,6 @@ class RecordRefresher
                 $due[] = $identity;
             }
         }
-        // TEMP(live-verify)
-        $this->logRepository->addDebugLog('LIVEVERIFY RecordRefresher: scheduled run', [
-            'identities' => count($identities),
-            'due' => count($due),
-        ]);
         $this->refreshWithin($due, INF);
     }
 
