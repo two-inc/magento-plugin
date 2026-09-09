@@ -168,10 +168,6 @@ class Two extends AbstractMethod
      */
     private $supportedCountriesProvider;
     /**
-     * @var SettingsProvider
-     */
-    private $settingsProvider;
-    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -242,6 +238,8 @@ class Two extends AbstractMethod
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
+        // Unused here: kept because a brand overlay's payment method mirrors
+        // this constructor and passes it through positionally.
         SettingsProvider $settingsProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -280,7 +278,6 @@ class Two extends AbstractMethod
         $this->lifecycleEvents = $lifecycleEvents;
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
-        $this->settingsProvider = $settingsProvider;
     }
 
     /**
@@ -863,10 +860,14 @@ class Two extends AbstractMethod
         // A configured api_key is not the same thing as a WORKING one. Unless
         // the stored key currently verifies, the method must not be offered —
         // for ANY reason it fails to verify (rejected key, service 5xx, the
-        // API unreachable), because a buyer selecting a method whose
-        // integration cannot be confirmed gets a failure at placement instead
-        // of at selection. The check is cached (see ApiKeyStatus), so this
-        // costs no HTTP round-trip per render.
+        // API unreachable). The verdict's five-minute success cache is what
+        // makes a revoked key stop being honoured promptly, which is the whole
+        // point of the gate, and it costs no HTTP round-trip per render.
+        //
+        // This check is the ONLY upstream failure that may withhold the method
+        // (ABN-519). A merchant-record fetch that 5xxes is unrelated to whether
+        // the key works, so it withholds nothing: the record's consumers each
+        // degrade to their own "not configured" behaviour instead.
         //
         // Placed BEFORE the Amasty bypass below deliberately: that bypass
         // returns true unconditionally to defer the *minimum-order* gate to
@@ -883,15 +884,6 @@ class Two extends AbstractMethod
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: API key verification failed', $this->_code),
                 ['status' => $status['status'], 'http_status' => $status['code']]
-            );
-            return false;
-        }
-        // An unresolvable merchant record leaves every stored term unvalidated (ABN-493).
-        // Before the Amasty bypass, which defers only the minimum-order gate.
-        if ($this->settingsProvider->getAvailableTerms($storeId) === []) {
-            $this->logRepository->addDebugLog(
-                sprintf('%s hidden from checkout: merchant configuration unavailable', $this->_code),
-                []
             );
             return false;
         }

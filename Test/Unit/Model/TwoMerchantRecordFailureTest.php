@@ -8,24 +8,29 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
-use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * The payment method must not be offered while the merchant record cannot be
- * reached: without it there is no set of terms the buyer may be offered, and
- * anything the admin has stored is unvalidated (ABN-493).
+ * A merchant-record fetch that fails says nothing about whether the API key
+ * works, so it must not take the payment method off the storefront. The
+ * api-key verification verdict is the only upstream failure that withholds
+ * (ABN-519).
  */
-class TwoMerchantTermsGateTest extends TestCase
+class TwoMerchantRecordFailureTest extends TestCase
 {
     /**
      * Builds a Two instance with only the collaborators isAvailable() reaches,
-     * injected by reflection.
+     * injected by reflection. The minimum-order provider is the REAL one over
+     * a record provider that cannot resolve, so the record failure reaches the
+     * availability chain the way it does in production.
+     *
+     * @param array<string,mixed>|null $record
      */
-    private function build(array $offeredTerms): Two
+    private function build(?array $record): Two
     {
         $reflection = new \ReflectionClass(Two::class);
         $model = $reflection->newInstanceWithoutConstructor();
@@ -36,11 +41,11 @@ class TwoMerchantTermsGateTest extends TestCase
         $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
         $apiKeyStatus->method('isVerified')->willReturn(true);
         $apiKeyStatus->method('getStatus')->willReturn(
-            ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]
+            ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => ['id' => 'abc-123']]
         );
 
-        $settingsProvider = $this->createMock(SettingsProvider::class);
-        $settingsProvider->method('getAvailableTerms')->willReturn($offeredTerms);
+        $recordProvider = $this->createMock(RecordProvider::class);
+        $recordProvider->method('getRecord')->willReturn($record);
 
         $minimumOrderGate = $this->createMock(MinimumOrderGate::class);
         $minimumOrderGate->method('isSatisfied')->willReturn(true);
@@ -51,9 +56,8 @@ class TwoMerchantTermsGateTest extends TestCase
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
-            'settingsProvider' => $settingsProvider,
             'logRepository' => $this->createMock(LogRepository::class),
-            'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
+            'minimumOrderProvider' => new MinimumOrderProvider($recordProvider),
             'minimumOrderGate' => $minimumOrderGate,
             'amastyCheckoutStore' => [],
             'buyerCountryResolver' => new BuyerCountryResolver(),
@@ -66,30 +70,35 @@ class TwoMerchantTermsGateTest extends TestCase
         return $model;
     }
 
-    public function testMethodIsUnavailableWhileTheMerchantRecordIsUnreachable(): void
+    /**
+     * @param array<string,mixed>|null $record
+     * @dataProvider recordStates
+     */
+    public function testTheMethodIsOfferedWhateverTheRecordFetchDid(?array $record, string $description): void
     {
-        $model = $this->build([]);
-
-        $this->assertFalse($model->isAvailable(null));
+        $this->assertTrue($this->build($record)->isAvailable(null), $description);
     }
 
-    public function testMethodIsAvailableWhenTheRecordOffersTerms(): void
+    /**
+     * @return array<int, array{0: array<string,mixed>|null, 1: string}>
+     */
+    public static function recordStates(): array
     {
-        $model = $this->build([14, 30]);
-
-        $this->assertTrue($model->isAvailable(null));
+        return [
+            [null, 'an unresolvable record — a 5xx, a timeout, an unreachable host — withholds nothing'],
+            [['id' => 'abc-123'], 'a record carrying no terms and no minimum withholds nothing'],
+            [['id' => 'abc-123', 'available_terms' => [14, 30]], 'a resolved record offers the method'],
+        ];
     }
 
-    public function testWithholdingIsLogged(): void
+    public function testTheRecordFetchIsNotAReasonToLogAWithholding(): void
     {
         $logRepository = $this->createMock(LogRepository::class);
-        $logRepository->expects($this->once())
-            ->method('addDebugLog')
-            ->with($this->stringContains('merchant configuration unavailable'), $this->anything());
+        $logRepository->expects($this->never())->method('addDebugLog');
 
-        $model = $this->build([]);
+        $model = $this->build(null);
         (new \ReflectionClass(Two::class))->getProperty('logRepository')->setValue($model, $logRepository);
 
-        $this->assertFalse($model->isAvailable(null));
+        $this->assertTrue($model->isAvailable(null));
     }
 }

@@ -163,13 +163,17 @@ validation message.
 Degrading a junk value to a working default is the failure this replaces: it
 prices an order under a configuration nobody chose, and nobody is told.
 
-**An unresolvable merchant record fails CLOSED** (ABN-493, ABN-495).
-`isAvailable()` withholds the payment method, the read path offers no buyer
-term at all, and order composition refuses to fall back to the nominal default
-term — the buyer cannot use the plugin until the configuration resolves. A 200
-carrying no merchant record counts as unresolved: a proxy, a captive portal or a
-maintenance page answers 200 too, and there is no identity to offer the method
-under.
+**An unresolvable merchant record does NOT withhold the payment method**
+(ABN-519). A record fetch that 5xxes, times out or finds the host unreachable
+says nothing about whether the API key works, and only the api-key verification
+verdict may take the method off the storefront. The record's consumers each
+degrade to their own "nothing configured" behaviour instead: the read path
+offers no buyer term, and order composition refuses to fall back to the nominal
+default term rather than pricing an order under terms nobody granted (ABN-495).
+So a buyer can reach placement and be refused there — accepted, and the cost of
+never hiding the method for a reason unrelated to the key. A 200 carrying no
+merchant record counts as unresolved: a proxy, a captive portal or a maintenance
+page answers 200 too.
 
 **The admin save stays permissive, and a rejected key blocks only the key field.**
 Refusing the save would lock the merchant out of correcting the very key that
@@ -232,10 +236,16 @@ these records.
 ## The order `isAvailable()` withholds in, and it is SILENT
 
 Core's own checks; a configured non-empty API key; the api-key verification
-verdict; the merchant's available-terms set being empty; the surcharge FX rate
-resolving and the stored surcharge method being recognised; the buyer country;
-then an Amasty store view returns true early, deferring only the minimum-order
-gate to the client; then the platform and merchant minimum-order gate.
+verdict; the surcharge FX rate resolving and the stored surcharge method being
+recognised; the buyer country; then an Amasty store view returns true early,
+deferring only the minimum-order gate to the client; then the platform and
+merchant minimum-order gate.
+
+**The api-key verdict is the only UPSTREAM failure on that list** (ABN-519). The
+two that remain are a store's own configuration — an FX rate the store has not
+entered, and a stored surcharge method nothing recognises — not a service that
+could not be reached. Do not add a gate that withholds because a call to Two
+failed; that is the defect this rule exists to stop coming back.
 
 **There is no captured-company condition anywhere on that path.** The
 company-number guard runs at placement, not at render — do not reach for
