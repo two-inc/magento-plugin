@@ -121,6 +121,8 @@ class HideFieldsUnlessConfiguredTest extends TestCase
         $typeRow = 'payment/two_payment/payment_terms_type@default:';
         $brandType = self::field('acme_payment/payment_terms/payment_terms_type', 'payment/acme_payment/payment_terms_type');
         $brandTypeRow = 'payment/acme_payment/payment_terms_type@default:';
+        $custom = self::field('two_payment/payment_terms/payment_terms_duration_days', 'payment/two_payment/payment_terms_duration_days');
+        $customRow = 'payment/two_payment/payment_terms_duration_days@default:';
 
         return [
             [$rate, false, [$rateRow => '21.5'], false, 'already hidden natively — passed through'],
@@ -135,6 +137,9 @@ class HideFieldsUnlessConfiguredTest extends TestCase
             [$type, true, [$typeRow => ' end_of_month '], true, 'hand-edited whitespace around end of month — shown'],
             [$brandType, true, [$typeRow => 'end_of_month'], false, 'brand field reads its own row, not the base one — hidden'],
             [$brandType, true, [$brandTypeRow => 'end_of_month'], true, 'brand field with its own end of month row — shown'],
+            [$custom, true, [], false, 'deprecated custom days unset — hidden'],
+            [$custom, true, [$customRow => ''], false, 'deprecated custom days stored empty — hidden'],
+            [$custom, true, [$customRow => '37'], true, 'deprecated custom days carrying a legacy term — shown'],
             [
                 self::field('acme_order_management/order_management/default_shipping_tax_rate', 'payment/acme_payment/default_shipping_tax_rate'),
                 true,

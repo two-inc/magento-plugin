@@ -16,6 +16,11 @@ namespace Magento\Framework\Data\Form\Element {
     if (!class_exists(AbstractElement::class, false)) {
         class AbstractElement extends \Magento\Framework\DataObject
         {
+            /** Explicit: the shared DataObject stub's magic getter does not snake_case the key. */
+            public function getHtmlId()
+            {
+                return $this->getData('html_id');
+            }
         }
     }
 }
@@ -82,6 +87,26 @@ namespace Magento\Config\Block\System\Config\Form {
             public function getUrl($route = '', $params = [])
             {
                 return 'https://admin.example/' . $route;
+            }
+
+            /**
+             * @param string $data
+             * @param array|null $allowedTags
+             * @return string
+             */
+            public function escapeHtml($data, $allowedTags = null)
+            {
+                return htmlspecialchars((string)$data, ENT_QUOTES, 'UTF-8');
+            }
+
+            /**
+             * @param string $string
+             * @param bool $escapeSingleQuote
+             * @return string
+             */
+            public function escapeHtmlAttr($string, $escapeSingleQuote = true)
+            {
+                return htmlspecialchars((string)$string, ENT_QUOTES, 'UTF-8');
             }
         }
     }

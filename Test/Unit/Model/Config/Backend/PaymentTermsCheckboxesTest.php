@@ -14,17 +14,11 @@ use Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Tests PaymentTermsCheckboxes::beforeSave(): the pre-existing mandatory-
- * selection guard, and the TWO-25498 fold-in of a sibling custom-days value
- * that duplicates a merchant-offered term.
+ * Tests PaymentTermsCheckboxes::beforeSave(): the offered-set guard, and the mandatory-
+ * selection guard that a legacy custom term satisfies on its own.
  *
- * The fold-in must be reachable for a custom value matching an offered term
- * that is NOT currently ticked — a prior implementation (on the matched
- * woocommerce-plugin change) only ever compared against the ticked subset,
- * which made that branch dead code. getFieldsetDataValue() reads the
- * sibling's POSTED value, which Magento populates for the whole group
- * before any field's beforeSave() runs, so the fold-in does not depend on
- * which field saves first.
+ * The stored set is the ticked boxes and nothing else — the deprecated custom-days field is
+ * read only to know whether a selection exists, never merged into it (ABN-522).
  */
 class PaymentTermsCheckboxesTest extends TestCase
 {
@@ -65,56 +59,37 @@ class PaymentTermsCheckboxesTest extends TestCase
         $model->beforeSave();
     }
 
-    public function testFoldsInACustomValueThatMatchesAnUntickedOfferedTerm(): void
-    {
-        // Nothing is ticked, but the custom value (30) is one of the
-        // merchant's offered terms — the fold-in must still tick it,
-        // which is the exact case a ticked-only comparison would miss.
+    /**
+     * @param string[] $ticked
+     * @dataProvider siblingCustomDaysProvider
+     */
+    public function testTheSiblingCustomDaysValueNeverJoinsTheStoredSet(
+        array $ticked,
+        string $custom,
+        string $expected,
+        string $case
+    ): void {
         $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30, 60]);
         $model = $this->buildModel([
-            'value' => [],
+            'value' => $ticked,
             'scope' => 'default',
             'scope_id' => 0,
-            'fieldset_data' => ['payment_terms_duration_days' => '30'],
+            'fieldset_data' => ['payment_terms_duration_days' => $custom],
         ]);
 
         $model->beforeSave();
 
-        $this->assertSame('30', $model->getValue());
+        $this->assertSame($expected, $model->getValue(), $case);
     }
 
-    public function testFoldsInACustomValueThatDuplicatesAnAlreadyTickedTerm(): void
+    public static function siblingCustomDaysProvider(): array
     {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
-        $model = $this->buildModel([
-            'value' => ['14'],
-            'scope' => 'default',
-            'scope_id' => 0,
-            'fieldset_data' => ['payment_terms_duration_days' => '14'],
-        ]);
-
-        $model->beforeSave();
-
-        $this->assertSame('14', $model->getValue(), 'the ticked term must not be duplicated');
-    }
-
-    public function testDoesNotFoldInAValueTheMerchantDoesNotOffer(): void
-    {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
-        $model = $this->buildModel([
-            'value' => ['14'],
-            'scope' => 'default',
-            'scope_id' => 0,
-            'fieldset_data' => ['payment_terms_duration_days' => '45'],
-        ]);
-
-        $model->beforeSave();
-
-        $this->assertSame(
-            '14',
-            $model->getValue(),
-            'a value outside the offered set has no term to fold into'
-        );
+        return [
+            [[], '30', '', 'a custom term matching an offered one does not tick that box'],
+            [['14'], '14', '14', 'a custom term duplicating a ticked one changes nothing'],
+            [['14'], '45', '14', 'a custom term outside the offered set changes nothing'],
+            [['14'], '', '14', 'no custom term at all'],
+        ];
     }
 
     /**
@@ -185,10 +160,10 @@ class PaymentTermsCheckboxesTest extends TestCase
             }
         );
         $model = $this->buildModel([
-            'value' => [],
+            'value' => ['30'],
             'scope' => 'stores',
             'scope_id' => 7,
-            'fieldset_data' => ['payment_terms_duration_days' => '30'],
+            'fieldset_data' => ['payment_terms_duration_days' => ''],
         ]);
 
         $model->beforeSave();

@@ -39,6 +39,7 @@
             <argument name="predicates" xsi:type="array">
                 <item name="order_management/order_management/default_shipping_tax_rate" xsi:type="object">Two\Gateway\Model\Config\FieldGate\UsableRate</item>
                 <item name="payment/payment_terms/payment_terms_type" xsi:type="object">Two\Gateway\Model\Config\FieldGate\EndOfMonth</item>
+                <item name="payment/payment_terms/payment_terms_duration_days" xsi:type="object">Two\Gateway\Model\Config\FieldGate\StoredValue</item>
             </argument>
         </arguments>
     </type>

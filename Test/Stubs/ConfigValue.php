@@ -53,6 +53,24 @@ class Value extends \Magento\Framework\DataObject
         return $this->getData('scope_id');
     }
 
+    public function getScopeCode()
+    {
+        return $this->getData('scope_code');
+    }
+
+    /**
+     * As the real base class: the effective value the form rendered, read back through
+     * ScopeConfig at the scope being saved.
+     */
+    public function getOldValue()
+    {
+        return $this->_config->getValue(
+            $this->getPath(),
+            $this->getScope() ?: 'default',
+            $this->getScopeCode()
+        );
+    }
+
     public function getFieldsetDataValue($key)
     {
         $data = $this->getData('fieldset_data');
@@ -71,8 +89,7 @@ class Value extends \Magento\Framework\DataObject
 
     /**
      * AbstractModel's public load hook dispatches to the protected one every
-     * serialising backend model implements. Its updateStoredData() is out of
-     * scope: nothing here reads getOldValue()/isValueChanged().
+     * serialising backend model implements. Its updateStoredData() is out of scope.
      */
     public function afterLoad()
     {

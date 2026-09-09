@@ -301,8 +301,8 @@
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Custom payment terms (days)</label>
                     <comment model="Two\Gateway\Model\Config\Comment\PaymentTermsCustomDays"/>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <!-- Backend model refuses an unoffered value and clears a duplicate of an offered term. ABN-493, TWO-25498. -->
+                    <!-- Deprecated: hidden unless a value is stored (etc/adminhtml/di.xml gate), and removable but not changeable. ABN-522. -->
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays</backend_model>
                     <config_path>payment/two_payment/payment_terms_duration_days</config_path>
                 </field>

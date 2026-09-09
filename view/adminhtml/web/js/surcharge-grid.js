@@ -329,7 +329,7 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
         // ── Event bindings ───────────────────────────────────────────────
 
         $termsContainer.on('change', '.two-term-checkboxes__input', update);
-        $customDays.on('change keyup', update);
+        $customDays.on('change', update);
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);

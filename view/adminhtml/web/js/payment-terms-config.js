@@ -1,19 +1,6 @@
 define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
-    /**
-     * Hidden when nothing is stored, or when the value folds into an offered
-     * term's checkbox on save. Anything else shows, so validate-digits can fire.
-     */
-    function shouldHideCustomDays(rawValue, offeredTerms) {
-        var raw = String(rawValue == null ? '' : rawValue).trim();
-        if (raw === '') {
-            return true;
-        }
-        var custom = parseInt(raw, 10);
-        return String(custom) === raw && custom > 0 && offeredTerms.indexOf(custom) !== -1;
-    }
-
     function initPaymentTermsConfig() {
         // Discover the section-id prefix from the page. The phtml
         // template ships the checkboxes container with id
@@ -130,24 +117,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             });
         }
 
-        // ── Custom payment terms visibility ──────────────────────────────
-
-        function getOfferedTerms() {
-            // Every rendered checkbox is a backend-offered term (ticked or
-            // not) — see Block\...\PaymentTermsCheckboxes::getAvailableTerms().
-            // Comparing against ticked terms only left the matching save-time
-            // fold-in unreachable on an offered-but-unticked preset (TWO-25498).
-            return $termsContainer.find('.two-term-checkboxes__input').map(function () {
-                return Number(this.value);
-            }).get().filter(function (n) { return n > 0; });
-        }
-
-        function updateCustomDaysVisibility() {
-            shouldHideCustomDays($customDays.val(), getOfferedTerms())
-                ? hideField('payment_terms_duration_days')
-                : showField('payment_terms_duration_days');
-        }
-
         // ── Differential option label ────────────────────────────────────
 
         function updateDifferentialOptionLabel() {
@@ -166,7 +135,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         function onTermsChanged() {
             updateDefaultTermOptions();
             updateSurchargeVisibility();
-            updateCustomDaysVisibility();
         }
 
         function onSurchargeChanged() {
@@ -179,7 +147,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         $termsContainer.on('change', '.two-term-checkboxes__input', onTermsChanged);
-        $customDays.on('change keyup', onTermsChanged);
+        $customDays.on('change', onTermsChanged);
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
@@ -382,14 +350,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // Additional handlers for fee refresh — fire alongside the term-set
         // change handlers without disturbing their existing wiring.
         $termsContainer.on('change', '.two-term-checkboxes__input', loadFees);
-        $customDays.on('change keyup', loadFees);
+        $customDays.on('change', loadFees);
 
         // ── Initialize ───────────────────────────────────────────────────
 
         updateDefaultTermOptions();
         updateDifferentialOptionLabel();
         updateSurchargeVisibility();
-        updateCustomDaysVisibility();
         initInheritResetBehavior();
         initTermCheckboxInherit();
         loadFees();
@@ -400,7 +367,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     });
 
     return {
-        init: initPaymentTermsConfig,
-        shouldHideCustomDays: shouldHideCustomDays
+        init: initPaymentTermsConfig
     };
 });

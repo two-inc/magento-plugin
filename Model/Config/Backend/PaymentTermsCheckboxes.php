@@ -59,16 +59,10 @@ class PaymentTermsCheckboxes extends Value
         $storeId = $this->resolveStoreId();
         $this->offeredTerms->assertOffered($value, $storeId);
 
-        // Comparing against only the ticked subset left this fold-in unreachable on an offered-but-unticked term (TWO-25498).
+        sort($value);
+
         // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
         $custom = (int)$this->getFieldsetDataValue('payment_terms_duration_days');
-        if ($custom > 0
-            && !in_array($custom, $value, true)
-            && in_array($custom, $this->offeredTerms->offered($storeId), true)
-        ) {
-            $value[] = $custom;
-        }
-        sort($value);
 
         // A selection is mandatory; the sibling custom-days field satisfies it too.
         if (count($value) === 0 && $custom <= 0) {

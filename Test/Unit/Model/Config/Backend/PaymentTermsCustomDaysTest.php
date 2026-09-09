@@ -9,72 +9,67 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays;
-use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Save-time rules for "Custom payment terms (days)": a value the merchant
- * record does not offer is refused (ABN-493), and one that duplicates an
- * offered term — ticked or not, since the available-terms set carries no tick
- * state — is cleared (TWO-25498). The matching fold-in (ticking that term's
- * checkbox) is on the sibling PaymentTermsCheckboxes backend model.
+ * Save-time rules for the deprecated "Custom payment terms (days)": the stored value may be
+ * removed but never replaced, and a save that leaves it alone must not disturb it (ABN-522).
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {
-    /** @param int[] $offeredForStore terms offered at store 5; $offered covers every other scope */
-    private function buildModel(array $data, array $offered, array $offeredForStore = null): PaymentTermsCustomDays
+    private function buildModel(string $posted, ?string $stored, array $data = []): PaymentTermsCustomDays
     {
-        $settingsProvider = $this->createMock(SettingsProvider::class);
-        $settingsProvider->method('getAvailableTerms')->willReturnCallback(
-            static fn ($storeId) => $storeId === 5 && $offeredForStore !== null ? $offeredForStore : $offered
-        );
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->method('getValue')->willReturn($stored);
 
         return new PaymentTermsCustomDays(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
-            $this->createMock(ScopeConfigInterface::class),
+            $scopeConfig,
             $this->createMock(TypeListInterface::class),
-            new OfferedTermsGuard($settingsProvider),
             null,
             null,
-            $data
+            $data + [
+                'value' => $posted,
+                'path' => 'payment/two_payment/payment_terms_duration_days',
+                'scope' => 'default',
+                'scope_id' => 0,
+            ]
         );
     }
 
     /**
-     * @param int[] $offered
-     * @dataProvider savedValueProvider
+     * @dataProvider acceptedValueProvider
      */
-    public function testSavedValue(string $value, array $offered, string $expected, string $case): void
+    public function testAcceptedValue(string $posted, ?string $stored, string $expected, string $case): void
     {
-        $model = $this->buildModel(['value' => $value, 'scope' => 'default', 'scope_id' => 0], $offered);
+        $model = $this->buildModel($posted, $stored);
 
         $model->beforeSave();
 
         $this->assertSame($expected, $model->getValue(), $case);
     }
 
-    public static function savedValueProvider(): array
+    public static function acceptedValueProvider(): array
     {
         return [
-            ['', [14, 30], '', 'an empty field is left empty'],
-            ['0', [14, 30], '0', 'a zero is not a term and is left alone'],
-            ['30', [14, 30, 60], '', 'a value duplicating an offered term is cleared'],
-            ['37', [], '37', 'an unresolvable offered set cannot refuse, so the value stands'],
+            ['30', '30', '30', 'a save posting the stored value back leaves it byte-identical'],
+            ['  30  ', '30', '30', 'whitespace around the posted value is not a change'],
+            ['', '30', '', 'clearing the field removes the term'],
+            ['', null, '', 'nothing stored and nothing posted'],
+            ['0', '0', '0', 'a stored zero is a value like any other'],
         ];
     }
 
     /**
-     * @param int[] $offered
      * @dataProvider refusedValueProvider
      */
-    public function testAnUnofferedValueIsRefused(string $value, array $offered, string $message, string $case): void
+    public function testARewriteIsRefused(string $posted, ?string $stored, string $case): void
     {
-        $model = $this->buildModel(['value' => $value, 'scope' => 'default', 'scope_id' => 0], $offered);
+        $model = $this->buildModel($posted, $stored);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage($message);
+        $this->expectExceptionMessage('Custom payment terms (days) can only be removed, not changed.');
         $model->beforeSave();
         $this->fail($case);
     }
@@ -82,36 +77,38 @@ class PaymentTermsCustomDaysTest extends TestCase
     public static function refusedValueProvider(): array
     {
         return [
-            [
-                '37',
-                [7, 14, 15, 20, 21, 30, 45, 60, 90],
-                'Payment terms you are not able to offer: 37 days.'
-                . ' Choose from: 7, 14, 15, 20, 21, 30, 45, 60, 90 days.',
-                'the refusal names the rejected value and the offered set',
-            ],
-            [
-                '1',
-                [30],
-                'Payment terms you are not able to offer: 1 days. Choose from: 30 days.',
-                'a single-term merchant refuses everything else',
-            ],
+            ['45', '30', 'a different term is refused rather than stored'],
+            ['0', '30', 'zeroing is not the removal route'],
+            ['37', null, 'a value where none is stored is refused'],
         ];
     }
 
-    public function testResolvesTheOfferedSetAtTheStoreScopeBeingSaved(): void
+    public function testTheStoredValueIsReadAtTheScopeBeingSaved(): void
     {
-        $model = $this->buildModel(
-            ['value' => '45', 'scope' => 'stores', 'scope_id' => 5],
-            [14, 30],
-            [45]
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->expects($this->once())
+            ->method('getValue')
+            ->with('payment/two_payment/payment_terms_duration_days', 'stores', 'de')
+            ->willReturn('30');
+
+        $model = new PaymentTermsCustomDays(
+            $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
+            $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
+            $scopeConfig,
+            $this->createMock(TypeListInterface::class),
+            null,
+            null,
+            [
+                'value' => '30',
+                'path' => 'payment/two_payment/payment_terms_duration_days',
+                'scope' => 'stores',
+                'scope_id' => 5,
+                'scope_code' => 'de',
+            ]
         );
 
         $model->beforeSave();
 
-        $this->assertSame(
-            '',
-            $model->getValue(),
-            'a store-scope save must resolve available terms for that store, not the default scope'
-        );
+        $this->assertSame('30', $model->getValue());
     }
 }

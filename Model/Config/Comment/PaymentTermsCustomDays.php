@@ -49,15 +49,20 @@ class PaymentTermsCustomDays implements CommentInterface
      */
     public function getCommentText($elementValue)
     {
+        // %1 is the stored day count, so either wording can name the term it describes.
+        $days = trim((string)$elementValue);
+
         if ($this->endOfMonth->isConfigured($this->storedType())) {
             return (string)__(
                 'Optional. Enter a custom term as a number of days after the end of the month,'
-                . ' offered alongside the terms selected above.'
+                . ' offered alongside the terms selected above.',
+                $days
             );
         }
 
         return (string)__(
-            'Optional. Enter a custom number of days to offer alongside the selected terms above.'
+            'Optional. Enter a custom number of days to offer alongside the selected terms above.',
+            $days
         );
     }
 

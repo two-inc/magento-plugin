@@ -401,3 +401,5 @@
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standaardbetaaltermijn %1 dagen is niet een van de termijnen die u aanbiedt: %2 dagen."
 "Optional. Enter a custom term as a number of days after the end of the month, offered alongside the terms selected above.","Optioneel. Voer een aangepaste termijn in als een aantal dagen na het einde van de maand, aangeboden naast de hierboven geselecteerde termijnen."
 "Unrecognised surcharge method: %1. Choose one of: %2.","Onbekende toeslagmethode: %1. Kies een van: %2."
+"Remove","Verwijderen"
+"Custom payment terms (days) can only be removed, not changed.","Aangepaste betaaltermijnen (dagen) kunnen alleen worden verwijderd, niet gewijzigd."

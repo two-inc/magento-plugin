@@ -70,7 +70,13 @@ class PaymentTermsFieldWiringTest extends TestCase
                 'payment_terms_duration_days',
                 'backend_model',
                 'Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays',
-                'the custom day is checked against the offered set on save',
+                'the deprecated custom day can be removed but not changed on save',
+            ],
+            [
+                'payment_terms_duration_days',
+                'frontend_model',
+                'Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays',
+                'the deprecated custom day is rendered as keep-or-remove, not as free entry',
             ],
             [
                 'payment_terms_duration_days',
