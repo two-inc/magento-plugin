@@ -82,6 +82,7 @@ class HealthChecklistTest extends TestCase
         $store->method('getBaseCurrencyCode')->willReturn('GBP');
         $storeManager = $this->createMock(StoreManagerInterface::class);
         $storeManager->method('getStore')->willReturn($store);
+        $storeManager->method('getDefaultStoreView')->willReturn($store);
 
         $this->block->setDependencies(
             $this->configRepository,
@@ -266,6 +267,9 @@ class HealthChecklistTest extends TestCase
                 ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unavailable')));
         }
         $this->supportedCountriesProvider->method('getState')->willReturn($countryState);
+        $this->supportedCountriesProvider->method('getAllowedCountries')->willReturn(
+            $countryState === SupportedCountriesProvider::STATE_ALLOWLIST ? ['NO', 'GB'] : null
+        );
         $this->minimumOrderProvider->method('getMinimum')->with(null)->willReturn($platformMinimum);
         // The resolver is parameterised by method code and base currency; a row
         // that passed either wrongly would report another method's floor.
@@ -319,10 +323,25 @@ class HealthChecklistTest extends TestCase
                 'Shown at checkout',
                 'the same for a store that cannot reach us at all',
             ],
+            'key unverifiable, other error' => [
+                true, ApiKeyStatus::ERROR, 'none', $unrestricted, null, null, false, true,
+                'Shown at checkout',
+                'a non-2xx that is not a rejection withholds nothing either',
+            ],
+            'key unverifiable, malformed answer' => [
+                true, ApiKeyStatus::MALFORMED_RESPONSE, 'none', $unrestricted, null, null, false, true,
+                'Shown at checkout',
+                'nor does an unreadable answer, which is about the service and not the key',
+            ],
             'stored surcharge method unknown' => [
                 true, ApiKeyStatus::OK, null, $unrestricted, null, null, false, false,
                 'Check Surcharge method',
                 'a corrupt stored surcharge type withholds and names its own field',
+            ],
+            'account restricted to an allowlist' => [
+                true, ApiKeyStatus::OK, 'none', SupportedCountriesProvider::STATE_ALLOWLIST, null, null, false, true,
+                'offered only to buyers in NO, GB',
+                'a populated allowlist withholds from every other buyer, which no local field explains',
             ],
             'account allows no buyer countries' => [
                 true, ApiKeyStatus::OK, 'none', SupportedCountriesProvider::STATE_EMPTY, null, null, false, false,
@@ -449,7 +468,8 @@ class HealthChecklistTest extends TestCase
         // The scope assertion is `isActive()`'s own `with($expectedStoreId)`;
         // this proves the read reached the row rather than being swallowed.
         $this->assertStringContainsString('Check Enable payment method', $row['value'], $description);
-        $this->assertContains($expectedStoreId, $scopesAsked, $description);
+        // Every verdict read on the panel judges the page's scope, not just the row's.
+        $this->assertSame([$expectedStoreId], array_values(array_unique($scopesAsked, SORT_REGULAR)), $description);
     }
 
     /**
@@ -470,6 +490,49 @@ class HealthChecklistTest extends TestCase
      * ABN-518: a platform floor that has never been fetched is unknown, not
      * absent, and a bare "shown at checkout" would read as no floor at all.
      */
+    /**
+     * At default scope the current store is the admin store, whose base
+     * currency is not the storefront's.
+     */
+    public function testTheDefaultScopeFloorUsesTheDefaultStoreViewCurrency(): void
+    {
+        $store = $this->createMock(\Magento\Store\Model\Store::class);
+        $store->method('getBaseCurrencyCode')->willReturn('SEK');
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn('two_payment');
+        $storeManager = $this->createMock(StoreManagerInterface::class);
+        $storeManager->expects($this->never())->method('getStore');
+        $storeManager->expects($this->once())->method('getDefaultStoreView')->willReturn($store);
+
+        $this->block->setDependencies(
+            $this->configRepository,
+            $this->apiKeyStatus,
+            $this->recordProvider,
+            $this->supportedCountriesProvider,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver,
+            $brandRegistry,
+            $storeManager,
+            $this->scopeConfig,
+            $this->request
+        );
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        $this->supportedCountriesProvider->method('getState')
+            ->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->merchantMinimumResolver->expects($this->once())->method('resolve')
+            ->with('two_payment', 'SEK', null, null)
+            ->willReturn(['amount' => 900.0, 'currency' => 'SEK', 'basis' => 'net']);
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertStringContainsString('900.00 SEK', $row['value']);
+    }
+
     public function testAProfileThatHasNeverResolvedNamesTheUnknownFloor(): void
     {
         $this->recordProvider = $this->createMock(RecordProvider::class);

@@ -273,18 +273,62 @@ class ConfigProviderApiKeyGateTest extends TestCase
     /**
      * ABN-518: the category and HTTP status, never a response body.
      *
-     * @dataProvider failureCategories
+     * @dataProvider definitiveFailureCategories
      */
     public function testEveryVerificationFailureIsLogged(string $status, ?int $code): void
     {
         $this->logRepository = $this->createMock(LogRepository::class);
         $this->logRepository->expects($this->once())->method('addDebugLog')
             ->with(
-                sprintf('two_payment checkout config withheld (tile and company search): API key verdict "%s"', $status),
+                sprintf(
+                    'two_payment checkout config withheld (tile and company search): API key verdict "%s"',
+                    $status
+                ),
                 ['status' => $status, 'http_status' => $code]
             );
 
         $this->build($this->statusService($status, $code))->getConfig();
+    }
+
+    /**
+     * Only these two withhold the subtree (ABN-533), so only these two have a
+     * withholding to record.
+     *
+     * @return array<string, array{0: string, 1: int|null}>
+     */
+    public static function definitiveFailureCategories(): array
+    {
+        return [
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null],
+        ];
+    }
+
+    /**
+     * A transient verdict leaves the subtree in place, so there is nothing to
+     * record about it here (ABN-533).
+     *
+     * @dataProvider transientVerdicts
+     */
+    public function testATransientVerdictIsNotLoggedAsAWithholding(string $status, ?int $code): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->never())->method('addDebugLog');
+
+        $this->build($this->statusService($status, $code))->getConfig();
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int|null}>
+     */
+    public static function transientVerdicts(): array
+    {
+        return [
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, null],
+            'other error' => [ApiKeyStatus::ERROR, 404],
+            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null],
+        ];
     }
 
     /**

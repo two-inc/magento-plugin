@@ -104,7 +104,8 @@ class HealthChecklist extends Field
      */
     public function getChecklistRows(): array
     {
-        $status = $this->apiKeyStatus->getStatus();
+        $storeId = $this->resolveScopeStoreId();
+        $status = $this->apiKeyStatus->getStatus($storeId);
         $apiKeyOk = $status['status'] === ApiKeyStatus::OK;
 
         $sslDisabled = $this->configRepository->isSslVerificationDisabled();
@@ -127,7 +128,7 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
-            $this->checkoutVisibilityRow(),
+            $this->checkoutVisibilityRow($storeId),
         ];
     }
 
@@ -138,9 +139,8 @@ class HealthChecklist extends Field
      *
      * @return array{label: string, ok: bool, value: string}
      */
-    private function checkoutVisibilityRow(): array
+    private function checkoutVisibilityRow(?int $storeId): array
     {
-        $storeId = $this->resolveScopeStoreId();
         $apiKeyStatus = $this->apiKeyStatus->getStatus($storeId);
         $label = (string)__('Payment method at checkout');
         $notShown = (string)__('Not shown at checkout');
@@ -175,7 +175,9 @@ class HealthChecklist extends Field
             }
         }
         if ($reason === null && $this->coreCountryGateAllowsNothing($storeId)) {
-            $reason = (string)__('Country availability is set to specific countries with none chosen. Check Allowed countries.');
+            $reason = (string)__(
+                'Country availability is set to specific countries with none chosen. Check Allowed countries.'
+            );
         }
         if ($reason !== null) {
             return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
@@ -184,15 +186,18 @@ class HealthChecklist extends Field
         return ['label' => $label, 'ok' => true, 'value' => $this->offeredValue($storeId)];
     }
 
-    /**
-     * "Shown at checkout", plus the minimum-order floors that hide it for a
-     * small basket. Both floors bind; they can be denominated differently, so
-     * neither can be reduced to the other without an FX rate.
-     */
+    /** "Shown at checkout", plus the constraints that hide it for some baskets. */
     private function offeredValue(?int $storeId): string
     {
         $shown = (string)__('Shown at checkout');
-        $store = $this->_storeManager->getStore($storeId ?? 0);
+        // At default scope the current store is the ADMIN store, whose base
+        // currency is not the storefront's.
+        $store = $storeId !== null
+            ? $this->_storeManager->getStore($storeId)
+            : $this->_storeManager->getDefaultStoreView();
+        if ($store === null) {
+            return $shown;
+        }
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
         $merchant = $this->merchantMinimumResolver->resolve(
             $this->brandRegistry->getCode(),
@@ -215,6 +220,10 @@ class HealthChecklist extends Field
                 $this->describeFloor($floors[1])
             );
         }
+        $allowed = $this->supportedCountriesProvider->getAllowedCountries($storeId);
+        if (is_array($allowed) && $allowed !== []) {
+            $clauses[] = (string)__('offered only to buyers in %1', implode(', ', $allowed));
+        }
         if ($this->hasSurchargeConfigured($storeId)) {
             $clauses[] = (string)__('hidden for baskets in a currency the buyer surcharge cannot be priced in');
         }
@@ -227,7 +236,7 @@ class HealthChecklist extends Field
 
     /**
      * Two floors in the same currency on the same basis are one floor — only
-     * the higher binds. Different currencies cannot be reduced without a rate.
+     * the higher binds; different currencies cannot be reduced without a rate.
      *
      * @param array<int, array{amount: float, currency: string, basis: string}|null> $candidates
      * @return list<array{amount: float, currency: string, basis: string}>
