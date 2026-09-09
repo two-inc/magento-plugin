@@ -254,14 +254,48 @@ the pricing service could not be reached. Do not restore a bare
 
 Core's own checks; a configured non-empty API key; the api-key verification
 verdict; the surcharge FX rate resolving and the stored surcharge method being
-recognised; the buyer country; then an Amasty store view returns true early,
-deferring only the minimum-order gate to the client; then the platform and
-merchant minimum-order gate.
+recognised; the buyer country; the fee quote for the term being charged; then an
+Amasty store view returns true early, deferring only the minimum-order gate to
+the client; then the platform and merchant minimum-order gate.
 
 **The api-key verdict is the gate the ruling puts that power in** (ABN-519), and
-only its definitive-rejection categories withhold (ABN-533). Do not add another
-gate that withholds because a call to Two failed, and do not widen this one back
-to every failure category; both are defects the rule exists to stop coming back.
+only its definitive-rejection categories withhold (ABN-533). Do not widen it
+back to every failure category, and do not add a further gate that withholds
+because a call to Two failed; both are defects the rule exists to stop coming
+back. The buyer fee quote is the one named exception (ABN-546): a term whose
+fee cannot be priced cannot be charged, so `Service\Order\FeeQuoteGate` prices
+it rather than wait to be told — the term-chip endpoints answer after the
+payment list has rendered, and the totals collector prices only once this
+method is already selected, so no later request is guaranteed to notice.
+
+The gate resolves the charged term through `Service\Order\ChargedTermResolver`,
+the same resolver the totals collector uses, so the two cannot disagree; a
+selection the merchant has since withdrawn falls back to the default rather
+than pricing a term the order would be refused for at placement. It prices the
+fee-EXCLUSIVE total, as the collector and both chip endpoints do, so the fee
+already on the quote is neither compounded nor a cache miss against their
+quote. `SurchargeCalculator` bounds every surcharge quote at one ceiling,
+below the adapter default because a quote is also made on a render path, where
+a hanging endpoint would otherwise stall the payment step. Gate and charging
+path share that ceiling by construction, so the gate cannot refuse a fee
+placement would have priced. A refusal — including a malformed
+response, which is caught as broadly as the collector catches it — withholds
+the method for that request and that cart only; the next request re-asks, so
+recovery needs no expiry and one buyer's refused quote cannot reach another's
+checkout. During a pricing outage every payment-method render therefore spends
+one such call, bounded by the gate's own ceiling, and that cost is accepted so
+a slow-but-healthy pricing service is never mistaken for a refusing one.
+
+Guards run before any call and concede the method without one: the adminhtml
+area, no surcharge configured, no cart carrying items and a positive
+fee-exclusive total, no currency, no term offered. The area guard is what keeps
+admin order create from pricing: Magento evaluates payment availability there
+against a quote, and `canUseInternal()` is not consulted first, so without it
+an admin session's term would be quoted.
+
+The admin settings page prices nothing either way: its fee preview reads
+merchant rates through `Service\Merchant\FeeRatesProvider`, never the buyer
+quote, so a merchant is never locked out of the settings needed to fix this.
 
 **Every buyer-facing surface asks that same question, and must keep asking it.**
 Three besides `isAvailable()`: `Model\Ui\ConfigProvider::getConfig()`, whose
@@ -308,7 +342,9 @@ company-number guard runs at placement, not at render — do not reach for
 vanishes, with no message, no error node and an empty message area. Each gate
 writes a log line and that is the only account of it — debug at the gate, error
 where the underlying service reports the cause — so the log is where a "why is the
-method missing" question gets answered. An unrecognised stored surcharge method
+method missing" question gets answered. The fee-quote gate is the one that error-logs
+at the gate itself, class and message only: nothing downstream records a corrupt
+cached quote or a failing session read. An unrecognised stored surcharge method
 throws with a buyer-facing string that no buyer ever sees.
 
 ## A field declared only in `system.xml` reaches no brand — nor does its model

@@ -118,6 +118,12 @@ namespace Magento\Quote\Model {
                 return [];
             }
 
+            /** @return array<int, mixed> */
+            public function getAllVisibleItems()
+            {
+                return [];
+            }
+
             /**
              * Declared (rather than left to the catch-all) so tests can
              * configure it: Model\Ui\ConfigProvider resolves the quote's

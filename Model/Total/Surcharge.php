@@ -16,6 +16,7 @@ use Magento\Quote\Model\Quote\Address\Total\AbstractTotal;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
+use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
@@ -81,6 +82,11 @@ class Surcharge extends AbstractTotal
     private $surchargeDisplay;
 
     /**
+     * @var ChargedTermResolver
+     */
+    private $chargedTermResolver;
+
+    /**
      * @var array<string, true> set of payment-method codes (as keys) that
      *                          engage the surcharge collector. Populated via
      *                          DI; brand overlays append their own code.
@@ -99,6 +105,7 @@ class Surcharge extends AbstractTotal
         MinimumOrderProvider $minimumOrderProvider,
         MerchantMinimumResolver $merchantMinimumResolver,
         SurchargeDisplay $surchargeDisplay,
+        ChargedTermResolver $chargedTermResolver,
         array $allowedMethods = ['two_payment']
     ) {
         $this->checkoutSession = $checkoutSession;
@@ -110,6 +117,7 @@ class Surcharge extends AbstractTotal
         $this->minimumOrderProvider = $minimumOrderProvider;
         $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->surchargeDisplay = $surchargeDisplay;
+        $this->chargedTermResolver = $chargedTermResolver;
         $this->allowedMethods = array_fill_keys($allowedMethods, true);
         $this->setCode('two_surcharge');
     }
@@ -195,7 +203,7 @@ class Surcharge extends AbstractTotal
             return $this;
         }
 
-        $selectedDays = $this->getSelectedTermDays($storeId);
+        $selectedDays = $this->chargedTermResolver->resolve($storeId);
         if ($selectedDays <= 0) {
             $this->logRepository->addDebugLog('TotalCollector: skipped (no term selected)', []);
             $this->clearSessionSurcharge();
@@ -414,16 +422,6 @@ class Surcharge extends AbstractTotal
             'title' => new \Magento\Framework\Phrase((string)$title),
             'value' => $this->surchargeDisplay->pick($mode, $amount, $tax),
         ];
-    }
-
-    private function getSelectedTermDays(int $storeId): int
-    {
-        $sessionTerm = (int)$this->checkoutSession->getTwoSelectedTerm();
-        if ($sessionTerm > 0) {
-            return $sessionTerm;
-        }
-        // 0 when no term is offered, which the caller reads as no selection.
-        return $this->configRepository->getDefaultPaymentTerm($storeId) ?? 0;
     }
 
     /**

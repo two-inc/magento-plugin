@@ -17,6 +17,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
  * TWO-25641: every branch that withholds the method names its own reason, so one
@@ -113,6 +114,8 @@ class TwoWithholdingLogTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'stubAvailableInBase' => $knob !== 'core_refuses',
             'logRepository' => $logRepository,
+            // Not this test's subject: the fee quote concedes.
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'apiKeyStatus' => $apiKeyStatus,
             'surchargeCalculator' => $surchargeCalculator,
             'minimumOrderGate' => $gate,
@@ -158,4 +161,13 @@ class TwoWithholdingLogTest extends TestCase
         return $quote;
     }
 
+    /**
+     * @return ConfigRepository|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function surchargeFreeConfig()
+    {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getSurchargeType')->willReturn(SurchargeType::NONE);
+        return $config;
+    }
 }

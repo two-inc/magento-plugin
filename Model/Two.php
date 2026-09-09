@@ -39,6 +39,7 @@ use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\FeeQuoteGate;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
@@ -156,6 +157,10 @@ class Two extends AbstractMethod
      */
     private $surchargeCalculator;
     /**
+     * @var FeeQuoteGate
+     */
+    private $feeQuoteGate;
+    /**
      * @var LifecycleEventDispatcher
      */
     private $lifecycleEvents;
@@ -208,6 +213,7 @@ class Two extends AbstractMethod
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
      * @param ApiKeyStatus $apiKeyStatus
      * @param SurchargeCalculator $surchargeCalculator
+     * @param FeeQuoteGate $feeQuoteGate
      * @param LifecycleEventDispatcher $lifecycleEvents
      * @param BuyerCountryResolver $buyerCountryResolver
      * @param SupportedCountriesProvider $supportedCountriesProvider
@@ -242,6 +248,7 @@ class Two extends AbstractMethod
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
+        FeeQuoteGate $feeQuoteGate,
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
@@ -280,6 +287,7 @@ class Two extends AbstractMethod
         $this->configDataCollectionFactory = $configDataCollectionFactory;
         $this->apiKeyStatus = $apiKeyStatus;
         $this->surchargeCalculator = $surchargeCalculator;
+        $this->feeQuoteGate = $feeQuoteGate;
         $this->lifecycleEvents = $lifecycleEvents;
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
@@ -928,6 +936,14 @@ class Two extends AbstractMethod
                     'country' => $buyerCountry,
                     'restriction' => $this->supportedCountriesProvider->getState($storeId),
                 ]
+            );
+            return false;
+        }
+        // ABN-546: no later request is guaranteed to notice an unpriceable fee.
+        if (!$this->feeQuoteGate->isQuotable($quote, $storeId)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),
+                []
             );
             return false;
         }

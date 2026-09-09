@@ -16,6 +16,7 @@ use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
  * TWO-40: the method is withdrawn when the buyer's country is outside the
@@ -207,6 +208,8 @@ class TwoCountryGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->createMock(LogRepository::class),
+            // Not this test's subject: the fee quote concedes.
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'merchantMinimumResolver' => $this->createMock(MerchantMinimumResolver::class),
             'minimumOrderGate' => $minimumOrderGate,
@@ -271,4 +274,13 @@ class TwoCountryGateTest extends TestCase
         return $address;
     }
 
+    /**
+     * @return ConfigRepository|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function surchargeFreeConfig()
+    {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getSurchargeType')->willReturn(SurchargeType::NONE);
+        return $config;
+    }
 }
