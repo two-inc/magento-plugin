@@ -15,6 +15,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Store\Model\ScopeInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -152,14 +153,9 @@ class HealthChecklist extends Field
         } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
             $reason = (string)__('the API key was rejected. Check API key and Environment.');
         } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
-            // Neither "shown" nor a reason, because isVerified() still
-            // withholds on a transient verdict. Delete this arm with ABN-533's
-            // fall-through to the cached record, which owns that gate.
-            return [
-                'label' => $label,
-                'ok' => false,
-                'value' => (string)__('Cannot be checked — the API key could not be verified just now.'),
-            ];
+            // isVerified() is status === OK, so a transient verdict withholds
+            // today. ABN-533's fall-through owns this arm's removal.
+            $reason = (string)__('the API key could not be verified just now.');
         }
         if ($reason === null) {
             try {
@@ -202,31 +198,35 @@ class HealthChecklist extends Field
         $shown = (string)__('Shown at checkout');
         $store = $this->_storeManager->getStore($storeId ?? 0);
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
-        if ($platform === null && !$this->hasEverFetchedRecord($storeId)) {
-            return $shown . ' — ' . (string)__('minimum order value not known until your profile refreshes');
-        }
         $merchant = $this->merchantMinimumResolver->resolve(
             $this->brandRegistry->getCode(),
             (string)$store->getBaseCurrencyCode(),
             $platform,
             $storeId
         );
-        $floors = self::bindingFloors([$platform, $merchant]);
-        if ($floors === []) {
-            return $shown;
+
+        $clauses = [];
+        if ($platform === null && !$this->hasEverFetchedRecord($storeId)) {
+            $clauses[] = (string)__('minimum order value not known until your profile refreshes');
         }
+        $floors = self::bindingFloors([$platform, $merchant]);
         if (count($floors) === 1) {
-            return $shown . ' — ' . (string)__(
-                'hidden for baskets below %1',
-                $this->describeFloor($floors[0])
+            $clauses[] = (string)__('hidden for baskets below %1', $this->describeFloor($floors[0]));
+        } elseif (count($floors) > 1) {
+            $clauses[] = (string)__(
+                'hidden for baskets below %1 or %2',
+                $this->describeFloor($floors[0]),
+                $this->describeFloor($floors[1])
             );
         }
+        if ($this->hasSurchargeConfigured($storeId)) {
+            $clauses[] = (string)__('hidden for baskets in a currency the buyer surcharge cannot be priced in');
+        }
+        if ($clauses === []) {
+            return $shown;
+        }
 
-        return $shown . ' — ' . (string)__(
-            'hidden for baskets below %1 or %2',
-            $this->describeFloor($floors[0]),
-            $this->describeFloor($floors[1])
-        );
+        return $shown . ' — ' . implode('; ', $clauses);
     }
 
     /**
@@ -260,6 +260,19 @@ class HealthChecklist extends Field
             $floor['currency'],
             $floor['basis'] === 'net' ? (string)__('excluding tax') : (string)__('including tax')
         );
+    }
+
+    /**
+     * Whether a buyer surcharge is configured at all. Whether it can be priced
+     * depends on the basket's currency, so it is named as a constraint.
+     */
+    private function hasSurchargeConfigured(?int $storeId): bool
+    {
+        try {
+            return $this->configRepository->getSurchargeType($storeId) !== SurchargeTypeSource::NONE;
+        } catch (LocalizedException) {
+            return false;
+        }
     }
 
     /**

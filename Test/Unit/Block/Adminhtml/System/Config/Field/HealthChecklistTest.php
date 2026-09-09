@@ -247,7 +247,7 @@ class HealthChecklistTest extends TestCase
     public function testTheCheckoutVisibilityRowNamesTheActiveReason(
         bool $active,
         string $apiKeyStatus,
-        bool $surchargeTypeKnown,
+        ?string $surchargeType,
         string $countryState,
         ?array $platformMinimum,
         ?array $merchantMinimum,
@@ -259,8 +259,8 @@ class HealthChecklistTest extends TestCase
         $this->configRepository->method('isActive')->willReturn($active);
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $apiKeyStatus]);
         $this->configRepository->method('getMode')->willReturn('sandbox');
-        if ($surchargeTypeKnown) {
-            $this->configRepository->method('getSurchargeType')->willReturn('none');
+        if ($surchargeType !== null) {
+            $this->configRepository->method('getSurchargeType')->willReturn($surchargeType);
         } else {
             $this->configRepository->method('getSurchargeType')
                 ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unavailable')));
@@ -283,7 +283,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: bool, 1: string, 2: bool, 3: string,
+     * @return array<string, array{0: bool, 1: string, 2: string|null, 3: string,
      *     4: array<string,mixed>|null, 5: array<string,mixed>|null, 6: bool, 7: bool, 8: string, 9: string}>
      */
     public static function checkoutVisibilityStates(): array
@@ -295,72 +295,77 @@ class HealthChecklistTest extends TestCase
 
         return [
             'disabled' => [
-                false, ApiKeyStatus::OK, true, $unrestricted, null, null, false, false,
+                false, ApiKeyStatus::OK, 'none', $unrestricted, null, null, false, false,
                 'Check Enable payment method',
                 'the switched-off method names the field that switches it on',
             ],
             'no key saved' => [
-                true, ApiKeyStatus::NOT_CONFIGURED, true, $unrestricted, null, null, false, false,
+                true, ApiKeyStatus::NOT_CONFIGURED, 'none', $unrestricted, null, null, false, false,
                 'no API key is saved',
                 'an unconfigured install is not a rejected key',
             ],
             'key rejected' => [
-                true, ApiKeyStatus::INVALID_KEY, true, $unrestricted, null, null, false, false,
+                true, ApiKeyStatus::INVALID_KEY, 'none', $unrestricted, null, null, false, false,
                 'the API key was rejected',
                 'a definitive rejection names both key and environment',
             ],
             'key unverifiable, service down' => [
-                true, ApiKeyStatus::SERVICE_ERROR, true, $unrestricted, null, null, false, false,
-                'Cannot be checked',
-                'a transient verdict claims neither a withholding nor a showing',
+                true, ApiKeyStatus::SERVICE_ERROR, 'none', $unrestricted, null, null, false, false,
+                'Not shown at checkout — the API key could not be verified just now.',
+                'a transient verdict withholds today, so the row says so',
             ],
             'key unverifiable, unreachable' => [
-                true, ApiKeyStatus::UNREACHABLE, true, $unrestricted, null, null, false, false,
-                'Cannot be checked',
+                true, ApiKeyStatus::UNREACHABLE, 'none', $unrestricted, null, null, false, false,
+                'the API key could not be verified just now.',
                 'the same for a store that cannot reach us at all',
             ],
             'stored surcharge method unknown' => [
-                true, ApiKeyStatus::OK, false, $unrestricted, null, null, false, false,
+                true, ApiKeyStatus::OK, null, $unrestricted, null, null, false, false,
                 'Check Surcharge method',
                 'a corrupt stored surcharge type withholds and names its own field',
             ],
             'account allows no buyer countries' => [
-                true, ApiKeyStatus::OK, true, SupportedCountriesProvider::STATE_EMPTY, null, null, false, false,
+                true, ApiKeyStatus::OK, 'none', SupportedCountriesProvider::STATE_EMPTY, null, null, false, false,
                 'no buyer countries are currently enabled for your account',
                 'an empty allowlist hides the method for every buyer, which no local field explains',
             ],
             'core allowlist restricted to nothing' => [
-                true, ApiKeyStatus::OK, true, $unrestricted, null, null, true, false,
+                true, ApiKeyStatus::OK, 'none', $unrestricted, null, null, true, false,
                 'Check Allowed countries',
                 'the two country gates are separate settings and name themselves separately',
             ],
             'nothing withholding it' => [
-                true, ApiKeyStatus::OK, true, $unrestricted, null, null, false, true,
+                true, ApiKeyStatus::OK, 'none', $unrestricted, null, null, false, true,
                 'Shown at checkout',
                 'nothing withholding it reads as shown',
             ],
             'platform minimum only' => [
-                true, ApiKeyStatus::OK, true, $unrestricted, $eur, null, false, true,
+                true, ApiKeyStatus::OK, 'none', $unrestricted, $eur, null, false, true,
                 'hidden for baskets below 250.00 EUR (excluding tax)',
                 'the basket-dependent gate is named as a constraint, not as the current state',
             ],
             'merchant minimum only' => [
-                true, ApiKeyStatus::OK, true, $unrestricted, null, $gbp, false, true,
+                true, ApiKeyStatus::OK, 'none', $unrestricted, null, $gbp, false, true,
                 'hidden for baskets below 1000.00 GBP (including tax)',
                 'the merchant own floor binds even with no platform floor',
             ],
             'both minimums bind' => [
-                true, ApiKeyStatus::OK, true, $unrestricted, $eur, $gbp, false, true,
+                true, ApiKeyStatus::OK, 'none', $unrestricted, $eur, $gbp, false, true,
                 '250.00 EUR (excluding tax) or 1000.00 GBP (including tax)',
                 'two floors in different currencies cannot be reduced to one, so both are named',
             ],
+            'a configured surcharge is a currency constraint' => [
+                true, ApiKeyStatus::OK, 'percentage', $unrestricted, null, null, false, true,
+                'hidden for baskets in a currency the buyer surcharge cannot be priced in',
+                'whether the fee can be priced depends on the basket currency, so it is a constraint',
+            ],
             'both minimums in the same currency' => [
-                true, ApiKeyStatus::OK, true, $unrestricted, $eur, $eurHigher, false, true,
+                true, ApiKeyStatus::OK, 'none', $unrestricted, $eur, $eurHigher, false, true,
                 'hidden for baskets below 500.00 EUR (excluding tax)',
                 'same currency and basis is one floor — naming both would state a bar that never binds',
             ],
             'the account allowlist could not be read' => [
-                true, ApiKeyStatus::OK, true, SupportedCountriesProvider::STATE_MALFORMED, null, null, false, false,
+                true, ApiKeyStatus::OK, 'none', SupportedCountriesProvider::STATE_MALFORMED, null, null, false, false,
                 'could not be read',
                 'an unreadable list is not a deliberate account restriction',
             ],
@@ -482,13 +487,16 @@ class HealthChecklistTest extends TestCase
         $this->supportedCountriesProvider->method('getState')
             ->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
         $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
-        $this->merchantMinimumResolver->method('resolve')->willReturn(null);
+        $this->merchantMinimumResolver->method('resolve')
+            ->willReturn(['amount' => 1000.0, 'currency' => 'GBP', 'basis' => 'gross']);
         $this->scopeConfig->method('isSetFlag')->willReturn(false);
 
         $row = $this->block->getChecklistRows()[4];
 
         $this->assertTrue($row['ok']);
         $this->assertStringContainsString('minimum order value not known until your profile refreshes', $row['value']);
+        // A local admin value is known even when the platform floor is not.
+        $this->assertStringContainsString('1000.00 GBP (including tax)', $row['value']);
     }
 
     public function testAllHealthyRows(): void
@@ -638,6 +646,4 @@ class HealthChecklistTestable extends HealthChecklist
     {
         return '@' . $timestamp;
     }
-
-
 }
