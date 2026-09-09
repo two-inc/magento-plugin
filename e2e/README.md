@@ -25,10 +25,13 @@ ADMIN_PASS="<magento admin password>" npx playwright test
 
 Screenshots land in `e2e/screenshots/`.
 
-`global-setup.ts` runs first and aborts the whole suite if the store is not
-returning 200, or if its served `Two_Gateway/css/style.css` does not match the
-checked-out `view/frontend/web/css/style.css` — a mismatch means the store is
-running a different ref, so every assertion afterwards would be meaningless.
+`global-setup.ts` runs first and aborts the whole suite unless the store returns
+200 and its served `Two_Gateway/css/style.css` matches the checked-out
+`view/frontend/web/css/style.css` — a mismatch means the store is running a
+different ref, so every assertion afterwards would be meaningless. It polls both
+for up to five minutes, longer than the in-place static redeploy a plugin merge
+triggers. The digest only moves when that stylesheet does, so the check catches a
+store on a different plugin release rather than every possible divergence.
 
 ## Run on demand in CI
 
