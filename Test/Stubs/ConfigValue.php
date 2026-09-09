@@ -17,12 +17,7 @@ class Value extends \Magento\Framework\DataObject
     /** @var ScopeConfigInterface */
     protected $_config;
 
-    /**
-     * AbstractModel's per-object save gate. A backend model that turns this
-     * off in beforeSave() is the only field the config section skips writing.
-     *
-     * @var bool
-     */
+    /** @var bool AbstractModel's per-object save gate; off in beforeSave() means the field is not written. */
     protected $_dataSaveAllowed = true;
 
     public function __construct(

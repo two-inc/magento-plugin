@@ -31,7 +31,7 @@ class ApiKeyTest extends TestCase
 
     private const KEY_PATH = 'two_general/general/api_key';
 
-    private const SIBLING_PATH = 'two_general/general/vendor_name';
+    private const SIBLING_PATH = 'two_general/general/vendor_site_name';
 
     private const SIBLING_VALUE = 'Northwind Supplies';
 
@@ -94,9 +94,7 @@ class ApiKeyTest extends TestCase
     }
 
     /**
-     * The config section's save: every field's backend model runs
-     * beforeSave(), and only a model that left its own save allowed is
-     * written — the one gate that lets a section drop a single field.
+     * Mirrors AbstractDb::save(): beforeSave() runs, then only a model that left its own save allowed is written.
      *
      * @param array<string, Value> $models keyed by config path
      * @return array<string, mixed> what storage is left holding
@@ -180,7 +178,6 @@ class ApiKeyTest extends TestCase
         return [
             'verified' => [ApiKeyStatus::OK, 200, 'a verified key saves'],
             'unreachable' => [ApiKeyStatus::UNREACHABLE, null, 'no HTTP exchange completed must not block'],
-            'timeout' => [ApiKeyStatus::UNREACHABLE, null, 'a call that timed out must not block'],
             'service error' => [ApiKeyStatus::SERVICE_ERROR, 503, 'an erroring service must not block'],
             'other error' => [ApiKeyStatus::ERROR, 404, 'an unclassified error must not block'],
             'malformed' => [ApiKeyStatus::MALFORMED_RESPONSE, null, 'an unconfirmable response must not block'],
