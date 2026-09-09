@@ -14,6 +14,7 @@ use Magento\Config\Model\Config\Structure;
 use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\StoredTerm;
 
@@ -45,7 +46,7 @@ class PaymentTermsCustomDays extends Field
     private $scopeCode;
 
     /** @var int|null */
-    private $storeId;
+    private $scopeId;
 
     public function __construct(
         Context $context,
@@ -99,7 +100,8 @@ class PaymentTermsCustomDays extends Field
         if ($days === null || !$this->siblingCanTakeTheTerm($element)) {
             return '';
         }
-        $offered = $this->offeredTerms->offered($this->resolveStoreId());
+        [$scopeId, $scope] = $this->resolveMerchantScope();
+        $offered = $this->offeredTerms->offered($scopeId, $scope);
 
         return $offered !== [] && in_array($days, $offered, true)
             ? '<span class="two-legacy-term-folds-in" hidden="hidden"></span>'
@@ -139,12 +141,16 @@ class PaymentTermsCustomDays extends Field
         return $path === '' ? null : $path;
     }
 
-    /** Store id for the scope being edited, or null for website/default — resolves the API key. */
-    private function resolveStoreId(): ?int
+    /**
+     * Scope being edited, as the config repository reads it (ABN-530).
+     *
+     * @return array{int|null, string}
+     */
+    private function resolveMerchantScope(): array
     {
         $this->resolveScope();
 
-        return $this->storeId;
+        return AdminScope::fromScope($this->scope, $this->scopeId);
     }
 
     /**
@@ -165,29 +171,32 @@ class PaymentTermsCustomDays extends Field
             try {
                 $resolved = $this->storeManager->getStore($store);
                 $this->scopeCode = (string)$resolved->getCode();
-                $this->storeId = (int)$resolved->getId() ?: null;
+                $this->scopeId = (int)$resolved->getId() ?: null;
                 $this->scope = 'stores';
 
                 return;
             } catch (\Exception $e) {
                 $this->scopeCode = null;
-                $this->storeId = null;
+                $this->scopeId = null;
             }
         }
 
         if ($website !== '') {
             try {
-                $this->scopeCode = (string)$this->storeManager->getWebsite($website)->getCode();
+                $resolved = $this->storeManager->getWebsite($website);
+                $this->scopeCode = (string)$resolved->getCode();
+                $this->scopeId = (int)$resolved->getId() ?: null;
                 $this->scope = 'websites';
 
                 return;
             } catch (\Exception $e) {
                 $this->scopeCode = null;
+                $this->scopeId = null;
             }
         }
 
         $this->scope = 'default';
         $this->scopeCode = null;
-        $this->storeId = null;
+        $this->scopeId = null;
     }
 }

@@ -12,7 +12,7 @@ use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Json;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
-use Magento\Store\Model\ScopeInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
@@ -72,7 +72,11 @@ class VerifyApiKey extends Action
             return $result->setData(['skipped' => true]);
         }
 
-        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $this->resolveStoreId());
+        [$scopeId, $scope] = AdminScope::fromScope(
+            (string)$this->getRequest()->getParam('scope', 'default'),
+            $this->getRequest()->getParam('scopeId', 0)
+        );
+        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, null, $scope);
         $described = $this->statusMessage->describe($status);
 
         return $result->setData([
@@ -80,21 +84,5 @@ class VerifyApiKey extends Action
             'status' => $described['status'],
             'message' => (string)$described['message'],
         ]);
-    }
-
-    /**
-     * The store id only selects which environment the candidate is verified
-     * against — the key itself comes from the request, not from config — so
-     * a website-scope check is left on the default scope's environment
-     * rather than hopping to the website's default store.
-     */
-    private function resolveStoreId(): ?int
-    {
-        if ((string)$this->getRequest()->getParam('scope', 'default') !== ScopeInterface::SCOPE_STORES) {
-            return null;
-        }
-        $scopeId = (int)$this->getRequest()->getParam('scopeId', 0);
-
-        return $scopeId > 0 ? $scopeId : null;
     }
 }

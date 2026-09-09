@@ -43,9 +43,9 @@ class SettingsProvider
      *
      * @return int[]
      */
-    public function getAvailableTerms(?int $storeId = null): array
+    public function getAvailableTerms(?int $storeId = null, ?string $scope = null): array
     {
-        $record = $this->recordProvider->getRecord($storeId);
+        $record = $this->recordProvider->getRecord($storeId, $scope);
         if ($record === null) {
             return [];
         }
@@ -73,9 +73,9 @@ class SettingsProvider
      *
      * @return array{amount: float, currency: string}|null
      */
-    public function getSurchargeLimit(?int $storeId = null): ?array
+    public function getSurchargeLimit(?int $storeId = null, ?string $scope = null): ?array
     {
-        $record = $this->recordProvider->getRecord($storeId);
+        $record = $this->recordProvider->getRecord($storeId, $scope);
         if ($record === null) {
             return null;
         }
@@ -100,9 +100,9 @@ class SettingsProvider
      * guaranteed to be a member of getAvailableTerms(); callers honour
      * it only when it is an offered term (see TWO-24859).
      */
-    public function getDefaultTerm(?int $storeId = null): ?int
+    public function getDefaultTerm(?int $storeId = null, ?string $scope = null): ?int
     {
-        $record = $this->recordProvider->getRecord($storeId);
+        $record = $this->recordProvider->getRecord($storeId, $scope);
         if ($record === null) {
             return null;
         }
@@ -167,9 +167,9 @@ class SettingsProvider
      * is deliberately no admin-configurable override (TWO-25106,
      * Option A).
      */
-    public function isInvoiceDistributedByMerchant(?int $storeId = null): bool
+    public function isInvoiceDistributedByMerchant(?int $storeId = null, ?string $scope = null): bool
     {
-        $record = $this->recordProvider->getRecord($storeId);
+        $record = $this->recordProvider->getRecord($storeId, $scope);
         if ($record === null) {
             return false;
         }

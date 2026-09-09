@@ -9,7 +9,9 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
+use Magento\Store\Api\Data\WebsiteInterface;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\DefaultPaymentTerm;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -28,12 +30,15 @@ class DefaultPaymentTermTest extends TestCase
 
         $store = $this->createMock(StoreInterface::class);
         $store->method('getId')->willReturn(5);
+        $website = $this->createMock(WebsiteInterface::class);
+        $website->method('getId')->willReturn(4);
         $storeManager = $this->createMock(StoreManagerInterface::class);
         $storeManager->method('getStore')->willReturnCallback(
             static fn ($code) => $code === 'broken' ? throw new \RuntimeException('no such store') : $store
         );
+        $storeManager->method('getWebsite')->willReturn($website);
 
-        return new class ($context, $settingsProvider, $storeManager) extends DefaultPaymentTerm {
+        return new class ($context, $settingsProvider, new AdminScope($storeManager)) extends DefaultPaymentTerm {
             public function renderForTest(AbstractElement $element): string
             {
                 return $this->_getElementHtml($element);
@@ -47,17 +52,18 @@ class DefaultPaymentTermTest extends TestCase
      */
     public function testTheRecordIsReadForTheScopeBeingEdited(
         array $params,
-        ?int $expectedStoreId,
+        ?int $expectedScopeId,
+        string $expectedScope,
         string $case
     ): void {
         $settingsProvider = $this->createMock(SettingsProvider::class);
         $settingsProvider->expects($this->once())
             ->method('getAvailableTerms')
-            ->with($expectedStoreId)
+            ->with($expectedScopeId, $expectedScope)
             ->willReturn([14, 30]);
         $settingsProvider->expects($this->once())
             ->method('getDefaultTerm')
-            ->with($expectedStoreId)
+            ->with($expectedScopeId, $expectedScope)
             ->willReturn(30);
 
         $element = new AbstractElement(['value' => '']);
@@ -69,11 +75,11 @@ class DefaultPaymentTermTest extends TestCase
     public static function scopeProvider(): array
     {
         return [
-            [['store' => 'de'], 5, 'the store param names the store whose record is read'],
-            [[], null, 'no param is the default scope'],
-            [['website' => 'eu'], null, 'a website scope has no single store to read'],
-            [['store' => ''], null, 'an empty param is not a scope'],
-            [['store' => 'broken'], null, 'an unresolvable store falls back rather than throwing'],
+            [['store' => 'de'], 5, 'store', 'the store param names the store whose record is read'],
+            [[], null, 'default', 'no param is the default scope'],
+            [['website' => 'eu'], 4, 'website', 'a website reads its own key, not a child store\'s (ABN-530)'],
+            [['store' => ''], null, 'default', 'an empty param is not a scope'],
+            [['store' => 'broken'], null, 'default', 'an unresolvable store falls back rather than throwing'],
         ];
     }
 
@@ -84,7 +90,7 @@ class DefaultPaymentTermTest extends TestCase
     public function testTheFormObjectIsNotTheScopeSource(): void
     {
         $settingsProvider = $this->createMock(SettingsProvider::class);
-        $settingsProvider->expects($this->once())->method('getAvailableTerms')->with(5)->willReturn([14]);
+        $settingsProvider->expects($this->once())->method('getAvailableTerms')->with(5, 'store')->willReturn([14]);
         $settingsProvider->method('getDefaultTerm')->willReturn(14);
 
         $form = new class {

@@ -10,7 +10,7 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -31,18 +31,18 @@ class DefaultPaymentTerm extends Field
     /** @var SettingsProvider */
     private $settingsProvider;
 
-    /** @var StoreManagerInterface */
-    private $storeManager;
+    /** @var AdminScope */
+    private $adminScope;
 
     public function __construct(
         Context $context,
         SettingsProvider $settingsProvider,
-        StoreManagerInterface $storeManager,
+        AdminScope $adminScope,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->settingsProvider = $settingsProvider;
-        $this->storeManager = $storeManager;
+        $this->adminScope = $adminScope;
     }
 
     /**
@@ -51,9 +51,9 @@ class DefaultPaymentTerm extends Field
     protected function _getElementHtml(AbstractElement $element): string
     {
         if ((string)$element->getValue() === '') {
-            $storeId = $this->resolveStoreId();
-            $terms = array_map('intval', $this->settingsProvider->getAvailableTerms($storeId));
-            $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
+            [$scopeId, $scope] = $this->resolveScope();
+            $terms = array_map('intval', $this->settingsProvider->getAvailableTerms($scopeId, $scope));
+            $apiDefault = $this->settingsProvider->getDefaultTerm($scopeId, $scope);
             if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
                 $element->setValue((string)$apiDefault);
             } elseif (count($terms) > 0) {
@@ -67,22 +67,15 @@ class DefaultPaymentTerm extends Field
     }
 
     /**
-     * Store id for the scope being edited, or null for website/default — used to resolve the
-     * per-store API key when reading merchant settings.
+     * Scope being edited, from the form's own URL params rather than the form object.
      *
-     * @see SurchargeGrid::resolveScope() for why the request param and not the form object.
+     * @return array{int|null, string}
      */
-    private function resolveStoreId(): ?int
+    private function resolveScope(): array
     {
-        $store = $this->getRequest()->getParam('store');
-        if ($store === null || $store === '') {
-            return null;
-        }
-
-        try {
-            return (int)$this->storeManager->getStore($store)->getId() ?: null;
-        } catch (\Exception $e) {
-            return null;
-        }
+        return $this->adminScope->fromCodes(
+            $this->getRequest()->getParam('store'),
+            $this->getRequest()->getParam('website')
+        );
     }
 }

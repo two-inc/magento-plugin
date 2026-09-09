@@ -13,6 +13,7 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -82,15 +83,17 @@ class PaymentTermsCheckboxes extends Field
      */
     public function getAvailableTerms(): array
     {
-        return $this->settingsProvider->getAvailableTerms($this->resolveStoreId());
+        return $this->settingsProvider->getAvailableTerms(...$this->resolveMerchantScope());
     }
 
-    /** Store id for the active config scope, or null for website/default — resolves the API key. */
-    private function resolveStoreId(): ?int
+    /**
+     * Scope being edited, as the config repository reads it (ABN-530).
+     *
+     * @return array{int|null, string}
+     */
+    private function resolveMerchantScope(): array
     {
-        return $this->getScope() === 'stores' && $this->getScopeId() > 0
-            ? $this->getScopeId()
-            : null;
+        return AdminScope::fromScope($this->getScope(), $this->getScopeId());
     }
 
     /**

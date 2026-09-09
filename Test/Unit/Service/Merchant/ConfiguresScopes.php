@@ -10,7 +10,8 @@ use Magento\Store\Api\Data\WebsiteInterface;
 /**
  * A store tree plus a config fake that inherits like Magento's: store -> its
  * website -> default, and a store-scope read with no id resolving through
- * the current store. Needs $this->storeManager and $this->configRepository.
+ * the current store. Both spellings of each scope name resolve, as the config
+ * layer's own do. Needs $this->storeManager and $this->configRepository.
  */
 trait ConfiguresScopes
 {
@@ -66,12 +67,12 @@ trait ConfiguresScopes
         );
         $lookup = function (int $index) use ($config, $stores, $currentStoreId) {
             return function (?int $storeId = null, ?string $scope = null) use ($config, $stores, $currentStoreId, $index) {
-                if ($scope === null || $scope === 'stores') {
+                if ($scope === null || $scope === 'stores' || $scope === 'store') {
                     $storeId = $storeId ?? $currentStoreId;
                     $chain = $storeId === null
                         ? []
                         : [(string)$storeId, 'websites:' . ($stores[$storeId] ?? 0), 'default:'];
-                } elseif ($scope === 'websites') {
+                } elseif ($scope === 'websites' || $scope === 'website') {
                     $chain = ['websites:' . $storeId, 'default:'];
                 } else {
                     $chain = ['default:'];

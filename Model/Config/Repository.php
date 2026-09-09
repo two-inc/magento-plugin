@@ -735,7 +735,7 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function hasCustomSurchargeTaxRate(?int $storeId = null): bool
+    public function hasCustomSurchargeTaxRate(?int $storeId = null, ?string $scope = null): bool
     {
         // Existence, not truthiness: a merchant-configured rate of 0 or
         // "0.00" is still a real value and must keep the deprecated
@@ -743,7 +743,7 @@ class Repository implements RepositoryInterface
         // excluded because etc/config.xml declares an empty
         // <surcharge_tax_rate/> initial node, so scopeConfig yields ''
         // (not null) even when no merchant ever touched the field.
-        $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId);
+        $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId, $scope);
         return $configured !== null && $configured !== '';
     }
 

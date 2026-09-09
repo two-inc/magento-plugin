@@ -9,9 +9,9 @@ namespace Two\Gateway\Model\Config\Source;
 
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\OptionSourceInterface;
-use Magento\Store\Model\StoreManagerInterface;
 use Magento\Tax\Model\TaxClass\Source\Product as ProductTaxClassSource;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
 /**
@@ -89,20 +89,20 @@ class SurchargeTaxClass implements OptionSourceInterface
     private $request;
 
     /**
-     * @var StoreManagerInterface
+     * @var AdminScope
      */
-    private $storeManager;
+    private $adminScope;
 
     public function __construct(
         ProductTaxClassSource $productTaxClassSource,
         ConfigRepository $configRepository,
         RequestInterface $request,
-        StoreManagerInterface $storeManager
+        AdminScope $adminScope
     ) {
         $this->productTaxClassSource = $productTaxClassSource;
         $this->configRepository = $configRepository;
         $this->request = $request;
-        $this->storeManager = $storeManager;
+        $this->adminScope = $adminScope;
     }
 
     /**
@@ -113,7 +113,12 @@ class SurchargeTaxClass implements OptionSourceInterface
         $options = [
             ['value' => '', 'label' => __('-- Select surcharge tax treatment --')],
         ];
-        if ($this->configRepository->hasCustomSurchargeTaxRate($this->resolveStoreId())) {
+        // Read at the scope being edited, not through one of its stores (ABN-530).
+        [$scopeId, $scope] = $this->adminScope->fromCodes(
+            $this->request->getParam('store'),
+            $this->request->getParam('website')
+        );
+        if ($this->configRepository->hasCustomSurchargeTaxRate($scopeId, $scope)) {
             $options[] = ['value' => self::CUSTOM, 'label' => __('Custom flat rate (deprecated)')];
         }
         foreach ($this->productTaxClassSource->getAllOptions(true) as $option) {
@@ -149,35 +154,5 @@ class SurchargeTaxClass implements OptionSourceInterface
 
         return isset($option['label'])
             && (string)$option['label'] === SurchargeTaxCalculator::NO_TAX_CLASS_NAME;
-    }
-
-    /**
-     * Resolve a store view representative of the config scope the
-     * admin form is editing, so the "Custom" carve-out reflects the
-     * value the merchant would actually inherit at that scope. Website
-     * scope resolves through the website's default store view (which
-     * inherits website-scoped values); default scope (no scope params)
-     * resolves to null.
-     *
-     * @return int|null
-     */
-    private function resolveStoreId(): ?int
-    {
-        try {
-            $storeCode = $this->request->getParam('store');
-            if ($storeCode) {
-                return (int)$this->storeManager->getStore($storeCode)->getId();
-            }
-            $websiteCode = $this->request->getParam('website');
-            if ($websiteCode) {
-                $website = $this->storeManager->getWebsite($websiteCode);
-                $group = $this->storeManager->getGroup($website->getDefaultGroupId());
-                $storeId = (int)$group->getDefaultStoreId();
-                return $storeId > 0 ? $storeId : null;
-            }
-        } catch (\Exception $e) {
-            return null;
-        }
-        return null;
     }
 }

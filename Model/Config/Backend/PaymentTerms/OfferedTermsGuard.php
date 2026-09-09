@@ -22,14 +22,14 @@ class OfferedTermsGuard
         $this->settingsProvider = $settingsProvider;
     }
 
-    public function offered(?int $storeId): array
+    public function offered(?int $storeId, ?string $scope = null): array
     {
-        return array_map('intval', $this->settingsProvider->getAvailableTerms($storeId));
+        return array_map('intval', $this->settingsProvider->getAvailableTerms($storeId, $scope));
     }
 
-    public function assertOffered(array $days, ?int $storeId): void
+    public function assertOffered(array $days, ?int $storeId, ?string $scope = null): void
     {
-        $offered = $this->offered($storeId);
+        $offered = $this->offered($storeId, $scope);
         // Refusing the save would lock the merchant out of correcting the API key that
         // resolves the record; the buyer path fails closed instead (ABN-493).
         if ($offered === []) {

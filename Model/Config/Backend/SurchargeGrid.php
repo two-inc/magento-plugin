@@ -21,6 +21,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -354,8 +355,7 @@ class SurchargeGrid extends Value
      */
     private function getConvertedFixedMax(string $scope, int $scopeId): ?int
     {
-        $storeId = ($scope === 'stores' && $scopeId > 0) ? $scopeId : null;
-        $limit = $this->settingsProvider->getSurchargeLimit($storeId);
+        $limit = $this->settingsProvider->getSurchargeLimit(...AdminScope::fromScope($scope, $scopeId));
         if ($limit === null) {
             return null;
         }

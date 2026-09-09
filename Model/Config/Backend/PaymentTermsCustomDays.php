@@ -20,6 +20,7 @@ use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\StoredTerm;
 
@@ -194,19 +195,18 @@ class PaymentTermsCustomDays extends Value
      */
     private function isOffered(int $days): bool
     {
-        $offered = $this->offeredTerms->offered($this->resolveStoreId());
+        $offered = $this->offeredTerms->offered(...$this->resolveScope());
 
         return $offered !== [] && in_array($days, $offered, true);
     }
 
     /**
-     * Store id for the scope being saved, or null for website/default —
-     * the offered-terms lookup resolves the per-store API key from it.
+     * Scope being edited, as the config repository reads it (ABN-530).
+     *
+     * @return array{int|null, string}
      */
-    private function resolveStoreId(): ?int
+    private function resolveScope(): array
     {
-        return $this->getScope() === 'stores' && (int)$this->getScopeId() > 0
-            ? (int)$this->getScopeId()
-            : null;
+        return AdminScope::fromScope((string)$this->getScope(), $this->getScopeId());
     }
 }

@@ -189,6 +189,14 @@ submitted key.
 One key configured against sandbox on one store view and production on another must
 not share a slot, or a store view serves the other environment's merchant.
 
+**An admin surface reads the record at the scope its form is editing** (ABN-530).
+The API key field is website-scoped, so a website carries its own key and its own
+offerable terms; flattening a website form to a store id judged the edit against
+the default scope's merchant and silently dropped a stored term. Config reads take
+the `(scope id, scope type)` pair `Model/Config/AdminScope` resolves, never a store
+id alone. A website is never resolved through one of its stores: the child may
+override the key, which makes the answer depend on which child was picked.
+
 **The record entry has NO expiry.** The scheduled hourly refresh is the only
 thing this module lets replace it (a cache backend under a memory-pressure
 eviction policy is its own matter), so a key that stops verifying costs the

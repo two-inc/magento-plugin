@@ -84,8 +84,8 @@ class HideFieldsUnlessConfigured
     }
 
     /**
-     * Scope the admin form is editing, from the same request params SurchargeTaxClass::resolveStoreId() reads;
-     * null when the param names no store/website, which hides the field rather than trusting a wider scope.
+     * Scope the admin form is editing, from the form's own URL params; null when a named
+     * store/website cannot be resolved, which hides the field rather than trusting a wider scope.
      *
      * @return array{string, int|null}|null
      */
