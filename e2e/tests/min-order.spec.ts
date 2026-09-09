@@ -3,17 +3,21 @@ import {
     addToCart,
     adminLogin,
     availableMethods,
+    editShippingMethod,
     fillCheckout,
+    goToPaymentStep,
     gotoConfigSection,
     selectShipping
 } from './_helpers';
 
 // Regression test for the minimum-order-value gate: the Two method must appear
-// and disappear LIVE as buyer-side changes (here: the shipping choice) move the
-// order total across the merchant minimum, without a page reload. The minimum is
-// pinned via the admin store config for the duration of the test so the run
-// never depends on how the shared test merchant happens to be configured, and
-// is always restored afterwards.
+// and disappear as buyer-side changes (here: the shipping choice) move the order
+// total across the merchant minimum, within one checkout and with no page
+// reload. Each crossing is submitted, because a shipping choice is estimated
+// client-side and only reaches the quote the gate judges when the shipping step
+// is submitted. The minimum is pinned via the admin store config for the
+// duration of the test so the run never depends on how the shared test merchant
+// happens to be configured, and is always restored afterwards.
 //
 // Admin-gated like the admin-config specs: skips without ADMIN_PASS.
 
@@ -172,6 +176,7 @@ test.describe('minimum order value gate', () => {
         // Baseline before any admin write, so a later absence is attributable to
         // the minimum rather than to the method never having been offered.
         await selectShipping(page, 'flatrate');
+        await goToPaymentStep(page);
         await expect
             .poll(() => availableMethods(page), { timeout: 25_000 })
             .toContain('two_payment');
@@ -194,16 +199,16 @@ test.describe('minimum order value gate', () => {
                 basisInherited: false
             });
 
-            await selectShipping(page, 'flatrate');
-            await expect
-                .poll(() => availableMethods(page), { timeout: 25_000 })
-                .toContain('two_payment');
+            await editShippingMethod(page);
             await selectShipping(page, 'freeshipping');
+            await goToPaymentStep(page);
             await expect
                 .poll(() => availableMethods(page), { timeout: 25_000 })
                 .not.toContain('two_payment');
             // …and back, so the gate re-opens as well as closes.
+            await editShippingMethod(page);
             await selectShipping(page, 'flatrate');
+            await goToPaymentStep(page);
             await expect
                 .poll(() => availableMethods(page), { timeout: 25_000 })
                 .toContain('two_payment');

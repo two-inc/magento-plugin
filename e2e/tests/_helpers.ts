@@ -91,6 +91,17 @@ export async function goToPaymentStep(page: Page) {
     await waitIdle(page);
 }
 
+// Return to the shipping-method step from the payment step. Luma renders the
+// chosen rate there as a summary; the radios stay in the DOM but hidden, so this
+// edit control is the only way to reach them again.
+export async function editShippingMethod(page: Page) {
+    await waitIdle(page);
+    const edit = page.locator('.ship-via .action-edit').first();
+    await expect(edit).toBeVisible({ timeout: 20_000 });
+    await edit.click();
+    await waitIdle(page);
+}
+
 // Native click on the shipping radio — Playwright's .check()/.click() on the
 // styled input doesn't fire Magento's shipping-change handler that recalculates
 // totals, so wait for the radio to load, then drive it in-page like a real click.
