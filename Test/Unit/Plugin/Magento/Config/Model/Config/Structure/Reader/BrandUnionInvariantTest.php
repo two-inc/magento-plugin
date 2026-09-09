@@ -11,8 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm;
 
 /**
- * Regression coverage for the brand-asymmetric-admin-tree risk (diagnostic
- * harness milestone 1).
+ * Regression coverage for the brand-asymmetric-admin-tree risk.
  *
  * The structure cache key
  * `adminhtml::backend_system_configuration_structure` is not scope-keyed.

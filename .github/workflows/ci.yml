@@ -226,9 +226,8 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento setup:di:compile"
 
-      # Diagnostic-harness milestone 3: install-time smoke test. Catches
-      # the full admin-tab-vanishes-class regression surface in one
-      # sequence: DI scope
+      # Install-time smoke test. Catches the full
+      # admin-tab-vanishes-class regression surface in one sequence: DI scope
       # (compile picks up plugins from etc/di.xml, etc/adminhtml/di.xml,
       # etc/crontab/di.xml), Setup/Recurring.php firing (cache:flush
       # auto-runs as part of setup:upgrade), structure cache rebuild,
@@ -236,7 +235,7 @@ jobs:
       # two_payment/title` default from etc/config.xml. A regression
       # in any of these surfaces as an empty or error-containing
       # config:show output.
-      - name: Install-time smoke test (diagnostic-harness M3)
+      - name: Install-time smoke test
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento cache:flush"

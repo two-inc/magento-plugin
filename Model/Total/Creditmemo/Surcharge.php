@@ -15,7 +15,7 @@ use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
  *
  * Default behaviour: refund the surcharge proportionally to the items being
  * refunded (creditmemo subtotal / order subtotal). When the merchant types an
- * explicit value into the creditmemo override field (Phase 5), that value is
+ * explicit value into the creditmemo override field, that value is
  * pre-set on the creditmemo before collectTotals runs and we honour it here.
  *
  * The override path is what allows the surcharge to be refunded in full on a
@@ -46,7 +46,7 @@ class Surcharge extends AbstractTotal
         $baseAlreadyRefunded = (float)$order->getBaseTwoSurchargeRefunded();
         $baseMaxRefundable = $baseOrderSurcharge - $baseAlreadyRefunded;
 
-        // Phase 5 plugin sets `two_surcharge_amount` directly on the
+        // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
         // creditmemo from request data. hasData() distinguishes "explicit
         // merchant override" (including 0) from "never set, use default".
         // Normalise to 6dp on entry — admin input is parsed by
@@ -65,9 +65,10 @@ class Surcharge extends AbstractTotal
         $proportion = $orderSubtotal > 0 ? $cmSubtotal / $orderSubtotal : 0.0;
         $defaultNet = round($orderSurcharge * $proportion, 6);
 
-        // Phase 5 plugin sets `two_surcharge_amount` directly on the creditmemo
-        // from request data. hasData() distinguishes "explicit merchant
-        // override" (including 0) from "never set, use proportional default".
+        // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
+        // creditmemo from request data. hasData() distinguishes "explicit
+        // merchant override" (including 0) from "never set, use proportional
+        // default".
         $hasOverride = $creditmemo->hasData('two_surcharge_amount')
             && $creditmemo->getData('two_surcharge_amount') !== null
             && $creditmemo->getData('two_surcharge_amount') !== '';
@@ -101,9 +102,9 @@ class Surcharge extends AbstractTotal
         // Tax delta: native already refunded VAT on the proportional default
         // surcharge net, so adjust the tax line ONLY for the difference an
         // override introduces. This is exactly zero on the non-override path,
-        // preserving the de-dup guarantee from magento-plugin PR #201 (surcharge
-        // VAT counted once); when the merchant edits the surcharge it moves the
-        // Tax line to the VAT on the surcharge actually refunded
+        // preserving the de-dup guarantee from magento-plugin PR #201
+        // (surcharge VAT counted once); when the merchant edits the surcharge
+        // it moves the Tax line to the VAT on the surcharge actually refunded
         // (refunded net × rate).
         $taxDelta = round(($amount - $defaultNet) * ($taxRatePercent / 100), 6);
         $baseTaxDelta = round(($baseAmount - $baseDefaultNet) * ($taxRatePercent / 100), 6);

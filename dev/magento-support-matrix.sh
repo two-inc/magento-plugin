@@ -143,8 +143,8 @@ fetch_json() {
 # probe_image <image-tag> → prints one of: exists | missing | error
 #
 # Distinguishes a genuinely-unpublished image (skip) from a transient
-# registry failure (fail TOWARD running the test, per TWO-24998 Phase 2 —
-# a Docker Hub blip must not silently zero the matrix). `docker manifest
+# registry failure (fail TOWARD running the test, per TWO-24998 — a Docker
+# Hub blip must not silently zero the matrix). `docker manifest
 # inspect` returns non-zero for both cases, so we inspect stderr: a clear
 # "not found"-class message → missing; anything else → retry once → error.
 #

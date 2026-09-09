@@ -65,8 +65,8 @@ use Two\Gateway\Model\Brand\Loader;
  * `brand_code` survives Converter conversion at section / group /
  * field levels (probed in magento-plugin PR #160). Synthesised
  * elements carry `brand_code="{code}"` so downstream code can
- * discriminate by brand
- * when iterating Structure (e.g. brand-aware admin-block headers).
+ * discriminate by brand when iterating Structure (e.g. brand-aware
+ * admin-block headers).
  */
 class SynthesiseBrandAdminForm
 {
