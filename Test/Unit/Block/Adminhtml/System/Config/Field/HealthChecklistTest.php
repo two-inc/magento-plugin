@@ -487,10 +487,6 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518: a platform floor that has never been fetched is unknown, not
-     * absent, and a bare "shown at checkout" would read as no floor at all.
-     */
-    /**
      * At default scope the current store is the admin store, whose base
      * currency is not the storefront's.
      */
@@ -533,6 +529,10 @@ class HealthChecklistTest extends TestCase
         $this->assertStringContainsString('900.00 SEK', $row['value']);
     }
 
+    /**
+     * A platform floor that has never been fetched is unknown, not absent, and
+     * a bare "shown at checkout" would read as no floor at all.
+     */
     public function testAProfileThatHasNeverResolvedNamesTheUnknownFloor(): void
     {
         $this->recordProvider = $this->createMock(RecordProvider::class);

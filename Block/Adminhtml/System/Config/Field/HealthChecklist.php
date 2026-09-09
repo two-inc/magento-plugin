@@ -128,7 +128,7 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
-            $this->checkoutVisibilityRow($storeId),
+            $this->checkoutVisibilityRow($storeId, $status),
         ];
     }
 
@@ -139,9 +139,8 @@ class HealthChecklist extends Field
      *
      * @return array{label: string, ok: bool, value: string}
      */
-    private function checkoutVisibilityRow(?int $storeId): array
+    private function checkoutVisibilityRow(?int $storeId, array $apiKeyStatus): array
     {
-        $apiKeyStatus = $this->apiKeyStatus->getStatus($storeId);
         $label = (string)__('Payment method at checkout');
         $notShown = (string)__('Not shown at checkout');
         $reason = null;

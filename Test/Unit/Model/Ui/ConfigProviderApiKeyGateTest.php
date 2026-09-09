@@ -275,7 +275,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
      *
      * @dataProvider definitiveFailureCategories
      */
-    public function testEveryVerificationFailureIsLogged(string $status, ?int $code): void
+    public function testEveryDefinitiveFailureIsLogged(string $status, ?int $code): void
     {
         $this->logRepository = $this->createMock(LogRepository::class);
         $this->logRepository->expects($this->once())->method('addDebugLog')
