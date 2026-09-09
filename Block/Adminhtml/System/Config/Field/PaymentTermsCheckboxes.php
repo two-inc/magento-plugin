@@ -173,23 +173,33 @@ class PaymentTermsCheckboxes extends Field
             return;
         }
 
-        $this->scope = 'default';
-        $this->scopeId = 0;
         $store = (string)$this->getRequest()->getParam('store');
         $website = (string)$this->getRequest()->getParam('website');
 
-        try {
-            if ($store !== '') {
-                $this->scope = 'stores';
+        if ($store !== '') {
+            try {
                 $this->scopeId = (int)$this->storeManager->getStore($store)->getId();
-            } elseif ($website !== '') {
-                $this->scope = 'websites';
-                $this->scopeId = (int)$this->storeManager->getWebsite($website)->getId();
+                $this->scope = 'stores';
+
+                return;
+            } catch (\Exception $e) {
+                $this->scopeId = 0;
             }
-        } catch (\Exception $e) {
-            $this->scope = 'default';
-            $this->scopeId = 0;
         }
+
+        if ($website !== '') {
+            try {
+                $this->scopeId = (int)$this->storeManager->getWebsite($website)->getId();
+                $this->scope = 'websites';
+
+                return;
+            } catch (\Exception $e) {
+                $this->scopeId = 0;
+            }
+        }
+
+        $this->scope = 'default';
+        $this->scopeId = 0;
     }
 
     /**

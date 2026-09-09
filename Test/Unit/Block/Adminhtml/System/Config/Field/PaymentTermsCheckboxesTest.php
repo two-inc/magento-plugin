@@ -129,6 +129,7 @@ class PaymentTermsCheckboxesTest extends TestCase
             [['website' => 'eu'], 'websites', self::WEBSITE_ID, null, 'a website scope has no single store to ask for'],
             [['store' => ''], 'default', 0, null, 'an empty param is not a scope'],
             [['store' => 'broken'], 'default', 0, null, 'an unresolvable store falls back rather than throwing'],
+            [['store' => 'broken', 'website' => 'eu'], 'websites', self::WEBSITE_ID, null, 'an unresolvable store falls through to the website param'],
         ];
     }
 
@@ -155,6 +156,7 @@ class PaymentTermsCheckboxesTest extends TestCase
             [['website' => 'eu'], 'SEK', [], 'the website record answers at website scope'],
             [['store' => ''], 'EUR', [], 'an empty param leaves the default scope'],
             [['store' => 'broken'], 'EUR', ['broken'], 'an unresolvable store falls back to config'],
+            [['store' => 'broken', 'website' => 'eu'], 'SEK', ['broken'], 'an unresolvable store falls through to the website param'],
         ];
     }
 

@@ -147,24 +147,36 @@ class PaymentTermsCustomDays extends Field
             return;
         }
 
-        $this->scope = 'default';
         $store = (string)$this->getRequest()->getParam('store');
         $website = (string)$this->getRequest()->getParam('website');
 
-        try {
-            if ($store !== '') {
+        if ($store !== '') {
+            try {
                 $resolved = $this->storeManager->getStore($store);
-                $this->scope = 'stores';
                 $this->scopeCode = (string)$resolved->getCode();
                 $this->storeId = (int)$resolved->getId() ?: null;
-            } elseif ($website !== '') {
-                $this->scope = 'websites';
-                $this->scopeCode = (string)$this->storeManager->getWebsite($website)->getCode();
+                $this->scope = 'stores';
+
+                return;
+            } catch (\Exception $e) {
+                $this->scopeCode = null;
+                $this->storeId = null;
             }
-        } catch (\Exception $e) {
-            $this->scope = 'default';
-            $this->scopeCode = null;
-            $this->storeId = null;
         }
+
+        if ($website !== '') {
+            try {
+                $this->scopeCode = (string)$this->storeManager->getWebsite($website)->getCode();
+                $this->scope = 'websites';
+
+                return;
+            } catch (\Exception $e) {
+                $this->scopeCode = null;
+            }
+        }
+
+        $this->scope = 'default';
+        $this->scopeCode = null;
+        $this->storeId = null;
     }
 }

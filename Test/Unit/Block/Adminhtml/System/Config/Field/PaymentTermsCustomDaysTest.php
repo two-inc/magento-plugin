@@ -248,6 +248,30 @@ class PaymentTermsCustomDaysTest extends TestCase
         ];
     }
 
+    /**
+     * A lock query at the wrong scope reads as unlocked, and the row would then hide on a locked
+     * sibling that never takes the tick.
+     *
+     * @param array<string, string> $params
+     * @dataProvider lockScopeProvider
+     */
+    public function testTheEnvLockIsQueriedAtTheScopeBeingEdited(array $params, string $case): void
+    {
+        $html = $this->render(['value' => '30'], [30], $params, ['payment_terms']);
+
+        $this->assertSame(0, $this->parse($html)->getElementsByTagName('span')->length, $case);
+    }
+
+    public static function lockScopeProvider(): array
+    {
+        return [
+            [[], 'the default scope'],
+            [['store' => 'de'], 'a store view, named by its code'],
+            [['website' => 'eu'], 'a website, named by its code'],
+            [['store' => 'broken', 'website' => 'eu'], 'an unresolvable store falls through to the website param'],
+        ];
+    }
+
     /** The backend model refuses on a missing structure path too, so the marker must not claim one. */
     public function testAnUnknownStructurePathClaimsNoFoldIn(): void
     {
