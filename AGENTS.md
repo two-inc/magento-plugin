@@ -171,24 +171,6 @@ carrying no merchant record counts as unresolved: a proxy, a captive portal or a
 maintenance page answers 200 too, and there is no identity to offer the method
 under.
 
-## The order `isAvailable()` withholds in, and it is SILENT
-
-Core's own checks; a configured non-empty API key; the api-key verification
-verdict; the merchant's available-terms set being empty; the surcharge FX rate
-resolving and the stored surcharge method being recognised; the buyer country;
-then an Amasty store view returns true early, deferring only the minimum-order
-gate to the client; then the platform and merchant minimum-order gate.
-
-**There is no captured-company condition anywhere on that path.** The
-company-number guard runs at placement, not at render — do not reach for
-`isAvailable()` to explain a company-capture symptom.
-
-**Every one of those withholds is invisible to the buyer**: the method simply
-vanishes, with no message, no error node and an empty message area. Each gate
-writes a debug log line and that is the only account of it, so the log is where a
-"why is the method missing" question gets answered. An unrecognised stored
-surcharge method throws with a buyer-facing string that no buyer ever sees.
-
 **The admin save stays permissive, and a rejected key blocks only the key field.**
 Refusing the save would lock the merchant out of correcting the very key that
 resolves the record, and a `LocalizedException` from a config backend model rolls
@@ -233,6 +215,26 @@ either way; `cache:clean two_gateway` and the admin cache-management row are wha
 stop working, and they report success while dropping nothing. Declaring the type
 is what makes a targeted clean possible at all — a config clean does not touch
 these records.
+
+## The order `isAvailable()` withholds in, and it is SILENT
+
+Core's own checks; a configured non-empty API key; the api-key verification
+verdict; the merchant's available-terms set being empty; the surcharge FX rate
+resolving and the stored surcharge method being recognised; the buyer country;
+then an Amasty store view returns true early, deferring only the minimum-order
+gate to the client; then the platform and merchant minimum-order gate.
+
+**There is no captured-company condition anywhere on that path.** The
+company-number guard runs at placement, not at render — do not reach for
+`isAvailable()` to explain a company-capture symptom.
+
+**Every one of those withholds is invisible to the buyer**: the method simply
+vanishes, with no message, no error node and an empty message area. Each gate
+writes a log line and that is the only account of it — debug for most, error for
+the unrecognised stored surcharge method and for a platform floor that cannot be
+converted — so the log is where a "why is the method missing" question gets
+answered. The surcharge case throws with a buyer-facing string that no buyer
+ever sees.
 
 ## A Diagnostics field declared only in `system.xml` never reaches the admin
 
