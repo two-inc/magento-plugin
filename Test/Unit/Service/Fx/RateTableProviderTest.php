@@ -394,7 +394,7 @@ class RateTableProviderTest extends TestCase
         // Given a caller's mode differing from the store scope's,
         // When it refreshes, Then the fetch goes to the caller's environment.
         $this->apiAdapter->expects($this->once())->method('execute')
-            ->with(RateTableProvider::ENDPOINT, [], 'GET', 1, 'test-api-key', 'sandbox', null)
+            ->with(RateTableProvider::ENDPOINT, [], 'GET', 1, 'test-api-key', 'sandbox', 10)
             ->willReturn(self::RATES_RESPONSE);
 
         $this->assertTrue($this->provider(null, 'test-api-key', 'production')->refresh('sandbox', 'test-api-key', 1));
@@ -414,5 +414,61 @@ class RateTableProviderTest extends TestCase
         $this->apiAdapter->expects($this->never())->method('execute');
 
         $this->assertFalse($this->provider(null, '')->refresh('production', '', 1));
+    }
+
+    /**
+     * Given either fetch entry point, When the adapter is called, Then the call
+     * carries an explicit timeout rather than inheriting the adapter's 60s default.
+     *
+     * @dataProvider fetchEntryPoints
+     */
+    public function testEveryFetchCarriesATimeoutBudget(
+        string $entryPoint,
+        int $expectedTimeout,
+        string $description
+    ): void {
+        $budgets = [];
+        $this->apiAdapter->method('execute')->willReturnCallback(
+            function (
+                string $endpoint,
+                array $payload = [],
+                string $method = 'POST',
+                ?int $storeId = null,
+                ?string $apiKeyOverride = null,
+                ?string $modeOverride = null,
+                ?int $timeoutSeconds = null
+            ) use (&$budgets) {
+                $budgets[] = $timeoutSeconds;
+                return self::RATES_RESPONSE;
+            }
+        );
+
+        $provider = $this->provider();
+        if ($entryPoint === 'refresh') {
+            $provider->refresh('production', 'test-api-key', 1);
+        } else {
+            $provider->getRateTable(1);
+        }
+
+        $this->assertSame([$expectedTimeout], $budgets, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int, 2: string}>
+     */
+    public static function fetchEntryPoints(): array
+    {
+        return [
+            'storefront read path' => [
+                'getRateTable',
+                10,
+                'a storefront render must not be able to wait out the adapter default',
+            ],
+            'cron refresh' => [
+                'refresh',
+                10,
+                'the cron fetch shares the read path, so it shares its budget',
+            ],
+        ];
     }
 }
