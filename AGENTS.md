@@ -360,7 +360,7 @@ lasts until the buyer touches an address field.
 
 ## A popup window is in no tab listing
 
-`window.open` returns a window outside the browser extension's tab group, so a
+`window.open` returns a window outside a browser extension's tab group, so a
 tab list can never answer "did the popup open" — nor can a hang. The
 authoritative check is the page's own retained handle and its `.closed`, which
 means wrapping `window.open` before the action that should raise one. Judging
