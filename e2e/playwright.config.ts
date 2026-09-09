@@ -1,6 +1,9 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
     testDir: './tests',
+    // Refuses to run the suite against a store that is mid-redeploy or serving a
+    // different ref — both produce failures that read as plugin defects.
+    globalSetup: './global-setup.ts',
     timeout: 120_000,
     workers: 1,
     reporter: [['list']],
