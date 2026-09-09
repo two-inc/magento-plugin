@@ -43,12 +43,7 @@ class RepositoryPaymentTermsTest extends TestCase
      */
     private $offeredTerms = [7, 14, 21, 30, 37, 45, 60, 90];
 
-    /**
-     * The merchant record's own default term (`due_in_days`), or null when it
-     * is unset or unresolved.
-     *
-     * @var int|null
-     */
+    /** @var int|null The merchant record's own default term (`due_in_days`). */
     private $apiDefaultTerm = null;
 
     protected function setUp(): void

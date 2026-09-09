@@ -660,10 +660,7 @@ class Repository implements RepositoryInterface
         if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
             return $apiDefault;
         }
-        // Else the lowest offered term, so the buyer always lands on a real,
-        // selectable term — in particular a single offered term is always the
-        // default, even if a stale default_payment_term points elsewhere.
-        // With nothing offered there is no default: inventing one offers a
+        // With nothing offered there is no default: an invented one offers a
         // term the merchant's account cannot honour (ABN-544).
         return $terms ? min($terms) : null;
     }
