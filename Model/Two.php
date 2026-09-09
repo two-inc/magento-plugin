@@ -168,6 +168,13 @@ class Two extends AbstractMethod
      */
     private $supportedCountriesProvider;
     /**
+     * Read by no method here. Retained because a brand overlay's payment
+     * method mirrors this constructor and passes it through positionally.
+     *
+     * @var SettingsProvider
+     */
+    private $settingsProvider;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -238,8 +245,6 @@ class Two extends AbstractMethod
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
-        // Unused here: kept because a brand overlay's payment method mirrors
-        // this constructor and passes it through positionally.
         SettingsProvider $settingsProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -278,6 +283,7 @@ class Two extends AbstractMethod
         $this->lifecycleEvents = $lifecycleEvents;
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
+        $this->settingsProvider = $settingsProvider;
     }
 
     /**
