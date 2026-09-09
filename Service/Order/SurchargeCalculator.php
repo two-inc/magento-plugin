@@ -54,8 +54,7 @@ class SurchargeCalculator
      * already changes with anything that would change the quote (cart
      * total, currency, buyer country, term, the merchant's surcharge
      * config), so this only bounds a quote drifting from something the
-     * request body can't see (e.g. the backend's own FX rate), matching
-     * RecordProvider::CACHE_LIFETIME's role for the same class of risk.
+     * request body can't see (e.g. the backend's own FX rate).
      */
     private const CACHE_LIFETIME = 300;
 

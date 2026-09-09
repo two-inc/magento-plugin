@@ -40,10 +40,23 @@ class RecordProviderTest extends TestCase
         );
     }
 
+    /** Timeout budgets the last stubApi() call observed, one per API call, in order. */
+    private $budgets = [];
+
     private function stubApi(array $verifyResponse, array $merchantResponse = []): void
     {
+        $this->budgets = [];
         $this->apiAdapter->method('execute')->willReturnCallback(
-            function (string $endpoint) use ($verifyResponse, $merchantResponse) {
+            function (
+                string $endpoint,
+                array $payload = [],
+                string $method = 'GET',
+                ?int $storeId = null,
+                ?string $apiKey = null,
+                ?string $mode = null,
+                ?int $timeoutSeconds = null
+            ) use ($verifyResponse, $merchantResponse) {
+                $this->budgets[] = $timeoutSeconds;
                 return $endpoint === '/v1/merchant/verify_api_key' ? $verifyResponse : $merchantResponse;
             }
         );
@@ -170,10 +183,10 @@ class RecordProviderTest extends TestCase
         $this->assertCount(1, $recordSaves);
         [$data, $tags, $lifetime] = array_values($recordSaves)[0];
         $this->assertStringContainsString('"available_terms"', $data);
-        $this->assertSame([['TWO_GATEWAY'], RecordProvider::CACHE_LIFETIME], [$tags, $lifetime]);
+        $this->assertSame([['TWO_GATEWAY'], null], [$tags, $lifetime], 'the record entry never expires');
         $stamps = preg_grep('/_fetched_at$/', array_keys($saves));
         $this->assertCount(1, $stamps, 'the success stamp is written beside the record');
-        $this->assertSame([['TWO_GATEWAY'], RecordProvider::CACHE_LIFETIME], array_slice($saves[reset($stamps)], 1));
+        $this->assertSame([['TWO_GATEWAY'], null], array_slice($saves[reset($stamps)], 1));
     }
 
     /**
@@ -194,13 +207,20 @@ class RecordProviderTest extends TestCase
         );
         $this->cache->method('save')->willReturnCallback(
             function ($data, $identifier, $tags, $lifetime) use (&$sequence) {
-                $sequence[] = self::describe($identifier) . ' ' . implode(',', $tags) . ' ' . $lifetime;
+                $sequence[] = self::describe($identifier) . ' ' . implode(',', $tags)
+                    . ' ' . ($lifetime === null ? 'no expiry' : $lifetime);
                 return true;
             }
         );
         $this->cache->method('remove')->willReturnCallback(
             function ($identifier) use (&$sequence) {
-                $sequence[] = substr($identifier, -9) === '_cooldown' ? 'clear cooldown' : 'remove ' . $identifier;
+                if (str_ends_with($identifier, '_cooldown')) {
+                    $sequence[] = 'clear cooldown';
+                } elseif (str_ends_with($identifier, '_absent_on_read')) {
+                    $sequence[] = 'clear absent mark';
+                } else {
+                    $sequence[] = 'remove ' . $identifier;
+                }
                 return true;
             }
         );
@@ -219,19 +239,23 @@ class RecordProviderTest extends TestCase
             'fetch succeeds' => [
                 ['id' => 'abc-123'],
                 [
-                    'mark absent TWO_GATEWAY 93600',
                     'arm cooldown TWO_GATEWAY 60',
                     'fetch',
                     'fetch',
-                    'store record TWO_GATEWAY 93600',
-                    'store stamp TWO_GATEWAY 93600',
+                    'store record TWO_GATEWAY no expiry',
+                    'store stamp TWO_GATEWAY no expiry',
                     'clear cooldown',
                 ],
                 'armed first, record and stamp stored, cooldown cleared so readers are not stranded on null',
             ],
             'fetch fails' => [
                 ['http_status' => 503],
-                ['mark absent TWO_GATEWAY 93600', 'arm cooldown TWO_GATEWAY 60', 'fetch', 'fetch'],
+                [
+                    'arm cooldown TWO_GATEWAY 60',
+                    'fetch',
+                    'fetch',
+                    'mark absent TWO_GATEWAY no expiry',
+                ],
                 'armed first and left armed for 60s only, nothing stored, stamp untouched',
             ],
         ];
@@ -239,7 +263,15 @@ class RecordProviderTest extends TestCase
 
     private static function describe(string $identifier): string
     {
-        $names = ['_cooldown' => 'arm cooldown', '_fetched_at' => 'store stamp', '_absent_on_read' => 'mark absent'];
+        // '_stale_cooldown' also ends in '_cooldown', so the longer suffix is matched first.
+        $names = [
+            '_stale_cooldown' => 'arm stale cooldown',
+            '_stood_in_at' => 'mark stand-in',
+            '_scheduled_at' => 'mark scheduled run',
+            '_cooldown' => 'arm cooldown',
+            '_fetched_at' => 'store stamp',
+            '_absent_on_read' => 'mark absent',
+        ];
         foreach ($names as $suffix => $name) {
             if (str_ends_with($identifier, $suffix)) {
                 return $name;
@@ -287,12 +319,27 @@ class RecordProviderTest extends TestCase
         ?int $stampAge,
         ?int $absentAge = null,
         string $mode = 'sandbox',
-        string $apiKey = 'test-api-key'
+        string $apiKey = 'test-api-key',
+        bool $staleCooldown = false,
+        ?int $stoodInAge = null
     ) {
         $entry = self::entryFor($mode, $apiKey);
         $cache = $this->createMock(CacheInterface::class);
         $cache->method('load')->willReturnCallback(
-            function (string $identifier) use ($record, $stampAge, $absentAge, $entry) {
+            function (string $identifier) use (
+                $record,
+                $stampAge,
+                $absentAge,
+                $entry,
+                $staleCooldown,
+                $stoodInAge
+            ) {
+                if ($identifier === $entry . '_stale_cooldown') {
+                    return $staleCooldown ? '1' : false;
+                }
+                if ($identifier === $entry . '_stood_in_at') {
+                    return $stoodInAge === null ? false : (string)(time() - $stoodInAge);
+                }
                 if ($identifier === $entry . '_fetched_at') {
                     return $stampAge === null ? false : (string)(time() - $stampAge);
                 }
@@ -386,14 +433,27 @@ class RecordProviderTest extends TestCase
         $this->assertFalse($this->providerWith($this->cacheWith(false, null), '')->isDue('sandbox', ''));
     }
 
-    public function testAReadMissLogsThatTheScheduledRefreshMayNotBeRunning(): void
-    {
-        // With the cron running the record is replaced before eviction, so a miss is a signal.
-        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123']);
+    /**
+     * @dataProvider readMissOutcomes
+     */
+    public function testAReadMissIsMarkedOnlyWhenTheReadCouldNotResolveOneEither(
+        array $merchantResponse,
+        int $expectedMarks,
+        string $description,
+        ?int $absentAge = null
+    ): void {
+        // The entry never expires, so a miss is a fresh install or a flush. The
+        // mark says the admin has no record AND no way to get one.
+        $this->stubApi(['id' => 'abc-123'], $merchantResponse);
         $log = $this->createMock(LogRepository::class);
-        $log->expects($this->once())->method('addErrorLog')
-            ->with($this->stringContains('scheduled refresh may not be running'), $this->anything());
-        $cache = $this->cacheWith(false, null);
+        $logged = [];
+        $log->method('addErrorLog')->willReturnCallback(
+            function ($message, $data = null) use (&$logged) {
+                $logged[] = $message;
+                return null;
+            }
+        );
+        $cache = $this->cacheWith(false, null, $absentAge);
         $marked = [];
         $cache->method('save')->willReturnCallback(
             function ($data, $identifier) use (&$marked) {
@@ -404,8 +464,43 @@ class RecordProviderTest extends TestCase
             }
         );
 
-        $this->assertNotNull($this->providerWith($cache, 'test-api-key', 'sandbox', $log)->getRecord(1), 'still fetched');
-        $this->assertCount(1, $marked, 'the miss is recorded for Diagnostics');
+        $this->providerWith($cache, 'test-api-key', 'sandbox', $log)->getRecord(1);
+
+        $this->assertCount($expectedMarks, $marked, $description);
+        $this->assertNotSame([], preg_grep('/merchant record absent on read/', $logged), $description);
+    }
+
+    /**
+     * @return array<int, array{0: array<string,mixed>, 1: int, 2: string, 3?: int}>
+     */
+    public static function readMissOutcomes(): array
+    {
+        return [
+            [['id' => 'abc-123'], 0, 'a read that resolved one itself leaves no mark to freeze'],
+            [['http_status' => 503], 1, 'no record and no way to get one is recorded for Diagnostics'],
+            [
+                ['http_status' => 503],
+                0,
+                'a mark already stored keeps its own clock, so the health surface can judge its age',
+                7200,
+            ],
+        ];
+    }
+
+    public function testTheReadPathStandsInOnASmallerBudgetThanTheCron(): void
+    {
+        // A page render may not wait on the cron's budget.
+        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123', 'available_terms' => [30]]);
+        $provider = $this->providerWith($this->cacheWith(true, RecordProvider::STALE_AFTER + 1));
+
+        $provider->getRecord(1);
+        $standIn = $this->budgets;
+
+        $provider->refresh('sandbox', 'test-api-key');
+        $scheduled = array_slice($this->budgets, count($standIn));
+
+        $this->assertSame([2, 2], $standIn, 'the stand-in is bounded per call');
+        $this->assertSame([10, 10], $scheduled, 'the cron and the admin button keep the full budget');
     }
 
     public function testACacheHitLogsNothing(): void
@@ -426,6 +521,13 @@ class RecordProviderTest extends TestCase
                 return true;
             }
         );
+        $written = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$written) {
+                $written[] = $identifier;
+                return true;
+            }
+        );
         $provider = $this->providerWith($cache);
 
         $status = $provider->status('sandbox', 'test-api-key');
@@ -434,6 +536,12 @@ class RecordProviderTest extends TestCase
         $this->assertEqualsWithDelta(time() - 100, $status['fetched_at'], 2);
         $this->assertEqualsWithDelta(time() - 50, $status['absent_on_read_at'], 2);
         $this->assertCount(1, preg_grep('/_absent_on_read$/', $removed));
+        $this->assertCount(1, preg_grep('/_stood_in_at$/', $removed), 'the cron clears the stand-in mark too');
+        $this->assertCount(
+            1,
+            preg_grep('/_scheduled_at$/', $written),
+            'and records that it ran, whatever its own fetch did'
+        );
     }
 
     public function testEveryConsumerReadsThroughGetRecordSoAFailedFetchServesTheLastKnownGoodToAll(): void
@@ -676,7 +784,8 @@ class RecordProviderTest extends TestCase
 
     public function testARefreshFetchesTheIdentityItIsGivenNotTheStoresConfig(): void
     {
-        // Given a store resolving one identity; when another is refreshed through it; then that one is fetched and cached.
+        // Given a store resolving one identity; when another is refreshed
+        // through it; then that one is fetched and cached.
         $calls = [];
         $this->apiAdapter->method('execute')->willReturnCallback(
             function (string $endpoint, array $payload, string $method, ...$identity) use (&$calls) {
@@ -700,5 +809,112 @@ class RecordProviderTest extends TestCase
             ['two_gateway_merchant_record_' . $identity, 'two_gateway_merchant_record_' . $identity . '_fetched_at'],
             $saved
         );
+    }
+
+    public function testAStaleRecordIsRefreshedInPlaceAndTheFresherOneServed(): void
+    {
+        $fresh = ['id' => 'abc-123', 'available_terms' => [30, 60]];
+        $this->stubApi(['id' => 'abc-123'], $fresh);
+        $cache = $this->cacheWith(true, RecordProvider::STALE_AFTER + 1);
+        $writes = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$writes) {
+                $writes[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->assertSame($fresh, $this->providerWith($cache)->getRecord(1));
+        $this->assertCount(
+            1,
+            preg_grep('/_stale_cooldown$/', $writes),
+            'the stand-in refresh is bounded to one attempt per run the cron owes'
+        );
+    }
+
+    public function testAStandInLeavesAMarkTheScheduleClears(): void
+    {
+        // The record's own stamp cannot say the schedule is dead, because the
+        // stand-in moves it — this mark is what says so.
+        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123', 'available_terms' => [30]]);
+        $cache = $this->cacheWith(true, RecordProvider::STALE_AFTER + 1);
+        $writes = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$writes) {
+                $writes[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->providerWith($cache)->getRecord(1);
+
+        $this->assertCount(1, preg_grep('/_stood_in_at$/', $writes));
+    }
+
+    public function testStatusReportsTheStandInMark(): void
+    {
+        $cache = $this->cacheWith(true, 100, null, 'sandbox', 'test-api-key', false, 40);
+
+        $status = $this->providerWith($cache)->status('sandbox', 'test-api-key');
+
+        $this->assertEqualsWithDelta(time() - 40, $status['stood_in_at'], 2);
+    }
+
+    public function testAStaleRecordSurvivesAFailedRefreshAndIsStillServed(): void
+    {
+        // Staleness never withholds: the held record is the answer either way.
+        $this->stubApi(['id' => 'abc-123'], ['http_status' => 503]);
+        $cache = $this->cacheWith(true, RecordProvider::STALE_AFTER + 1);
+        $writes = [];
+        $removes = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$writes) {
+                $writes[] = $identifier;
+                return true;
+            }
+        );
+        $cache->method('remove')->willReturnCallback(
+            function (string $identifier) use (&$removes) {
+                $removes[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->assertSame(['available_terms' => [30]], $this->providerWith($cache)->getRecord(1));
+        $this->assertSame([], preg_grep('/_record_[0-9a-f]{64}$/', $writes), 'the record is not rewritten');
+        $this->assertSame([], preg_grep('/_fetched_at$/', $writes), 'the success stamp does not move');
+        $this->assertSame([], $removes, 'a failed stand-in refresh evicts nothing');
+    }
+
+    public function testAStaleRecordIsNotRefetchedWhileTheCooldownStands(): void
+    {
+        $this->apiAdapter->expects($this->never())->method('execute');
+        $cache = $this->cacheWith(true, RecordProvider::STALE_AFTER + 1, null, 'sandbox', 'test-api-key', true);
+
+        $this->assertSame(['available_terms' => [30]], $this->providerWith($cache)->getRecord(1));
+    }
+
+    /**
+     * @dataProvider freshAges
+     */
+    public function testAFreshEnoughRecordIsServedWithNoApiCall(?int $stampAge, string $description): void
+    {
+        $this->apiAdapter->expects($this->never())->method('execute');
+        $cache = $this->cacheWith(true, $stampAge);
+
+        $this->assertSame(['available_terms' => [30]], $this->providerWith($cache)->getRecord(1), $description);
+    }
+
+    /**
+     * @return array<int, array{0: int|null, 1: string}>
+     */
+    public static function freshAges(): array
+    {
+        return [
+            [10, 'a record fetched moments ago is served as it is'],
+            [null, 'a record with no success stamp is left to the cron, which already counts it due'],
+            [RecordProvider::MAX_AGE + 1, 'a record the cron owes a refresh is still not stale'],
+            [RecordProvider::STALE_AFTER - 1, 'a record just under the staleness bound is still not stale'],
+        ];
     }
 }

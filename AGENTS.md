@@ -163,13 +163,17 @@ validation message.
 Degrading a junk value to a working default is the failure this replaces: it
 prices an order under a configuration nobody chose, and nobody is told.
 
-**An unresolvable merchant record fails CLOSED** (ABN-493, ABN-495).
-`isAvailable()` withholds the payment method, the read path offers no buyer
-term at all, and order composition refuses to fall back to the nominal default
-term — the buyer cannot use the plugin until the configuration resolves. A 200
-carrying no merchant record counts as unresolved: a proxy, a captive portal or a
-maintenance page answers 200 too, and there is no identity to offer the method
-under.
+**An unresolvable merchant record does NOT withhold the payment method**
+(ABN-519). A record fetch that 5xxes, times out or finds the host unreachable
+says nothing about whether the API key works, and only the api-key verification
+verdict may take the method off the storefront. The record's consumers each
+degrade to their own "nothing configured" behaviour instead: the read path
+offers no buyer term, and order composition refuses to fall back to the nominal
+default term rather than pricing an order under terms nobody granted (ABN-495).
+So a buyer can reach placement and be refused there — accepted, and the cost of
+never hiding the method for a reason unrelated to the key. A 200 carrying no
+merchant record counts as unresolved: a proxy, a captive portal or a maintenance
+page answers 200 too.
 
 **The admin save stays permissive, and a rejected key blocks only the key field.**
 Refusing the save would lock the merchant out of correcting the very key that
@@ -185,23 +189,37 @@ submitted key.
 One key configured against sandbox on one store view and production on another must
 not share a slot, or a store view serves the other environment's merchant.
 
-**The record's freshness is a stored success stamp, not cache expiry.** The hourly
-cron refreshes a record older than 24 hours; the cache's own 26-hour eviction
-ceiling sits above that sum on purpose, so a refresh one run late still beats
-eviction and a stopped cron shows up as a stale stamp rather than an empty slot. A
-fetch is bounded at 10 seconds, so a caller with its own wall-clock budget — a
-config save, the admin refresh button, a storefront render — can hold to it. A
-failed fetch is never cached as the record and never moves the stamp:
-last-known-good is served and re-fetch is bounded to once a minute, so an outage is
-not a fetch per read.
+**The record entry has NO expiry.** The scheduled hourly refresh is the only
+thing this module lets replace it (a cache backend under a memory-pressure
+eviction policy is its own matter), so a key that stops verifying costs the
+merchant nothing beyond the buyer-facing payment method: every admin control the
+record drives keeps rendering indefinitely (ABN-519). The motivating case is a
+merchant running two shops who rotates their key and updates only one — the
+forgotten shop must lose the tile and nothing else, however long the key stays
+wrong. Do not reintroduce a TTL on the record or its success stamp.
 
-**That last-known-good does NOT keep the method on offer through an outage.** The
-availability chain reaches the api-key verification verdict before it reaches the
-record, and a verdict caches a success for five minutes — so the method is withheld
-about five minutes into an unreachable API, whatever the record holds. Measured
-live: warm record with the API blackholed, and cleared record with the API
-blackholed, withhold identically. What the 26 hours protect is the cron and admin
-paths, not the buyer gate.
+**Freshness is the stored success stamp, and staleness is never a verdict.** The
+cron refreshes a record older than 24 hours. A record that reaches 26 hours says
+the cron is not running, so a read stands in for it — one attempt per hour, the
+held record returned either way, nothing withheld and no buyer told. A fetch is
+bounded at 10 seconds, so a caller with its own wall-clock budget — a config save,
+the admin refresh button, a storefront render — can hold to it. A failed fetch is
+never cached as the record and never moves the stamp: last-known-good is served and
+re-fetch is bounded, so an outage is not a fetch per read. The admin health
+checklist reports both an absent-on-read mark and a stamp the record has outlived.
+
+**That last-known-good does NOT keep the method on offer through an outage, and
+that is the ruling.** The availability chain reaches the api-key verification
+verdict before it reaches the record, and a verdict caches a success for five
+minutes — a heartbeat — so the method is withheld about five minutes into an
+unreachable API, whatever the record holds. Every failure category withholds
+alike: a rejected key, a transport failure, a timeout and a 5xx are not
+distinguished for this purpose, and no fallback to the record belongs on the buyer
+surface. Measured live: warm record with the API blackholed, and cleared record
+with the API blackholed, withhold identically. What the record protects is the
+cron and admin paths, and no admin surface is gated on the verdict at all — the
+one place a verdict blocks an admin action is the api-key field refusing to store
+a key the API definitively rejected.
 
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
 carries no default-state attribute, so an install has to write the state itself:
@@ -228,10 +246,30 @@ the pricing service could not be reached. Do not restore a bare
 ## The order `isAvailable()` withholds in, and it is SILENT
 
 Core's own checks; a configured non-empty API key; the api-key verification
-verdict; the merchant's available-terms set being empty; the surcharge FX rate
-resolving and the stored surcharge method being recognised; the buyer country;
-then an Amasty store view returns true early, deferring only the minimum-order
-gate to the client; then the platform and merchant minimum-order gate.
+verdict; the surcharge FX rate resolving and the stored surcharge method being
+recognised; the buyer country; then an Amasty store view returns true early,
+deferring only the minimum-order gate to the client; then the platform and
+merchant minimum-order gate.
+
+**The api-key verdict is the gate the ruling puts that power in** (ABN-519). Do
+not add another gate that withholds because a call to Two failed; that is the
+defect the rule exists to stop coming back.
+
+Two on the list are NOT the store's own configuration and are worth knowing
+about. The surcharge FX gate resolves its rate table from Two, and the
+minimum-order gate fails closed when it cannot convert at that same table. Both
+are nonetheless safe against an outage, because the rate table is cached with no
+expiry and keeps its last-known-good on a failed fetch, exactly as the merchant
+record does — so an unreachable API loses neither. What remains reachable is the
+narrow case of a table that was never fetched, or a cache flushed while Two is
+unreachable. One known cost, unaddressed: the rate table's own refresh-on-read
+carries no timeout budget, so a table past its refresh interval can hold a
+storefront render for the HTTP client's default while an outage runs — the
+merchant record's read-path stand-in is bounded; that one is not.
+
+The FX gate is not simply removable: it exists because an unresolvable rate used
+to throw inside the totals collector and error the whole checkout, which is
+worse than withholding one method.
 
 **There is no captured-company condition anywhere on that path.** The
 company-number guard runs at placement, not at render — do not reach for

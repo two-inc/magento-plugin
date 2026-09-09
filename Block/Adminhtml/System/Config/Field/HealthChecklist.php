@@ -95,9 +95,11 @@ class HealthChecklist extends Field
     }
 
     /**
-     * When the merchant profile last refreshed. An absent-on-read mark the cron
-     * has had a run to clear and has not is what says the cron is not running;
-     * a newer one is the ordinary first read after a cache flush.
+     * When the merchant profile last refreshed, and whether the scheduled
+     * refresh is running. A read that had to stand in for the cron, and one
+     * that could not resolve a record at all, both leave a mark a scheduled
+     * run clears — the record's own stamp cannot answer that, because a
+     * stand-in moves it (ABN-519).
      *
      * @return array{label: string, ok: bool, value: string}
      */
@@ -105,8 +107,14 @@ class HealthChecklist extends Field
     {
         $status = $this->recordProvider->status($mode, $this->configRepository->getApiKey());
         $label = (string)__('Merchant profile');
+        $fetchedAt = $status['fetched_at'];
         $absentAt = $status['absent_on_read_at'];
-        if ($absentAt !== null && time() - $absentAt >= RecordProvider::CRON_INTERVAL) {
+        // A stamp newer than the mark means the miss has since been answered.
+        // Two intervals, not one, so ordinary cron jitter is not a diagnosis.
+        if ($absentAt !== null
+            && time() - $absentAt >= 2 * RecordProvider::CRON_INTERVAL
+            && ($fetchedAt === null || $fetchedAt < $absentAt)
+        ) {
             return [
                 'label' => $label,
                 'ok' => false,
@@ -116,11 +124,36 @@ class HealthChecklist extends Field
                 ),
             ];
         }
-        if ($status['fetched_at'] !== null) {
+        // Three ways a schedule that is not running shows up against a record
+        // that is present. Its own run stamp going stale is the direct one. A
+        // stand-in mark it never cleared covers the window before that stamp
+        // exists at all. An overdue success stamp covers a store with no
+        // traffic, which never stands in — but only while no run stamp says
+        // otherwise, since a cron that runs and cannot reach the API moves the
+        // run stamp and not the success stamp.
+        $grace = 2 * RecordProvider::CRON_INTERVAL;
+        $stoodInAt = $status['stood_in_at'];
+        $scheduledAt = $status['scheduled_at'];
+        $notRunning = ($scheduledAt !== null && time() - $scheduledAt >= $grace)
+            || ($stoodInAt !== null && time() - $stoodInAt >= $grace)
+            || ($scheduledAt === null
+                && $fetchedAt !== null
+                && time() - $fetchedAt >= RecordProvider::MAX_AGE + $grace);
+        if ($fetchedAt !== null && $notRunning) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => (string)__(
+                    'Refreshed %1 — the hourly refresh appears not to be running',
+                    $this->formatTimestamp($fetchedAt)
+                ),
+            ];
+        }
+        if ($fetchedAt !== null) {
             return [
                 'label' => $label,
                 'ok' => true,
-                'value' => (string)__('Refreshed %1', $this->formatTimestamp($status['fetched_at'])),
+                'value' => (string)__('Refreshed %1', $this->formatTimestamp($fetchedAt)),
             ];
         }
 
