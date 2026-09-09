@@ -357,16 +357,19 @@ focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
 Every `focusin` while the hosted sole-trader signup window is up is classified
 once, and these are the three rules (TWO-25658):
 
--   **The role's own Sole trader chip is inert.** Arrival moves the popup
-    neither way — only an activation raises it, and the browser delivers Enter
-    and Space on a focused chip as a click.
+-   **A Sole trader chip inside the capture's own popover is inert.** Arrival
+    moves the popup neither way — only an activation raises it, and the browser
+    delivers Enter and Space on a focused chip as a click.
 -   **Any other target closes an open popup.**
--   **A target outside that role's popover closes the popover too**, with the
+-   **A target outside that capture's popover closes the popover too**, with the
     company field counted as INSIDE it: the field is the popover's own trigger
     and sits outside the panel node, and a buyer typing a query is still inside
     the control.
 
-A window or application switch lands on no control at all and settles nothing.
+A `focusin` the browser re-fires on window return counts as the buyer focusing
+that control, so an alt-tab back onto a control is classified like any other
+arrival. Opening the popup blurs whatever held focus for exactly that reason —
+with nothing focused, a window return settles nothing.
 
 **Reaching another capture popover's Sole trader chip by FOCUS raises nothing** —
 that chip is not the exempt one, so the popup closes as it would for any other
