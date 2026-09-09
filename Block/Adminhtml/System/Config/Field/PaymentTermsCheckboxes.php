@@ -13,7 +13,6 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -45,6 +44,12 @@ class PaymentTermsCheckboxes extends Field
 
     /** @var AdminDecimalFormatter */
     private $decimalFormatter;
+
+    /** @var string|null */
+    private $scope;
+
+    /** @var int */
+    private $scopeId = 0;
 
     public function __construct(
         Context $context,
@@ -80,11 +85,7 @@ class PaymentTermsCheckboxes extends Field
         return $this->settingsProvider->getAvailableTerms($this->resolveStoreId());
     }
 
-    /**
-     * Store id for the active config scope, or null for website/default
-     * scope — used to resolve the per-store API key when reading
-     * merchant settings.
-     */
+    /** Store id for the active config scope, or null for website/default — resolves the API key. */
     private function resolveStoreId(): ?int
     {
         return $this->getScope() === 'stores' && $this->getScopeId() > 0
@@ -152,36 +153,54 @@ class PaymentTermsCheckboxes extends Field
      */
     public function getScope(): string
     {
-        $element = $this->getData('element');
-        if ($element) {
-            $form = $element->getForm();
-            if ($form) {
-                $scope = (string)$form->getScope();
-                if ($scope !== '') {
-                    return $scope;
-                }
-            }
-        }
-        return 'default';
+        $this->resolveScope();
+
+        return $this->scope;
     }
 
     public function getScopeId(): int
     {
-        $element = $this->getData('element');
-        if ($element) {
-            $form = $element->getForm();
-            if ($form) {
-                return (int)$form->getScopeId();
-            }
-        }
-        return 0;
+        $this->resolveScope();
+
+        return $this->scopeId;
     }
 
-    /**
-     * Base currency code of the active scope. The Fees controller
-     * returns amounts in the merchant's contractual currency; JS
-     * appends a degraded-currency suffix when they differ.
-     */
+    /** @see SurchargeGrid::resolveScope() for why the request params and not the form object. */
+    private function resolveScope(): void
+    {
+        if ($this->scope !== null) {
+            return;
+        }
+
+        $store = (string)$this->getRequest()->getParam('store');
+        $website = (string)$this->getRequest()->getParam('website');
+
+        if ($store !== '') {
+            try {
+                $this->scopeId = (int)$this->storeManager->getStore($store)->getId();
+                $this->scope = 'stores';
+
+                return;
+            } catch (\Exception $e) {
+                $this->scopeId = 0;
+            }
+        }
+
+        if ($website !== '') {
+            try {
+                $this->scopeId = (int)$this->storeManager->getWebsite($website)->getId();
+                $this->scope = 'websites';
+
+                return;
+            } catch (\Exception $e) {
+                $this->scopeId = 0;
+            }
+        }
+
+        $this->scope = 'default';
+        $this->scopeId = 0;
+    }
+
     /**
      * Decimal separator for the active admin locale, emitted as a
      * data attribute on the container so the inline-fees JS can
@@ -192,6 +211,11 @@ class PaymentTermsCheckboxes extends Field
         return $this->decimalFormatter->getSeparator();
     }
 
+    /**
+     * Base currency code of the active scope. The Fees controller
+     * returns amounts in the merchant's contractual currency; JS
+     * appends a degraded-currency suffix when they differ.
+     */
     public function getBaseCurrency(): string
     {
         try {

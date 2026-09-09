@@ -16,6 +16,7 @@ use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
+use Two\Gateway\Model\Config\StoredTerm;
 
 /**
  * Backend model for payment terms checkboxes.
@@ -59,21 +60,24 @@ class PaymentTermsCheckboxes extends Value
         $storeId = $this->resolveStoreId();
         $this->offeredTerms->assertOffered($value, $storeId);
 
-        // Comparing against only the ticked subset left this fold-in unreachable on an offered-but-unticked term (TWO-25498).
         // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
-        $custom = (int)$this->getFieldsetDataValue('payment_terms_duration_days');
-        if ($custom > 0
+        $custom = StoredTerm::days($this->getFieldsetDataValue('payment_terms_duration_days'));
+
+        // An unresolvable offered set matches nothing, so an outage cannot move a value (ABN-522).
+        $offered = $this->offeredTerms->offered($storeId);
+        if ($custom !== null
+            && $offered !== []
+            && in_array($custom, $offered, true)
             && !in_array($custom, $value, true)
-            && in_array($custom, $this->offeredTerms->offered($storeId), true)
         ) {
             $value[] = $custom;
         }
         sort($value);
 
-        // A selection is mandatory; the sibling custom-days field satisfies it too.
-        if (count($value) === 0 && $custom <= 0) {
+        // A selection is mandatory; a legacy term still stored satisfies it, so this fires without one.
+        if (count($value) === 0 && $custom === null) {
             throw new LocalizedException(
-                __('Select at least one payment term or enter a custom term.')
+                __('Select at least one payment term.')
             );
         }
 

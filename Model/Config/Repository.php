@@ -578,7 +578,8 @@ class Repository implements RepositoryInterface
      */
     public function getPaymentTermsDurationDays(?int $storeId = null): int
     {
-        return (int)$this->getConfig($this->path('payment_terms_duration_days'), $storeId);
+        // StoredTerm, not a cast: a cast reads '1e2' as 100 where the admin reads it as no term (ABN-522).
+        return StoredTerm::days($this->getConfig($this->path('payment_terms_duration_days'), $storeId)) ?? 0;
     }
 
     /**

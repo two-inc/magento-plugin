@@ -2,42 +2,122 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * Hidden unless configured or foldable; invalid must stay visible so validate-digits fires.
+ * ABN-522. The deprecated custom-term row hides only where the save will fold the value away:
+ * the server-emitted marker plus the live inherit state of the Payment terms sibling. The term the
+ * row contributes comes from the server-emitted data-two-term, never from the raw value.
+ *
+ * The row is hidden, NOT removed: it still posts, which is what lets the fold-in save happen.
  */
 
 'use strict';
 
+const $ = require('jquery');
 const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
-const OFFERED = [7, 14, 15, 20, 21, 30, 45, 60, 90];
+const SECTION = 'two_payment';
+const PREFIX = SECTION + '_payment_terms_';
+const CUSTOM_ROW = '#row_' + PREFIX + 'payment_terms_duration_days';
 
-function loadPredicate() {
-    const mocks = defaultMocks();
-    return loadAmdModule('view/adminhtml/web/js/payment-terms-config.js', mocks).shouldHideCustomDays;
+function buildForm(storedValue, foldsIn, term, inherit) {
+    const inheritBox = inherit === undefined
+        ? ''
+        : '<input type="checkbox" id="' + PREFIX + 'payment_terms_inherit"' +
+          (inherit ? ' checked="checked"' : '') + ' />';
+    document.body.innerHTML =
+        '<table><tbody>' +
+        '<tr><td>' + inheritBox +
+        '<div class="two-term-checkboxes" id="' + PREFIX + 'payment_terms_checkboxes">' +
+        '<input class="two-term-checkboxes__input" type="checkbox" value="14" checked />' +
+        '<input class="two-term-checkboxes__input" type="checkbox" value="30" />' +
+        '</div></td></tr>' +
+        '<tr id="row_' + PREFIX + 'payment_terms_duration_days"><td>' +
+        '<select id="' + PREFIX + 'payment_terms_duration_days">' +
+        '<option value="' + storedValue + '" data-two-term="' + (term === undefined ? 0 : term) +
+        '" selected="selected">keep</option>' +
+        '<option value="" data-two-term="0">Remove</option>' +
+        '</select>' +
+        (foldsIn ? '<span class="two-legacy-term-folds-in" hidden="hidden"></span>' : '') +
+        '</td></tr>' +
+        '<tr><td><select id="' + PREFIX + 'default_payment_term"></select></td></tr>' +
+        '<tr><td><select id="' + PREFIX + 'surcharge_type"><option value="none" selected>none</option></select></td></tr>' +
+        '<tr><td><select id="' + PREFIX + 'surcharge_differential"><option value="0" selected>0</option></select></td></tr>' +
+        '</tbody></table>';
 }
 
-describe('shouldHideCustomDays', () => {
-    const shouldHideCustomDays = loadPredicate();
+function initWith(storedValue, foldsIn, term, inherit) {
+    buildForm(storedValue, foldsIn, term, inherit);
+    const mocks = defaultMocks();
+    mocks.jquery = $;
+    loadAmdModule('view/adminhtml/web/js/payment-terms-config.js', mocks).init();
 
+    return $(CUSTOM_ROW);
+}
+
+/** Terms the default-payment-term dropdown was rebuilt from, i.e. what the module read. */
+function offeredTermsInDropdown() {
+    return $('#' + PREFIX + 'default_payment_term option').map(function () {
+        return Number(this.value);
+    }).get();
+}
+
+describe('deprecated custom-term row visibility', () => {
     it.each([
-        ['', true, 'nothing stored, so there is no legacy value to show'],
-        ['   ', true, 'whitespace is nothing stored'],
-        [null, true, 'an absent value is nothing stored'],
-        [undefined, true, 'an absent value is nothing stored'],
-        ['30', true, 'folds into an offered term the save will tick'],
-        ['7', true, 'the shortest offered term folds in too'],
-        ['45', true, 'offered but unticked still folds in (TWO-25498)'],
-        ['37', false, 'a genuine custom term the account does not offer'],
-        ['abc', false, 'unparseable, so validate-digits must be able to fire'],
-        ['30abc', false, 'parses to an offered term but is not one'],
-        ['3.5', false, 'not a whole number'],
-        ['-5', false, 'negative'],
-        ['0', false, 'zero is not a usable term']
-    ])('%s hides=%s — %s', (value, expected, description) => {
-        expect(shouldHideCustomDays(value, OFFERED)).toBe(expected);
+        ['30', true, 30, true, 'the marker hides the row the save will fold in'],
+        ['37', false, 37, false, 'no marker leaves a genuinely custom term visible'],
+        ['abc', false, 0, false, 'an unusable value stays visible so it can be removed'],
+        ['30', false, 30, false, 'a value that looks foldable is still shown without the marker']
+    ])('value %s, marker %s -> hidden=%s — %s', (storedValue, foldsIn, term, expectedHidden) => {
+        expect(initWith(storedValue, foldsIn, term).css('display') === 'none').toBe(expectedHidden);
     });
 
-    it('shows a value when the account offers no terms at all', () => {
-        expect(shouldHideCustomDays('30', [])).toBe(false);
+    it.each([
+        [undefined, true, 'no inherit box at all is an editable sibling, so the row hides'],
+        [false, true, 'an unticked inherit box is an editable sibling, so the row hides'],
+        [true, false, 'a ticked inherit box means the save keeps the value, so the row stays visible']
+    ])('marker present, inherit %s -> hidden=%s — %s', (inherit, expectedHidden) => {
+        expect(initWith('30', true, 30, inherit).css('display') === 'none').toBe(expectedHidden);
+    });
+
+    it('follows the sibling inherit box as the merchant toggles it', () => {
+        const $row = initWith('30', true, 30, true);
+        const $inherit = $('#' + PREFIX + 'payment_terms_inherit');
+
+        expect($row.css('display')).not.toBe('none');
+
+        $inherit.prop('checked', false).trigger('change');
+        expect($row.css('display')).toBe('none');
+
+        $inherit.prop('checked', true).trigger('change');
+        expect($row.css('display')).not.toBe('none');
+    });
+
+    it('keeps the hidden row in the form so its value still posts', () => {
+        const $row = initWith('30', true, 30);
+
+        expect($row.find('select#' + PREFIX + 'payment_terms_duration_days').length).toBe(1);
+        expect($row.find('select').val()).toBe('30');
+    });
+});
+
+describe('the term the custom-days row contributes', () => {
+    it.each([
+        ['30', 30, [14, 30], 'a plain term joins the ticked 14'],
+        ['030', 30, [14, 30], 'a leading-zero value contributes the normalised term'],
+        ['1e2', 0, [14], 'an unusable value contributes nothing, where parseInt would read 1'],
+        ['30.0', 0, [14], 'a decimal contributes nothing, where parseInt would read 30'],
+        ['abc', 0, [14], 'junk contributes nothing']
+    ])('value %s, data-two-term %s -> %s — %s', (storedValue, term, expected) => {
+        initWith(storedValue, false, term);
+
+        expect(offeredTermsInDropdown()).toEqual(expected);
+    });
+
+    it('drops the term when the merchant selects Remove', () => {
+        initWith('30', false, 30);
+        expect(offeredTermsInDropdown()).toEqual([14, 30]);
+
+        $('#' + PREFIX + 'payment_terms_duration_days').val('').trigger('change');
+
+        expect(offeredTermsInDropdown()).toEqual([14]);
     });
 });

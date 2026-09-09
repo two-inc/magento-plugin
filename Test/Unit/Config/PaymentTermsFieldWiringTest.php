@@ -57,6 +57,24 @@ class PaymentTermsFieldWiringTest extends TestCase
         $this->assertSame('Psr\Log\LoggerInterface', trim((string)$argument[0]));
     }
 
+    /**
+     * A scope holding no row of its own renders the field inherited and disabled, so it posts no
+     * value and reaches no backend model — this plugin is the only guard that shape reaches.
+     */
+    public function testAdminhtmlDiXmlRegistersTheUnusableTermGuard(): void
+    {
+        $xml = simplexml_load_file(dirname(__DIR__, 3) . '/etc/adminhtml/di.xml');
+        $this->assertNotFalse($xml, 'Cannot parse etc/adminhtml/di.xml.');
+
+        $plugin = $xml->xpath('//type[@name="Magento\Config\Model\Config"]/plugin');
+
+        $this->assertCount(1, $plugin);
+        $this->assertSame(
+            'Two\Gateway\Plugin\Config\RefuseUnusableCustomTerm',
+            (string)$plugin[0]['type']
+        );
+    }
+
     public static function wiringProvider(): array
     {
         return [
@@ -70,7 +88,13 @@ class PaymentTermsFieldWiringTest extends TestCase
                 'payment_terms_duration_days',
                 'backend_model',
                 'Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays',
-                'the custom day is checked against the offered set on save',
+                'the deprecated custom day can be removed but not changed on save',
+            ],
+            [
+                'payment_terms_duration_days',
+                'frontend_model',
+                'Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays',
+                'the deprecated custom day is rendered as keep-or-remove, not as free entry',
             ],
             [
                 'payment_terms_duration_days',

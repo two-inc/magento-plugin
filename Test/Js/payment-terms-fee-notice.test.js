@@ -18,7 +18,12 @@ const NOTICE = '.two-term-checkboxes__fee-notice';
 function render() {
     document.body.innerHTML =
         '<input name="form_key" value="k"/>'
-        + '<input id="two_payment_payment_terms_payment_terms_duration_days" value=""/>'
+        // Keep-or-remove, as the field renders: the term comes from the server-emitted
+        // data-two-term, never from the raw value (ABN-522).
+        + '<select id="two_payment_payment_terms_payment_terms_duration_days">'
+        + '<option value="45" data-two-term="45">45 days</option>'
+        + '<option value="" data-two-term="0" selected="selected">Remove</option>'
+        + '</select>'
         + '<select id="two_payment_payment_terms_default_payment_term"></select>'
         + '<select id="two_payment_payment_terms_surcharge_type"></select>'
         + '<div id="' + CONTAINER_ID + '" class="two-term-checkboxes" data-fees-url="/two/config/fees">'

@@ -10,6 +10,7 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -30,13 +31,18 @@ class DefaultPaymentTerm extends Field
     /** @var SettingsProvider */
     private $settingsProvider;
 
+    /** @var StoreManagerInterface */
+    private $storeManager;
+
     public function __construct(
         Context $context,
         SettingsProvider $settingsProvider,
+        StoreManagerInterface $storeManager,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->settingsProvider = $settingsProvider;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -45,7 +51,7 @@ class DefaultPaymentTerm extends Field
     protected function _getElementHtml(AbstractElement $element): string
     {
         if ((string)$element->getValue() === '') {
-            $storeId = $this->resolveStoreId($element);
+            $storeId = $this->resolveStoreId();
             $terms = array_map('intval', $this->settingsProvider->getAvailableTerms($storeId));
             $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
             if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
@@ -61,18 +67,22 @@ class DefaultPaymentTerm extends Field
     }
 
     /**
-     * Store id for the active config scope, or null for website/default
-     * scope — used to resolve the per-store API key when reading merchant
-     * settings.
+     * Store id for the scope being edited, or null for website/default — used to resolve the
+     * per-store API key when reading merchant settings.
+     *
+     * @see SurchargeGrid::resolveScope() for why the request param and not the form object.
      */
-    private function resolveStoreId(AbstractElement $element): ?int
+    private function resolveStoreId(): ?int
     {
-        $form = $element->getForm();
-        if (!$form) {
+        $store = $this->getRequest()->getParam('store');
+        if ($store === null || $store === '') {
             return null;
         }
-        return (string)$form->getScope() === 'stores' && (int)$form->getScopeId() > 0
-            ? (int)$form->getScopeId()
-            : null;
+
+        try {
+            return (int)$this->storeManager->getStore($store)->getId() ?: null;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 }

@@ -9,6 +9,7 @@ namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Framework\App\Config\Value;
 use Magento\Framework\Exception\LocalizedException;
+use Two\Gateway\Model\Config\StoredTerm;
 
 /**
  * Refuses a default term outside the terms saved alongside it (ABN-495).
@@ -24,7 +25,8 @@ class DefaultPaymentTerm extends Value
         $enabled = $this->enabledTerms();
         if ($default > 0 && $enabled !== [] && !in_array($default, $enabled, true)) {
             throw new LocalizedException(__(
-                'Default payment term %1 days is not one of the terms you offer: %2 days.',
+                'Default payment terms names %1 days, which is not one of the terms you offer: %2 days.'
+                . ' Choose one of those in this same save.',
                 $default,
                 implode(', ', $enabled)
             ));
@@ -45,8 +47,8 @@ class DefaultPaymentTerm extends Value
             is_array($posted) ? $posted : explode(',', (string)$posted)
         ));
 
-        $custom = (int)$this->getFieldsetDataValue('payment_terms_duration_days');
-        if ($custom > 0) {
+        $custom = StoredTerm::days($this->getFieldsetDataValue('payment_terms_duration_days'));
+        if ($custom !== null) {
             $terms[] = $custom;
         }
 

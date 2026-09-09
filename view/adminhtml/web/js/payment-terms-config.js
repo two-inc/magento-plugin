@@ -1,19 +1,6 @@
 define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
-    /**
-     * Hidden when nothing is stored, or when the value folds into an offered
-     * term's checkbox on save. Anything else shows, so validate-digits can fire.
-     */
-    function shouldHideCustomDays(rawValue, offeredTerms) {
-        var raw = String(rawValue == null ? '' : rawValue).trim();
-        if (raw === '') {
-            return true;
-        }
-        var custom = parseInt(raw, 10);
-        return String(custom) === raw && custom > 0 && offeredTerms.indexOf(custom) !== -1;
-    }
-
     function initPaymentTermsConfig() {
         // Discover the section-id prefix from the page. The phtml
         // template ships the checkboxes container with id
@@ -37,8 +24,15 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         var $defaultTerm    = $('#' + prefix + 'default_payment_term');
         var $surchargeType  = $('#' + prefix + 'surcharge_type');
         var $differential   = $('#' + prefix + 'surcharge_differential');
+        var $termsInherit   = $('#' + prefix + 'payment_terms_inherit');
 
         // ── Helpers ──────────────────────────────────────────────────────
+
+        // Server-normalised term for the current selection; parsing the raw value here would
+        // disagree with the save on shapes like '1e2' (ABN-522).
+        function getCustomTerm() {
+            return Number($customDays.find('option:selected').attr('data-two-term')) || 0;
+        }
 
         function getSelectedTerms() {
             var terms = [];
@@ -46,7 +40,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 terms.push(Number($(this).val()));
             });
             terms = terms.filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = getCustomTerm();
             if (custom > 0) {
                 terms.push(custom);
             }
@@ -132,20 +126,20 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
         // ── Custom payment terms visibility ──────────────────────────────
 
-        function getOfferedTerms() {
-            // Every rendered checkbox is a backend-offered term (ticked or
-            // not) — see Block\...\PaymentTermsCheckboxes::getAvailableTerms().
-            // Comparing against ticked terms only left the matching save-time
-            // fold-in unreachable on an offered-but-unticked preset (TWO-25498).
-            return $termsContainer.find('.two-term-checkboxes__input').map(function () {
-                return Number(this.value);
-            }).get().filter(function (n) { return n > 0; });
+        // The marker carries what the server settles before the post; the sibling's inherit box is
+        // the rest of it, and an inheriting sibling makes the save keep the value (ABN-522).
+        function customDaysFoldsIn() {
+            return $customDays.closest('tr').find('.two-legacy-term-folds-in').length > 0
+                && !$termsInherit.is(':checked');
         }
 
         function updateCustomDaysVisibility() {
-            shouldHideCustomDays($customDays.val(), getOfferedTerms())
-                ? hideField('payment_terms_duration_days')
-                : showField('payment_terms_duration_days');
+            // Hidden, not removed: the row must still post for the fold-in save to happen.
+            if (customDaysFoldsIn()) {
+                hideField('payment_terms_duration_days');
+            } else {
+                showField('payment_terms_duration_days');
+            }
         }
 
         // ── Differential option label ────────────────────────────────────
@@ -166,7 +160,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         function onTermsChanged() {
             updateDefaultTermOptions();
             updateSurchargeVisibility();
-            updateCustomDaysVisibility();
         }
 
         function onSurchargeChanged() {
@@ -179,11 +172,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         $termsContainer.on('change', '.two-term-checkboxes__input', onTermsChanged);
-        $customDays.on('change keyup', onTermsChanged);
+        $customDays.on('change', onTermsChanged);
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
         $('#' + prefix + 'surcharge_type_inherit').on('change', onSurchargeChanged);
+        $termsInherit.on('change', updateCustomDaysVisibility);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
@@ -319,7 +313,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var terms = $termsContainer.find('.two-term-checkboxes__input').map(function () {
                 return Number(this.value);
             }).get().filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = getCustomTerm();
             if (custom > 0 && terms.indexOf(custom) === -1) {
                 terms.push(custom);
             }
@@ -425,7 +419,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // Additional handlers for fee refresh — fire alongside the term-set
         // change handlers without disturbing their existing wiring.
         $termsContainer.on('change', '.two-term-checkboxes__input', loadFees);
-        $customDays.on('change keyup', loadFees);
+        $customDays.on('change', loadFees);
 
         // ── Initialize ───────────────────────────────────────────────────
 
@@ -443,7 +437,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     });
 
     return {
-        init: initPaymentTermsConfig,
-        shouldHideCustomDays: shouldHideCustomDays
+        init: initPaymentTermsConfig
     };
 });

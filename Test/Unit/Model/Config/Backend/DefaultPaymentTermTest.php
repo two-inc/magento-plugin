@@ -52,6 +52,12 @@ class DefaultPaymentTermTest extends TestCase
             ['30', ['payment_terms' => '14,30', 'payment_terms_duration_days' => ''], 'a CSV selection'],
             ['', ['payment_terms' => ['14'], 'payment_terms_duration_days' => ''], 'no choice at all'],
             ['7', [], 'nothing posted to validate against (a CLI config:set)'],
+            [
+                '30',
+                ['payment_terms' => ['14', '30'], 'payment_terms_duration_days' => ''],
+                'removing the legacy custom term that was also the default lands when the default is repointed in the same save',
+            ],
+            ['30', ['payment_terms' => ['30'], 'payment_terms_duration_days' => '030'], 'a leading-zero custom day is the same term'],
         ];
     }
 
@@ -79,14 +85,23 @@ class DefaultPaymentTermTest extends TestCase
             [
                 '7',
                 ['payment_terms' => ['14', '30'], 'payment_terms_duration_days' => ''],
-                'Default payment term 7 days is not one of the terms you offer: 14, 30 days.',
-                'the refusal names the rejected default and the enabled set',
+                'Default payment terms names 7 days, which is not one of the terms you offer: 14, 30 days.'
+                . ' Choose one of those in this same save.',
+                'the refusal names the rejected default, the enabled set and the remedy',
             ],
             [
                 '14',
                 ['payment_terms' => [], 'payment_terms_duration_days' => '37'],
-                'Default payment term 14 days is not one of the terms you offer: 37 days.',
+                'Default payment terms names 14 days, which is not one of the terms you offer: 37 days.'
+                . ' Choose one of those in this same save.',
                 'a custom-only selection still constrains the default',
+            ],
+            [
+                '37',
+                ['payment_terms' => ['14', '30'], 'payment_terms_duration_days' => ''],
+                'Default payment terms names 37 days, which is not one of the terms you offer: 14, 30 days.'
+                . ' Choose one of those in this same save.',
+                'removing the legacy custom term while the default still names it raises rather than repointing',
             ],
         ];
     }

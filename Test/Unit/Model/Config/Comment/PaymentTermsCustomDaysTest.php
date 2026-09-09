@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Model\Config\Comment;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\Escaper;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Api\Data\WebsiteInterface;
 use Magento\Store\Model\StoreManagerInterface;
@@ -24,7 +25,7 @@ class PaymentTermsCustomDaysTest extends TestCase
     private const EOM_COPY = 'after the end of the month';
 
     /** @param array<string, mixed> $storedRows keyed `<path>@<scope>:<id>`, no inheritance */
-    private function comment(array $storedRows, array $params = []): string
+    private function comment(array $storedRows, array $params = [], string $value = ''): string
     {
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturnCallback(
@@ -52,10 +53,11 @@ class PaymentTermsCustomDaysTest extends TestCase
             $request,
             $storeManager,
             $brandRegistry,
-            new EndOfMonth()
+            new EndOfMonth(),
+            new Escaper()
         );
 
-        return $model->getCommentText('');
+        return $model->getCommentText($value);
     }
 
     /**
@@ -72,7 +74,75 @@ class PaymentTermsCustomDaysTest extends TestCase
         $text = $this->comment($storedRows, $params);
 
         $this->assertSame($expectEom, str_contains($text, self::EOM_COPY), $case);
-        $this->assertStringContainsString('Optional.', $text, $case);
+        $this->assertStringContainsString('Legacy setting.', $text, $case);
+    }
+
+    /**
+     * @param array<string, mixed> $storedRows
+     * @dataProvider interpolatedDaysProvider
+     */
+    public function testTheHintNamesTheStoredTerm(
+        array $storedRows,
+        string $value,
+        string $expected,
+        string $case
+    ): void {
+        $text = $this->comment($storedRows, [], $value);
+
+        $this->assertStringContainsString($expected, $text, $case);
+        $this->assertStringNotContainsString('%1', $text, "$case — the placeholder is filled");
+    }
+
+    /** The hint is the only place the merchant is told why the section will not save. */
+    public function testTheUnusableWordingNamesTheBlockAndTheRemedy(): void
+    {
+        $text = $this->comment([], [], 'abc');
+
+        $this->assertStringContainsString('this section cannot be saved until it is removed', $text);
+        $this->assertStringContainsString('Choose Remove to clear it.', $text);
+        $this->assertStringNotContainsString('offers a custom term', $text);
+    }
+
+    /**
+     * Comment output is rendered raw, so a stored value the admin form never validated reaches
+     * the page as markup unless it is escaped on the way in.
+     */
+    public function testAnUnusableStoredValueCannotInjectMarkup(): void
+    {
+        $text = $this->comment([], [], '<img src=x onerror=alert(1)>');
+
+        $this->assertStringNotContainsString('<img', $text);
+        $this->assertStringContainsString('&lt;img src=x onerror=alert(1)&gt;', $text);
+    }
+
+    public static function interpolatedDaysProvider(): array
+    {
+        $eom = ['payment/two_payment/payment_terms_type@default:' => 'end_of_month'];
+
+        return [
+            [$eom, '37', 'custom term of 37 days after the end of the month', 'End of Month names the term'],
+            [[], '37', 'custom term of 37 days from fulfilment', 'Standard names the term'],
+            [$eom, '037', 'custom term of 37 days', 'a leading-zero value names the normalised term'],
+            [[], '  37  ', 'custom term of 37 days', 'padding is trimmed out of the wording'],
+            [
+                [],
+                'abc',
+                'Legacy setting currently holds "abc", which is not a usable number of days.',
+                'an unusable value says nothing is offered and names the value as stored',
+            ],
+            [
+                [],
+                '-5',
+                'Legacy setting currently holds "-5", which is not a usable number of days.',
+                'a negative is unusable and is named as stored',
+            ],
+            [
+                $eom,
+                'abc',
+                'Legacy setting currently holds "abc", which is not a usable number of days.',
+                'the unusable wording does not depend on the terms type',
+            ],
+        ];
     }
 
     public static function storedTypeProvider(): array

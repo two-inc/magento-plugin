@@ -33,6 +33,12 @@ namespace Magento\Store\Model {
                 return null;
             }
 
+            /** Every store has a code; the stock default store view's is what a fixture would carry. */
+            public function getCode()
+            {
+                return 'default';
+            }
+
             public function getBaseCurrencyCode()
             {
                 return null;

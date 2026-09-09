@@ -108,7 +108,7 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
                 terms.push(Number($(this).val()));
             });
             terms = terms.filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = Number($customDays.find('option:selected').attr('data-two-term')) || 0;
             if (custom > 0) {
                 terms.push(custom);
             }
@@ -327,7 +327,7 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
         // ── Event bindings ───────────────────────────────────────────────
 
         $termsContainer.on('change', '.two-term-checkboxes__input', update);
-        $customDays.on('change keyup', update);
+        $customDays.on('change', update);
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);
