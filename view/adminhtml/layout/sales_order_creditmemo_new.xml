@@ -15,6 +15,10 @@
                    name="creditmemo_totals.two_surcharge_override"
                    as="two_surcharge_override"
                    template="Two_Gateway::sales/order/creditmemo/two_surcharge_input.phtml"/>
+            <block class="Two\Gateway\Block\Adminhtml\Creditmemo\OtherChargesOverride"
+                   name="creditmemo_totals.two_other_charges_override"
+                   as="two_other_charges_override"
+                   template="Two_Gateway::sales/order/creditmemo/two_other_charges_input.phtml"/>
         </referenceBlock>
     </body>
 </page>

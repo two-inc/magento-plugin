@@ -124,7 +124,7 @@ class SurchargeOverride extends Template
     /**
      * Default value for the input. Prefers whatever collectTotals just
      * produced on the creditmemo (which honours any merchant override
-     * stamped via the Plugin\Model\Sales\CreditmemoSurchargeOverride
+     * stamped via the Plugin\Model\Sales\CreditmemoFeeOverride
      * beforeCollectTotals plugin), falling back to the proportional
      * default when the field has not been collected yet.
      */
@@ -201,7 +201,7 @@ class SurchargeOverride extends Template
      * Decimal separator for the current admin locale (',' for nl_NL, '.' for
      * en_*). No grouping separator is emitted by the caller — refund
      * surcharges are small by construction and the override parser
-     * (Plugin\Model\Sales\CreditmemoSurchargeOverride) intentionally rejects
+     * (Plugin\Model\Sales\CreditmemoFeeOverride) intentionally rejects
      * thousands separators.
      */
     protected function localeDecimalSymbol(): string

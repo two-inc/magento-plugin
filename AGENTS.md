@@ -607,11 +607,12 @@ the composition path's own `getOtherChargesLineItem()` over
 `getKnownLineAmountsOrder()` plus any registered provider's fee lines — the
 same reconciliation `reconcileOtherCharges()` performs. None of it names an
 extension: the residual is defined by what the grand total exceeds, never by
-whose fee it is. The collector is gated on the order being a
-Two order — by payment-method INSTANCE, since a brand overlay's
-`GenericPaymentMethod` extends `Two` under its own per-brand code — because a
-store-wide fee extension applies to every order and this module has no
-business moving anyone else's refund total.
+whose fee it is. The resolver answers only for a Two order — by payment-method
+INSTANCE, since a brand overlay's `GenericPaymentMethod` extends `Two` under
+its own per-brand code — because a store-wide fee extension applies to every
+order and this module has no business moving anyone else's refund total, nor
+offering an editable charge row on someone else's credit memo. The collector
+re-checks it before it resolves anything.
 
 `getKnownLineAmountsOrder()` counts what composition *should* itemize, which
 is deliberately not identical to what it actually emits. Two known
@@ -656,7 +657,35 @@ not take is recovered by a later one rather than stranded, and the last memo
 lands on the whole charge exactly with no rounding residue. The one exception
 is the stranding case below.
 
-Three cases defer rather than pay out, all logging `OtherChargesDeferred`. A
+**The merchant can refund part of the charge, or none of it.** The credit-memo
+form carries the amount as `creditmemo[two_other_charges_amount]`, which
+`Plugin\Model\Sales\CreditmemoFeeOverride` — one parser for that field and the
+surcharge's — stamps on the memo before `collectTotals`. A stamped value
+replaces the proration entirely and is bounded only by what the charge has
+left, so the whole charge is refundable on a memo carrying no items; a cleared
+field is an explicit zero rather than a fall back to the proportional default.
+The cap is checked at the form against the resolver's derived residual less
+what earlier memos took, with a one-cent tolerance for a default that
+round-tripped through a 2dp display — the collector clamps to the real cap
+regardless, so the tolerance cannot over-refund. With no charge on the order
+nothing is stamped at all, or the value would persist to the memo's own column
+and render there as a refund that never happened.
+
+**The field offers only what the collector resolved**, and 0.00 when it
+resolved nothing. Recomputing a proportional default for the input instead
+prefills an amount the collector has already deferred, and a merchant saving
+that untouched form posts it as an explicit instruction — turning a fee the
+memo silently omits into a refusal that blocks the credit memo.
+
+**A ceiling refuses an override out loud.** Every ceiling below is silent on
+the proration, which simply takes less; against a typed amount each raises a
+`LocalizedException` naming the ceiling and the amount that would fit, because
+a merchant who types 7.25 and is handed 0.00 has been told nothing. That
+includes the two solved ceilings, whose clamp is refused rather than applied,
+and an unusable conversion rate.
+
+Three cases defer rather than pay out on the proration path, all logging
+`OtherChargesDeferred`. A
 NEGATIVE granted amount means some other total's tax is missing from the
 memo — on a partial memo of a surcharged order core omits the surcharge VAT
 that `ComposeRefund` declares in its surcharge line — and adding it here
