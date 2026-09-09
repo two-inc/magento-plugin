@@ -42,6 +42,9 @@ class HealthChecklistTest extends TestCase
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
+    /** @var \Magento\Framework\App\RequestInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $request;
+
     /** @var HealthChecklist */
     private $block;
 
@@ -62,6 +65,8 @@ class HealthChecklistTest extends TestCase
         $this->minimumOrderProvider = $this->createMock(MinimumOrderProvider::class);
         $this->merchantMinimumResolver = $this->createMock(MerchantMinimumResolver::class);
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->request = $this->createMock(\Magento\Framework\App\RequestInterface::class);
+        $this->request->method('getParam')->willReturn('');
 
         $this->block = new HealthChecklistTestable();
         $this->setBlockDependencies();
@@ -87,7 +92,8 @@ class HealthChecklistTest extends TestCase
             $this->merchantMinimumResolver,
             $brandRegistry,
             $storeManager,
-            $this->scopeConfig
+            $this->scopeConfig,
+            $this->request
         );
     }
 
@@ -242,7 +248,7 @@ class HealthChecklistTest extends TestCase
         bool $active,
         string $apiKeyStatus,
         bool $surchargeTypeKnown,
-        ?array $allowedCountries,
+        string $countryState,
         ?array $platformMinimum,
         ?array $merchantMinimum,
         bool $coreRestrictedToNoCountry,
@@ -259,9 +265,13 @@ class HealthChecklistTest extends TestCase
             $this->configRepository->method('getSurchargeType')
                 ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unavailable')));
         }
-        $this->supportedCountriesProvider->method('getAllowedCountries')->willReturn($allowedCountries);
-        $this->minimumOrderProvider->method('getMinimum')->willReturn($platformMinimum);
-        $this->merchantMinimumResolver->method('resolve')->willReturn($merchantMinimum);
+        $this->supportedCountriesProvider->method('getState')->willReturn($countryState);
+        $this->minimumOrderProvider->method('getMinimum')->with(null)->willReturn($platformMinimum);
+        // The resolver is parameterised by method code and base currency; a row
+        // that passed either wrongly would report another method's floor.
+        $this->merchantMinimumResolver->method('resolve')
+            ->with('two_payment', 'GBP', $platformMinimum, null)
+            ->willReturn($merchantMinimum);
         $this->scopeConfig->method('isSetFlag')->willReturn($coreRestrictedToNoCountry);
         $this->scopeConfig->method('getValue')->willReturn('');
 
@@ -273,75 +283,173 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: bool, 1: string, 2: bool, 3: array<int,string>|null,
+     * @return array<string, array{0: bool, 1: string, 2: bool, 3: string,
      *     4: array<string,mixed>|null, 5: array<string,mixed>|null, 6: bool, 7: bool, 8: string, 9: string}>
      */
     public static function checkoutVisibilityStates(): array
     {
         $eur = ['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net'];
         $gbp = ['amount' => 1000.0, 'currency' => 'GBP', 'basis' => 'gross'];
+        $eurHigher = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'net'];
+        $unrestricted = SupportedCountriesProvider::STATE_UNRESTRICTED;
 
         return [
             'disabled' => [
-                false, ApiKeyStatus::OK, true, null, null, null, false, false,
+                false, ApiKeyStatus::OK, true, $unrestricted, null, null, false, false,
                 'Check Enable payment method',
                 'the switched-off method names the field that switches it on',
             ],
             'no key saved' => [
-                true, ApiKeyStatus::NOT_CONFIGURED, true, null, null, null, false, false,
+                true, ApiKeyStatus::NOT_CONFIGURED, true, $unrestricted, null, null, false, false,
                 'no API key is saved',
                 'an unconfigured install is not a rejected key',
             ],
             'key rejected' => [
-                true, ApiKeyStatus::INVALID_KEY, true, null, null, null, false, false,
+                true, ApiKeyStatus::INVALID_KEY, true, $unrestricted, null, null, false, false,
                 'the API key was rejected',
                 'a definitive rejection names both key and environment',
             ],
             'key unverifiable, service down' => [
-                true, ApiKeyStatus::SERVICE_ERROR, true, null, null, null, false, false,
+                true, ApiKeyStatus::SERVICE_ERROR, true, $unrestricted, null, null, false, false,
                 'could not be verified just now',
                 'a transient verdict must not be reported as the method being withheld (ABN-533)',
             ],
             'key unverifiable, unreachable' => [
-                true, ApiKeyStatus::UNREACHABLE, true, null, null, null, false, false,
+                true, ApiKeyStatus::UNREACHABLE, true, $unrestricted, null, null, false, false,
                 'could not be verified just now',
                 'the same for a store that cannot reach us at all',
             ],
             'stored surcharge method unknown' => [
-                true, ApiKeyStatus::OK, false, null, null, null, false, false,
+                true, ApiKeyStatus::OK, false, $unrestricted, null, null, false, false,
                 'Check Surcharge method',
                 'a corrupt stored surcharge type withholds and names its own field',
             ],
             'account allows no buyer countries' => [
-                true, ApiKeyStatus::OK, true, [], null, null, false, false,
+                true, ApiKeyStatus::OK, true, SupportedCountriesProvider::STATE_EMPTY, null, null, false, false,
                 'no buyer countries are currently enabled for your account',
                 'an empty allowlist hides the method for every buyer, which no local field explains',
             ],
             'core allowlist restricted to nothing' => [
-                true, ApiKeyStatus::OK, true, null, null, null, true, false,
+                true, ApiKeyStatus::OK, true, $unrestricted, null, null, true, false,
                 'Allowed countries is empty',
                 'the two country gates are separate settings and name themselves separately',
             ],
             'nothing withholding it' => [
-                true, ApiKeyStatus::OK, true, null, null, null, false, true,
+                true, ApiKeyStatus::OK, true, $unrestricted, null, null, false, true,
                 'Shown at checkout',
                 'nothing withholding it reads as shown',
             ],
             'platform minimum only' => [
-                true, ApiKeyStatus::OK, true, null, $eur, null, false, true,
+                true, ApiKeyStatus::OK, true, $unrestricted, $eur, null, false, true,
                 'hidden for baskets below 250.00 EUR (excluding tax)',
                 'the basket-dependent gate is named as a constraint, not as the current state',
             ],
             'merchant minimum only' => [
-                true, ApiKeyStatus::OK, true, null, null, $gbp, false, true,
+                true, ApiKeyStatus::OK, true, $unrestricted, null, $gbp, false, true,
                 'hidden for baskets below 1000.00 GBP (including tax)',
                 'the merchant own floor binds even with no platform floor',
             ],
             'both minimums bind' => [
-                true, ApiKeyStatus::OK, true, null, $eur, $gbp, false, true,
+                true, ApiKeyStatus::OK, true, $unrestricted, $eur, $gbp, false, true,
                 '250.00 EUR (excluding tax) or 1000.00 GBP (including tax)',
                 'two floors in different currencies cannot be reduced to one, so both are named',
             ],
+            'both minimums in the same currency' => [
+                true, ApiKeyStatus::OK, true, $unrestricted, $eur, $eurHigher, false, true,
+                'hidden for baskets below 500.00 EUR (excluding tax)',
+                'same currency and basis is one floor — naming both would state a bar that never binds',
+            ],
+            'the account allowlist could not be read' => [
+                true, ApiKeyStatus::OK, true, SupportedCountriesProvider::STATE_MALFORMED, null, null, false, false,
+                'could not be read',
+                'an unreadable list is not a deliberate account restriction',
+            ],
+        ];
+    }
+
+    /**
+     * ABN-518: the row has to judge the same store the checkout gate would,
+     * not the default scope, on a website- or store-view-scoped page.
+     *
+     * @dataProvider scopeParams
+     */
+    public function testTheRowJudgesTheScopeThePageIsOpenAt(
+        string $storeParam,
+        string $websiteParam,
+        bool $storeResolves,
+        ?int $expectedStoreId,
+        string $description
+    ): void {
+        $request = $this->createMock(\Magento\Framework\App\RequestInterface::class);
+        $request->method('getParam')->willReturnCallback(
+            static fn ($name) => $name === 'store' ? $storeParam : ($name === 'website' ? $websiteParam : '')
+        );
+
+        $store = $this->createMock(\Magento\Store\Model\Store::class);
+        $store->method('getId')->willReturn(7);
+        $store->method('getBaseCurrencyCode')->willReturn('GBP');
+        $storeManager = $this->createMock(StoreManagerInterface::class);
+        if ($storeResolves) {
+            $storeManager->method('getStore')->willReturn($store);
+            $storeManager->method('getWebsite')->willReturn(
+                new class ($store) {
+                    private $store;
+
+                    public function __construct($store)
+                    {
+                        $this->store = $store;
+                    }
+
+                    public function getDefaultStore()
+                    {
+                        return $this->store;
+                    }
+                }
+            );
+        } else {
+            $storeManager->method('getStore')
+                ->willThrowException(new \Magento\Framework\Exception\NoSuchEntityException());
+            $storeManager->method('getWebsite')
+                ->willThrowException(new \Magento\Framework\Exception\NoSuchEntityException());
+        }
+
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn('two_payment');
+        $this->block->setDependencies(
+            $this->configRepository,
+            $this->apiKeyStatus,
+            $this->recordProvider,
+            $this->supportedCountriesProvider,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver,
+            $brandRegistry,
+            $storeManager,
+            $this->scopeConfig,
+            $request
+        );
+        $this->configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)
+            ->willReturn(false);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+
+        $row = $this->block->getChecklistRows()[4];
+
+        // The scope assertion is the mock's own `with($expectedStoreId)`; this
+        // proves the read reached the row rather than being swallowed.
+        $this->assertStringContainsString('Check Enable payment method', $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: bool, 3: int|null, 4: string}>
+     */
+    public static function scopeParams(): array
+    {
+        return [
+            'default scope' => ['', '', true, null, 'no scope param reads the default scope'],
+            'store view' => ['7', '', true, 7, 'a store-view page judges that store'],
+            'website' => ['', '3', true, 7, "a website page judges the website's default store"],
+            'stale store param' => ['999', '', false, null, 'an unresolvable scope degrades, never throws'],
+            'stale website param' => ['', '999', false, null, 'and the same for a website'],
         ];
     }
 
@@ -446,7 +554,8 @@ class HealthChecklistTestable extends HealthChecklist
         MerchantMinimumResolver $merchantMinimumResolver,
         BrandRegistryInterface $brandRegistry,
         StoreManagerInterface $storeManager,
-        ScopeConfigInterface $scopeConfig
+        ScopeConfigInterface $scopeConfig,
+        \Magento\Framework\App\RequestInterface $request
     ): void {
         $ref = new \ReflectionClass(HealthChecklist::class);
 
@@ -462,6 +571,7 @@ class HealthChecklistTestable extends HealthChecklist
         }
         $this->_storeManager = $storeManager;
         $this->_scopeConfig = $scopeConfig;
+        $this->request = $request;
 
         $recordProp = $ref->getProperty('recordProvider');
         $recordProp->setAccessible(true);
@@ -476,15 +586,20 @@ class HealthChecklistTestable extends HealthChecklist
         $apiKeyProp->setValue($this, $apiKeyStatus);
     }
 
+    /** @var mixed */
+    private $request;
+
+    /** The stub base takes its request from a Context this exercises without. */
+    public function getRequest()
+    {
+        return $this->request;
+    }
+
     /** The real one needs the locale from Context; render the epoch instead. */
     protected function formatTimestamp(int $timestamp): string
     {
         return '@' . $timestamp;
     }
 
-    /** The real one reads the admin request, which this exercises without. */
-    protected function resolveScopeStoreId(): ?int
-    {
-        return null;
-    }
+
 }

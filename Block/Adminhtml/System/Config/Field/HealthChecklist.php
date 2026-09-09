@@ -12,6 +12,7 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Store\Model\ScopeInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -155,6 +156,7 @@ class HealthChecklist extends Field
             return [
                 'label' => $label,
                 'ok' => false,
+                'state' => 'unknown',
                 'value' => (string)__('Cannot be checked — the API key could not be verified just now.'),
             ];
         }
@@ -165,11 +167,19 @@ class HealthChecklist extends Field
                 $reason = (string)__('the saved surcharge method is not recognised. Check Surcharge method.');
             }
         }
-        if ($reason === null && $this->supportedCountriesProvider->getAllowedCountries($storeId) === []) {
-            $reason = (string)__(
-                'no buyer countries are currently enabled for your account. Contact %1 to have them enabled.',
-                $this->brandRegistry->getProviderFullName()
-            );
+        if ($reason === null) {
+            $countryState = $this->supportedCountriesProvider->getState($storeId);
+            if ($countryState === SupportedCountriesProvider::STATE_EMPTY) {
+                $reason = (string)__(
+                    'no buyer countries are currently enabled for your account. Contact %1 to have them enabled.',
+                    $this->brandRegistry->getProviderFullName()
+                );
+            } elseif ($countryState === SupportedCountriesProvider::STATE_MALFORMED) {
+                $reason = (string)__(
+                    'the buyer countries on your account could not be read. Contact %1.',
+                    $this->brandRegistry->getProviderFullName()
+                );
+            }
         }
         if ($reason === null && $this->coreCountryGateAllowsNothing($storeId)) {
             $reason = (string)__(
@@ -177,10 +187,10 @@ class HealthChecklist extends Field
             );
         }
         if ($reason !== null) {
-            return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
+            return ['label' => $label, 'ok' => false, 'state' => 'bad', 'value' => $notShown . ' — ' . $reason];
         }
 
-        return ['label' => $label, 'ok' => true, 'value' => $this->offeredValue($storeId)];
+        return ['label' => $label, 'ok' => true, 'state' => 'good', 'value' => $this->offeredValue($storeId)];
     }
 
     /**
@@ -199,7 +209,7 @@ class HealthChecklist extends Field
             $platform,
             $storeId
         );
-        $floors = array_values(array_filter([$platform, $merchant]));
+        $floors = self::bindingFloors([$platform, $merchant]);
         if ($floors === []) {
             return $shown;
         }
@@ -218,6 +228,26 @@ class HealthChecklist extends Field
     }
 
     /**
+     * Two floors in the same currency on the same basis are one floor — only
+     * the higher binds. Different currencies cannot be reduced without a rate.
+     *
+     * @param array<int, array{amount: float, currency: string, basis: string}|null> $candidates
+     * @return list<array{amount: float, currency: string, basis: string}>
+     */
+    private static function bindingFloors(array $candidates): array
+    {
+        $binding = [];
+        foreach (array_filter($candidates) as $floor) {
+            $key = $floor['currency'] . '|' . $floor['basis'];
+            if (!isset($binding[$key]) || $floor['amount'] > $binding[$key]['amount']) {
+                $binding[$key] = $floor;
+            }
+        }
+
+        return array_values($binding);
+    }
+
+    /**
      * @param array{amount: float, currency: string, basis: string} $floor
      */
     private function describeFloor(array $floor): string
@@ -230,11 +260,7 @@ class HealthChecklist extends Field
         );
     }
 
-    /**
-     * Core's own allowlist restricted to specific countries with none chosen —
-     * the one state of it that withholds from every buyer, so the only one
-     * decidable without a basket.
-     */
+    /** Core's own allowlist restricted to specific countries with none chosen. */
     private function coreCountryGateAllowsNothing(?int $storeId): bool
     {
         $path = 'payment/' . $this->brandRegistry->getCode() . '/';
@@ -256,13 +282,20 @@ class HealthChecklist extends Field
      */
     protected function resolveScopeStoreId(): ?int
     {
-        $store = (string)$this->getRequest()->getParam('store');
-        if ($store !== '') {
-            return (int)$this->_storeManager->getStore($store)->getId();
-        }
-        $website = (string)$this->getRequest()->getParam('website');
-        if ($website !== '') {
-            return (int)$this->_storeManager->getWebsite($website)->getDefaultStore()->getId();
+        // A stale or hand-edited scope param must degrade to the default
+        // scope, never take the whole configuration page down.
+        try {
+            $store = (string)$this->getRequest()->getParam('store');
+            if ($store !== '') {
+                return (int)$this->_storeManager->getStore($store)->getId();
+            }
+            $website = (string)$this->getRequest()->getParam('website');
+            if ($website !== '') {
+                $default = $this->_storeManager->getWebsite($website)->getDefaultStore();
+                return $default ? (int)$default->getId() : null;
+            }
+        } catch (NoSuchEntityException) {
+            return null;
         }
 
         return null;

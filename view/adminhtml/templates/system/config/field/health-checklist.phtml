@@ -17,7 +17,10 @@ $rows = $block->getChecklistRows();
         <?php foreach ($rows as $row): ?>
             <div>
                 <strong><?= $block->escapeHtml($row['label']); ?>:</strong>
-                <span style="color:<?= $row['ok'] ? '#079633' : '#e02b27'; ?>;">
+                <?php // A verdict that could not be reached is not a fault to paint red. ?>
+                <span style="color:<?= ($row['state'] ?? ($row['ok'] ? 'good' : 'bad')) === 'good'
+                    ? '#079633'
+                    : (($row['state'] ?? '') === 'unknown' ? '#666666' : '#e02b27'); ?>;">
                     <?= $block->escapeHtml($row['value']); ?>
                 </span>
             </div>

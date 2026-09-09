@@ -114,6 +114,9 @@ class ConfigProvider implements ConfigProviderInterface
      */
     private $logRepository;
 
+    /** @var bool */
+    private $withholdLogged = false;
+
     /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
@@ -193,11 +196,16 @@ class ConfigProvider implements ConfigProviderInterface
         // Two::isAvailable() resolves from the quote and passes explicitly —
         // so both surfaces judge the same store's key and agree.
         if ($this->apiKeyStatus->isDefinitiveFailure()) {
-            $apiKeyStatus = $this->apiKeyStatus->getStatus();
-            $this->logRepository->addDebugLog(
-                sprintf('%s withheld from checkout: API key verification failed', $this->code),
-                ['status' => $apiKeyStatus['status'], 'http_status' => $apiKeyStatus['code']]
-            );
+            // Once per request: getConfig() is evaluated on every cart,
+            // checkout and payment-information render.
+            if (!$this->withholdLogged) {
+                $this->withholdLogged = true;
+                $apiKeyStatus = $this->apiKeyStatus->getStatus();
+                $this->logRepository->addDebugLog(
+                    sprintf('%s withheld from checkout: API key verification failed', $this->code),
+                    ['status' => $apiKeyStatus['status'], 'http_status' => $apiKeyStatus['code']]
+                );
+            }
             return [];
         }
         // Identity only, and one shape whichever source supplies it: the

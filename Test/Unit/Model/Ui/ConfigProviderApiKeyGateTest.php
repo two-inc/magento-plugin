@@ -287,6 +287,21 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $this->build($this->statusService($status, $code))->getConfig();
     }
 
+    /**
+     * getConfig() is evaluated several times per checkout render; one broken
+     * key is one log line, not one per evaluation.
+     */
+    public function testTheWithholdingIsLoggedOncePerRequest(): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $provider = $this->build($this->statusService(ApiKeyStatus::INVALID_KEY, 401));
+        $provider->getConfig();
+        $provider->getConfig();
+        $provider->getConfig();
+    }
+
     public function testNothingIsLoggedWhenTheKeyVerifies(): void
     {
         $this->logRepository = $this->createMock(LogRepository::class);
