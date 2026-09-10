@@ -595,6 +595,33 @@ billing-address subscription re-evaluates that button and clears anything
 written onto it from outside the binding, silently, so an imperative disable
 lasts until the buyer touches an address field.
 
+## The selected term must be CONFIRMED before submit
+
+The order is composed on the term the chips show as selected, so a selection
+the server has not confirmed it priced the quote on can be charged against a
+total the summary never showed (ABN-550). `surchargeModel.isTermReconciled()`
+is the whole invariant — `confirmedTerm === selectedTerm() && !isUpdating()` —
+and `confirmedTerm` moves only when a `/select-term` response actually carries
+the totals it re-collected.
+
+It gates placement twice: `isPlaceOrderEnabled()`, so the button is disabled
+rather than only answering a click, and `placeOrder()` as the belt.
+
+**Do not gate on the chip fees instead.** Comparing the summary's
+`two_surcharge` value against the chip map looks stronger and is weaker: the
+map is documented above as lagging a `/totals-information` transition by one
+step, and `loadFees()`'s own snapshot dedup can then decline to refresh it — so
+a numeric comparison can refuse a settled checkout permanently, behind a
+message that says it is still updating.
+
+`/select-term` carries a sequence guard of its own, as `loadFees()` does. Two
+chip clicks whose responses land out of order would otherwise write the
+superseded term's segments into the summary and confirm a term nobody selected.
+
+A `/select-term` the server did not take reverts the chips to the confirmed
+term and says so. Reverted rather than left standing, because re-clicking the
+chip the buyer already appears to have selected does nothing.
+
 ## A popup window is in no tab listing
 
 `window.open` returns a window outside a browser extension's tab group, so a

@@ -18,9 +18,11 @@ define([
     'ko',
     'jquery',
     'Magento_Checkout/js/model/quote',
+    'Magento_Ui/js/model/messageList',
+    'mage/translate',
     'mage/url',
     'Two_Gateway/js/model/brand-config'
-], function (ko, $, quote, url, brandConfig) {
+], function (ko, $, quote, messageList, $t, url, brandConfig) {
     'use strict';
 
     // Resolve the active Two-family brand subtree from checkoutConfig
@@ -39,6 +41,16 @@ define([
     // supplied on every surcharge response; 'excl' until the first answers.
     var taxDisplay = ko.observable('excl');
     var isUpdating = ko.observable(false);
+
+    // The term /select-term has confirmed the server priced the quote on. Only a
+    // confirmed response moves it, so a chip showing anything else means the
+    // summary and the order can disagree and placement is refused (ABN-550).
+    var confirmedTerm = selectedTerm();
+
+    // Sequence guard for /select-term, mirroring loadFees' own: two chip clicks
+    // whose responses land out of order would otherwise leave the summary and
+    // the confirmed term describing a selection nobody made.
+    var selectSeq = 0;
 
     // Fetch sequence guard. Magento fires quote.getTotals() once on bootstrap
     // (often with subtotal-only basis) and again after /totals-information
@@ -232,10 +244,21 @@ define([
         },
 
         /**
+         * Whether the term the chips show as selected is the one the server has
+         * confirmed it priced the quote on. Placement is refused while it is
+         * not: the order is composed on the selection, so submitting against an
+         * unconfirmed one charges a total the summary never showed (ABN-550).
+         */
+        isTermReconciled: function () {
+            return !isUpdating() && confirmedTerm === selectedTerm();
+        },
+
+        /**
          * Call /select-term to update totals with the new surcharge.
          */
         recalculateTotals: function (days) {
             var restUrl = url.build('rest/V1/two/select-term');
+            var mySeq = ++selectSeq;
 
             isUpdating(true);
             // Do NOT clear termSurcharges here. A chip click only changes
@@ -256,6 +279,9 @@ define([
                     termDays: days
                 })
             }).done(function (response) {
+                if (mySeq !== selectSeq) {
+                    return;
+                }
                 var data = Array.isArray(response) ? response[0] : response;
                 if (data && data.total_segments) {
                     var currentTotals = quote.getTotals()();
@@ -281,8 +307,27 @@ define([
                     fetchSeq++;
                     applyTermSurcharges(data.term_surcharges);
                 }
+
+                if (data && data.total_segments) {
+                    confirmedTerm = days;
+                }
+            }).fail(function (xhr, status, err) {
+                if (mySeq !== selectSeq) {
+                    return;
+                }
+                // The chips go back to the term the quote is still priced on
+                // rather than claim a selection the order will not carry.
+                // Reverted rather than left standing, because re-clicking the
+                // chip the buyer already appears to have selected does nothing.
+                console.warn('Two_Gateway: select-term failed', status, err);
+                selectedTerm(confirmedTerm);
+                messageList.addErrorMessage({
+                    message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
+                });
             }).always(function () {
-                isUpdating(false);
+                if (mySeq === selectSeq) {
+                    isUpdating(false);
+                }
             });
         }
     };

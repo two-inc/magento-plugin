@@ -179,6 +179,7 @@
 "day","dag"
 "Selected payment terms","Gewenste betaaltermijn"
 "Selected payment term is not available.","Geselecteerde betaaltermijn is niet beschikbaar."
+"The selected payment term is still being applied. Please try again shortly.","De geselecteerde betaaltermijn wordt nog toegepast. Probeer het binnenkort opnieuw."
 "Could not update payment term.","Kan betaaltermijn niet bijwerken."
 "Please try again.","Probeer het opnieuw."
 "Please select a country first","Selecteer eerst een land"
