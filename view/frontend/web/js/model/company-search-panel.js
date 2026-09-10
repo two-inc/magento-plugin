@@ -780,13 +780,23 @@
         this._items = [];
         this._activeIndex = -1;
         if (this._field) this._field.setAttribute('aria-expanded', 'false');
-        if (options && options.returnFocus && this._field) {
-            // Guards the field's own focus opener against reopening the panel
-            // this call is closing.
-            this._closing = true;
-            this._field.focus();
-            this._closing = false;
+        if (options && options.returnFocus) {
+            this.restoreFieldFocus();
         }
+    };
+
+    /**
+     * Put focus back on the company field, leaving the panel's open state as it
+     * was: `_closing` stops the field's own opener opening a closed popover, and
+     * the field sits OUTSIDE the panel node, so arriving on it from inside the
+     * panel would otherwise read as leaving the control and close an open one.
+     */
+    CompanySearchPanel.prototype.restoreFieldFocus = function () {
+        if (!this._field) return;
+        this._closing = true;
+        this._field.focus();
+        this._closing = false;
+        this._cancelFocusOutClose();
     };
 
     /** @returns {boolean} whether the panel is currently open */

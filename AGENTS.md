@@ -570,6 +570,16 @@ that control, so an alt-tab back onto a control is classified like any other
 arrival. Opening the popup blurs whatever held focus for exactly that reason —
 with nothing focused, a window return settles nothing.
 
+**Closing the signup with nothing captured gives focus back, but only where
+focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
+`document.activeElement` on the body or nothing at all has nowhere for the buyer
+to be, and the company field takes it. A close the buyer caused by focusing
+another control — including another capture's Sole trader chip, which hands the
+popup over — keeps focus where they put it: taking it back there would kill the
+flow they just began. The panel's own restore leaves its open state alone, which
+takes cancelling the pending focus-out close, since the company field sits
+outside the panel node and arriving on it otherwise reads as leaving the control.
+
 **Focus arriving on ANOTHER capture's Sole trader chip hands the popup over.**
 That chip is a different control, so this popup and popover close first; the new
 one is then raised by invoking that chip's own click handler, the single place a
