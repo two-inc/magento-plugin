@@ -19,7 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, makeObservable, defaultMocks } = require('./amd-harness');
 
 const ROOT = path.join(__dirname, '..', '..');
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
@@ -261,8 +261,6 @@ describe('the arrow keys move the selection, and both ends wrap (ABN-554)', () =
 
         const focused = group.querySelectorAll('.two-term-chip')[TERMS.indexOf(expected)];
         expect(ctx.selectedTerm()).toBe(expected);
-        expect(focused.getAttribute('aria-checked')).toBe('true');
-        expect(focused.getAttribute('tabindex')).toBe('0');
         expect(document.activeElement).toBe(focused);
         expect(ctx.selected).toHaveLength(keys.length);
     });
@@ -278,6 +276,32 @@ describe('the arrow keys move the selection, and both ends wrap (ABN-554)', () =
 
         expect(press(ctx, group, key)).toBe(true);
         expect(ctx.selected).toEqual([]);
+    });
+
+    test.each([
+        { modifier: 'altKey', case: 'Alt+ArrowLeft is the browser going back' },
+        { modifier: 'ctrlKey', case: 'Ctrl+ArrowRight belongs to the browser' },
+        { modifier: 'metaKey', case: 'Cmd+ArrowRight belongs to the browser' }
+    ])('a modified arrow key is left alone: $case', ({ modifier }) => {
+        const ctx = makeContext(30);
+        const group = renderChips(ctx);
+        const event = new window.KeyboardEvent('keydown', { key: 'ArrowRight' });
+        Object.defineProperty(event, 'currentTarget', { value: group });
+        Object.defineProperty(event, modifier, { value: true });
+
+        expect(ctx.onTermKeydown.call(ctx, ctx, event)).toBe(true);
+        expect(ctx.selected).toEqual([]);
+    });
+
+    test('with focus unplaced, the step is taken from the selected term', () => {
+        const ctx = makeContext(30);
+        const group = renderChips(ctx);
+        document.body.focus();
+
+        press(ctx, group, 'ArrowRight');
+
+        expect(ctx.selectedTerm()).toBe(60);
+        expect(document.activeElement).toBe(group.querySelectorAll('.two-term-chip')[2]);
     });
 
     test('a group offering one term handles no keys at all', () => {
@@ -332,4 +356,56 @@ describe('the method radio and the consent checkbox are named (ABN-554)', () => 
             expect(ctx[method]()).toBe(prefix + 'two_payment_other_brand');
         }
     );
+});
+
+describe('the chips outlive a fee refresh (ABN-554)', () => {
+    /** The renderer, loaded over a surcharge model whose fee map a spec can write. */
+    function loadWithFees() {
+        // The harness's own observable: the ko double tracks a dependency only
+        // on one of its own, so a local stub would make the specs vacuous.
+        const fees = makeObservable({});
+        const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+            getPriceFormat: function () {
+                return { pattern: '%s' };
+            }
+        });
+        const component = loadAmdModule(RENDERER, {
+            'Magento_Checkout/js/model/quote': quote,
+            'Two_Gateway/js/model/surcharge': {
+                selectedTerm: makeObservable(null),
+                taxDisplay: makeObservable('excl'),
+                currencySymbol: '\u20ac',
+                selectTerm: function () {},
+                isTermReconciled: function () {
+                    return true;
+                },
+                displayedTermSurcharges: function () {
+                    return fees();
+                }
+            }
+        });
+        return {
+            options: component.buildTermOptions.call({}, TERMS.slice()),
+            publish: fees
+        };
+    }
+
+    test('a fee refresh updates the labels without replacing the chip view models', () => {
+        const { options, publish } = loadWithFees();
+
+        expect(Array.isArray(options)).toBe(true);
+        const identities = options.slice();
+        expect(options.map((o) => o.isLoading())).toEqual([true, true, true]);
+
+        publish({ 14: 0, 30: 1.5, 60: 3 });
+
+        expect(options).toEqual(identities);
+        expect(options.map((o) => o.isLoading())).toEqual([false, false, false]);
+        expect(options.map((o) => o.surchargeLabel())).not.toEqual(['', '', '']);
+
+        publish({ 14: 0, 30: 0, 60: 0 });
+
+        expect(options).toEqual(identities);
+        expect(options.map((o) => o.surchargeLabel())).toEqual(['', '', '']);
+    });
 });

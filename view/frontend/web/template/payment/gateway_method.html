@@ -44,13 +44,9 @@
             <span class="label" data-bind="attr: {id: termGroupLabelId()}">
                 <span data-bind="i18n: 'Selected payment terms'"></span>
             </span>
-            <!--
-                The chips are a radio group, not a row of buttons (ABN-554):
-                the selected term is exposed as aria-checked, the group is one
-                tab stop, and onTermKeydown moves the selection with the arrow
-                keys. Roles without that keyboard contract advertise a
-                behaviour the group does not have.
-            -->
+            <!-- A radio group, not a row of buttons: the roles come with the
+                 single tab stop and the arrow keys, or they describe nothing
+                 (ABN-554). -->
             <div
                 class="two-term-chips__container"
                 role="radiogroup"
@@ -75,7 +71,7 @@
                         ><span>.</span><span>.</span><span>.</span></span
                     >
                     <!-- /ko -->
-                    <!-- ko if: !isLoading && surchargeLabel -->
+                    <!-- ko if: !isLoading() && surchargeLabel() -->
                     <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
                     <!-- /ko -->
                 </button>

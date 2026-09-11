@@ -669,14 +669,19 @@ without it the group swallows Tab.
 
 `isTermChecked()` is the single definition of a selected chip, read by the
 `aria-checked` binding and by the visual `--selected` class, so the tick and the
-exposed state cannot drift apart. A selection matching no chip — a term the
-merchant withdrew, or one reverted mid-flight — leaves nothing checked, and
-`focusableTerm()` puts the tab stop on the first chip so the group cannot drop
-out of the tab order.
+exposed state cannot drift apart. A selection matching no chip leaves nothing
+checked, and `focusableTerm()` puts the tab stop on the first chip so the group
+cannot drop out of the tab order.
+
+**`termOptions` is a plain array, not a computed.** Knockout's `foreach` over a
+recomputed array rebuilds every chip node, and a `/select-term` response
+rewrites the per-term fee maps on its way back — so a computed drops the focus
+the arrow keys just placed, one round trip later. Each chip's fee is its own
+observable instead, which is what lets the nodes outlive a fee refresh.
 
 The focus ring is `:focus-visible`, not `:focus`: the group's single tab stop
-makes the focused chip the only thing saying where the keyboard is, while a ring
-on a clicked chip is what the suppressed outline it replaces was avoiding.
+makes the focused chip the only thing saying where the keyboard is, and a
+clicked chip still gets no ring.
 
 **Every ARIA association in the payment template is keyed on the payment code.**
 The chip group's label, the consent checkbox and the consent sentence each take

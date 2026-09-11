@@ -329,29 +329,7 @@ define([
                 }
                 return '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
             });
-            this.termOptions = ko.pureComputed(function () {
-                var surcharges = surchargeModel.displayedTermSurcharges();
-                var isLoading = !surcharges || !Object.keys(surcharges).length;
-                var amounts = terms.map(function (days) {
-                    return parseFloat(surcharges[days] || 0);
-                });
-                var allZero =
-                    !isLoading &&
-                    amounts.every(function (a) {
-                        return a < 0.005;
-                    });
-                return terms.map(function (days, i) {
-                    return {
-                        days: days,
-                        daysLabel: days + ' ' + $t('days'),
-                        isLoading: isLoading,
-                        surchargeLabel:
-                            isLoading || allZero
-                                ? ''
-                                : '+' + priceUtils.formatPrice(amounts[i], quote.getPriceFormat())
-                    };
-                });
-            });
+            this.termOptions = this.buildTermOptions(terms);
 
             this.fillCustomerData();
             this.configureFormValidation();
@@ -588,14 +566,57 @@ define([
          * @param {number} days
          * @returns {boolean}
          */
+        /**
+         * The chips' own view models: a PLAIN array, each fee an observable of
+         * its own. A `foreach` over a recomputed array rebuilds every chip node,
+         * and a rebuilt chip drops the focus the keyboard traversal put on it
+         * (ABN-554), while the fees still follow every totals change.
+         *
+         * @param {Array<number>} terms offered day counts
+         * @returns {Array<object>}
+         */
+        buildTermOptions: function (terms) {
+            var fees = ko.pureComputed(function () {
+                var surcharges = surchargeModel.displayedTermSurcharges();
+                var isLoading = !surcharges || !Object.keys(surcharges).length;
+                var amounts = terms.map(function (days) {
+                    return parseFloat(surcharges[days] || 0);
+                });
+                var allZero =
+                    !isLoading &&
+                    amounts.every(function (amount) {
+                        return amount < 0.005;
+                    });
+
+                return {
+                    isLoading: isLoading,
+                    labels: amounts.map(function (amount) {
+                        return isLoading || allZero
+                            ? ''
+                            : '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
+                    })
+                };
+            });
+
+            return terms.map(function (days, i) {
+                return {
+                    days: days,
+                    daysLabel: days + ' ' + $t('days'),
+                    isLoading: ko.pureComputed(function () {
+                        return fees().isLoading;
+                    }),
+                    surchargeLabel: ko.pureComputed(function () {
+                        return fees().labels[i];
+                    })
+                };
+            });
+        },
         isTermChecked: function (days) {
             return days === this.selectedTerm();
         },
         /**
-         * The term the chip group's single tab stop sits on. A selection the
-         * chips cannot show — one the merchant has withdrawn, or a term reverted
-         * mid-flight — matches no chip, so the first chip holds the tab stop
-         * rather than the group dropping out of the tab order entirely.
+         * The term the group's single tab stop sits on. A selection matching no
+         * chip falls back to the first, so the group cannot leave the tab order.
          *
          * @returns {number|undefined}
          */
@@ -610,12 +631,9 @@ define([
         },
         /**
          * The radio-group keyboard contract the chips' roles advertise
-         * (ABN-554): the arrow keys move the checked term and the focus
-         * together, Home and End jump to the ends, and both ends wrap.
-         *
-         * Returning true on every other key is what keeps Tab working —
-         * knockout suppresses an event's default action unless the handler
-         * says otherwise.
+         * (ABN-554). Returning true is what keeps every other key, Tab and the
+         * browser's own modifier shortcuts included, working: knockout
+         * suppresses an event's default action unless the handler says otherwise.
          *
          * @param {object} data - the bound view model, unused
          * @param {KeyboardEvent} event
@@ -629,7 +647,7 @@ define([
             var current = chips.indexOf(document.activeElement);
             var next;
 
-            if (terms.length < 2) {
+            if (terms.length < 2 || event.altKey || event.ctrlKey || event.metaKey) {
                 return true;
             }
 

@@ -190,8 +190,7 @@
 
 /* The group is one tab stop with arrow-key traversal, so the focused chip has
    to be identifiable; offset outside the chip to stay visible against the
-   selected chip's own blue fill. Keyboard only, as the suppressed outline this
-   replaces was there to keep a ring off a clicked chip. */
+   selected chip's own blue fill. Keyboard only: a clicked chip gets no ring. */
 .two-term-chip:focus-visible {
     outline: 2px solid var(--color-blue2);
     outline-offset: 2px;
