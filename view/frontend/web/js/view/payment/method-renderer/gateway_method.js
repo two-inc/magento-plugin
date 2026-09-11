@@ -307,10 +307,12 @@ define([
 
             var terms = config.availableBuyerTerms || [];
             this.availableBuyerTerms = terms;
+            this.isEndOfMonthTerms = !!config.isEndOfMonthTerms;
             this.showTermSelector = terms.length > 1;
             this.showSingleTerm = terms.length === 1;
-            this.singleTermLabel =
-                terms.length === 1 ? $t('Payment Terms %1 days').replace('%1', terms[0]) : '';
+            this.singleTermLabel = terms.length === 1 ? this.singleTermText(terms[0]) : '';
+            this.singleTermExplanation =
+                terms.length === 1 ? this.termChipExplanation(terms[0]) : '';
 
             // Empty-object termSurcharges → loading state (template shows the
             // three-dot loader). Once populated, label becomes '+€n.nn' or ''
@@ -569,6 +571,7 @@ define([
          * @returns {Array<object>}
          */
         buildTermOptions: function (terms) {
+            var self = this;
             var fees = ko.pureComputed(function () {
                 var surcharges = surchargeModel.displayedTermSurcharges();
                 var isLoading = !surcharges || !Object.keys(surcharges).length;
@@ -594,7 +597,8 @@ define([
             return terms.map(function (days, i) {
                 return {
                     days: days,
-                    daysLabel: days + ' ' + $t('days'),
+                    daysLabel: self.termChipText(days),
+                    explanation: self.termChipExplanation(days),
                     isLoading: ko.pureComputed(function () {
                         return fees().isLoading;
                     }),
@@ -603,6 +607,46 @@ define([
                     })
                 };
             });
+        },
+        /**
+         * A chip's visible text. An end-of-month term falls due that many days
+         * after the end of the month, so a bare day count states the wrong due
+         * date for it (ABN-554).
+         *
+         * @param {number} days
+         * @returns {string}
+         */
+        termChipText: function (days) {
+            return this.isEndOfMonthTerms
+                ? $t('EOM+%1').replace('%1', days)
+                : days + ' ' + $t('days');
+        },
+        /**
+         * The sole offered term's chip text, which names the term because that
+         * branch renders no heading above it.
+         *
+         * @param {number} days
+         * @returns {string}
+         */
+        singleTermText: function (days) {
+            return this.isEndOfMonthTerms
+                ? $t('Payment Terms EOM+%1').replace('%1', days)
+                : $t('Payment Terms %1 days').replace('%1', days);
+        },
+        /**
+         * What `EOM+30` means, spelled out, and empty under standard terms where
+         * the visible text already says it. Opens with the visible token: WCAG
+         * 2.5.3 requires the accessible name to contain the visible text.
+         *
+         * @param {number} days
+         * @returns {string}
+         */
+        termChipExplanation: function (days) {
+            if (!this.isEndOfMonthTerms) {
+                return '';
+            }
+
+            return $t('EOM+%1: pay %1 days after the end of the month').split('%1').join(days);
         },
         // The one definition of a selected term, so the chip's tick and its
         // aria-checked state cannot drift apart (ABN-554).
