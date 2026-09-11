@@ -42,14 +42,12 @@ define([
     var taxDisplay = ko.observable('excl');
     var isUpdating = ko.observable(false);
 
-    // The term /select-term has confirmed the server priced the quote on. Only a
-    // confirmed response moves it, so a chip showing anything else means the
-    // summary and the order can disagree and placement is refused (ABN-550).
+    // The term /select-term answered with re-collected totals for; anything else
+    // on the chips means the summary and the order can disagree (ABN-550).
     var confirmedTerm = selectedTerm();
 
-    // Sequence guard for /select-term, mirroring loadFees' own: two chip clicks
-    // whose responses land out of order would otherwise leave the summary and
-    // the confirmed term describing a selection nobody made.
+    // Sequence guard: out-of-order /select-term responses would otherwise
+    // confirm a term nobody selected.
     var selectSeq = 0;
 
     // Fetch sequence guard. Magento fires quote.getTotals() once on bootstrap
@@ -207,9 +205,8 @@ define([
     }
 
     /**
-     * Hand the chips back to the term the quote is still priced on. Reverted
-     * rather than left standing, because re-clicking the chip that already
-     * looks selected does nothing.
+     * Hand the chips back to the confirmed term: re-clicking the chip that
+     * already looks selected does nothing.
      */
     function revertSelection() {
         selectedTerm(confirmedTerm);
@@ -256,10 +253,8 @@ define([
         },
 
         /**
-         * Whether the term the chips show as selected is the one the server has
-         * confirmed it priced the quote on. Placement is refused while it is
-         * not: the order is composed on the selection, so submitting against an
-         * unconfirmed one charges a total the summary never showed (ABN-550).
+         * Whether the chips' selection is the term the server confirmed it
+         * priced the quote on. Placement is refused while it is not (ABN-550).
          */
         isTermReconciled: function () {
             return !isUpdating() && confirmedTerm === selectedTerm();
@@ -297,8 +292,7 @@ define([
                 var data = Array.isArray(response) ? response[0] : response;
                 if (!data || !data.total_segments) {
                     // Nothing confirms the term without the totals it was
-                    // collected on, so this is a failure and not a placement
-                    // silently refused with nothing the buyer can act on.
+                    // collected on.
                     revertSelection();
                     return;
                 }

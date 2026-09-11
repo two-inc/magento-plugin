@@ -1106,9 +1106,8 @@ define([
                 return;
             }
 
-            // Belt to the button binding above: the order is composed on the
-            // selection, so a placement against a term the server has not
-            // confirmed charges a total the summary never showed (ABN-550).
+            // Belt to the button binding: the order is composed on the
+            // selection (ABN-550).
             if (!this.isTermReconciled()) {
                 this.showErrorMessage(
                     $t('The selected payment term is still being applied. Please try again shortly.')
