@@ -327,7 +327,8 @@ describe('payment-term chip text', () => {
             case: 'one wrapper over both branches, so the heading cannot be in only one'
         },
         {
-            pattern: /<span class="label" data-bind="attr: \{id: termGroupLabelId\(\)\}">[\s\S]*?<!-- ko if: showTermSelector -->/,
+            pattern:
+                /<span class="label" data-bind="attr: \{id: termGroupLabelId\(\)\}">[\s\S]*?<!-- ko if: showTermSelector -->/,
             case: 'the heading ahead of the multi-term branch, not inside it'
         },
         {
