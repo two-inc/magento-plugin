@@ -173,15 +173,6 @@ describe('every close path hands focus back to the company field', () => {
         },
         {
             drive: async (ctx) => {
-                const chips = openWithChips(ctx, function () {});
-                chips[chips.length - 1].focus();
-                document.querySelector(OUTSIDE).focus();
-                await nextTick();
-            },
-            description: 'focus leaving the panel for another control'
-        },
-        {
-            drive: async (ctx) => {
                 await openWithRows(ctx);
                 dispatchMousedown(document.querySelector(ROW));
                 expect(ctx.selected).toHaveLength(1);
@@ -212,6 +203,26 @@ describe('every close path hands focus back to the company field', () => {
         // Manual entry hands the field back as a plain input and takes the
         // combobox attributes with it; every other path leaves `false`.
         expect(fieldNode().getAttribute('aria-expanded')).not.toBe('true');
+    });
+});
+
+describe('focus leaving the panel closes it and leaves the buyer where they went', () => {
+    /**
+     * The deferred close only runs once focus has settled on another control,
+     * so taking focus back would undo the buyer's own Tab (TWO-25326).
+     */
+    test('the control focus moved to keeps it', async () => {
+        const ctx = setup();
+        const chips = openWithChips(ctx, function () {});
+        chips[chips.length - 1].focus();
+        const next = document.querySelector(OUTSIDE);
+
+        next.focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(false);
+        expect(document.activeElement).toBe(next);
+        expect(fieldNode().getAttribute('aria-expanded')).toBe('false');
     });
 });
 

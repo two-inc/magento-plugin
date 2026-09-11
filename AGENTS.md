@@ -545,6 +545,10 @@ the field, a click on it, or focus arriving from anywhere else brings the popove
 straight back; a flag left set is a popover that never reopens, which is worse
 than the close that has nowhere to land.
 
+**The close-on-focus-leave path is the exception, and deliberately so.** It only
+fires once focus has settled on another control, so taking focus back would undo
+the buyer's own Tab (TWO-25326).
+
 **The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
 on close the field's PRIOR value restored exactly, which is removal when there was
 none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without

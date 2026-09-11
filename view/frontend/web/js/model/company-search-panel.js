@@ -551,7 +551,10 @@
             // — in neither case has the buyer left the control.
             const active = document.activeElement;
             if (!active || active === document.body || active === document.documentElement) return;
-            self.close();
+            // `returnFocus: false`: by the time this runs the buyer has settled
+            // focus on another control, and taking it back would undo their own
+            // Tab (TWO-25326).
+            self.close({ returnFocus: false });
         }, 0);
     };
 
@@ -764,8 +767,12 @@
      * (ABN-554). The field's own open-on-focus opener is held off for that one
      * programmatic focus alone, so the next keystroke, click or Tab arrival
      * reopens.
+     *
+     * @param {object} [options]
+     * @param {boolean} [options.returnFocus] `false` where focus has already
+     *        settled somewhere the buyer put it.
      */
-    CompanySearchPanel.prototype.close = function () {
+    CompanySearchPanel.prototype.close = function (options) {
         if (!this._panel || !this._open) return;
         this._open = false;
         releaseOpenSlot(this);
@@ -781,7 +788,7 @@
         this._items = [];
         this._activeIndex = -1;
         if (this._field) this._field.setAttribute('aria-expanded', 'false');
-        this.restoreFieldFocus();
+        if (!options || options.returnFocus !== false) this.restoreFieldFocus();
     };
 
     /**
