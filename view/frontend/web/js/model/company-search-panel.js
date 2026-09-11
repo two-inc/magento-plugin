@@ -1037,8 +1037,8 @@
             self._chips.appendChild(button);
         });
         this._chips.classList.toggle(HIDDEN_CLASS, actionable === 0);
-        // The rebuild deletes the chip the buyer activated, and focus falls to
-        // the body unless the company field takes it (ABN-561).
+        // The rebuild deletes the chip the buyer activated, so without this
+        // focus falls to the body (ABN-561).
         if (focusedChip && !focusedChip.isConnected) this.restoreFieldFocus();
     };
 
