@@ -106,15 +106,15 @@ function boot(surchargeType) {
 
 /**
  * The fields Magento's admin validator would validate on submit, mirroring
- * mage/backend/validation.js `Elements()`: everything in the form, less the
- * ignore list, less anything carrying no rule.
+ * mage/backend/validation.js `Elements()`. Rules reach a field either through
+ * `data-validate` or through a `validate-*` / `required-entry` class.
  */
 function validatedFieldIds() {
     return $('#config-edit-form')
         .find('input, select, textarea')
-        .not(':submit, :reset, :image, :disabled')
+        .not(':submit, :reset, :image, [disabled]')
         .not(ADMIN_IGNORE)
-        .filter('[data-validate]')
+        .filter('[data-validate], [class*="validate-"], .required-entry')
         .map(function () { return this.id; })
         .get();
 }

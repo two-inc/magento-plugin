@@ -172,6 +172,8 @@ class SurchargeGrid extends Value
             $this->assertNoStaleZeroLimits(array_keys($gridValues), $scope, $scopeId);
         }
 
+        $storedCells = $this->storedSurchargeCells($scope, $scopeId);
+
         foreach ($gridValues as $days => $fields) {
             if (!is_array($fields)) {
                 continue;
@@ -198,18 +200,27 @@ class SurchargeGrid extends Value
                 // the JS pass; normalise server-side too.
                 $value = str_replace(',', '.', $value);
 
-                // Every ceiling is skipped while its own column is hidden, for the
-                // reason the limit rule already records: the cell posts a stored
-                // value the merchant cannot see, and the fixed cap is derived from
-                // an FX-converted merchant setting that can fall below a value that
-                // was legal when it was entered.
-                $columnVisible = match ($type) {
-                    'fixed' => $fixedColumnVisible,
-                    'percentage', 'limit' => $limitColumnVisible,
-                    default => true,
-                };
+                // The Limit column rides with the percentage it caps.
+                $columnVisible = $type === 'fixed' ? $fixedColumnVisible : $limitColumnVisible;
 
-                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage, $columnVisible);
+                // A hidden cell is excused its ceiling only while it posts back
+                // what is already stored — the case the limit rule above
+                // describes, and the case of a merchant cap that has since
+                // fallen below an amount that was legal when it was entered. A
+                // CHANGED value is an assertion, and a direct POST
+                // (app:config:import, curl) can make one on a cell no screen
+                // ever showed, so it is judged whether or not it shows.
+                $unchanged = array_key_exists($path, $storedCells)
+                    && $this->sameAmount((string)$storedCells[$path], $value);
+
+                $this->validateValue(
+                    $type,
+                    $value,
+                    $days,
+                    $maxFixed,
+                    $maxPercentage,
+                    $columnVisible || !$unchanged
+                );
 
                 $this->configWriter->save($path, $value, $scope, $scopeId);
             }
@@ -270,9 +281,41 @@ class SurchargeGrid extends Value
     }
 
     /**
+     * Stored surcharge cells at the scope being saved, as path => value.
+     *
+     * @return array<string, string>
+     */
+    private function storedSurchargeCells(string $scope, int $scopeId): array
+    {
+        $conn = $this->resourceConnection->getConnection();
+
+        return $conn->fetchPairs(
+            $conn->select()
+                ->from($conn->getTableName('core_config_data'), ['path', 'value'])
+                ->where('scope = ?', $scope)
+                ->where('scope_id = ?', $scopeId)
+                ->where('path LIKE ?', 'payment/' . $this->methodCode() . '/surcharge%')
+                ->where('path REGEXP ?', 'surcharge_[0-9]+_(fixed|percentage|limit)$')
+        );
+    }
+
+    /**
+     * Whether two cell values are the same number, decimal separator and
+     * trailing zeroes aside.
+     */
+    private function sameAmount(string $stored, string $posted): bool
+    {
+        $stored = str_replace(',', '.', $stored);
+        if (!is_numeric($stored) || !is_numeric($posted)) {
+            return $stored === $posted;
+        }
+
+        return (string)(float)$stored === (string)(float)$posted;
+    }
+
+    /**
      * Whether the surcharge type being saved carries a fixed component, i.e.
-     * whether the grid's Fixed column is visible. Resolved exactly as
-     * savedSurchargeTypeHasPercentage() resolves its own.
+     * whether the grid's Fixed column is visible.
      *
      * @param array<string, mixed> $groups
      */

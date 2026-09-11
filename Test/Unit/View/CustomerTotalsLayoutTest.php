@@ -116,9 +116,8 @@ class CustomerTotalsLayoutTest extends TestCase
     }
 
     /**
-     * `sales_order_invoice_view` is an adminhtml-only handle. A frontend file
-     * under that name is never loaded, so it reads as coverage while rendering
-     * nothing.
+     * `sales_order_invoice_view` is an adminhtml-only handle, so a frontend file
+     * under that name reads as coverage while rendering nothing.
      */
     public function testNoFrontendLayoutUsesAnAdminOnlyHandleName(): void
     {

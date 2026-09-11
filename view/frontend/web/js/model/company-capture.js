@@ -246,7 +246,7 @@ define([
      *
      * @returns {Object<string, string>}
      */
-    function sharedPhrases() {
+    function buildSharedPhrases() {
         return {
             'Company Number': $t('Company Number'),
             'Company search is unavailable right now. Please try again shortly.':
@@ -259,10 +259,14 @@ define([
         };
     }
 
-    function translateSharedPhrase(text) {
-        const phrases = sharedPhrases();
+    let sharedPhraseCache = null;
 
-        return Object.prototype.hasOwnProperty.call(phrases, text) ? phrases[text] : $t(text);
+    function translateSharedPhrase(text) {
+        sharedPhraseCache = sharedPhraseCache || buildSharedPhrases();
+
+        return Object.prototype.hasOwnProperty.call(sharedPhraseCache, text)
+            ? sharedPhraseCache[text]
+            : $t(text);
     }
 
     /**

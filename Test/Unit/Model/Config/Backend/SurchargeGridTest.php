@@ -495,14 +495,14 @@ class SurchargeGridTest extends TestCase
      * are never reached.
      *
      * @param array<int, array<string, string>> $grid
-     * @param array<string, string> $storedLimitRows stored surcharge_*_limit
-     *        rows at this scope, as the aggregate stale-zero scan reads them
+     * @param array<string, string> $storedCells stored surcharge cell rows at
+     *        this scope, as the stale-zero scan and the unchanged-value check read them
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
     private function runProductionAfterSave(
         string $postedType,
         array $grid,
-        array $storedLimitRows = [],
+        array $storedCells = [],
         ?array $surchargeLimit = null
     ): array {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
@@ -541,7 +541,7 @@ class SurchargeGridTest extends TestCase
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
         $inject(SurchargeGrid::class, 'settingsProvider', $settings);
         $inject(SurchargeGrid::class, 'configWriter', $writer);
-        $inject(SurchargeGrid::class, 'resourceConnection', $this->makeResourceConnection($storedLimitRows));
+        $inject(SurchargeGrid::class, 'resourceConnection', $this->makeResourceConnection($storedCells));
 
         $model->setData('scope', 'default');
         $model->setData('scope_id', 0);
@@ -573,9 +573,11 @@ class SurchargeGridTest extends TestCase
      */
     public function testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule(): void
     {
-        $saved = $this->runProductionAfterSave('fixed', [
-            30 => ['fixed' => '10', 'percentage' => '0', 'limit' => '0'],
-        ]);
+        $saved = $this->runProductionAfterSave(
+            'fixed',
+            [30 => ['fixed' => '10', 'percentage' => '0', 'limit' => '0']],
+            ['payment/two_payment/surcharge_30_limit' => '0']
+        );
 
         $this->assertContains(
             ['payment/two_payment/surcharge_30_limit', '0'],
@@ -601,21 +603,38 @@ class SurchargeGridTest extends TestCase
     }
 
     /**
-     * A fixed amount over the merchant's cap must not refuse the save while the
-     * Fixed column is hidden. The cap is FX-converted from a merchant setting
-     * that can fall below a value that was legal when it was entered, so this
-     * is reachable without anyone editing the cell (ABN-558).
+     * A stored fixed amount now over the merchant's cap must not refuse the
+     * save while the Fixed column is hidden: the cap is FX-converted from a
+     * merchant setting that can fall below a value that was legal when it was
+     * entered, and the cell is on no screen (ABN-558).
      */
     public function testProductionAfterSaveSkipsTheFixedCeilingWhileThatColumnIsHidden(): void
     {
         $saved = $this->runProductionAfterSave(
             'percentage',
             [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
-            [],
+            ['payment/two_payment/surcharge_30_fixed' => '999.00'],
             ['amount' => 25, 'currency' => 'EUR']
         );
 
         $this->assertContains(['payment/two_payment/surcharge_30_fixed', '999'], $saved);
+    }
+
+    /**
+     * The excuse covers a value the merchant cannot reach, not a new one. A
+     * direct POST can set an over-cap amount on a hidden cell, and storing that
+     * unvalidated would charge buyers over the merchant's cap.
+     */
+    public function testProductionAfterSaveRefusesAChangedOverCapAmountOnAHiddenColumn(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('fixed amount: maximum is 25');
+        $this->runProductionAfterSave(
+            'none',
+            [30 => ['fixed' => '999']],
+            ['payment/two_payment/surcharge_30_fixed' => '10'],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
     }
 
     /**
@@ -641,7 +660,8 @@ class SurchargeGridTest extends TestCase
     {
         $saved = $this->runProductionAfterSave(
             'fixed',
-            [30 => ['fixed' => '10', 'percentage' => '101']]
+            [30 => ['fixed' => '10', 'percentage' => '101']],
+            ['payment/two_payment/surcharge_30_percentage' => '101']
         );
 
         $this->assertContains(['payment/two_payment/surcharge_30_percentage', '101'], $saved);

@@ -18,24 +18,16 @@ class SharedCapturePhraseHarvestTest extends TestCase
 {
     private const LOCALES = ['nb_NO', 'nl_NL', 'sv_SE'];
 
-    /**
-     * Modules that ask for a phrase by name rather than translating it.
-     */
+    /** Modules that ask for a phrase by name rather than translating it. */
     private const SEAM_MODULES = [
         'view/frontend/web/js/model/company-capture-component.js',
         'view/frontend/web/js/model/company-search-panel.js',
     ];
 
-    /**
-     * The Magento host that answers them — and the only file in that chain
-     * Magento's scanner can harvest a phrase from.
-     */
+    /** The only file in that chain Magento's scanner can harvest a phrase from. */
     private const HOST_MODULE = 'view/frontend/web/js/model/company-capture.js';
 
-    /**
-     * Every phrase the picker renders through the seam, as of ABN-555. Guards
-     * the extraction below against silently matching nothing.
-     */
+    /** Guards the extraction below against silently matching nothing. */
     private const KNOWN_SEAM_PHRASE_COUNT = 7;
 
     public function testTheHostAnswersTheSeamFromThatDictionary(): void
