@@ -148,9 +148,9 @@ describe('the manual-entry affordance is a real, native button', () => {
 
         expect(source).toContain("this.translate('" + MSGID + "')");
         expect(source).not.toMatch(/<button[^>]*>\$\{/);
-        // Luma's `translate` is the catalogue, so the msgid above is a real
+        // Luma's adapter answers that msgid from the catalogue, so it is a real
         // lookup rather than a string that only looks translated.
-        expect(readSource(ADAPTER_PATH)).toContain('translate: $t');
+        expect(readSource(ADAPTER_PATH)).toContain("$t('" + MSGID + "')");
     });
 
     test.each(['nb_NO', 'nl_NL', 'sv_SE'])('the label is translated in %s', (locale) => {
