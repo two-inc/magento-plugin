@@ -43,27 +43,32 @@ class TableNameResolutionTest extends TestCase
     }
 
     /**
+     * Directories that hold no module source. `.worktrees` is pruned rather
+     * than filtered because it holds whole sibling checkouts.
+     */
+    private const SKIP_DIRS = ['vendor', 'node_modules', '.worktrees', '.git', 'Test', 'e2e'];
+
+    /**
      * @return array<string, string> repo-relative path => source
      */
     private function modulePhpFiles(): array
     {
         $root = dirname(__DIR__, 3);
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)
+        $directories = new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS);
+        $pruned = new \RecursiveCallbackFilterIterator(
+            $directories,
+            static function (\SplFileInfo $file): bool {
+                return !$file->isDir() || !in_array($file->getFilename(), self::SKIP_DIRS, true);
+            }
         );
 
         $files = [];
-        foreach ($iterator as $file) {
+        foreach (new \RecursiveIteratorIterator($pruned) as $file) {
             /** @var \SplFileInfo $file */
-            $relative = str_replace($root . '/', '', $file->getPathname());
-            if ($file->getExtension() !== 'php'
-                || str_starts_with($relative, 'vendor/')
-                || str_starts_with($relative, 'node_modules/')
-                || str_starts_with($relative, '.worktrees/')
-                || str_starts_with($relative, 'Test/')
-            ) {
+            if ($file->getExtension() !== 'php') {
                 continue;
             }
+            $relative = str_replace($root . '/', '', $file->getPathname());
             $files[$relative] = (string) file_get_contents($file->getPathname());
         }
 
