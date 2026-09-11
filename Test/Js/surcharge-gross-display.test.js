@@ -48,7 +48,8 @@ function loadModel() {
             getQuoteId: function () { return 42; },
             getTotals: function () {
                 return observable({ grand_total: 1000, total_segments: [] });
-            }
+            },
+            setTotals: function () {}
         })
     });
 
@@ -108,6 +109,8 @@ describe('surcharge model term previews', function () {
         captured.get(Object.assign({ tax_display: 'excl' }, RESPONSE));
         model.recalculateTotals(60);
         captured.post({
+            grand_total: 1200,
+            total_segments: [{ code: 'two_surcharge', title: 'fee', value: 200 }],
             term_surcharges: [{ days: 60, net: 200, gross: 242 }],
             tax_display: 'incl'
         });
