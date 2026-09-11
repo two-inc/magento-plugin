@@ -580,10 +580,16 @@ another control keeps focus where they put it.
 Handing the popup over to another capture launches that capture's signup, and
 that launch blurs its own chip — so the abandoning capture's close watcher,
 polling 300ms later, sees exactly the unplaced focus it reads as its own to
-reclaim. The handover therefore records whether the other capture's launch
-actually took focus off the chip, and the close watcher passes that on as
-`returnFocus`. A handover whose chip opened nothing leaves the buyer on that
-chip and is not suppressed.
+reclaim. The handover therefore records whether focus was still on the chip once
+the other capture's chip handler had run, and the close watcher passes that on as
+`returnFocus`.
+
+That test cannot separate a launch blurring the chip from the receiving capture
+re-rendering its own chip row out from under it, which its chip handler does
+before it decides whether to launch anything. So a handover to a capture that
+adopts an autofilled sole trader, or whose popup is blocked, also suppresses the
+reclaim and leaves the buyer with focus unplaced — the same end state as before
+ABN-561, and the adopt path's own gap, which is out of scope here.
 
 The reclaim decision is read BEFORE returning to registered mode, which can
 remount the panel and so unplace focus the buyer had put somewhere themselves.

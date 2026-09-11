@@ -1139,7 +1139,7 @@
         if (this._identity.soleTraderAdopted()) return;
         // Read before registeredMode(), which can remount the panel and so
         // unplace focus the buyer had put somewhere.
-        var reclaimable = focusIsUnplaced();
+        const reclaimable = focusIsUnplaced();
         this.registeredMode();
         if (options && options.returnFocus === false) return;
         if (this._panel && reclaimable) this._panel.restoreFieldFocus();

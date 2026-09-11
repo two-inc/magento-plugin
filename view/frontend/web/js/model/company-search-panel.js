@@ -787,8 +787,9 @@
 
     /**
      * Put focus back on the company field, leaving the panel's open state as it
-     * was: the field sits OUTSIDE the panel node, so arriving on it would
-     * otherwise read as leaving the control.
+     * was. `_closing` holds off the field's own focus opener, and the pending
+     * focus-out close is cancelled because the field sits OUTSIDE the panel
+     * node, so arriving on it otherwise reads as leaving the control.
      */
     CompanySearchPanel.prototype.restoreFieldFocus = function () {
         if (!this._field) return;
