@@ -170,11 +170,11 @@ describe('the term chips are a radio group, not a row of buttons (ABN-554)', () 
     test.each([
         {
             pattern: /<!--\s*ko if:\s*isLoading\(\)\s*-->/,
-            case: "the loading dots call the chip's own computed"
+            case: "the loading dots call the chip's own computed, as the fee label must"
         },
         {
             pattern: /<!--\s*ko if:\s*!isLoading\(\)\s*&&\s*surchargeLabel\(\)\s*-->/,
-            case: 'so does the fee label — a bare computed in an `if` is always truthy'
+            case: 'the fee label negates that computed, so leaving it uncalled is always false'
         }
     ])('the chips read their fees as computeds: $case', ({ pattern }) => {
         expect(template()).toMatch(pattern);
@@ -408,7 +408,7 @@ describe('the chips outlive a fee refresh (ABN-554)', () => {
         };
     }
 
-    test('a fee refresh updates the labels without replacing the chip view models', () => {
+    test('a fee refresh updates the labels in place', () => {
         const { options, publish } = loadWithFees();
 
         // A plain array is the whole mechanism: knockout cannot recompute it,

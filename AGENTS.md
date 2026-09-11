@@ -678,8 +678,9 @@ recomputed array rebuilds every chip node, and a `/select-term` response
 rewrites the per-term fee maps on its way back — so a computed drops the focus
 the arrow keys just placed, one round trip later. Each chip reads its fee
 through a computed of its own instead, which is what lets the nodes outlive a
-refresh — and the template calls those, since a containerless `if` over a bare
-computed reads as permanently true.
+refresh. The template CALLS those computeds: a binding negating one — the fee
+label's `!isLoading()` — negates the function itself and is permanently false
+without the call, where a binding handed the bare value unwraps it.
 
 The focus ring is `:focus-visible`, not `:focus`: the group's single tab stop
 makes the focused chip the only thing saying where the keyboard is, and a

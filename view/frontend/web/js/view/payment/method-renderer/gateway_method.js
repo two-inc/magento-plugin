@@ -561,9 +561,9 @@ define([
         /**
          * The chips' own view models: a PLAIN array, each chip reading its fee
          * through a computed of its own. A `foreach` over a recomputed array
-         * rebuilds every chip node,
-         * and a rebuilt chip drops the focus the keyboard traversal put on it
-         * (ABN-554), while the fees still follow every totals change.
+         * rebuilds every chip node, and a rebuilt chip drops the focus the
+         * keyboard traversal put on it (ABN-554), while the fees still have to
+         * follow every totals change.
          *
          * @param {Array<number>} terms offered day counts
          * @returns {Array<object>}
