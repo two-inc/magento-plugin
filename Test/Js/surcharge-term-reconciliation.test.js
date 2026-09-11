@@ -94,6 +94,9 @@ function settle(ctx, index, outcome, net) {
     const post = ctx.posts[index];
     if (outcome === 'failed') {
         post.fail({}, 'error', 'Internal Server Error');
+    } else if (outcome === 'empty') {
+        // A 200 the server answered without the totals it re-collected.
+        post.done({ term_surcharges: FEES.term_surcharges });
     } else {
         post.done(settledResponse(net));
     }
@@ -113,7 +116,8 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         ['an untouched checkout is reconciled: the server rendered the summary', 'none', null, true],
         ['a chip click in flight is not reconciled — nothing has confirmed it', 'pending', null, false],
         ['a confirmed chip click is reconciled', 'settled', 200, true],
-        ['a refused chip click reverts, so the chips and the quote agree again', 'failed', null, true]
+        ['a refused chip click reverts, so the chips and the quote agree again', 'failed', null, true],
+        ['a 200 carrying no totals reverts as well — nothing confirmed the term', 'empty', null, true]
     ])('%s', function (because, outcome, net, expected) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
@@ -125,24 +129,17 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         expect(ctx.model.isTermReconciled()).toBe(expected);
     });
 
-    it('a response carrying no totals does not confirm the term', function () {
+    it.each([
+        ['a refused chip click', 'failed'],
+        ['a 200 that carried no re-collected totals', 'empty']
+    ])('%s puts the chips back on the confirmed term and says so', function (because, outcome) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
         ctx.model.selectTerm(90);
-        ctx.posts[0].done({ term_surcharges: FEES.term_surcharges });
-        ctx.posts[0].always();
-
-        expect(ctx.model.selectedTerm()).toBe(90);
-        expect(ctx.model.isTermReconciled()).toBe(false);
-    });
-
-    it('a refused chip click puts the chips back on the confirmed term and says so', function () {
-        const ctx = loadModel();
-        ctx.captured.get(FEES);
-        ctx.model.selectTerm(90);
-        settle(ctx, 0, 'failed');
+        settle(ctx, 0, outcome);
 
         expect(ctx.model.selectedTerm()).toBe(30);
+        expect(ctx.model.isTermReconciled()).toBe(true);
         expect(ctx.captured.errors).toEqual(['Could not update payment term. Please try again.']);
     });
 

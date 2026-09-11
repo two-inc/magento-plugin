@@ -206,6 +206,18 @@ define([
         loadFees();
     }
 
+    /**
+     * Hand the chips back to the term the quote is still priced on. Reverted
+     * rather than left standing, because re-clicking the chip that already
+     * looks selected does nothing.
+     */
+    function revertSelection() {
+        selectedTerm(confirmedTerm);
+        messageList.addErrorMessage({
+            message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
+        });
+    }
+
     var surchargeModel = {
         selectedTerm: selectedTerm,
         isUpdating: isUpdating,
@@ -283,47 +295,42 @@ define([
                     return;
                 }
                 var data = Array.isArray(response) ? response[0] : response;
-                if (data && data.total_segments) {
-                    var currentTotals = quote.getTotals()();
-                    if (currentTotals) {
-                        currentTotals.grand_total = data.grand_total;
-                        currentTotals.base_grand_total = data.base_grand_total;
-                        currentTotals.tax_amount = data.tax_amount;
-                        currentTotals.total_segments = data.total_segments;
-                        quote.setTotals(currentTotals);
-                        // Record the post-/select-term state so loadFees
-                        // doesn't refetch on the totals re-emit that
-                        // setTotals just triggered.
-                        lastTotalsSnapshot = snapshotTotals(currentTotals);
-                    }
+                if (!data || !data.total_segments) {
+                    // Nothing confirms the term without the totals it was
+                    // collected on, so this is a failure and not a placement
+                    // silently refused with nothing the buyer can act on.
+                    revertSelection();
+                    return;
+                }
+                var currentTotals = quote.getTotals()();
+                if (currentTotals) {
+                    currentTotals.grand_total = data.grand_total;
+                    currentTotals.base_grand_total = data.base_grand_total;
+                    currentTotals.tax_amount = data.tax_amount;
+                    currentTotals.total_segments = data.total_segments;
+                    quote.setTotals(currentTotals);
+                    // Record the post-/select-term state so loadFees doesn't
+                    // refetch on the totals re-emit setTotals just triggered.
+                    lastTotalsSnapshot = snapshotTotals(currentTotals);
                 }
 
-                if (data && data.tax_display) {
+                if (data.tax_display) {
                     taxDisplay(data.tax_display);
                 }
-                if (data && data.term_surcharges) {
+                if (data.term_surcharges) {
                     // Bump fetchSeq so any in-flight loadFees can't clobber
                     // the authoritative values returned by /select-term.
                     fetchSeq++;
                     applyTermSurcharges(data.term_surcharges);
                 }
 
-                if (data && data.total_segments) {
-                    confirmedTerm = days;
-                }
+                confirmedTerm = days;
             }).fail(function (xhr, status, err) {
                 if (mySeq !== selectSeq) {
                     return;
                 }
-                // The chips go back to the term the quote is still priced on
-                // rather than claim a selection the order will not carry.
-                // Reverted rather than left standing, because re-clicking the
-                // chip the buyer already appears to have selected does nothing.
                 console.warn('Two_Gateway: select-term failed', status, err);
-                selectedTerm(confirmedTerm);
-                messageList.addErrorMessage({
-                    message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
-                });
+                revertSelection();
             }).always(function () {
                 if (mySeq === selectSeq) {
                     isUpdating(false);

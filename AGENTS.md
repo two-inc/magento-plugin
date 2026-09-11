@@ -619,8 +619,10 @@ chip clicks whose responses land out of order would otherwise write the
 superseded term's segments into the summary and confirm a term nobody selected.
 
 A `/select-term` the server did not take reverts the chips to the confirmed
-term and says so. Reverted rather than left standing, because re-clicking the
-chip the buyer already appears to have selected does nothing.
+term and says so. A 200 that carried no re-collected total segments counts as
+not taken: nothing confirms the term without them, so leaving the selection
+standing would refuse placement with no message and nothing to click — the
+chip the buyer appears to have selected already is a no-op.
 
 ## A popup window is in no tab listing
 
