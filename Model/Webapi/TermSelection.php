@@ -176,17 +176,20 @@ class TermSelection implements TermSelectionInterface
      */
     private function restoreTerm($quote, $previousTerm, bool $repriced): void
     {
-        $this->checkoutSession->setTwoSelectedTerm($previousTerm);
         if (!$repriced) {
+            $this->checkoutSession->setTwoSelectedTerm($previousTerm);
             return;
         }
 
         try {
             $quote->collectTotals();
             $this->cartRepository->save($quote);
+            $this->checkoutSession->setTwoSelectedTerm($previousTerm);
         } catch (\Throwable $error) {
-            // The saved totals still price the staged term, and only the next
-            // successful collectTotals can settle that.
+            // The session is deliberately left on the staged term, which is
+            // what the saved quote prices: a session disagreeing with the quote
+            // lets the order carry one term's fee against another, while this
+            // way placement refuses the disagreement it can see.
             $this->logRepository->addErrorLog(
                 'TermSelectionRollback',
                 sprintf('Quote totals could not be restored to the previous term: %s', $error->getMessage())

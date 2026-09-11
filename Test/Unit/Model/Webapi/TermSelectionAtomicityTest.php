@@ -66,10 +66,11 @@ class TermSelectionAtomicityTest extends TestCase
 
     /**
      * Given the repricing back fails too; When selectTerm throws; Then the
-     * quote is left pricing a term the session no longer holds, and that is
-     * logged rather than swallowed.
+     * session is left on the term the saved quote prices, so placement refuses
+     * the disagreement rather than charging one term's fee against another, and
+     * the failure is logged rather than swallowed.
      */
-    public function testARestoreThatAlsoFailsIsLogged(): void
+    public function testARestoreThatAlsoFailsLeavesTheSessionOnTheSavedTerm(): void
     {
         $session = new CheckoutSession();
         $session->setTwoSelectedTerm(30);
@@ -87,7 +88,7 @@ class TermSelectionAtomicityTest extends TestCase
             $subject->selectTerm('cart-1', 60);
             $this->fail('selectTerm was expected to throw');
         } catch (RuntimeException $error) {
-            $this->assertSame(30, (int)$session->getTwoSelectedTerm());
+            $this->assertSame(60, (int)$session->getTwoSelectedTerm());
             $this->assertSame(['TermSelectionRollback'], $log->errors);
         }
     }

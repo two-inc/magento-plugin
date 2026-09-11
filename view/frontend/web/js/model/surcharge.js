@@ -375,7 +375,12 @@ define([
             }).always(function () {
                 var next = pendingTerm;
                 pendingTerm = null;
-                isUpdating(false);
+                // Guarded apart from the flush below: this write re-renders the
+                // chip bindings, and a throw out of one must not strand the
+                // queued term.
+                guarded(function () {
+                    isUpdating(false);
+                });
                 guarded(function () {
                     // A refused call reverted the chips, so its queue is stale.
                     if (next !== null && next === selectedTerm() && next !== confirmedTerm()) {

@@ -633,7 +633,14 @@ what charges a term nobody selected.
 **The chips say while a call is in flight that the term is being applied.** The
 button is disabled by then, so the click-time message cannot be reached, and a
 primary button greying out on its own for up to the request timeout reads as a
-broken checkout.
+broken checkout. The status node is rendered unconditionally and its text
+toggled, because a live region created together with its text announces nothing.
+
+Server side, `Model/Webapi/TermSelection.php` stages the session term. If the
+repricing back after a failure fails in turn, the session is deliberately LEFT on
+the staged term — that is what the saved quote prices, and a session disagreeing
+with the quote is what lets an order carry one term's fee against another, while
+agreeing means placement refuses the disagreement it can see.
 
 The call carries a `timeout`. Without one a hung request holds `isUpdating()`
 true for the rest of the session, and with it the Place Order button disabled.

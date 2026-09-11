@@ -210,8 +210,6 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         settle(ctx, 0, 'settled', 200);
 
         expect(ctx.model.isUpdating()).toBe(false);
-        // The server answered, so it holds 90 — reverting the chips against it
-        // is what charges a term nobody selected.
         expect(ctx.model.selectedTerm()).toBe(90);
         expect(ctx.model.isTermReconciled()).toBe(true);
 
@@ -232,6 +230,24 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         settle(ctx, 0, 'settled', 200);
 
         expect(ctx.captured.getCalls).toBe(feeCallsBefore);
+    });
+
+    it('a chip binding throwing on the updating flag does not strand the queue', function () {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        let thrown = false;
+        ctx.model.isUpdating.subscribe(function (updating) {
+            if (updating || thrown) return;
+            thrown = true;
+            throw new Error('a chip binding');
+        });
+        ctx.model.selectTerm(90);
+        ctx.model.selectTerm(60);
+
+        settle(ctx, 0, 'settled', 200);
+
+        expect(thrown).toBe(true);
+        expect(ctx.posts).toHaveLength(2);
     });
 
     it('a totals change dropped during a chip click is re-evaluated after it', function () {
@@ -325,8 +341,8 @@ describe('the chips say why the button is disabled (ABN-550)', function () {
             'utf8'
         );
 
-        expect(template).toContain('<!-- ko if: isTermUpdating() -->');
-        expect(template).toContain('Applying the selected payment term');
+        expect(template).toContain('isTermUpdating()');
+        expect(template).toContain('Applying the selected payment term…');
     });
 });
 
