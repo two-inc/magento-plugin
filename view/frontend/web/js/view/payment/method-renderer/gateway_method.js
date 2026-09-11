@@ -667,7 +667,7 @@ define([
                 ? $t('EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge')
                 : $t('EOM+%1: pay %1 days after the end of the month');
 
-            return template.split('%1').join(days).replace('%2', feeText);
+            return template.split('%1').join(days).split('%2').join(feeText);
         },
         // The one definition of a selected term, so the chip's tick and its
         // aria-checked state cannot drift apart (ABN-554).
