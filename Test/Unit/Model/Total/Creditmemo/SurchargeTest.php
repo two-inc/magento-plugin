@@ -23,7 +23,7 @@ use Two\Gateway\Model\Total\Creditmemo\Surcharge;
  * "The most money available to refund is ...". This collector must add only
  * the surcharge NET to the grand total and must not touch tax_amount.
  *
- * Full proportional refund of production order #2000000014:
+ * Full proportional refund of a fully invoiced order:
  *   net 58.09, VAT 21.5% = 12.48935.
  *   Native credit-memo pre-state: grand 1071.48935, tax 12.48935.
  *   Correct result: grand 1129.57935, tax 12.48935.
@@ -235,5 +235,110 @@ class SurchargeTest extends TestCase
             0.0001,
             'No override => proportional default => zero tax delta.'
         );
+    }
+
+    /**
+     * A memo raised after an earlier one refunded part of the surcharge.
+     *
+     * The order: merchandise 74.00 + 14.80 VAT, surcharge 13.00 + 2.60 VAT at
+     * 20%, fully invoiced, so the order's invoiced tax is 17.40. An earlier
+     * offline memo refunded 1.01 of surcharge net and its 0.20 of VAT and
+     * nothing else.
+     *
+     * Core hands the remaining memo the order's invoiced tax less the tax
+     * already refunded and puts the merchandise share on the memo's item rows,
+     * so the surcharge VAT this collector may still adjust is the VAT on the
+     * surcharge that is left — not on the whole order surcharge (ABN-560).
+     *
+     * @dataProvider priorRefundCases
+     */
+    public function testTaxBaselineIsTheSurchargeStillRefundable(
+        float $priorSurchargeRefunded,
+        float $priorTaxRefunded,
+        ?float $override,
+        float $expectedItemTax,
+        float $expectedTaxTotal,
+        float $expectedGrandTotal,
+        string $case
+    ): void {
+        $order = new Order();
+        $order->setData('two_surcharge_amount', 13.0);
+        $order->setData('base_two_surcharge_amount', 13.0);
+        $order->setData('two_surcharge_refunded', $priorSurchargeRefunded);
+        $order->setData('base_two_surcharge_refunded', $priorSurchargeRefunded);
+        $order->setData('two_surcharge_tax_rate', 20.0);
+        $order->setData('two_surcharge_description', 'Surcharge');
+        $order->setData('subtotal', 74.0);
+        $order->setData('tax_invoiced', 17.4);
+        $order->setData('tax_refunded', $priorTaxRefunded);
+        $order->setData('base_to_order_rate', 1.0);
+
+        // Core's own figures, per Magento\Sales\Model\Order\Creditmemo\
+        // Total\Tax: a memo taking every remaining item gets the order's
+        // invoiced tax less the tax already refunded, and each item row keeps
+        // its own share of it.
+        $nativeTax = 17.4 - $priorTaxRefunded;
+        $item = new \Magento\Framework\DataObject();
+        $item->setTaxAmount(14.8);
+
+        $creditmemo = new Creditmemo();
+        $creditmemo->setOrder($order);
+        $creditmemo->setData('subtotal', 74.0);
+        $creditmemo->setData('all_items', [$item]);
+        $creditmemo->setData('shipping_tax_amount', 0.0);
+        $creditmemo->setData('tax_amount', $nativeTax);
+        $creditmemo->setData('base_tax_amount', $nativeTax);
+        $creditmemo->setData('grand_total', 74.0 + $nativeTax);
+        $creditmemo->setData('base_grand_total', 74.0 + $nativeTax);
+        if ($override !== null) {
+            $creditmemo->setData('two_surcharge_amount', $override);
+        }
+
+        (new Surcharge())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta(
+            $expectedItemTax,
+            (float)$item->getTaxAmount(),
+            0.0001,
+            $case . ': the merchandise row tax is core\'s and must be left alone.'
+        );
+        $this->assertEqualsWithDelta(
+            $expectedTaxTotal,
+            (float)$creditmemo->getTaxAmount(),
+            0.0001,
+            $case . ': the refund tax total must agree with the memo\'s own rows.'
+        );
+        $this->assertEqualsWithDelta(
+            $expectedGrandTotal,
+            (float)$creditmemo->getGrandTotal(),
+            0.0001,
+            $case . ': the grand total must carry that same tax.'
+        );
+
+        // What Total\Creditmemo\OtherCharges reads as the VAT core granted a
+        // fee no line itemizes, and refuses the refund over when negative.
+        $unattributed = (float)$creditmemo->getTaxAmount()
+            - (float)$item->getTaxAmount()
+            - (float)$creditmemo->getTwoSurchargeTaxAmount();
+        $this->assertGreaterThan(
+            -0.005,
+            $unattributed,
+            $case . ': no tax shortfall against the memo\'s own lines.'
+        );
+    }
+
+    /**
+     * @return array<int, array<int, float|string|null>>
+     */
+    public static function priorRefundCases(): array
+    {
+        return [
+            // prior net, prior tax, override, item tax, tax total, grand total
+            [0.0, 0.0, null, 14.8, 17.4, 104.4, 'nothing refunded yet, whole surcharge prorated'],
+            [1.01, 0.2, null, 14.8, 17.2, 103.19, 'remaining surcharge prorated after a fee-only memo'],
+            [1.01, 0.2, 0.0, 14.8, 14.802, 88.802, 'merchandise isolated, surcharge refund zeroed'],
+            [1.01, 0.2, 11.99, 14.8, 17.2, 103.19, 'the whole remaining surcharge typed in'],
+            [1.01, 0.2, 6.0, 14.8, 16.002, 96.002, 'part of the remaining surcharge typed in'],
+        ];
     }
 }

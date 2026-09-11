@@ -46,16 +46,15 @@ class Surcharge extends AbstractTotal
         $baseAlreadyRefunded = (float)$order->getBaseTwoSurchargeRefunded();
         $baseMaxRefundable = $baseOrderSurcharge - $baseAlreadyRefunded;
 
-        // The proportional default is the surcharge net Magento's native tax
-        // collector has ALREADY refunded VAT for on this credit memo (it
-        // prorates order tax by subtotal). Compute it regardless of any
-        // override so we can reconcile the tax line to what's actually
-        // refunded. Keep 6dp internally (a 2dp round here previously lost up
-        // to half a cent and defeated the Total\Surcharge precision fix).
+        // The surcharge net Magento's native tax collector has ALREADY refunded
+        // VAT for on this memo, capped by what the surcharge has left: core
+        // offers the order's invoiced tax less what earlier memos refunded, so
+        // an uncapped baseline claims VAT core no longer offers and understates
+        // this memo's tax (ABN-560). 6dp deliberately — 2dp loses half a cent.
         $orderSubtotal = (float)$order->getSubtotal();
         $cmSubtotal = (float)$creditmemo->getSubtotal();
         $proportion = $orderSubtotal > 0 ? $cmSubtotal / $orderSubtotal : 0.0;
-        $defaultNet = round($orderSurcharge * $proportion, 6);
+        $defaultNet = min(round($orderSurcharge * $proportion, 6), $maxRefundable);
 
         // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
         // creditmemo from request data. hasData() distinguishes "explicit
@@ -90,7 +89,7 @@ class Surcharge extends AbstractTotal
         }
         $baseAmount = max(0.0, min(round($amount / $rate, 6), $baseMaxRefundable));
         $baseTaxAmount = round($taxAmount / $rate, 6);
-        $baseDefaultNet = round($defaultNet / $rate, 6);
+        $baseDefaultNet = max(0.0, min(round($defaultNet / $rate, 6), $baseMaxRefundable));
 
         // Tax delta: native already refunded VAT on the proportional default
         // surcharge net, so adjust the tax line ONLY for the difference an

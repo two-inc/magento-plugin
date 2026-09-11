@@ -737,7 +737,12 @@ shipping is in `tax_amount` already on that last memo and absent on every
 other. This is the one place it diverges from the sibling
 `Creditmemo\Surcharge` collector, which *assumes* core's native proration
 already granted its own VAT — an assumption that holds on the last memo and
-fails on a partial one.
+fails on a partial one. That assumption is bounded by the surcharge still
+refundable: core offers a memo the order's invoiced tax less the tax earlier
+memos refunded, so a baseline drawn from the whole order surcharge claims VAT
+an earlier surcharge-only memo has already taken and understates the memo's
+tax total and grand total by it while its merchandise rows stay right
+(ABN-560).
 
 How much core granted THIS fee is read the way `ComposeRefund` reads it — the
 memo's tax less the tax of every line composition itemizes (items, shipping,
