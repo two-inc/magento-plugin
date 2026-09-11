@@ -1379,12 +1379,45 @@ class SurchargeCalculatorTest extends TestCase
     {
         $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
         $this->config->method('getSurchargeFixedCurrency')->willReturn('SEK');
+        $this->config->method('getAllBuyerTerms')->willReturn([30]);
+        $this->stubSurchargeConfig(0, 999);
         $this->stubMerchantCap(25.0, 'EUR');
         $this->ratesProvider->method('getRate')->willReturn(null);
 
         $this->assertFalse(
             $this->calculator->isSurchargeResolvable('SEK', 1),
             'a cap with no rate into the order currency makes the surcharge unresolvable'
+        );
+    }
+
+    /**
+     * An unconvertible cap is only a problem for a fee there is something to
+     * bound. Withholding the method over a cap on a fee of nothing would take
+     * the tile off a working checkout.
+     */
+    public function testAnUnconvertibleCapOverNoFeeIsHarmless(): void
+    {
+        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
+        $this->config->method('getSurchargeFixedCurrency')->willReturn('SEK');
+        $this->config->method('getAllBuyerTerms')->willReturn([30]);
+        $this->config->method('isSurchargeDifferential')->willReturn(false);
+        $this->config->method('getPaymentTermsType')->willReturn('standard');
+        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(0.0);
+        $this->stubSurchargeConfig(0, 0.0);
+        $this->stubMerchantCap(25.0, 'EUR');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->assertTrue(
+            $this->calculator->isSurchargeResolvable('SEK', 1),
+            'no term carries a fixed amount, so the method stays on offer'
+        );
+
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 0.0]);
+        $this->assertSame(
+            0.0,
+            $this->calculator->calculate(1000.0, 30, 'NO', 'SEK')['amount'],
+            'and the fee still prices rather than refusing'
         );
     }
 

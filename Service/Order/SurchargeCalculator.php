@@ -304,9 +304,13 @@ class SurchargeCalculator
         // its own: an order already in the fixed currency still needs the cap
         // converted. capFixedSurcharge() refuses to price a fee it cannot
         // bound, so that verdict has to be reachable before anything is priced.
+        //
+        // Only a term that actually carries a fee needs bounding, and the term
+        // scan runs only once an unconvertible cap makes it matter — this is
+        // every payment-method render.
         if ($hasFixed) {
             $cap = $this->capProvider->inCurrency($orderCurrency, $storeId);
-            if ($cap !== null && !$cap['exact']) {
+            if ($cap !== null && !$cap['exact'] && $this->hasNonZeroFixedAmount($storeId)) {
                 $this->logRepository->addErrorLog('Surcharge unresolvable: no FX rate for the merchant cap', [
                     'to_currency' => $orderCurrency,
                     'store_id' => $storeId,
@@ -461,6 +465,18 @@ class SurchargeCalculator
         return $payload;
     }
 
+    /** Whether any offered term carries a fixed amount at all. */
+    private function hasNonZeroFixedAmount(?int $storeId): bool
+    {
+        foreach ($this->configRepository->getAllBuyerTerms($storeId) as $days) {
+            if ((float)$this->configRepository->getSurchargeConfig((int)$days, $storeId)['fixed'] !== 0.0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /**
      * The fixed surcharge bounded by the merchant's cap, in order currency.
      *
@@ -485,6 +501,11 @@ class SurchargeCalculator
         ?int $storeId,
         int $selectedTermDays
     ): float {
+        // No fee cannot exceed a cap, so an unconvertible one is harmless here.
+        if ($surcharge <= 0.0) {
+            return $surcharge;
+        }
+
         $cap = $this->capProvider->inCurrency($orderCurrency, $storeId);
         if ($cap === null) {
             return $surcharge;
