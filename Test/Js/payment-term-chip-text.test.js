@@ -244,4 +244,19 @@ describe('payment-term chip text', () => {
             expect(fs.readFileSync(path.join(ROOT, TEMPLATE), 'utf8')).toContain(pattern);
         }
     );
+
+    test.each([
+        {
+            pattern:
+                /<button\s+type="button"\s+class="two-term-chip two-term-chip--single"\s+disabled/,
+            case: 'a disabled button, so its name is exposed and Tab skips it'
+        },
+        {
+            pattern: /class="two-term-chip two-term-chip--single"/,
+            case: 'still carrying the sole-chip styling hook'
+        }
+    ])('the sole offered term renders as: $case', ({ pattern }) => {
+        // ARIA prohibits naming role=generic, which is what a bare span is.
+        expect(fs.readFileSync(path.join(ROOT, TEMPLATE), 'utf8')).toMatch(pattern);
+    });
 });

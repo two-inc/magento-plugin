@@ -723,6 +723,16 @@ explanation reaches the `attr` binding as `false`, not as `''`, because knockout
 renders a blank attribute and removes a false one — which is why both bindings
 call the computed rather than passing it unwrapped.
 
+## The sole offered term is a disabled button
+
+One offered term is not a choice, but it still has to carry the name that spells
+the term out, and ARIA prohibits naming a role-less element — which a bare
+`span` is. So the sole chip is a `button` with the native `disabled` attribute:
+naming works, and a natively disabled button is not focusable, so the tab order
+skips a chip that has nothing to select. It keeps the `two-term-chip--single`
+class, which is its whole appearance; the base chip rules already set border,
+background, padding and font because the multi-term chips are buttons too.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection
