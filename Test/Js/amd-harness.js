@@ -586,7 +586,8 @@ function makeSurchargeMock() {
         },
         currencySymbol: '€',
         selectTerm: function () {},
-        fetchSurcharges: function () {}
+        fetchSurcharges: function () {},
+        isTermReconciled: function () { return true; }
     };
 }
 

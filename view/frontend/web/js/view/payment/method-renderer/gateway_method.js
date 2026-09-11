@@ -519,7 +519,9 @@ define([
         },
         // Core's billing-address subscription rewrites isPlaceOrderActionAllowed, so the decline gate cannot live there (TWO-25657).
         isPlaceOrderEnabled: function () {
-            return this.getCode() === this.isChecked() && !this.isOrderIntentDeclined();
+            return this.getCode() === this.isChecked()
+                && !this.isOrderIntentDeclined()
+                && this.isTermReconciled();
         },
         /**
          * @returns {void}
@@ -551,6 +553,12 @@ define([
                 return;
             }
             this.showErrorMessage(message);
+        },
+        isTermReconciled: function () {
+            return surchargeModel.isTermReconciled();
+        },
+        isTermUpdating: function () {
+            return surchargeModel.isUpdating();
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
@@ -1098,6 +1106,15 @@ define([
             // that rather than posting and surfacing an API error.
             if (!this.isSelectedTermStillAvailable()) {
                 this.showErrorMessage(this.termUnavailableMessage);
+                return;
+            }
+
+            // Belt to the button binding: the order is composed on the
+            // selection (ABN-550).
+            if (!this.isTermReconciled()) {
+                this.showErrorMessage(
+                    $t('The selected payment term is still being applied. Please try again shortly.')
+                );
                 return;
             }
 

@@ -137,6 +137,7 @@ function makeContext(component, opts) {
         // No availableBuyerTerms on this ctx, so the TWO-25503 term gate is
         // inert here — these specs are about the latch and the company gate.
         isSelectedTermStillAvailable: component.isSelectedTermStillAvailable,
+        isTermReconciled: component.isTermReconciled,
         isOrderIntentDeclined: component.isOrderIntentDeclined,
         placeOrder: component.placeOrder,
         placeOrderBackend: component.placeOrderBackend,

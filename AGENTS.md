@@ -595,6 +595,71 @@ billing-address subscription re-evaluates that button and clears anything
 written onto it from outside the binding, silently, so an imperative disable
 lasts until the buyer touches an address field.
 
+## The selected term must be CONFIRMED before submit
+
+The order is composed on the term the chips show as selected, so a selection
+the server has not confirmed it priced the quote on can be charged against a
+total the summary never showed (ABN-550). `surchargeModel.isTermReconciled()`
+is the whole invariant — `confirmedTerm === selectedTerm() && !isUpdating()` —
+and `confirmedTerm` moves only when a `/select-term` response actually carries
+the totals it re-collected.
+
+It gates placement twice: `isPlaceOrderEnabled()`, so the button is disabled
+rather than only answering a click, and `placeOrder()` as the belt.
+
+**Do not gate on the chip fees instead.** Comparing the summary's
+`two_surcharge` value against the chip map looks stronger and is weaker: the
+map is documented above as lagging a `/totals-information` transition by one
+step, and `loadFees()`'s own snapshot dedup can then decline to refresh it — so
+a numeric comparison can refuse a settled checkout permanently, behind a
+message that says it is still updating.
+
+**Only one `/select-term` is ever in flight**, and `recalculateTotals()` itself
+is what holds that — not its caller. A chip clicked during a call is held and
+sent once that call settles, and dropped if it was refused. Overlapping calls are
+serialised by the server on the session lock, which can take them in the opposite
+order to the one they were sent in — so the client's own send order is no
+evidence of which term the session ended on, and confirming from it can leave the
+session holding a term the chips discarded as superseded.
+
+Every write a settled response makes runs inside a `try`. A totals subscriber or
+a knockout binding throwing would otherwise abort the rest of jQuery's callback
+chain, leaving the updating flag latched and the Place Order button disabled for
+the life of the page, with every later totals emission discarded as this module's
+own. **The term is confirmed even when writing the summary partly failed** — the
+server answered, so it holds that term, and reverting the chips against it is
+what charges a term nobody selected.
+
+**The chips say while a call is in flight that the term is being applied.** The
+button is disabled by then, so the click-time message cannot be reached, and a
+primary button greying out on its own for up to the request timeout reads as a
+broken checkout. The status node is rendered unconditionally and its text
+toggled, because a live region created together with its text announces nothing.
+
+Server side, `Model/Webapi/TermSelection.php` stages the session term. The
+surcharge collector prices on that term, so the rollback restores the session
+first and only then reprices — repricing while the staged term still stands
+prices the staged term again. The session ends up holding whatever term the last
+persisted save priced: if the repricing back fails in turn, it is deliberately
+LEFT on the staged term, because a session that agrees with the saved quote lets
+placement refuse the disagreement it can see, while one that disagrees lets an
+order carry one term's fee against another.
+
+The call carries a `timeout`. Without one a hung request holds `isUpdating()`
+true for the rest of the session, and with it the Place Order button disabled.
+
+A totals emission that arrives during a chip click is dropped by the subscriber,
+so the fees are re-evaluated once the click settles — and the snapshot the
+response wrote is cleared first, or the dedup would suppress exactly the fetch
+the dropped emission needed. The module's own write-back of the response totals
+is excluded, so a settled click does not refetch what it just received.
+
+A `/select-term` the server did not take reverts the chips to the confirmed
+term and says so. A 200 that carried no re-collected total segments counts as
+not taken: nothing confirms the term without them, so leaving the selection
+standing would refuse placement with no message and nothing to click — the
+chip the buyer appears to have selected already is a no-op.
+
 ## A popup window is in no tab listing
 
 `window.open` returns a window outside a browser extension's tab group, so a

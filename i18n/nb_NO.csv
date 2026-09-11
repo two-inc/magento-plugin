@@ -179,6 +179,8 @@
 "day","dag"
 "Selected payment terms","Valgte betalingsvilkår"
 "Selected payment term is not available.","Valgt betalingsvilkår er ikke tilgjengelig."
+"The selected payment term is still being applied. Please try again shortly.","Det valgte betalingsvilkåret tas fortsatt i bruk. Prøv igjen om kort tid."
+"Applying the selected payment term…","Tar i bruk det valgte betalingsvilkåret…"
 "Could not update payment term.","Kunne ikke oppdatere betalingsvilkår."
 "Please try again.","Vennligst prøv igjen."
 "Please select a country first","Vennligst velg et land først"

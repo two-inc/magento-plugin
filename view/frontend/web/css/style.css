@@ -148,6 +148,12 @@
     margin-top: 4px;
 }
 
+.two-term-chips__status:not(:empty) {
+    margin-top: 6px;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
 /*
  * Chip colour palette matches the `.two-company-mode-chip` toggle elsewhere on the
  * checkout page (the company-capture mode options): solid Two-brand
