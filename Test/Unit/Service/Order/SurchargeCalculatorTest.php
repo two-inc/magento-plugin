@@ -1448,7 +1448,13 @@ class SurchargeCalculatorTest extends TestCase
             'the reduction must be reported'
         );
         $this->assertSame(
-            ['configured_surcharge' => 999.0, 'merchant_cap' => 25, 'order_currency' => 'EUR', 'selected_term' => 30, 'store_id' => null],
+            [
+                'configured_surcharge' => 999.0,
+                'merchant_cap' => 25,
+                'order_currency' => 'EUR',
+                'selected_term' => 30,
+                'store_id' => null,
+            ],
             $reported['Surcharge above the merchant cap was reduced to the cap'],
             'the report names the configured amount and the cap that displaced it'
         );

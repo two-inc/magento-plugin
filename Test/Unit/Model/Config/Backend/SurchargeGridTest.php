@@ -1020,7 +1020,11 @@ class SurchargeGridTest extends TestCase
 
         $model->afterSave();
 
-        $this->assertSame([], $saved, 'an over-cap amount arriving without posted groups is neither refused nor written');
+        $this->assertSame(
+            [],
+            $saved,
+            'an over-cap amount arriving without posted groups is neither refused nor written'
+        );
     }
 }
 
