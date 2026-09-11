@@ -654,6 +654,49 @@ state, so a buyer held for a stale total is never told they were declined, and
 a declined buyer is never told their term is still applying. A third condition
 added later needs its own region for the same reason.
 
+## The term chips are a radio group
+
+The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,
+and they implement that role's whole keyboard contract: the group is a single
+tab stop — one chip at a time carries `tabindex="0"` — and the arrow keys move
+the checked term and the focus together, Home and End jump to the ends, and both
+ends wrap (ABN-554). Both halves or neither: roles without the keyboard
+behaviour advertise something the group does not do, which is its own defect.
+
+`onTermKeydown` returns true on every key it does not act on, because knockout's
+`event` binding suppresses the default action unless a handler says otherwise —
+without it the group swallows Tab.
+
+`isTermChecked()` is the single definition of a selected chip, read by the
+`aria-checked` binding and by the visual `--selected` class, so the tick and the
+exposed state cannot drift apart. A selection matching no chip leaves nothing
+checked, and `focusableTerm()` puts the tab stop on the first chip so the group
+cannot drop out of the tab order.
+
+**`termOptions` is a plain array, not a computed.** Knockout's `foreach` over a
+recomputed array rebuilds every chip node, and a `/select-term` response
+rewrites the per-term fee maps on its way back — so a computed drops the focus
+the arrow keys just placed, one round trip later. Each chip reads its fee
+through a computed of its own instead, which is what lets the nodes outlive a
+refresh. The template CALLS those computeds: a binding negating one — the fee
+label's `!isLoading()` — negates the function itself and is permanently false
+without the call, where a binding handed the bare value unwraps it.
+
+The focus ring is `:focus-visible`, not `:focus`: the group's single tab stop
+makes the focused chip the only thing saying where the keyboard is, and a
+clicked chip still gets no ring.
+
+**Every ARIA association in the payment template is keyed on the payment code.**
+The chip group's label, the consent checkbox and the consent sentence each take
+their id from `getCode()`, as the declined-notice region does, or a second brand
+tile's controls point at the first tile's text.
+
+The method radio is named by a `label` carrying `for`, so the tile title is both
+its accessible name and a click target for it; the subtitle and the about link
+stay outside that label. The consent checkbox is named by `aria-labelledby` at
+the consent sentence instead, because that sentence carries the terms link and a
+link inside a label makes activation ambiguous.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection
@@ -736,7 +779,9 @@ green it is. Assert the observable proxy instead — that the handler leaves the
 event undefaulted, that the control's parts are one contiguous run in document
 order, that a closed panel carries `hidden` — and say in the suite that the
 keyboard behaviour itself is verified in a real browser. A passing jsdom Tab
-test is never evidence that a trap is absent.
+test is never evidence that a trap is absent. Focus a handler moves ITSELF, with
+`element.focus()`, is the exception: jsdom performs that, so arrow-key traversal
+inside a composite control is directly observable where Tab order is not.
 
 Three traps in the same suites:
 

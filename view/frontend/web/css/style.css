@@ -72,7 +72,10 @@
     min-height: max-content;
 }
 
-.payment-option-title-container span {
+/* The title is a `label` naming the method radio, so it needs the same
+   protection from theme text colours the other title parts have. */
+.payment-option-title-container span,
+.payment-option-title-container label {
     color: inherit;
 }
 
@@ -185,8 +188,12 @@
     border-color: var(--color-blue2);
 }
 
-.two-term-chip:focus {
-    outline: none;
+/* The group is one tab stop with arrow-key traversal, so the focused chip has
+   to be identifiable; offset outside the chip to stay visible against the
+   selected chip's own blue fill. Keyboard only: a clicked chip gets no ring. */
+.two-term-chip:focus-visible {
+    outline: 2px solid var(--color-blue2);
+    outline-offset: 2px;
 }
 
 .two-term-chip--selected,
