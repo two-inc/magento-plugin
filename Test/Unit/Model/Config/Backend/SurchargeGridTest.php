@@ -495,9 +495,10 @@ class SurchargeGridTest extends TestCase
      * are never reached.
      *
      * @param array<int, array<string, string>> $grid
-     * @param array<string, string> $storedCells surcharge cell values already in
-     *        effect at this scope, as both the stale-zero scan and the
-     *        unchanged-value check read them
+     * @param array<string, string> $storedCells surcharge cell values in effect at
+     *        this scope, as the unchanged-value check reads them
+     * @param array<string, string>|null $scopeLocalRows rows this scope overrides
+     *        itself, as the stale-zero scan reads them; defaults to $storedCells
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
     private function runProductionAfterSave(
@@ -530,7 +531,8 @@ class SurchargeGridTest extends TestCase
         array $grid,
         array $storedCells = [],
         ?array $surchargeLimit = null,
-        ?object $resource = null
+        ?object $resource = null,
+        ?array $scopeLocalRows = null
     ): array {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
         $config->method('getValue')->willReturnCallback(
@@ -572,10 +574,12 @@ class SurchargeGridTest extends TestCase
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
         $inject(SurchargeGrid::class, 'settingsProvider', $settings);
         $inject(SurchargeGrid::class, 'configWriter', $writer);
+        // The scope config reports what is IN EFFECT (own row or inherited);
+        // the DB rows are only what this scope overrides itself.
         $inject(
             SurchargeGrid::class,
             'resourceConnection',
-            $resource ?? $this->makeResourceConnection($storedCells)
+            $resource ?? $this->makeResourceConnection($scopeLocalRows ?? $storedCells)
         );
         $inject(SurchargeGrid::class, 'storeManager', $this->makeStoreManager());
 
@@ -670,7 +674,10 @@ class SurchargeGridTest extends TestCase
             'percentage',
             [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
             ['payment/two_payment/surcharge_30_fixed' => '999'],
-            ['amount' => 25, 'currency' => 'EUR']
+            ['amount' => 25, 'currency' => 'EUR'],
+            null,
+            // Nothing overridden at this scope: the 999 is the parent's.
+            []
         );
 
         $this->assertContains(['payment/two_payment/surcharge_30_fixed', '999'], $saved);

@@ -191,11 +191,9 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                // Accept the Dutch comma decimal separator. Front-end
-                // JS already normalises on input, but admins posting
-                // directly (curl, REST app:config:import, scripted
-                // setup:config:set chain) hit this code path without
-                // the JS pass; normalise server-side too.
+                // Accept the Dutch comma decimal separator: the grid JS
+                // normalises on input, but a request posted straight to the
+                // admin config controller arrives without that pass.
                 $value = str_replace(',', '.', $value);
 
                 // The Limit column shows and hides with the percentage it caps.
@@ -455,9 +453,8 @@ class SurchargeGrid extends Value
      *
      * Takes the RAW string rather than a cast float so it can tell 'abc' —
      * which casts to 0.0 — from a real zero, and report each on its own
-     * terms. Nothing checked numeric input server-side before: the grid JS
-     * does, but the direct-POST paths this backend exists to cover (curl,
-     * app:config:import, a scripted config:set chain) skip it entirely.
+     * terms. The grid JS checks numeric input, but a request posted straight
+     * to the admin config controller skips it.
      *
      * Note the caller has already returned for an EMPTY cell (it deletes
      * the config row instead), so `limit` only reaches here when the admin
@@ -472,7 +469,7 @@ class SurchargeGrid extends Value
         int $days,
         ?int $maxFixed,
         int $maxPercentage,
-        bool $columnVisible = true
+        bool $columnVisible
     ): void {
         if (!is_numeric($rawValue)) {
             throw new LocalizedException(

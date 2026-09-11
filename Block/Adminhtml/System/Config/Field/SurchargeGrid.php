@@ -412,7 +412,7 @@ class SurchargeGrid extends Field
         }
         $conn = $this->resource->getConnection();
         $select = $conn->select()
-            ->from($conn->getTableName('core_config_data'), 'config_id')
+            ->from($this->resource->getTableName('core_config_data'), 'config_id')
             ->where('scope = ?', $this->scope)
             ->where('scope_id = ?', $this->scopeId)
             ->where('path LIKE ?', 'payment/' . $this->methodCode() . '/surcharge%')
