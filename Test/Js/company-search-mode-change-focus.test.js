@@ -166,6 +166,19 @@ describe('a mode change leaves the buyer somewhere', () => {
         expect(panelIsOpen()).toBe(expectOpen);
         expect(document.activeElement).toBe(focused());
     });
+
+    test('the company field where the mode leaves nothing in the popover to focus', () => {
+        const ctx = setup();
+        // Only the mode the buyer is in is offered, so the chip row is withheld
+        // and the withdrawn query row leaves the open panel with nothing in it.
+        ctx.panel.isChipVisible = function (mode) { return mode === 'soletrader'; };
+        ctx.panel.open();
+        ctx.state.mode = 'soletrader';
+
+        ctx.panel.syncChips();
+
+        expect(document.activeElement).toBe(fieldNode());
+    });
 });
 
 describe('Escape closes from anywhere inside the popover', () => {
