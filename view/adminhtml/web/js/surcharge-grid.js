@@ -1,4 +1,11 @@
-define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validation', 'domReady!'], function ($, $t, resolveDefaultTerm) {
+define([
+    'jquery',
+    'mage/translate',
+    'Two_Gateway/js/default-term',
+    'Two_Gateway/js/config-field-visibility',
+    'mage/validation',
+    'domReady!'
+], function ($, $t, resolveDefaultTerm, toggleField) {
     'use strict';
 
     // Browser-side mirror of the server-side refusal of a zero limit
@@ -205,11 +212,7 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validat
                 var term = parseInt($row.data('term'), 10);
                 existingTerms[term] = $row;
 
-                if (activeTerms.indexOf(term) === -1) {
-                    $row.hide();
-                } else {
-                    $row.show();
-                }
+                toggleField($row, activeTerms.indexOf(term) !== -1);
             });
 
             // Create rows for new terms (e.g. custom term just entered)
@@ -238,11 +241,11 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validat
 
             // Show table or "no terms" message
             if (activeTerms.length > 0) {
-                $table.show();
+                toggleField($table, true);
                 $currencyNote.show();
                 $noTermsMsg.hide();
             } else {
-                $table.hide();
+                toggleField($table, false);
                 $currencyNote.hide();
                 $noTermsMsg.show();
             }
@@ -255,9 +258,9 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validat
             var showFixed = type === 'fixed' || type === 'fixed_and_percentage';
             var showPct = type === 'percentage' || type === 'fixed_and_percentage';
 
-            $container.find('.surcharge-grid__fixed').toggle(showFixed);
-            $container.find('.surcharge-grid__percentage').toggle(showPct);
-            $container.find('.surcharge-grid__limit').toggle(showPct);
+            toggleField($container.find('.surcharge-grid__fixed'), showFixed);
+            toggleField($container.find('.surcharge-grid__percentage'), showPct);
+            toggleField($container.find('.surcharge-grid__limit'), showPct);
         }
 
         // ── Differential mode ────────────────────────────────────────────
@@ -307,7 +310,7 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validat
         function updateContainerVisibility() {
             var type = getSurchargeType();
             var hasSurcharge = type !== 'none';
-            $container.closest('tr').toggle(hasSurcharge);
+            toggleField($container.closest('tr'), hasSurcharge);
         }
 
         // ── Grid-level inherit ("Use Website/Default") ─────────────────────

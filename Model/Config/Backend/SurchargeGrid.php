@@ -157,6 +157,7 @@ class SurchargeGrid extends Value
         // surfaces again when the column comes back into view, which is where
         // the admin can act on it.
         $limitColumnVisible = $this->savedSurchargeTypeHasPercentage($groups, $scope, $scopeId);
+        $fixedColumnVisible = $this->savedSurchargeTypeHasFixed($groups, $scope, $scopeId);
 
         // TWO-25503: the per-cell zero rule below only ever sees the cells the
         // grid POSTED, i.e. the terms currently selected in "Payment terms".
@@ -190,14 +191,27 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                // Accept the Dutch comma decimal separator. Front-end
-                // JS already normalises on input, but admins posting
-                // directly (curl, REST app:config:import, scripted
-                // setup:config:set chain) hit this code path without
-                // the JS pass; normalise server-side too.
+                // Accept the Dutch comma decimal separator: the grid JS
+                // normalises on input, but a request posted straight to the
+                // admin config controller arrives without that pass.
                 $value = str_replace(',', '.', $value);
 
-                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage, $limitColumnVisible);
+                // The Limit column shows and hides with the percentage it caps.
+                $columnVisible = $type === 'fixed' ? $fixedColumnVisible : $limitColumnVisible;
+
+                // A hidden cell is excused its ceiling only while it posts back
+                // the value already in effect.
+                $inEffect = $this->effectiveCellValue($path, $scope, $scopeId);
+                $unchanged = $inEffect !== null && $this->sameAmount($inEffect, $value);
+
+                $this->validateValue(
+                    $type,
+                    $value,
+                    $days,
+                    $maxFixed,
+                    $maxPercentage,
+                    $columnVisible || !$unchanged
+                );
 
                 $this->configWriter->save($path, $value, $scope, $scopeId);
             }
@@ -217,33 +231,87 @@ class SurchargeGrid extends Value
 
     /**
      * Whether the surcharge type being saved carries a percentage component,
-     * i.e. whether the grid's Limit column is visible. Read from the POSTed
-     * group first — the type and the grid are saved in the same request, so
-     * the stored value is the PREVIOUS one and would misjudge a merchant
-     * switching type.
-     *
-     * The config fallback is NOT an edge case: when the type field is left on
-     * "Use Default Value" its `<select>` is rendered disabled, browsers do not
-     * submit disabled inputs, and so nothing is posted for it. It is therefore
-     * resolved AT THE SAVING SCOPE — an unscoped read returns the default
-     * scope's value, which is the wrong answer for exactly the store that
-     * inherits a different one.
+     * i.e. whether the grid's Limit column is visible.
      *
      * @param array<string, mixed> $groups
      */
     private function savedSurchargeTypeHasPercentage(array $groups, string $scope, int $scopeId): bool
     {
+        return in_array(
+            $this->resolveSavedSurchargeType($groups, $scope, $scopeId),
+            [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE],
+            true
+        );
+    }
+
+    /**
+     * The surcharge type this request is saving. Read from the POSTed group
+     * first — the type and the grid are saved together, so the stored value is
+     * the PREVIOUS one and would misjudge a merchant switching type.
+     *
+     * The config fallback is NOT an edge case: a type left on "Use Default
+     * Value" renders as a disabled `<select>`, which browsers do not submit. It
+     * is resolved AT THE SAVING SCOPE — an unscoped read returns the default
+     * scope's value, the wrong answer for exactly the store that inherits a
+     * different one.
+     *
+     * @param array<string, mixed> $groups
+     */
+    private function resolveSavedSurchargeType(array $groups, string $scope, int $scopeId): string
+    {
         $posted = $groups['payment_terms']['fields']['surcharge_type']['value'] ?? null;
         if (is_string($posted) && $posted !== '') {
-            $type = $posted;
-        } else {
-            $path = sprintf('payment/%s/surcharge_type', $this->methodCode());
-            $type = $scope === 'default'
-                ? (string)$this->_config->getValue($path)
-                : (string)$this->_config->getValue($path, $scope, $scopeId);
+            return $posted;
         }
 
-        return in_array($type, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE], true);
+        $path = sprintf('payment/%s/surcharge_type', $this->methodCode());
+
+        return $scope === 'default'
+            ? (string)$this->_config->getValue($path)
+            : (string)$this->_config->getValue($path, $scope, $scopeId);
+    }
+
+    /**
+     * The value already in effect for a cell at the scope being saved: that
+     * scope's own override if it has one, otherwise what it inherits. The grid
+     * renders the inherited value, so a first override posts it back unchanged.
+     */
+    private function effectiveCellValue(string $path, string $scope, int $scopeId): ?string
+    {
+        $value = $scope === 'default'
+            ? $this->_config->getValue($path)
+            : $this->_config->getValue($path, $scope, $scopeId);
+
+        return $value === null ? null : (string)$value;
+    }
+
+    /**
+     * Whether two cell values are the same number, decimal separator and
+     * trailing zeroes aside.
+     */
+    private function sameAmount(string $stored, string $posted): bool
+    {
+        $stored = str_replace(',', '.', $stored);
+        if (!is_numeric($stored) || !is_numeric($posted)) {
+            return $stored === $posted;
+        }
+
+        return (string)(float)$stored === (string)(float)$posted;
+    }
+
+    /**
+     * Whether the surcharge type being saved carries a fixed component, i.e.
+     * whether the grid's Fixed column is visible.
+     *
+     * @param array<string, mixed> $groups
+     */
+    private function savedSurchargeTypeHasFixed(array $groups, string $scope, int $scopeId): bool
+    {
+        return in_array(
+            $this->resolveSavedSurchargeType($groups, $scope, $scopeId),
+            [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE],
+            true
+        );
     }
 
     /**
@@ -385,9 +453,8 @@ class SurchargeGrid extends Value
      *
      * Takes the RAW string rather than a cast float so it can tell 'abc' —
      * which casts to 0.0 — from a real zero, and report each on its own
-     * terms. Nothing checked numeric input server-side before: the grid JS
-     * does, but the direct-POST paths this backend exists to cover (curl,
-     * app:config:import, a scripted config:set chain) skip it entirely.
+     * terms. The grid JS checks numeric input, but a request posted straight
+     * to the admin config controller skips it.
      *
      * Note the caller has already returned for an EMPTY cell (it deletes
      * the config row instead), so `limit` only reaches here when the admin
@@ -402,7 +469,7 @@ class SurchargeGrid extends Value
         int $days,
         ?int $maxFixed,
         int $maxPercentage,
-        bool $limitColumnVisible = true
+        bool $columnVisible
     ): void {
         if (!is_numeric($rawValue)) {
             throw new LocalizedException(
@@ -439,7 +506,7 @@ class SurchargeGrid extends Value
         // cap of 0.00 — the very outcome being refused, one step later.
         // Refusing everything that rounds away is what makes "the rounding
         // direction cannot decide whether a configured cap survives" true.
-        if ($type === 'limit' && $limitColumnVisible && round($value, self::MONEY_DECIMALS) === 0.0) {
+        if ($type === 'limit' && $columnVisible && round($value, self::MONEY_DECIMALS) === 0.0) {
             throw new LocalizedException(
                 __(
                     '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'
@@ -448,7 +515,7 @@ class SurchargeGrid extends Value
                 )
             );
         }
-        if ($type === 'fixed' && $maxFixed !== null && $value > $maxFixed) {
+        if ($type === 'fixed' && $columnVisible && $maxFixed !== null && $value > $maxFixed) {
             throw new LocalizedException(
                 __('%1 days - fixed amount: maximum is %2.', $days, $maxFixed)
             );

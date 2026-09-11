@@ -194,7 +194,7 @@ class SurchargeGridTest extends TestCase
         string $type,
         string $rawValue,
         int $days = 30,
-        bool $limitColumnVisible = true
+        bool $columnVisible = true
     ): void {
         $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
         $method = new \ReflectionMethod(SurchargeGrid::class, 'validateValue');
@@ -206,7 +206,7 @@ class SurchargeGridTest extends TestCase
             $days,
             25,
             ConfigRepository::SURCHARGE_PERCENTAGE_MAX,
-            $limitColumnVisible
+            $columnVisible
         );
     }
 
@@ -482,41 +482,79 @@ class SurchargeGridTest extends TestCase
      * Build the REAL backend model and run its REAL afterSave().
      *
      * Everything else in this file either drives the SurchargeGridTestable
-     * reimplementation or reaches into a single private method, so neither can
-     * see how afterSave() wires the two together. `validateValue()` defaults
-     * $limitColumnVisible to true, so dropping the argument at the call site —
-     * or dropping the `&& $limitColumnVisible` term from the rule — compiles
-     * and leaves every other test in this file green while reintroducing the
-     * failed-section-save regression. This helper exists to make that red.
+     * reimplementation or reaches into a single private method, so none of it
+     * sees which visibility afterSave() hands each cell. Replacing that
+     * per-cell expression with a constant is invisible to every other test in
+     * the file; the tests built on this helper are the ones it reds.
      *
-     * The model is built without its constructor and has only the
-     * dependencies this path touches injected: at the default scope with no
-     * merchant surcharge limit, the store manager and the FX rates provider
-     * are never reached.
+     * The model is built without its constructor, with only the dependencies
+     * this path touches injected. A cap quoted in the base currency
+     * short-circuits the conversion, so the FX rates provider is never reached.
      *
      * @param array<int, array<string, string>> $grid
-     * @param array<string, string> $storedLimitRows stored surcharge_*_limit
-     *        rows at this scope, as the aggregate stale-zero scan reads them
+     * @param array<string, string> $storedCells surcharge cell values in effect at
+     *        this scope, as the unchanged-value check reads them
+     * @param array<string, string>|null $surchargeLimit the merchant's fixed-fee
+     *        cap, as ['amount' => int, 'currency' => string]; null for no cap
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
-    private function runProductionAfterSave(string $postedType, array $grid, array $storedLimitRows = []): array
-    {
+    private function runProductionAfterSave(
+        string $postedType,
+        array $grid,
+        array $storedCells = [],
+        ?array $surchargeLimit = null
+    ): array {
+        return $this->runProductionAfterSaveAtScope(
+            'default',
+            0,
+            $postedType,
+            $grid,
+            $storedCells,
+            $surchargeLimit
+        );
+    }
+
+    /**
+     * As runProductionAfterSave(), at an arbitrary config scope.
+     *
+     * @param array<int, array<string, string>> $grid
+     * @param array<string, string> $storedCells
+     * @param array<string, string>|null $surchargeLimit
+     * @param object|null $resource stands in for the injected ResourceConnection
+     * @param array<string, string>|null $scopeLocalRows rows this scope overrides
+     *        itself, as the stale-zero scan reads them; defaults to $storedCells
+     * @return list<array{0: string, 1: string}>
+     */
+    private function runProductionAfterSaveAtScope(
+        string $scope,
+        int $scopeId,
+        string $postedType,
+        array $grid,
+        array $storedCells = [],
+        ?array $surchargeLimit = null,
+        ?object $resource = null,
+        ?array $scopeLocalRows = null
+    ): array {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
         $config->method('getValue')->willReturnCallback(
-            static function ($path) {
-                return $path === 'currency/options/base' ? 'EUR' : null;
+            static function ($path) use ($storedCells) {
+                if ($path === 'currency/options/base') {
+                    return 'EUR';
+                }
+
+                return $storedCells[$path] ?? null;
             }
         );
 
         $brand = $this->getMockBuilder(BrandRegistryInterface::class)->getMock();
         $brand->method('getCode')->willReturn('two_payment');
 
-        // No merchant-side surcharge cap, so the fixed upper-bound check is
-        // skipped and the FX rates provider is never consulted.
+        // A cap quoted in the base currency short-circuits the conversion, so
+        // the FX rates provider is never consulted; null means no cap at all.
         $settings = $this->getMockBuilder(SettingsProvider::class)
             ->disableOriginalConstructor()
             ->getMock();
-        $settings->method('getSurchargeLimit')->willReturn(null);
+        $settings->method('getSurchargeLimit')->willReturn($surchargeLimit);
 
         $saved = [];
         $writer = $this->getMockBuilder(WriterInterface::class)->getMock();
@@ -537,10 +575,17 @@ class SurchargeGridTest extends TestCase
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
         $inject(SurchargeGrid::class, 'settingsProvider', $settings);
         $inject(SurchargeGrid::class, 'configWriter', $writer);
-        $inject(SurchargeGrid::class, 'resourceConnection', $this->makeResourceConnection($storedLimitRows));
+        // The scope config reports what is IN EFFECT (own row or inherited);
+        // the DB rows are only what this scope overrides itself.
+        $inject(
+            SurchargeGrid::class,
+            'resourceConnection',
+            $resource ?? $this->makeResourceConnection($scopeLocalRows ?? $storedCells)
+        );
+        $inject(SurchargeGrid::class, 'storeManager', $this->makeStoreManager());
 
-        $model->setData('scope', 'default');
-        $model->setData('scope_id', 0);
+        $model->setData('scope', $scope);
+        $model->setData('scope_id', $scopeId);
         $model->setData('groups', [
             'payment_terms' => [
                 'fields' => [
@@ -561,17 +606,17 @@ class SurchargeGridTest extends TestCase
      * so a legacy zero must sail through the whole save — not throw, and not
      * be deleted.
      *
-     * Deleting the sixth argument at the call site, or the `&&
-     * $limitColumnVisible` term from the rule itself, turns this red: the
-     * parameter's `true` default means the zero rule fires on a cell the admin
-     * can neither see nor clear, and the merchant's entire payment section
-     * fails to save.
+     * Dropping the `&& $columnVisible` term from the rule turns this red: the
+     * zero rule then fires on a cell the admin can neither see nor clear, and
+     * the merchant's entire payment section fails to save.
      */
     public function testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule(): void
     {
-        $saved = $this->runProductionAfterSave('fixed', [
-            30 => ['fixed' => '10', 'percentage' => '0', 'limit' => '0'],
-        ]);
+        $saved = $this->runProductionAfterSave(
+            'fixed',
+            [30 => ['fixed' => '10', 'percentage' => '0', 'limit' => '0']],
+            ['payment/two_payment/surcharge_30_limit' => '0']
+        );
 
         $this->assertContains(
             ['payment/two_payment/surcharge_30_limit', '0'],
@@ -594,6 +639,128 @@ class SurchargeGridTest extends TestCase
         $this->runProductionAfterSave('fixed_and_percentage', [
             30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '0'],
         ]);
+    }
+
+    /**
+     * A stored fixed amount now over the merchant's cap must not refuse the
+     * save while the Fixed column is hidden: the cap is FX-converted from a
+     * merchant setting that can fall below a value that was legal when it was
+     * entered, and the cell is on no screen (ABN-558).
+     */
+    public function testProductionAfterSaveSkipsTheFixedCeilingWhileThatColumnIsHidden(): void
+    {
+        $saved = $this->runProductionAfterSave(
+            'percentage',
+            [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
+            ['payment/two_payment/surcharge_30_fixed' => '999.00'],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_fixed', '999'], $saved);
+    }
+
+    /**
+     * The grid renders inherited values, so a first override at a store scope
+     * posts the parent's stranded amount back with no row of its own. Reading
+     * only scope-local rows would call that a change and refuse the save over a
+     * cell the hidden column never shows.
+     */
+    public function testProductionAfterSaveExcusesAnInheritedStrandedAmountAtAStoreScope(): void
+    {
+        $saved = $this->runProductionAfterSaveAtScope(
+            'stores',
+            1,
+            'percentage',
+            [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
+            ['payment/two_payment/surcharge_30_fixed' => '999'],
+            ['amount' => 25, 'currency' => 'EUR'],
+            null,
+            // Nothing overridden at this scope: the 999 is the parent's.
+            []
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_fixed', '999'], $saved);
+    }
+
+    /**
+     * The excuse covers a value the merchant cannot reach, not a new one. A
+     * direct POST can set an over-cap amount on a hidden cell, and storing that
+     * unvalidated would charge buyers over the merchant's cap.
+     */
+    public function testProductionAfterSaveRefusesAChangedOverCapAmountOnAHiddenColumn(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('fixed amount: maximum is 25');
+        $this->runProductionAfterSave(
+            'none',
+            [30 => ['fixed' => '999']],
+            ['payment/two_payment/surcharge_30_fixed' => '10'],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
+    }
+
+    /**
+     * The mirror, so the skip cannot be satisfied by dropping the ceiling.
+     */
+    public function testProductionAfterSaveStillRefusesAnOverCapFixedAmountWhileVisible(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('fixed amount: maximum is 25');
+        $this->runProductionAfterSave(
+            'fixed_and_percentage',
+            [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
+            [],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
+    }
+
+    /**
+     * The percentage ceiling is a code constant that never falls under a
+     * merchant, so no stored value can be stranded above it and hiding the
+     * column earns no excuse.
+     */
+    public function testProductionAfterSaveRefusesAnOverCapPercentageEvenWhileHidden(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('percentage: maximum is');
+        $this->runProductionAfterSave(
+            'fixed',
+            [30 => ['fixed' => '10', 'percentage' => '101']],
+            ['payment/two_payment/surcharge_30_percentage' => '101']
+        );
+    }
+
+    /**
+     * A store manager whose stores and websites all report the base currency
+     * the scope config reports, so a non-default scope resolves it without FX.
+     */
+    private function makeStoreManager(): object
+    {
+        $currencyHolder = new class {
+            public function getBaseCurrencyCode(): string
+            {
+                return 'EUR';
+            }
+        };
+
+        return new class ($currencyHolder) {
+            private object $holder;
+
+            public function __construct(object $holder)
+            {
+                $this->holder = $holder;
+            }
+
+            public function getStore($id = null): object
+            {
+                return $this->holder;
+            }
+
+            public function getWebsite($id = null): object
+            {
+                return $this->holder;
+            }
+        };
     }
 
     /**

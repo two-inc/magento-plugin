@@ -1,4 +1,10 @@
-define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'domReady!'], function ($, $t, resolveDefaultTerm) {
+define([
+    'jquery',
+    'mage/translate',
+    'Two_Gateway/js/default-term',
+    'Two_Gateway/js/config-field-visibility',
+    'domReady!'
+], function ($, $t, resolveDefaultTerm, toggleField) {
     'use strict';
 
     function initPaymentTermsConfig() {
@@ -111,11 +117,11 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'domReady!'],
         }
 
         function showField(fieldId) {
-            getFieldRow(fieldId).show();
+            toggleField(getFieldRow(fieldId), true);
         }
 
         function hideField(fieldId) {
-            getFieldRow(fieldId).hide();
+            toggleField(getFieldRow(fieldId), false);
         }
 
         function updateSurchargeVisibility() {

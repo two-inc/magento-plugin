@@ -239,6 +239,37 @@ define([
     }
 
     /**
+     * Phrases the framework-free capture modules ask their host for by name.
+     * Magento builds js-translation.json by scanning for literal `$t()` calls,
+     * so a phrase reaches the dictionary — and the buyer's own language — only
+     * if it is spelled out here (ABN-555).
+     *
+     * @returns {Object<string, string>}
+     */
+    function buildSharedPhrases() {
+        return {
+            'Company Number': $t('Company Number'),
+            'Company search is unavailable right now. Please try again shortly.':
+                $t('Company search is unavailable right now. Please try again shortly.'),
+            'Enter manually': $t('Enter manually'),
+            'Registered company': $t('Registered company'),
+            'Search for company': $t('Search for company'),
+            'Select a different sole trader': $t('Select a different sole trader'),
+            'Sole trader': $t('Sole trader')
+        };
+    }
+
+    let sharedPhraseCache = null;
+
+    function translateSharedPhrase(text) {
+        sharedPhraseCache = sharedPhraseCache || buildSharedPhrases();
+
+        return Object.prototype.hasOwnProperty.call(sharedPhraseCache, text)
+            ? sharedPhraseCache[text]
+            : $t(text);
+    }
+
+    /**
      * Members every panel's host options share verbatim — the buyer, the
      * transport, and everything that is not "where do I live / what do I
      * write into". Everything panel-scoped — the country it reads, the form it
@@ -253,7 +284,7 @@ define([
             Panel: CompanySearchPanel,
             SoleTraderFlow: SoleTrader,
             search: companySearch,
-            translate: $t,
+            translate: translateSharedPhrase,
             observe: function (selector, onNode) {
                 $.async(selector, onNode);
             },
