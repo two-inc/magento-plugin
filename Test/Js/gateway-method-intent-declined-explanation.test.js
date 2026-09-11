@@ -17,7 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule } = require('./amd-harness');
 
 const ROOT = path.join(__dirname, '..', '..');
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
