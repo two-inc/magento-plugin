@@ -59,7 +59,7 @@
             <!-- Rendered unconditionally: a live region announces nothing if it
                  is created together with its text. -->
             <div class="two-term-chips__status" role="status" aria-live="polite"
-                 data-bind="text: isTermUpdating() ? $t('Applying the selected payment term…') : ''"></div>
+                 data-bind="text: termStatusMessage()"></div>
         </div>
         <!-- /ko -->
         <!-- ko if: showSingleTerm -->

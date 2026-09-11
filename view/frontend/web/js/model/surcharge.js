@@ -246,6 +246,21 @@ define([
     }
 
     /**
+     * The reason placement is refused, or '' when the chips agree with the term
+     * the quote is priced on. The placement gate is derived from this, so a
+     * disabled Place Order button can never be silent (ABN-550).
+     */
+    function termStatusMessage() {
+        if (isUpdating()) {
+            return $t('Applying the selected payment term…');
+        }
+        if (confirmedTerm() !== selectedTerm()) {
+            return $t('The selected payment term was not applied. Reload the page and select it again.');
+        }
+        return '';
+    }
+
+    /**
      * Write a settled /select-term response into the summary and the chip fees.
      */
     function applyResponse(data) {
@@ -318,8 +333,10 @@ define([
          * priced the quote on. Placement is refused while it is not (ABN-550).
          */
         isTermReconciled: function () {
-            return !isUpdating() && confirmedTerm() === selectedTerm();
+            return termStatusMessage() === '';
         },
+
+        termStatusMessage: termStatusMessage,
 
         /**
          * Call /select-term to update totals with the new surcharge.
