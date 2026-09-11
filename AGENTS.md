@@ -548,6 +548,12 @@ never reopens.
 fires once focus has settled on another control, so taking focus back would undo
 the buyer's own Tab (TWO-25326).
 
+**A pointer press outside the popover takes focus back only where the press left
+it nowhere**, and one tick later rather than in the handler: the press's own
+default action runs after the handler and either focuses what it hit or clears
+focus entirely, so focusing the field from the handler is simply undone. Neither
+default action exists in jsdom, which is why this needed a real browser.
+
 **The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
 on close the field's PRIOR value restored exactly, which is removal when there was
 none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without

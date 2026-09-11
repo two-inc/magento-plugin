@@ -166,13 +166,6 @@ describe('every close path hands focus back to the company field', () => {
         },
         {
             drive: async (ctx) => {
-                ctx.panel.open();
-                dispatchMousedown(document.querySelector(OUTSIDE));
-            },
-            description: 'a mousedown elsewhere on the page'
-        },
-        {
-            drive: async (ctx) => {
                 await openWithRows(ctx);
                 dispatchMousedown(document.querySelector(ROW));
                 expect(ctx.selected).toHaveLength(1);
@@ -203,6 +196,37 @@ describe('every close path hands focus back to the company field', () => {
         // Manual entry hands the field back as a plain input and takes the
         // combobox attributes with it; every other path leaves `false`.
         expect(fieldNode().getAttribute('aria-expanded')).not.toBe('true');
+    });
+});
+
+describe('a pointer press outside the panel closes it and lands focus somewhere', () => {
+    /**
+     * The press's own default action runs after the panel's handler: it focuses
+     * whatever it hit, or clears focus where it hit nothing focusable. jsdom
+     * performs neither, so each case plays the browser's part explicitly —
+     * which is also what makes the two cases distinguishable at all.
+     */
+    test.each([
+        {
+            settleFocus: () => document.querySelector(OUTSIDE).focus(),
+            expected: () => document.querySelector(OUTSIDE),
+            description: 'a press on another control leaves focus on that control'
+        },
+        {
+            settleFocus: () => document.activeElement.blur(),
+            expected: () => fieldNode(),
+            description: 'a press on anything unfocusable hands focus to the company field'
+        }
+    ])('$description', async ({ settleFocus, expected }) => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        dispatchMousedown(document.querySelector(OUTSIDE));
+        settleFocus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(false);
+        expect(document.activeElement).toBe(expected());
     });
 });
 

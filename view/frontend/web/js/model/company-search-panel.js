@@ -514,7 +514,11 @@
             if (!self._open) return;
             if (self._panel && self._panel.contains(event.target)) return;
             if (self._field === event.target) return;
-            self.close();
+            // Not close()'s own focus return: the press's default action runs
+            // AFTER this handler and would blow it away — focusing whatever it
+            // hit, or clearing focus where it hit nothing focusable.
+            self.close({ returnFocus: false });
+            self._returnFocusIfDropped();
         });
 
         // A mouse click is not the only way to leave: tabbing off the last chip
@@ -806,6 +810,21 @@
             this._closing = false;
         }
         this._cancelFocusOutClose();
+    };
+
+    /**
+     * Take focus back only if the pointer press that closed the panel left it
+     * nowhere, which is what a press on anything unfocusable does. Deferred by
+     * one tick so the press's own default action has already settled.
+     */
+    CompanySearchPanel.prototype._returnFocusIfDropped = function () {
+        const self = this;
+        setTimeout(function () {
+            if (self._destroyed || self._open) return;
+            const active = document.activeElement;
+            if (active && active !== document.body && active !== document.documentElement) return;
+            self.restoreFieldFocus();
+        }, 0);
     };
 
     /** @returns {boolean} whether the panel is currently open */
