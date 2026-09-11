@@ -636,8 +636,8 @@ lasts until the buyer touches an address field.
 sentence is the buyer's only account of a control that has gone dead, so
 `resolveOrderIntentDeclinedNotice()` falls back to platform copy wherever
 `<intent_declined_notice_enabled>` withholds the brand's own — the rule the
-order-intent error notice already followed (ABN-563). Both shipped overlays
-withhold it, which is how a declined buyer came to face a disabled button and
+order-intent error notice already followed (ABN-563). A shipped overlay
+withholds it, which is how a declined buyer came to face a disabled button and
 an empty tile. The brand switch chooses the wording; it cannot choose silence,
 and re-widening it to suppression reopens the defect.
 
