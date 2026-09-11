@@ -476,6 +476,18 @@ define([
         orderIntentDeclinedRegionId: function () {
             return 'two-order-intent-declined-' + this.getCode();
         },
+        // Same reason as the region id above: every ARIA association in this
+        // template is keyed on the payment code, or a second brand tile's
+        // controls point at the first tile's text (ABN-554).
+        termGroupLabelId: function () {
+            return 'two-term-group-label-' + this.getCode();
+        },
+        paymentTermsCheckboxId: function () {
+            return 'two-terms-accepted-' + this.getCode();
+        },
+        paymentTermsTextId: function () {
+            return 'two-terms-text-' + this.getCode();
+        },
         /**
          * Same guard, for the order-intent ERROR notice (TWO-25326,
          * 2026-08-05 four-platform convergence). The error text renders in
@@ -567,6 +579,88 @@ define([
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
+        },
+        /**
+         * One definition of a selected term for the chip's visual state and for
+         * its aria-checked state, so the tick and what assistive technology is
+         * told cannot drift apart (ABN-554).
+         *
+         * @param {number} days
+         * @returns {boolean}
+         */
+        isTermChecked: function (days) {
+            return days === this.selectedTerm();
+        },
+        /**
+         * The term the chip group's single tab stop sits on. A selection the
+         * chips cannot show — one the merchant has withdrawn, or a term reverted
+         * mid-flight — matches no chip, so the first chip holds the tab stop
+         * rather than the group dropping out of the tab order entirely.
+         *
+         * @returns {number|undefined}
+         */
+        focusableTerm: function () {
+            var terms = this.availableBuyerTerms || [];
+            var selected = this.selectedTerm();
+
+            return terms.indexOf(selected) === -1 ? terms[0] : selected;
+        },
+        termTabIndex: function (days) {
+            return days === this.focusableTerm() ? 0 : -1;
+        },
+        /**
+         * The radio-group keyboard contract the chips' roles advertise
+         * (ABN-554): the arrow keys move the checked term and the focus
+         * together, Home and End jump to the ends, and both ends wrap.
+         *
+         * Returning true on every other key is what keeps Tab working —
+         * knockout suppresses an event's default action unless the handler
+         * says otherwise.
+         *
+         * @param {object} data - the bound view model, unused
+         * @param {KeyboardEvent} event
+         * @returns {boolean|undefined}
+         */
+        onTermKeydown: function (data, event) {
+            var terms = this.availableBuyerTerms || [];
+            var chips = Array.prototype.slice.call(
+                event.currentTarget.querySelectorAll('.two-term-chip')
+            );
+            var current = chips.indexOf(document.activeElement);
+            var next;
+
+            if (terms.length < 2) {
+                return true;
+            }
+
+            if (current === -1) {
+                current = Math.max(terms.indexOf(this.focusableTerm()), 0);
+            }
+
+            switch (event.key) {
+                case 'ArrowRight':
+                case 'ArrowDown':
+                    next = (current + 1) % terms.length;
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                    next = (current - 1 + terms.length) % terms.length;
+                    break;
+                case 'Home':
+                    next = 0;
+                    break;
+                case 'End':
+                    next = terms.length - 1;
+                    break;
+                default:
+                    return true;
+            }
+
+            this.selectTerm(terms[next]);
+
+            if (chips[next]) {
+                chips[next].focus();
+            }
         },
         showErrorMessage: function (message, duration) {
             // Route through the payment block's own messageContainer (same

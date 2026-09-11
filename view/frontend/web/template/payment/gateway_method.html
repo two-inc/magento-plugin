@@ -13,7 +13,13 @@
                 visible: isRadioButtonVisible()"
             />
             <div class="two-title-block">
-                <span class="two-payment-title" data-bind="text: getTitle()"></span>
+                <!-- The method radio takes its accessible name from this label
+                     (ABN-554); the subtitle and the about link stay outside it
+                     so neither is read as part of the name. -->
+                <label
+                    class="two-payment-title"
+                    data-bind="attr: {'for': getCode()}, text: getTitle()"
+                ></label>
                 <!-- ko if: twoSubtitleHtml -->
                 <div class="two-payment-subtitle" data-bind="html: twoSubtitleHtml"></div>
                 <!-- /ko -->
@@ -33,16 +39,35 @@
     <div class="payment-method-content">
         <!-- ko if: showTermSelector -->
         <div class="field two-term-chips">
-            <label class="label">
+            <!-- A `span`, not a `label`: it names the chip group through
+                 aria-labelledby, and a `label` names a single form control. -->
+            <span class="label" data-bind="attr: {id: termGroupLabelId()}">
                 <span data-bind="i18n: 'Selected payment terms'"></span>
-            </label>
-            <div class="two-term-chips__container">
+            </span>
+            <!--
+                The chips are a radio group, not a row of buttons (ABN-554):
+                the selected term is exposed as aria-checked, the group is one
+                tab stop, and onTermKeydown moves the selection with the arrow
+                keys. Roles without that keyboard contract advertise a
+                behaviour the group does not have.
+            -->
+            <div
+                class="two-term-chips__container"
+                role="radiogroup"
+                data-bind="attr: {'aria-labelledby': termGroupLabelId()},
+                               event: {keydown: onTermKeydown}"
+            >
                 <!-- ko foreach: termOptions -->
                 <button
                     type="button"
                     class="two-term-chip"
+                    role="radio"
                     data-bind="click: function() { $parent.selectTerm(days) },
-                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }"
+                                   css: { 'two-term-chip--selected': $parent.isTermChecked(days) },
+                                   attr: {
+                                       'aria-checked': $parent.isTermChecked(days) ? 'true' : 'false',
+                                       tabindex: $parent.termTabIndex(days)
+                                   }"
                 >
                     <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
                     <!-- ko if: isLoading -->
@@ -348,12 +373,23 @@
                 </div>
                 <!-- ko if: isPaymentTermsEnabled -->
                 <div class="payment-method-content terms-container">
+                    <!-- aria-labelledby rather than a wrapping label (ABN-554):
+                         the consent sentence carries the terms link, and a link
+                         inside a label makes activation ambiguous. -->
                     <input
                         type="checkbox"
                         name="terms-checkbox"
-                        data-bind="checked: isPaymentTermsAccepted, event: { change: logIsPaymentsAccepted }"
+                        data-bind="attr: {
+                                       id: paymentTermsCheckboxId(),
+                                       'aria-labelledby': paymentTermsTextId()
+                                   },
+                                   checked: isPaymentTermsAccepted,
+                                   event: { change: logIsPaymentsAccepted }"
                     />
-                    <span class="terms-text" data-bind="html: paymentTermsMessage"></span>
+                    <span
+                        class="terms-text"
+                        data-bind="attr: {id: paymentTermsTextId()}, html: paymentTermsMessage"
+                    ></span>
                 </div>
                 <!-- /ko -->
             </fieldset>
