@@ -46,25 +46,20 @@ define([
 
     // The term /select-term answered with re-collected totals for; anything else
     // on the chips means the summary and the order can disagree (ABN-550).
-    // Observable so the placement gate re-evaluates when it moves.
     var confirmedTerm = ko.observable(selectedTerm());
 
-    // A chip clicked while a /select-term is in flight, sent once that settles.
-    // Overlapping calls are what the server serialises on the session lock, and
-    // it can take them in the opposite order to the one they were sent in.
+    // A chip clicked while a /select-term is in flight, sent once that settles:
+    // the server serialises overlapping calls on the session lock and can take
+    // them in the opposite order to the one they were sent in.
     var pendingTerm = null;
 
     // An external totals emission during a chip click is dropped by the
     // subscriber, so the fees are re-evaluated once the click settles.
     var totalsMissedWhileUpdating = false;
 
-    // True only while this module is writing the /select-term totals back, whose
-    // re-emission is not a change anything needs to react to.
+    // True while this module writes the /select-term totals back, whose
+    // re-emission is not a change to react to.
     var applyingOwnTotals = false;
-
-    // Sequence guard: out-of-order /select-term responses would otherwise
-    // confirm a term nobody selected.
-    var selectSeq = 0;
 
     // Fetch sequence guard. Magento fires quote.getTotals() once on bootstrap
     // (often with subtotal-only basis) and again after /totals-information
@@ -235,6 +230,37 @@ define([
         });
     }
 
+    /**
+     * Write a settled /select-term response into the summary and the chip fees.
+     */
+    function applyResponse(data) {
+        var currentTotals = quote.getTotals()();
+        if (currentTotals) {
+            currentTotals.grand_total = data.grand_total;
+            currentTotals.base_grand_total = data.base_grand_total;
+            currentTotals.tax_amount = data.tax_amount;
+            currentTotals.total_segments = data.total_segments;
+            applyingOwnTotals = true;
+            try {
+                quote.setTotals(currentTotals);
+            } finally {
+                applyingOwnTotals = false;
+            }
+            // Record the post-/select-term state so loadFees doesn't refetch on
+            // the totals re-emit setTotals just triggered.
+            lastTotalsSnapshot = snapshotTotals(currentTotals);
+        }
+        if (data.tax_display) {
+            taxDisplay(data.tax_display);
+        }
+        if (data.term_surcharges) {
+            // Bump fetchSeq so any in-flight loadFees can't clobber the
+            // authoritative values returned by /select-term.
+            fetchSeq++;
+            applyTermSurcharges(data.term_surcharges);
+        }
+    }
+
     var surchargeModel = {
         selectedTerm: selectedTerm,
         isUpdating: isUpdating,
@@ -269,10 +295,6 @@ define([
                 return;
             }
             selectedTerm(days);
-            if (isUpdating()) {
-                pendingTerm = days;
-                return;
-            }
             this.recalculateTotals(days);
         },
 
@@ -289,8 +311,11 @@ define([
          */
         recalculateTotals: function (days) {
             var restUrl = url.build('rest/V1/two/select-term');
-            var mySeq = ++selectSeq;
 
+            if (isUpdating()) {
+                pendingTerm = days;
+                return;
+            }
             isUpdating(true);
             // Do NOT clear termSurcharges here. A chip click only changes
             // which term is selected; the per-chip fees themselves are
@@ -305,62 +330,38 @@ define([
                 url: restUrl,
                 type: 'POST',
                 contentType: 'application/json',
-                // Without it a hung request holds isUpdating() true for the rest
-                // of the session, and with it the Place Order button disabled.
+                // A hung request would otherwise hold the Place Order button
+                // disabled for the rest of the session.
                 timeout: SELECT_TERM_TIMEOUT_MS,
                 data: JSON.stringify({
                     cartId: quote.getQuoteId(),
                     termDays: days
                 })
             }).done(function (response) {
-                if (mySeq !== selectSeq) {
-                    return;
-                }
                 var data = Array.isArray(response) ? response[0] : response;
                 if (!data || !Array.isArray(data.total_segments) || data.total_segments.length === 0) {
-                    // Nothing confirms the term without the totals it was
-                    // collected on, and an empty set would blank the summary.
+                    // An empty set would blank the summary, and nothing
+                    // confirms the term without the totals it was collected on.
                     revertSelection();
                     return;
                 }
-                var currentTotals = quote.getTotals()();
-                if (currentTotals) {
-                    currentTotals.grand_total = data.grand_total;
-                    currentTotals.base_grand_total = data.base_grand_total;
-                    currentTotals.tax_amount = data.tax_amount;
-                    currentTotals.total_segments = data.total_segments;
-                    applyingOwnTotals = true;
-                    quote.setTotals(currentTotals);
-                    applyingOwnTotals = false;
-                    // Record the post-/select-term state so loadFees doesn't
-                    // refetch on the totals re-emit setTotals just triggered.
-                    lastTotalsSnapshot = snapshotTotals(currentTotals);
-                }
-
-                if (data.tax_display) {
-                    taxDisplay(data.tax_display);
-                }
-                if (data.term_surcharges) {
-                    // Bump fetchSeq so any in-flight loadFees can't clobber
-                    // the authoritative values returned by /select-term.
-                    fetchSeq++;
-                    applyTermSurcharges(data.term_surcharges);
-                }
-
-                confirmedTerm(days);
-            }).fail(function (xhr, status, err) {
-                if (mySeq !== selectSeq) {
+                try {
+                    applyResponse(data);
+                } catch (error) {
+                    // A subscriber throwing out of setTotals would otherwise
+                    // take the rest of the chain with it and latch the gate.
+                    console.warn('Two_Gateway: select-term response rejected', error);
+                    revertSelection();
                     return;
                 }
+                confirmedTerm(days);
+            }).fail(function (xhr, status, err) {
                 console.warn('Two_Gateway: select-term failed', status, err);
                 revertSelection();
             }).always(function () {
-                if (mySeq !== selectSeq) {
-                    return;
-                }
-                isUpdating(false);
                 var next = pendingTerm;
                 pendingTerm = null;
+                isUpdating(false);
                 // A refused call reverted the chips, so its queue is stale.
                 if (next !== null && next === selectedTerm() && next !== confirmedTerm()) {
                     surchargeModel.recalculateTotals(next);
@@ -368,7 +369,7 @@ define([
                 }
                 if (totalsMissedWhileUpdating) {
                     totalsMissedWhileUpdating = false;
-                    // The snapshot above is of the totals this response merged
+                    // The snapshot below is of the totals this response merged
                     // into, so leaving it would dedup the fetch still needed.
                     lastTotalsSnapshot = null;
                     loadFees();

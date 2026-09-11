@@ -614,13 +614,18 @@ step, and `loadFees()`'s own snapshot dedup can then decline to refresh it — s
 a numeric comparison can refuse a settled checkout permanently, behind a
 message that says it is still updating.
 
-**Only one `/select-term` is ever in flight.** A chip clicked during a call is
-held and sent once that call settles, and dropped if it was refused. Overlapping
-calls are serialised by the server on the session lock, which can take them in
-the opposite order to the one they were sent in — so the client's own send order
-is no evidence of which term the session ended on, and confirming from it can
-leave the session holding a term the chips discarded as superseded.
-`recalculateTotals()` keeps a sequence guard anyway, for a direct caller.
+**Only one `/select-term` is ever in flight**, and `recalculateTotals()` itself
+is what holds that — not its caller. A chip clicked during a call is held and
+sent once that call settles, and dropped if it was refused. Overlapping calls are
+serialised by the server on the session lock, which can take them in the opposite
+order to the one they were sent in — so the client's own send order is no
+evidence of which term the session ended on, and confirming from it can leave the
+session holding a term the chips discarded as superseded.
+
+The response is applied inside a `try`. A totals subscriber throwing out of
+`setTotals` would otherwise abort the rest of jQuery's callback chain, leaving
+the updating flag latched and the Place Order button disabled for the life of the
+page, with every later totals emission discarded as this module's own.
 
 The call carries a `timeout`. Without one a hung request holds `isUpdating()`
 true for the rest of the session, and with it the Place Order button disabled.

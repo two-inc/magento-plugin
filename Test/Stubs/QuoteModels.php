@@ -93,16 +93,6 @@ namespace Magento\Quote\Model {
     if (!class_exists(Quote::class, false)) {
         class Quote implements \Magento\Quote\Api\Data\CartInterface
         {
-            public function getId()
-            {
-                return null;
-            }
-
-            public function collectTotals()
-            {
-                return $this;
-            }
-
             public function getGrandTotal()
             {
                 return null;

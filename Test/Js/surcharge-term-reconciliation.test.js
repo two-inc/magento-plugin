@@ -118,13 +118,13 @@ function shownSurcharge(ctx) {
 
 describe('surcharge model confirmed-term reconciliation (ABN-550)', function () {
     it.each([
-        ['an untouched checkout is reconciled: the server rendered the summary', 'none', null, true],
-        ['a chip click in flight is not reconciled — nothing has confirmed it', 'pending', null, false],
-        ['a confirmed chip click is reconciled', 'settled', 200, true],
-        ['a refused chip click reverts, so the chips and the quote agree again', 'failed', null, true],
-        ['a 200 carrying no totals reverts as well — nothing confirmed the term', 'empty', null, true],
-        ['a 200 carrying an empty segment set reverts too', 'blank', null, true]
-    ])('%s', function (because, outcome, net, expected) {
+        ['none', null, true, 'an untouched checkout is reconciled: the server rendered the summary'],
+        ['pending', null, false, 'a chip click in flight is not reconciled — nothing has confirmed it'],
+        ['settled', 200, true, 'a confirmed chip click is reconciled'],
+        ['failed', null, true, 'a refused chip click reverts, so the chips and the quote agree again'],
+        ['empty', null, true, 'a 200 carrying no totals reverts — nothing confirmed the term'],
+        ['blank', null, true, 'a 200 carrying an empty segment set reverts too']
+    ])('%s with net %p is reconciled=%p (%s)', function (outcome, net, expected) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
         if (outcome !== 'none') {
@@ -182,21 +182,43 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         expect(ctx.model.isTermReconciled()).toBe(true);
     });
 
-    it('a superseded response never writes its own term into the summary', function () {
+    it('a chip clicked back to the term in flight sends nothing more', function () {
         const ctx = loadModel();
         ctx.captured.get(FEES);
-        // recalculateTotals is the raw primitive. selectTerm never overlaps two
-        // calls; the guard is what stops a direct caller doing so.
-        ctx.model.selectedTerm(90);
-        ctx.model.recalculateTotals(90);
-        ctx.model.selectedTerm(60);
-        ctx.model.recalculateTotals(60);
-        settle(ctx, 1, 'settled', 150);
-        // 90's answer lands late; applying it would show a term nobody selected.
+        ctx.model.selectTerm(90);
+        ctx.model.selectTerm(60);
+        ctx.model.selectTerm(90);
+
         settle(ctx, 0, 'settled', 200);
 
-        expect(shownSurcharge(ctx)).toBe(150);
+        expect(ctx.posts).toHaveLength(1);
+        expect(ctx.model.selectedTerm()).toBe(90);
         expect(ctx.model.isTermReconciled()).toBe(true);
+    });
+
+    it('a totals subscriber throwing leaves the gate and the fee fetch usable', function () {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        let thrown = false;
+        ctx.totals.subscribe(function () {
+            if (thrown) return;
+            thrown = true;
+            throw new Error('a third-party summary subscriber');
+        });
+        ctx.model.selectTerm(90);
+
+        settle(ctx, 0, 'settled', 200);
+
+        expect(ctx.model.isUpdating()).toBe(false);
+        expect(ctx.model.selectedTerm()).toBe(30);
+        expect(ctx.model.isTermReconciled()).toBe(true);
+
+        // The self-emission flag is released, so a later totals change is still
+        // a change this model reacts to.
+        const feeCallsBefore = ctx.captured.getCalls;
+        ctx.totals({ grand_total: 1400, total_segments: [{ code: 'shipping', title: 'ship', value: 400 }] });
+
+        expect(ctx.captured.getCalls).toBe(feeCallsBefore + 1);
     });
 
     it('a settled chip click does not refetch the fees it just received', function () {
@@ -279,15 +301,15 @@ function makeRendererContext(component) {
 
 describe('gateway_method reconciliation submit gate (ABN-550)', function () {
     it.each([
-        ['a confirmed selection places the order and leaves the button enabled', true, 1, [], true],
+        [true, 1, [], true, 'a confirmed selection places the order and leaves the button enabled'],
         [
-            'an unconfirmed selection is refused rather than charged a total the summary never showed',
             false,
             0,
             ['The selected payment term is still being applied. Please try again shortly.'],
-            false
+            false,
+            'an unconfirmed selection is refused rather than charged a total the summary never showed'
         ]
-    ])('%s', function (because, reconciled, expectedCalls, expectedErrors, expectedEnabled) {
+    ])('reconciled=%p -> %p placements, %p errors, enabled=%p (%s)', function (reconciled, expectedCalls, expectedErrors, expectedEnabled) {
         const component = loadRenderer(reconciled);
         const ctx = makeRendererContext(component);
 
