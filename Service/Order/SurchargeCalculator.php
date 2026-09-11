@@ -300,14 +300,9 @@ class SurchargeCalculator
         $hasPercentage = in_array($surchargeType, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE]);
         $hasFixed = in_array($surchargeType, [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE]);
 
-        // The merchant cap bounds the fixed component, and its currency pair is
-        // its own: an order already in the fixed currency still needs the cap
-        // converted. capFixedSurcharge() refuses to price a fee it cannot
-        // bound, so that verdict has to be reachable before anything is priced.
-        //
-        // Only a term that actually carries a fee needs bounding, and the term
-        // scan runs only once an unconvertible cap makes it matter — this is
-        // every payment-method render.
+        // The cap's currency pair is its own, so an order already in the fixed
+        // currency still needs it converted. The term scan is last because this
+        // runs on every payment-method render.
         if ($hasFixed) {
             $cap = $this->capProvider->inCurrency($orderCurrency, $storeId);
             if ($cap !== null && !$cap['exact'] && $this->hasNonZeroFixedAmount($storeId)) {
@@ -480,18 +475,14 @@ class SurchargeCalculator
     /**
      * The fixed surcharge bounded by the merchant's cap, in order currency.
      *
-     * The admin form refuses an over-cap amount, but it is not the only way one
-     * arrives: a `config.php` import and a direct `core_config_data` write both
-     * reach the per-term surcharge paths without passing any backend model, and
-     * the cap itself can be lowered under an amount that was within it when
-     * saved. The ceiling therefore belongs where the charge is decided, not in
-     * the trust placed on what is stored.
+     * The ceiling is applied here rather than trusted from storage because the
+     * admin form is not the only way an amount arrives: the per-term surcharge
+     * paths carry no backend model, so a config import or a direct
+     * `core_config_data` write reaches none, and the cap can be lowered under an
+     * amount that was within it when saved.
      *
-     * A cap no rate converts is not a cap this can check, and an unconverted
-     * ceiling in a weaker currency would admit a fee far above the real one, so
-     * that case refuses to price rather than guessing. `isSurchargeResolvable()`
-     * reports it ahead of any pricing so the buyer meets an unofferable method
-     * instead of a checkout error.
+     * A cap no rate converts is refused rather than guessed at — an unconverted
+     * ceiling in a weaker currency would admit a fee far above the real one.
      *
      * @throws LocalizedException when a cap exists but cannot be converted
      */
@@ -529,8 +520,7 @@ class SurchargeCalculator
             return $surcharge;
         }
 
-        // The merchant's only notice that the fee they configured is not the fee
-        // being charged. Silence here is the concealment this clamp must avoid.
+        // The merchant's only notice: the admin grid still shows what they set.
         $this->logRepository->addErrorLog('Surcharge above the merchant cap was reduced to the cap', [
             'configured_surcharge' => $surcharge,
             'merchant_cap' => $cap['amount'],

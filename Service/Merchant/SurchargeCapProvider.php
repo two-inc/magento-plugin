@@ -43,15 +43,14 @@ class SurchargeCapProvider
      * The cap in $targetCurrency, or null when the merchant has no cap.
      *
      * `exact` is false when a cap exists but no rate converts it into
-     * $targetCurrency, in which case `amount` is the unconverted figure. The
-     * admin form compares against it anyway — it can only refuse more than the
-     * real cap would. A path that charges a buyer must not: an unconverted
-     * ceiling in a weaker currency admits a fee many times the real cap, so
-     * callers that price a fee treat an inexact cap as unpriceable instead.
+     * $targetCurrency, `amount` then being the unconverted figure. The admin
+     * form compares against it anyway, which can only refuse MORE than the real
+     * cap would; a path that charges a buyer refuses to price instead, because
+     * an unconverted ceiling in a weaker currency admits a fee many times the
+     * real cap.
      *
-     * Truncating the cap to whole units before converting, then rounding the
-     * converted figure up, is deliberate: both errors widen the buyer's fee by
-     * less than one unit rather than refusing a fee the merchant may charge.
+     * The cap is truncated to whole units and a converted figure rounded up, so
+     * neither step refuses a fee the merchant is entitled to charge.
      *
      * @return array{amount: int, exact: bool}|null
      */
