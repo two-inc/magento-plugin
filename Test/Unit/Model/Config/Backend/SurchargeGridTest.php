@@ -529,7 +529,8 @@ class SurchargeGridTest extends TestCase
         string $postedType,
         array $grid,
         array $storedCells = [],
-        ?array $surchargeLimit = null
+        ?array $surchargeLimit = null,
+        ?object $resource = null
     ): array {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
         $config->method('getValue')->willReturnCallback(
@@ -571,7 +572,11 @@ class SurchargeGridTest extends TestCase
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
         $inject(SurchargeGrid::class, 'settingsProvider', $settings);
         $inject(SurchargeGrid::class, 'configWriter', $writer);
-        $inject(SurchargeGrid::class, 'resourceConnection', $this->makeResourceConnection($storedCells));
+        $inject(
+            SurchargeGrid::class,
+            'resourceConnection',
+            $resource ?? $this->makeResourceConnection($storedCells)
+        );
         $inject(SurchargeGrid::class, 'storeManager', $this->makeStoreManager());
 
         $model->setData('scope', $scope);
@@ -720,6 +725,33 @@ class SurchargeGridTest extends TestCase
     }
 
     /**
+     * Every surcharge query must resolve its table through ResourceConnection,
+     * which is the only layer that applies the installation's table prefix.
+     */
+    public function testSurchargeQueriesResolveTheTableThroughResourceConnection(): void
+    {
+        $resource = $this->makeResourceConnection(
+            ['payment/two_payment/surcharge_60_limit' => '5']
+        );
+
+        $this->runProductionAfterSaveAtScope(
+            'default',
+            0,
+            'fixed_and_percentage',
+            [30 => ['fixed' => '10', 'percentage' => '5', 'limit' => '50']],
+            [],
+            null,
+            $resource
+        );
+
+        $this->assertContains(
+            'core_config_data',
+            $resource->tableNamesAsked,
+            'a surcharge query resolved its table without the installation prefix'
+        );
+    }
+
+    /**
      * A store manager whose stores and websites all report the base currency
      * the scope config reports, so a non-default scope resolves it without FX.
      */
@@ -807,6 +839,9 @@ class SurchargeGridTest extends TestCase
         };
 
         return new class ($connection) {
+            /** @var list<string> */
+            public array $tableNamesAsked = [];
+
             private $connection;
 
             public function __construct($connection)
@@ -817,6 +852,15 @@ class SurchargeGridTest extends TestCase
             public function getConnection()
             {
                 return $this->connection;
+            }
+
+            // Only ResourceConnection applies the table prefix; the adapter's
+            // own getTableName() just shortens a long name.
+            public function getTableName($name)
+            {
+                $this->tableNamesAsked[] = (string)$name;
+
+                return 'pfx_' . $name;
             }
         };
     }
