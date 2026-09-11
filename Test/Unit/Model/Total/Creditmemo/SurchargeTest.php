@@ -280,6 +280,7 @@ class SurchargeTest extends TestCase
         $nativeTax = 17.4 - $priorTaxRefunded;
         $item = new \Magento\Framework\DataObject();
         $item->setTaxAmount(14.8);
+        $item->setBaseTaxAmount(14.8);
 
         $creditmemo = new Creditmemo();
         $creditmemo->setOrder($order);
@@ -339,6 +340,244 @@ class SurchargeTest extends TestCase
             [1.01, 0.2, 0.0, 14.8, 14.802, 88.802, 'merchandise isolated, surcharge refund zeroed'],
             [1.01, 0.2, 11.99, 14.8, 17.2, 103.19, 'the whole remaining surcharge typed in'],
             [1.01, 0.2, 6.0, 14.8, 16.002, 96.002, 'part of the remaining surcharge typed in'],
+        ];
+    }
+
+    /**
+     * Every memo in a sequence must carry the VAT on the surcharge it refunds.
+     *
+     * The order: merchandise 74.00 + 14.80 VAT, surcharge 13.00 + 2.60 VAT at
+     * 20%, fully invoiced, so its invoiced tax is 17.40. Each case walks its
+     * memos in order, advancing the order's refunded columns the way core and
+     * Observer\CreditmemoSurchargeRunningTotal advance them, and asserts each
+     * memo's own row tax, tax total and grand total. An aggregate that only
+     * balances once the last memo lands is what shipped.
+     *
+     * @param array<int, array<string, float|bool|null>> $memos
+     * @param array<int, array<string, float>> $expected
+     * @dataProvider memoSequenceCases
+     */
+    public function testEveryMemoCarriesTheVatOnTheSurchargeItRefunds(
+        float $priorTaxRefunded,
+        array $memos,
+        array $expected,
+        string $case
+    ): void {
+        $order = new Order();
+        $order->setData('two_surcharge_amount', 13.0);
+        $order->setData('base_two_surcharge_amount', 13.0);
+        $order->setData('two_surcharge_refunded', 0.0);
+        $order->setData('base_two_surcharge_refunded', 0.0);
+        $order->setData('two_surcharge_tax_rate', 20.0);
+        $order->setData('two_surcharge_description', 'Surcharge');
+        $order->setData('subtotal', 74.0);
+        $order->setData('tax_invoiced', 17.4);
+        $order->setData('tax_refunded', $priorTaxRefunded);
+        $order->setData('base_to_order_rate', 1.0);
+
+        foreach ($memos as $index => $spec) {
+            $creditmemo = $this->nativeCreditmemo($order, $spec);
+
+            (new Surcharge())->collect($creditmemo);
+
+            $want = $expected[$index];
+            $label = sprintf('%s, memo %d', $case, $index + 1);
+
+            $rowTax = 0.0;
+            foreach ($creditmemo->getAllItems() as $item) {
+                $rowTax += (float)$item->getTaxAmount();
+            }
+            $this->assertEqualsWithDelta(
+                $want['row_tax'],
+                $rowTax,
+                0.0001,
+                $label . ': the merchandise row tax is core\'s and must be left alone.'
+            );
+            $this->assertEqualsWithDelta(
+                $want['surcharge_net'],
+                (float)$creditmemo->getTwoSurchargeAmount(),
+                0.0001,
+                $label . ': the surcharge net refunded on this memo.'
+            );
+            $this->assertEqualsWithDelta(
+                $want['tax_total'],
+                (float)$creditmemo->getTaxAmount(),
+                0.0001,
+                $label . ': the tax total must cover the surcharge this memo refunds.'
+            );
+            $this->assertEqualsWithDelta(
+                $want['grand_total'],
+                (float)$creditmemo->getGrandTotal(),
+                0.0001,
+                $label . ': the grand total must carry that same tax.'
+            );
+            // The order is in its base currency, so both legs land together.
+            $this->assertEqualsWithDelta(
+                $want['tax_total'],
+                (float)$creditmemo->getBaseTaxAmount(),
+                0.0001,
+                $label . ': the base tax total must move with the order-currency one.'
+            );
+            $this->assertEqualsWithDelta(
+                $want['grand_total'],
+                (float)$creditmemo->getBaseGrandTotal(),
+                0.0001,
+                $label . ': the base grand total must move with the order-currency one.'
+            );
+
+            // What Total\Creditmemo\OtherCharges reads as the VAT core granted
+            // a fee no line itemizes, and refuses the refund over when negative.
+            $unattributed = (float)$creditmemo->getTaxAmount()
+                - $rowTax
+                - (float)$creditmemo->getTwoSurchargeTaxAmount();
+            $this->assertEqualsWithDelta(
+                $want['unattributed'],
+                $unattributed,
+                0.0001,
+                $label . ': the tax left over for a charge no line itemizes.'
+            );
+
+            $order->setData('tax_refunded', round(
+                (float)$order->getData('tax_refunded') + round((float)$creditmemo->getTaxAmount(), 2),
+                6
+            ));
+            $refunded = round(
+                (float)$order->getData('two_surcharge_refunded') + (float)$creditmemo->getTwoSurchargeAmount(),
+                6
+            );
+            $order->setData('two_surcharge_refunded', $refunded);
+            $order->setData('base_two_surcharge_refunded', $refunded);
+        }
+    }
+
+    /**
+     * The pre-state Magento\Sales\Model\Order\Creditmemo\Total\Tax leaves:
+     * the memo's own row tax, replaced by the order's whole remaining tax
+     * allowance on the last memo and bounded by that allowance on any other.
+     *
+     * @param array<string, float|bool|null> $spec
+     */
+    private function nativeCreditmemo(Order $order, array $spec): Creditmemo
+    {
+        $allowance = (float)$order->getData('tax_invoiced') - (float)$order->getData('tax_refunded');
+        $rowTax = (float)$spec['row_tax'];
+        $memoTax = $spec['is_last'] ? $allowance : min($allowance, $rowTax);
+
+        $items = [];
+        if ($rowTax > 0) {
+            $item = new \Magento\Framework\DataObject();
+            $item->setTaxAmount($rowTax);
+            $item->setBaseTaxAmount($rowTax);
+            $items[] = $item;
+        }
+
+        $creditmemo = new Creditmemo();
+        $creditmemo->setOrder($order);
+        $creditmemo->setData('subtotal', $spec['subtotal']);
+        $creditmemo->setData('all_items', $items);
+        $creditmemo->setData('shipping_tax_amount', 0.0);
+        $creditmemo->setData('base_shipping_tax_amount', 0.0);
+        $creditmemo->setData('tax_amount', $memoTax);
+        $creditmemo->setData('base_tax_amount', $memoTax);
+        $creditmemo->setData('grand_total', (float)$spec['subtotal'] + $memoTax);
+        $creditmemo->setData('base_grand_total', (float)$spec['subtotal'] + $memoTax);
+        if ($spec['override'] !== null) {
+            $creditmemo->setData('two_surcharge_amount', $spec['override']);
+        }
+
+        return $creditmemo;
+    }
+
+    /**
+     * @return array<string, array<int, mixed>>
+     */
+    public static function memoSequenceCases(): array
+    {
+        return [
+            'one memo taking the whole order' => [
+                0.0,
+                [
+                    ['subtotal' => 74.0, 'row_tax' => 14.8, 'is_last' => true, 'override' => null],
+                ],
+                [
+                    [
+                        'row_tax' => 14.8, 'surcharge_net' => 13.0, 'tax_total' => 17.4,
+                        'grand_total' => 104.4, 'unattributed' => 0.0,
+                    ],
+                ],
+                'whole order on one memo',
+            ],
+            'surcharge prorated across two half memos' => [
+                0.0,
+                [
+                    ['subtotal' => 37.0, 'row_tax' => 7.4, 'is_last' => false, 'override' => null],
+                    ['subtotal' => 37.0, 'row_tax' => 7.4, 'is_last' => true, 'override' => null],
+                ],
+                [
+                    [
+                        'row_tax' => 7.4, 'surcharge_net' => 6.5, 'tax_total' => 8.7,
+                        'grand_total' => 52.2, 'unattributed' => 0.0,
+                    ],
+                    [
+                        'row_tax' => 7.4, 'surcharge_net' => 6.5, 'tax_total' => 8.7,
+                        'grand_total' => 52.2, 'unattributed' => 0.0,
+                    ],
+                ],
+                'surcharge split across two partial memos',
+            ],
+            'surcharge alone, then the merchandise' => [
+                0.0,
+                [
+                    ['subtotal' => 0.0, 'row_tax' => 0.0, 'is_last' => false, 'override' => 13.0],
+                    ['subtotal' => 74.0, 'row_tax' => 14.8, 'is_last' => true, 'override' => null],
+                ],
+                [
+                    [
+                        'row_tax' => 0.0, 'surcharge_net' => 13.0, 'tax_total' => 2.6,
+                        'grand_total' => 15.6, 'unattributed' => 0.0,
+                    ],
+                    [
+                        'row_tax' => 14.8, 'surcharge_net' => 0.0, 'tax_total' => 14.8,
+                        'grand_total' => 88.8, 'unattributed' => 0.0,
+                    ],
+                ],
+                'surcharge-only memo then the merchandise remainder',
+            ],
+            'surcharge held back to the last memo' => [
+                0.0,
+                [
+                    ['subtotal' => 37.0, 'row_tax' => 7.4, 'is_last' => false, 'override' => 0.0],
+                    ['subtotal' => 37.0, 'row_tax' => 7.4, 'is_last' => true, 'override' => null],
+                ],
+                [
+                    [
+                        'row_tax' => 7.4, 'surcharge_net' => 0.0, 'tax_total' => 7.4,
+                        'grand_total' => 44.4, 'unattributed' => 0.0,
+                    ],
+                    [
+                        'row_tax' => 7.4, 'surcharge_net' => 6.5, 'tax_total' => 8.7,
+                        'grand_total' => 52.2, 'unattributed' => 0.0,
+                    ],
+                ],
+                'no surcharge on the partial memo, prorated share on the last',
+            ],
+            // An order whose refunded tax has run ahead of its item rows: core
+            // grants this memo less tax than its own rows carry, and the
+            // shortfall must stay exactly that — the surcharge neither absorbs
+            // it nor hides it from the other-charges validator.
+            'a memo core grants less tax than its rows carry' => [
+                12.4,
+                [
+                    ['subtotal' => 37.0, 'row_tax' => 7.4, 'is_last' => false, 'override' => null],
+                ],
+                [
+                    [
+                        'row_tax' => 7.4, 'surcharge_net' => 6.5, 'tax_total' => 6.3,
+                        'grand_total' => 49.8, 'unattributed' => -2.4,
+                    ],
+                ],
+                'core grants less tax than the memo rows carry',
+            ],
         ];
     }
 }
