@@ -10,12 +10,9 @@ namespace Two\Gateway\Test\Unit\I18n;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The company picker's chips and prompts live in framework-free modules that
- * ask their host to translate a phrase by name. Magento builds the storefront's
- * JS dictionary by scanning for literal `$t()` calls, so a phrase written only
- * as a name the host is asked for never enters that dictionary and renders in
- * English on an otherwise translated checkout, with no error and no log line
- * (ABN-555).
+ * Magento builds the storefront's JS dictionary by scanning for literal `$t()`
+ * calls, so a phrase the picker only ever asks its host for by name renders in
+ * English with no error and no log line (ABN-555).
  */
 class SharedCapturePhraseHarvestTest extends TestCase
 {
@@ -40,6 +37,16 @@ class SharedCapturePhraseHarvestTest extends TestCase
      * the extraction below against silently matching nothing.
      */
     private const KNOWN_SEAM_PHRASE_COUNT = 7;
+
+    public function testTheHostAnswersTheSeamFromThatDictionary(): void
+    {
+        $this->assertStringContainsString(
+            'translate: translateSharedPhrase',
+            $this->source(self::HOST_MODULE),
+            'The host spells the phrases out but hands the seam a translator that bypasses them,'
+            . ' so the dictionary is dead code and nothing keeps it in step with the seam.'
+        );
+    }
 
     public function testEverySeamPhraseIsHarvestableByMagentosScanner(): void
     {
@@ -166,7 +173,7 @@ class SharedCapturePhraseHarvestTest extends TestCase
         $this->assertNotFalse($handle, sprintf('Cannot read i18n/%s.csv.', $locale));
 
         $rows = [];
-        while (($row = fgetcsv($handle)) !== false) {
+        while (($row = fgetcsv($handle, null, ',', '"', '')) !== false) {
             if (isset($row[0], $row[1])) {
                 $rows[$row[0]] = (string) $row[1];
             }

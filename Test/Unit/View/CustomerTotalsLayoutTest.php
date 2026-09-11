@@ -21,48 +21,70 @@ class CustomerTotalsLayoutTest extends TestCase
      * Every customer-facing sales surface, and the core totals block the
      * surcharge row attaches to.
      *
-     * @return array<string, array{0: string, 1: string, 2: string}>
+     * "Other charges" is reconciled on credit memos only, so only those
+     * surfaces require its block.
+     *
+     * @return array<string, array{0: string, 1: string, 2: list<string>, 3: string}>
      */
     public static function surfaceProvider(): array
     {
+        $fee = ['Two\Gateway\Block\Sales\Total\Surcharge'];
+        $memo = array_merge($fee, ['Two\Gateway\Block\Sales\Total\OtherCharges']);
+
         return [
-            'order view' => ['sales_order_view', 'order_totals', 'the signed-in order view'],
-            'guest order view' => ['sales_guest_view', 'order_totals', 'the guest order view'],
-            'order print' => ['sales_order_print', 'order_totals', 'the signed-in order print page'],
-            'guest order print' => ['sales_guest_print', 'order_totals', 'the guest order print page'],
-            'invoice view' => ['sales_order_invoice', 'invoice_totals', 'the signed-in invoice view'],
-            'guest invoice view' => ['sales_guest_invoice', 'invoice_totals', 'the guest invoice view'],
-            'invoice print' => ['sales_order_printinvoice', 'invoice_totals', 'the signed-in invoice print page'],
+            'order view' => ['sales_order_view', 'order_totals', $fee, 'the signed-in order view'],
+            'guest order view' => ['sales_guest_view', 'order_totals', $fee, 'the guest order view'],
+            'order print' => ['sales_order_print', 'order_totals', $fee, 'the signed-in order print page'],
+            'guest order print' => ['sales_guest_print', 'order_totals', $fee, 'the guest order print page'],
+            'invoice view' => ['sales_order_invoice', 'invoice_totals', $fee, 'the signed-in invoice view'],
+            'guest invoice view' => ['sales_guest_invoice', 'invoice_totals', $fee, 'the guest invoice view'],
+            'invoice print' => [
+                'sales_order_printinvoice',
+                'invoice_totals',
+                $fee,
+                'the signed-in invoice print page',
+            ],
             'guest invoice print' => [
                 'sales_guest_printinvoice',
                 'invoice_totals',
+                $fee,
                 'the guest invoice print page',
             ],
-            'creditmemo view' => ['sales_order_creditmemo', 'creditmemo_totals', 'the signed-in credit memo view'],
+            'creditmemo view' => [
+                'sales_order_creditmemo',
+                'creditmemo_totals',
+                $memo,
+                'the signed-in credit memo view',
+            ],
             'guest creditmemo view' => [
                 'sales_guest_creditmemo',
                 'creditmemo_totals',
+                $memo,
                 'the guest credit memo view',
             ],
             'creditmemo print' => [
                 'sales_order_printcreditmemo',
                 'creditmemo_totals',
+                $memo,
                 'the signed-in credit memo print page',
             ],
             'guest creditmemo print' => [
                 'sales_guest_printcreditmemo',
                 'creditmemo_totals',
+                $memo,
                 'the guest credit memo print page',
             ],
         ];
     }
 
     /**
+     * @param list<string> $requiredBlocks
      * @dataProvider surfaceProvider
      */
     public function testSurchargeRowIsDeclaredOnEveryCustomerFacingSurface(
         string $handle,
         string $container,
+        array $requiredBlocks,
         string $description
     ): void {
         $path = $this->layoutDir() . '/' . $handle . '.xml';
@@ -84,11 +106,13 @@ class CustomerTotalsLayoutTest extends TestCase
             $xml,
             sprintf('%s attaches the surcharge row to a block other than %s.', $description, $container)
         );
-        $this->assertStringContainsString(
-            'Two\Gateway\Block\Sales\Total\Surcharge',
-            $xml,
-            sprintf('%s declares no surcharge block.', $description)
-        );
+        foreach ($requiredBlocks as $block) {
+            $this->assertStringContainsString(
+                $block,
+                $xml,
+                sprintf('%s does not declare %s.', $description, $block)
+            );
+        }
     }
 
     /**

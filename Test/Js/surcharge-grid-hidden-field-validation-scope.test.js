@@ -2,12 +2,9 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-558. Magento's admin validator drops `:hidden` from jQuery-validate's
- * ignore list, so a surcharge cap the grid hides as irrelevant still refuses
- * the save — and renders the reason inside the hidden cell. The save then
- * reports neither success nor failure.
- *
- * The refusal itself is correct and must survive wherever the cap is on screen.
+ * ABN-558. Magento's admin validator does not ignore `:hidden`, so a grid cell
+ * hidden as irrelevant still refuses the save. The refusal itself is correct
+ * and must survive wherever the cell is on screen.
  */
 
 'use strict';
@@ -25,20 +22,25 @@ const ADMIN_IGNORE = ':disabled, .ignore-validate, .no-display.template, '
 
 const TERMS = [30, 60];
 
+/** The rules view/adminhtml/templates/system/config/field/surcharge-grid.phtml emits per column. */
+const COLUMN_RULES = {
+    fixed: '{"validate-zero-or-greater":true,"validate-number-range":"0-100"}',
+    percentage: '{"validate-zero-or-greater":true,"validate-number-range":"0-10"}',
+    limit: '{"validate-zero-or-greater":true,"validate-two-nonzero-limit":true}'
+};
+
 function cell(days, col) {
     return '<td class="surcharge-grid__' + col + '">'
         + '<input type="text" class="input-text surcharge-grid__input"'
         + ' data-column="' + col + '" data-term="' + days + '"'
         + ' id="fld_' + days + '_' + col + '"'
+        + " data-validate='" + COLUMN_RULES[col] + "'"
         + ' name="groups[payment_terms][fields][surcharge_' + days + '_' + col + '][value]"'
         + ' value="' + (col === 'limit' && days === 60 ? '0' : '5') + '"/>'
         + '</td>';
 }
 
-/**
- * The 60-day cap carries the residue of a save the merchant already watched
- * fail while the cell was visible.
- */
+/** Residue of a save the merchant already watched fail while the cell was visible. */
 function markPreviouslyRefused() {
     $('#fld_60_limit')
         .attr('aria-invalid', 'true')
@@ -73,8 +75,8 @@ function boot(surchargeType) {
                 + '" checked="checked"/>';
         }).join('')
         + '</div>'
-        // The grid field sits in its own admin form row; the module hides that
-        // row wholesale once no surcharge applies.
+        // The grid field sits in its own admin form row, hidden wholesale once
+        // no surcharge applies.
         + '<table><tbody><tr id="row_' + PREFIX + 'surcharge_grid"><td>'
         + '<div id="surcharge-grid-container" data-max-fixed="100" data-max-percentage="10">'
         + '  <p class="surcharge-grid__no-terms"><span></span></p>'
@@ -102,12 +104,17 @@ function boot(surchargeType) {
     );
 }
 
-/** The fields Magento's admin validator would actually validate on submit. */
+/**
+ * The fields Magento's admin validator would validate on submit, mirroring
+ * mage/backend/validation.js `Elements()`: everything in the form, less the
+ * ignore list, less anything carrying no rule.
+ */
 function validatedFieldIds() {
     return $('#config-edit-form')
         .find('input, select, textarea')
-        .not(':submit, :reset, :image, [disabled]')
+        .not(':submit, :reset, :image, :disabled')
         .not(ADMIN_IGNORE)
+        .filter('[data-validate]')
         .map(function () { return this.id; })
         .get();
 }
@@ -118,16 +125,21 @@ function selectType(type) {
 
 describe('a surcharge cap the grid hides does not gate the save', () => {
     it.each([
-        ['none', false, 'no surcharge applies, so no cap can refuse the save'],
-        ['fixed', false, 'a fixed fee has no cap column, so a stored zero cannot refuse it'],
-        ['percentage', true, 'the cap is on screen, so its refusal still stands'],
-        ['fixed_and_percentage', true, 'the cap is on screen here too']
-    ])('surcharge type %s -> cap validated=%s — %s', (type, expectedValidated) => {
-        boot(type);
+        ['none', false, false, false, 'no surcharge applies, so no cell can refuse the save'],
+        ['fixed', true, false, false, 'only the fixed column is on screen'],
+        ['percentage', false, true, true, 'the percentage and its cap are on screen'],
+        ['fixed_and_percentage', true, true, true, 'every column is on screen']
+    ])(
+        'surcharge type %s -> fixed=%s percentage=%s cap=%s — %s',
+        (type, fixedIn, percentageIn, capIn) => {
+            boot(type);
+            const scoped = validatedFieldIds();
 
-        expect(validatedFieldIds()).toContain(PREFIX + 'surcharge_type');
-        expect(validatedFieldIds().indexOf('fld_60_limit') !== -1).toBe(expectedValidated);
-    });
+            expect(scoped.indexOf('fld_60_fixed') !== -1).toBe(fixedIn);
+            expect(scoped.indexOf('fld_60_percentage') !== -1).toBe(percentageIn);
+            expect(scoped.indexOf('fld_60_limit') !== -1).toBe(capIn);
+        }
+    );
 
     it.each([
         ['none', 'switching to no surcharge'],
@@ -148,6 +160,16 @@ describe('a surcharge cap the grid hides does not gate the save', () => {
 
         expect($('#fld_60_limit').is(':disabled')).toBe(false);
         expect($('#fld_60_limit').val()).toBe('0');
+    });
+
+    it('takes a deselected term out of scope, cap and all', () => {
+        boot('percentage');
+        expect(validatedFieldIds()).toContain('fld_60_limit');
+
+        $('.two-term-checkboxes__input[value="60"]').prop('checked', false).trigger('change');
+
+        expect(validatedFieldIds()).not.toContain('fld_60_limit');
+        expect(validatedFieldIds()).toContain('fld_30_limit');
     });
 
     it('puts the cap back in scope when the merchant returns to percentage', () => {

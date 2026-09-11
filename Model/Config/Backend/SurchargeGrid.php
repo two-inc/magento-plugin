@@ -157,6 +157,7 @@ class SurchargeGrid extends Value
         // surfaces again when the column comes back into view, which is where
         // the admin can act on it.
         $limitColumnVisible = $this->savedSurchargeTypeHasPercentage($groups, $scope, $scopeId);
+        $fixedColumnVisible = $this->savedSurchargeTypeHasFixed($groups, $scope, $scopeId);
 
         // TWO-25503: the per-cell zero rule below only ever sees the cells the
         // grid POSTED, i.e. the terms currently selected in "Payment terms".
@@ -197,7 +198,18 @@ class SurchargeGrid extends Value
                 // the JS pass; normalise server-side too.
                 $value = str_replace(',', '.', $value);
 
-                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage, $limitColumnVisible);
+                // Every ceiling is skipped while its own column is hidden, for the
+                // reason the limit rule already records: the cell posts a stored
+                // value the merchant cannot see, and the fixed cap is derived from
+                // an FX-converted merchant setting that can fall below a value that
+                // was legal when it was entered.
+                $columnVisible = match ($type) {
+                    'fixed' => $fixedColumnVisible,
+                    'percentage', 'limit' => $limitColumnVisible,
+                    default => true,
+                };
+
+                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage, $columnVisible);
 
                 $this->configWriter->save($path, $value, $scope, $scopeId);
             }
@@ -233,17 +245,44 @@ class SurchargeGrid extends Value
      */
     private function savedSurchargeTypeHasPercentage(array $groups, string $scope, int $scopeId): bool
     {
+        return in_array(
+            $this->resolveSavedSurchargeType($groups, $scope, $scopeId),
+            [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE],
+            true
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $groups
+     */
+    private function resolveSavedSurchargeType(array $groups, string $scope, int $scopeId): string
+    {
         $posted = $groups['payment_terms']['fields']['surcharge_type']['value'] ?? null;
         if (is_string($posted) && $posted !== '') {
-            $type = $posted;
-        } else {
-            $path = sprintf('payment/%s/surcharge_type', $this->methodCode());
-            $type = $scope === 'default'
-                ? (string)$this->_config->getValue($path)
-                : (string)$this->_config->getValue($path, $scope, $scopeId);
+            return $posted;
         }
 
-        return in_array($type, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE], true);
+        $path = sprintf('payment/%s/surcharge_type', $this->methodCode());
+
+        return $scope === 'default'
+            ? (string)$this->_config->getValue($path)
+            : (string)$this->_config->getValue($path, $scope, $scopeId);
+    }
+
+    /**
+     * Whether the surcharge type being saved carries a fixed component, i.e.
+     * whether the grid's Fixed column is visible. Resolved exactly as
+     * savedSurchargeTypeHasPercentage() resolves its own.
+     *
+     * @param array<string, mixed> $groups
+     */
+    private function savedSurchargeTypeHasFixed(array $groups, string $scope, int $scopeId): bool
+    {
+        return in_array(
+            $this->resolveSavedSurchargeType($groups, $scope, $scopeId),
+            [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE],
+            true
+        );
     }
 
     /**
@@ -402,7 +441,7 @@ class SurchargeGrid extends Value
         int $days,
         ?int $maxFixed,
         int $maxPercentage,
-        bool $limitColumnVisible = true
+        bool $columnVisible = true
     ): void {
         if (!is_numeric($rawValue)) {
             throw new LocalizedException(
@@ -439,7 +478,7 @@ class SurchargeGrid extends Value
         // cap of 0.00 — the very outcome being refused, one step later.
         // Refusing everything that rounds away is what makes "the rounding
         // direction cannot decide whether a configured cap survives" true.
-        if ($type === 'limit' && $limitColumnVisible && round($value, self::MONEY_DECIMALS) === 0.0) {
+        if ($type === 'limit' && $columnVisible && round($value, self::MONEY_DECIMALS) === 0.0) {
             throw new LocalizedException(
                 __(
                     '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'
@@ -448,12 +487,12 @@ class SurchargeGrid extends Value
                 )
             );
         }
-        if ($type === 'fixed' && $maxFixed !== null && $value > $maxFixed) {
+        if ($type === 'fixed' && $columnVisible && $maxFixed !== null && $value > $maxFixed) {
             throw new LocalizedException(
                 __('%1 days - fixed amount: maximum is %2.', $days, $maxFixed)
             );
         }
-        if ($type === 'percentage' && $value > $maxPercentage) {
+        if ($type === 'percentage' && $columnVisible && $value > $maxPercentage) {
             throw new LocalizedException(
                 __('%1 days - percentage: maximum is %2.', $days, $maxPercentage)
             );

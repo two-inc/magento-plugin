@@ -212,11 +212,7 @@ define([
                 var term = parseInt($row.data('term'), 10);
                 existingTerms[term] = $row;
 
-                if (activeTerms.indexOf(term) === -1) {
-                    $row.hide();
-                } else {
-                    $row.show();
-                }
+                toggleField($row, activeTerms.indexOf(term) !== -1);
             });
 
             // Create rows for new terms (e.g. custom term just entered)

@@ -259,10 +259,6 @@ define([
         };
     }
 
-    /**
-     * @param {string} text
-     * @returns {string}
-     */
     function translateSharedPhrase(text) {
         const phrases = sharedPhrases();
 

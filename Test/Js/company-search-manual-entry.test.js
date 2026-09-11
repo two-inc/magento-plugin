@@ -149,7 +149,9 @@ describe('the manual-entry affordance is a real, native button', () => {
         expect(source).toContain("this.translate('" + MSGID + "')");
         expect(source).not.toMatch(/<button[^>]*>\$\{/);
         // Luma's adapter answers that msgid from the catalogue, so it is a real
-        // lookup rather than a string that only looks translated.
+        // lookup rather than a string that only looks translated, and Magento's
+        // dictionary scanner can see it.
+        expect(readSource(ADAPTER_PATH)).toContain('translate: translateSharedPhrase');
         expect(readSource(ADAPTER_PATH)).toContain("$t('" + MSGID + "')");
     });
 

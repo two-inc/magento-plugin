@@ -194,7 +194,7 @@ class SurchargeGridTest extends TestCase
         string $type,
         string $rawValue,
         int $days = 30,
-        bool $limitColumnVisible = true
+        bool $columnVisible = true
     ): void {
         $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
         $method = new \ReflectionMethod(SurchargeGrid::class, 'validateValue');
@@ -206,7 +206,7 @@ class SurchargeGridTest extends TestCase
             $days,
             25,
             ConfigRepository::SURCHARGE_PERCENTAGE_MAX,
-            $limitColumnVisible
+            $columnVisible
         );
     }
 
@@ -499,8 +499,12 @@ class SurchargeGridTest extends TestCase
      *        rows at this scope, as the aggregate stale-zero scan reads them
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
-    private function runProductionAfterSave(string $postedType, array $grid, array $storedLimitRows = []): array
-    {
+    private function runProductionAfterSave(
+        string $postedType,
+        array $grid,
+        array $storedLimitRows = [],
+        ?array $surchargeLimit = null
+    ): array {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
         $config->method('getValue')->willReturnCallback(
             static function ($path) {
@@ -511,12 +515,12 @@ class SurchargeGridTest extends TestCase
         $brand = $this->getMockBuilder(BrandRegistryInterface::class)->getMock();
         $brand->method('getCode')->willReturn('two_payment');
 
-        // No merchant-side surcharge cap, so the fixed upper-bound check is
-        // skipped and the FX rates provider is never consulted.
+        // A cap quoted in the base currency short-circuits the conversion, so
+        // the FX rates provider is never consulted; null means no cap at all.
         $settings = $this->getMockBuilder(SettingsProvider::class)
             ->disableOriginalConstructor()
             ->getMock();
-        $settings->method('getSurchargeLimit')->willReturn(null);
+        $settings->method('getSurchargeLimit')->willReturn($surchargeLimit);
 
         $saved = [];
         $writer = $this->getMockBuilder(WriterInterface::class)->getMock();
@@ -594,6 +598,66 @@ class SurchargeGridTest extends TestCase
         $this->runProductionAfterSave('fixed_and_percentage', [
             30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '0'],
         ]);
+    }
+
+    /**
+     * A fixed amount over the merchant's cap must not refuse the save while the
+     * Fixed column is hidden. The cap is FX-converted from a merchant setting
+     * that can fall below a value that was legal when it was entered, so this
+     * is reachable without anyone editing the cell (ABN-558).
+     */
+    public function testProductionAfterSaveSkipsTheFixedCeilingWhileThatColumnIsHidden(): void
+    {
+        $saved = $this->runProductionAfterSave(
+            'percentage',
+            [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
+            [],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_fixed', '999'], $saved);
+    }
+
+    /**
+     * The mirror, so the skip cannot be satisfied by dropping the ceiling.
+     */
+    public function testProductionAfterSaveStillRefusesAnOverCapFixedAmountWhileVisible(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('fixed amount: maximum is 25');
+        $this->runProductionAfterSave(
+            'fixed_and_percentage',
+            [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
+            [],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
+    }
+
+    /**
+     * The same for the percentage ceiling, whose column is hidden by a
+     * fixed-only surcharge.
+     */
+    public function testProductionAfterSaveSkipsThePercentageCeilingWhileThatColumnIsHidden(): void
+    {
+        $saved = $this->runProductionAfterSave(
+            'fixed',
+            [30 => ['fixed' => '10', 'percentage' => '101']]
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_percentage', '101'], $saved);
+    }
+
+    /**
+     * The mirror for the percentage ceiling.
+     */
+    public function testProductionAfterSaveStillRefusesAnOverCapPercentageWhileVisible(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('percentage: maximum is');
+        $this->runProductionAfterSave(
+            'fixed_and_percentage',
+            [30 => ['fixed' => '10', 'percentage' => '101', 'limit' => '50']]
+        );
     }
 
     /**
