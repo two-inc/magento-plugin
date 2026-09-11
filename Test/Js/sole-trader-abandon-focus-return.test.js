@@ -36,6 +36,14 @@ function loadComponentWithPanelDouble() {
     }, GLOBALS);
     const component = capture.shipping;
     const restores = [];
+    // Leaving sole-trader mode reaches into the flow, which this fixture does
+    // not boot.
+    component._soleTrader = {
+        forgetAdoptions: function () {},
+        autofilledSoleTrader: function () { return null; },
+        forgetAutofilledBuyer: function () {},
+        prefetchBuyer: function () {}
+    };
     component._panel = {
         restoreFieldFocus: function () { restores.push(true); },
         reclaimField: function () {},
@@ -68,6 +76,9 @@ describe('closing the sole-trader signup returns focus (ABN-561)', function () {
         'adopted=%p elsewhere=%p handedOver=%p remountUnplaces=%p -> %p restores (%s)',
         function (adopted, focusElsewhere, handedOver, remountUnplaces, expectedRestores) {
             const ctx = loadComponentWithPanelDouble();
+            // The mode the popup was raised in, which is the only one the close
+            // is this flow's to answer for (ABN-565).
+            ctx.component.identity().captureMode('soletrader');
             ctx.component.identity().soleTraderAdopted(adopted);
             // After the load, which resets the fixture.
             document.body.innerHTML = '<input id="other-control">';
