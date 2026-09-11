@@ -226,3 +226,38 @@ describe('the gate survives a rebind', () => {
         expect(document.querySelector(FIELD).disabled).toBe(false);
     });
 });
+
+describe('the caret stays where the buyer is typing while the search is withdrawn', () => {
+    function pressKey(node, key) {
+        node.dispatchEvent(new window.KeyboardEvent('keydown', { key: key, bubbles: true }));
+    }
+
+    /** @returns {Element} whatever holds the caret with the panel open */
+    function openOnChip(panel) {
+        panel.open();
+        return document.activeElement;
+    }
+
+    test.each([
+        { key: 'f', chipFirst: false, landsOnField: true, description: 'a key on the closed field, which opens onto a chip' },
+        { key: 'f', chipFirst: true, landsOnField: true, description: 'a key while a chip already holds the caret' },
+        { key: ' ', chipFirst: true, landsOnField: false, description: 'Space, which activates the focused chip instead' }
+    ])('$description', ({ key, chipFirst, landsOnField }) => {
+        const { panel } = setup({ mode: 'registered', offered: ['manual'] });
+        panel.setDisabled(true);
+        const field = document.querySelector(FIELD);
+        const target = chipFirst ? openOnChip(panel) : field;
+
+        pressKey(target, key);
+
+        expect(document.activeElement).toBe(landsOnField ? field : target);
+    });
+
+    test('an ungated panel still puts the caret in the query row', () => {
+        setup();
+
+        pressKey(document.querySelector(FIELD), 'f');
+
+        expect(document.activeElement).toBe(document.querySelector(QUERY));
+    });
+});
