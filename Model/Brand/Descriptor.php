@@ -47,7 +47,7 @@ final class Descriptor
      * @param string $aboutUrl Target of the checkout "What is <product>?" explainer link; '' = no link. See getAboutUrl().
      * @param string $checkoutSubtitleFaqUrl Target of the "read more" link in the checkout tagline; '' = no tagline. See getCheckoutSubtitleFaqUrl().
      * @param string|null $intentDeclinedNotice Copy override for the buyer-facing intent-declined notice; null = use the platform default copy. Never ''. See getIntentDeclinedNotice().
-     * @param bool $intentDeclinedNoticeEnabled Whether the buyer-facing intent-declined notice is rendered at all. Resolved by Loader, which inherits the approved switch when the declined switch is undeclared and declined copy is blank. See isIntentDeclinedNoticeEnabled().
+     * @param bool $intentDeclinedNoticeEnabled Whether the brand's own wording is used for the buyer-facing intent-declined notice. Resolved by Loader, which inherits the approved switch when the declined switch is undeclared and declined copy is blank. See isIntentDeclinedNoticeEnabled().
      */
     public function __construct(
         private readonly string $code,
@@ -124,8 +124,9 @@ final class Descriptor
     }
 
     /**
-     * From brand.xml <intent_declined_notice_enabled> when declared, else
-     * non-blank declined copy OR isIntentApprovedNoticeEnabled().
+     * Whether the brand's own declined wording is used. From brand.xml
+     * <intent_declined_notice_enabled> when declared, else non-blank declined
+     * copy OR isIntentApprovedNoticeEnabled().
      */
     public function isIntentDeclinedNoticeEnabled(): bool
     {
@@ -133,8 +134,8 @@ final class Descriptor
     }
 
     /**
-     * Wording only, same null/non-'' contract as getIntentApprovedNotice()
-     * above; suppression is isIntentDeclinedNoticeEnabled().
+     * Same null/non-'' contract as getIntentApprovedNotice() above; read only
+     * while isIntentDeclinedNoticeEnabled() holds.
      */
     public function getIntentDeclinedNotice(): ?string
     {

@@ -409,9 +409,12 @@ class ConfigProvider implements ConfigProviderInterface
      * counterpart to getOrderIntentApprovedNotice() above, added by the
      * same TWO-25326 work. Same shape, and its own switch and copy override —
      * <intent_declined_notice_enabled> / <intent_declined_notice> — so a
-     * brand suppresses or rewords the two outcomes separately once it
-     * declares the declined switch or ships non-blank declined copy
-     * (TWO-25326).
+     * brand rewords or withholds its own declined wording separately from
+     * the approved one (TWO-25326).
+     *
+     * `null` here is NOT silence: gateway_method.js substitutes platform
+     * wording, because this sentence explains a disabled Place Order button
+     * (ABN-563).
      *
      * This is the "not approved" business outcome only (a clean response
      * with `approved: false`) — a technical/HTTP failure is a different

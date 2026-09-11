@@ -472,6 +472,17 @@ define([
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
         },
         /**
+         * Id of the declined notice's live region, so the Place Order button can
+         * point `aria-describedby` at the sentence explaining why it is disabled
+         * (ABN-563). Per payment code: a store offering several brands renders a
+         * tile each, and a duplicate id would describe every button from one.
+         *
+         * @returns {string}
+         */
+        orderIntentDeclinedRegionId: function () {
+            return 'two-order-intent-declined-' + this.getCode();
+        },
+        /**
          * Same guard, for the order-intent ERROR notice (TWO-25326,
          * 2026-08-05 four-platform convergence). The error text renders in
          * the same bordered box as the other two outcomes instead of a
@@ -1035,9 +1046,7 @@ define([
 
             // Before the latch recovery below, so a declined verdict is not re-armed by the click (TWO-25657).
             if (this.isOrderIntentDeclined()) {
-                this.showErrorMessage(
-                    this.resolveOrderIntentDeclinedNotice() || this.generalErrorMessage
-                );
+                this.showErrorMessage(this.resolveOrderIntentDeclinedNotice());
                 return;
             }
 
@@ -1295,11 +1304,16 @@ define([
         },
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
-         * (TWO-25326). Returns '' when the active brand suppressed the
-         * declined notice.
+         * (TWO-25326). Never '': a decline disables the Place Order button, and
+         * a disabled control the buyer is given no reason for is the defect
+         * ABN-563 reports. Brand wording when the brand supplied any, otherwise
+         * this platform sentence — the rule the error notice already follows,
+         * since a brand declining to word a verdict has not asked for a blocked
+         * control to be unexplained.
          */
         resolveOrderIntentDeclinedNotice: function () {
-            return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy);
+            return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||
+                $t('This payment method is not available for the selected company.');
         },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {

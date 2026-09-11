@@ -363,6 +363,7 @@
 "What is %1?","Wat is %1?"
 "%1 is not available for this order","%1 is niet beschikbaar voor deze bestelling"
 "%1 is not available for this order by %2 (%3)","%1 is niet beschikbaar voor deze bestelling van %2 (%3)"
+"This payment method is not available for the selected company.","Deze betaalmethode is niet beschikbaar voor het geselecteerde bedrijf."
 "This order is likely to be accepted by %1","Deze bestelling wordt waarschijnlijk geaccepteerd door %1"
 "This order by %2 (%3) is likely to be accepted by %1","Deze bestelling van %2 (%3) wordt waarschijnlijk geaccepteerd door %1"
 "Show ""What is Two"" link","Toon de link ""Wat is Two"""

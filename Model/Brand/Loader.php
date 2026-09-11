@@ -170,10 +170,10 @@ class Loader
         $intentApprovedNotice = $this->readNoticeCopy($brand, 'intent_approved_notice');
         $intentDeclinedNotice = $this->readNoticeCopy($brand, 'intent_declined_notice');
 
-        // A declared switch decides. Otherwise the notice renders if
-        // non-blank declined copy asked for it OR the approved switch is
-        // on, so an overlay predating the declined elements — approved
-        // switch only — still suppresses both.
+        // A declared switch decides. Otherwise the brand's own declined
+        // wording is used if non-blank declined copy asked for it OR the
+        // approved switch is on, so an overlay predating the declined
+        // elements — approved switch only — still withholds both.
         $intentDeclinedNoticeEnabled = isset($brand->intent_declined_notice_enabled)
             ? $this->readNoticeSwitch($brand, 'intent_declined_notice_enabled', $sourcePath)
             : ($intentDeclinedNotice !== null || $intentApprovedNoticeEnabled);

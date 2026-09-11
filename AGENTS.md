@@ -632,6 +632,21 @@ billing-address subscription re-evaluates that button and clears anything
 written onto it from outside the binding, silently, so an imperative disable
 lasts until the buyer touches an address field.
 
+**And it always says why, in wording no brand can withhold.** The decline
+sentence is the buyer's only account of a control that has gone dead, so
+`resolveOrderIntentDeclinedNotice()` falls back to platform copy wherever
+`<intent_declined_notice_enabled>` withholds the brand's own — the rule the
+order-intent error notice already followed (ABN-563). Both shipped overlays
+withhold it, which is how a declined buyer came to face a disabled button and
+an empty tile. The brand switch chooses the wording; it cannot choose silence,
+and re-widening it to suppression reopens the defect.
+
+The sentence lands inside a live region rendered ahead of it — a `role="alert"`
+element created together with its own text is announced inconsistently — and
+the button points `aria-describedby` at that region while the decline stands.
+Note that a natively `disabled` button is not focusable, so the announcement
+comes from the region, not the association.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection

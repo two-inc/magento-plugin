@@ -133,7 +133,7 @@ across modules). Elements may appear in any order (`xs:all`).
 | `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
 | `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent approved" notice. Default `true`. **See below.**                                                                            |
 | `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                     |
-| `intent_declined_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent declined" notice. Undeclared, it inherits the approved switch. **See below.**                                               |
+| `intent_declined_notice_enabled` | no       | `true` \| `false`         | Whether the brand's own wording is used for the "order intent declined" notice; it cannot silence it. Undeclared, it inherits the approved switch. **See below.** |
 | `intent_declined_notice`         | no       | string                    | Copy override for the declined notice. Never an off switch, but non-blank copy turns an undeclared declined switch ON. **See below.**                            |
 
 ### The intent notices — a switch and a wording override per outcome
@@ -162,26 +162,32 @@ expressed as the absence of content is indistinguishable from an
 unfinished string, and any tidy-up that deletes the "empty, unused"
 declaration silently turns the notice back on.
 
-#### `intent_approved_notice_enabled` / `intent_declined_notice_enabled` — the on/off switches
+#### `intent_approved_notice_enabled` / `intent_declined_notice_enabled` — the switches
 
-Explicit boolean only, each governing its own outcome:
+Explicit boolean only, each governing its own outcome. **They are not
+symmetrical.** The approved switch is an on/off switch. The declined one
+chooses between the brand's wording and the platform's, because that
+sentence is the buyer's only account of why the Place Order button is
+disabled, and a switchable explanation for a blocked control is the defect
+ABN-563 reports.
 
 | brand.xml                                          | Behaviour                                                                                                                    |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `<…_notice_enabled>true</…_notice_enabled>`        | That notice **ON**.                                                                                                          |
-| `<…_notice_enabled>false</…_notice_enabled>`       | That notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. The other outcome is unaffected once its own switch is declared or its own copy is non-blank. |
+| `<…_notice_enabled>false</…_notice_enabled>`       | Approved: **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. Declined: the brand's own copy is not used and **platform wording renders instead**. The other outcome is unaffected once its own switch is declared or its own copy is non-blank. |
 | element absent                                     | Approved: documented explicit default **`true`**. Declined: see the precedence below.                                        |
 | anything else (`1`, `0`, `yes`, empty, whitespace) | **Error.** Never a silent third behaviour.                                                                                   |
 
-An overlay that wants neither notice declares both switches `false`.
+An overlay that wants no approved notice and no branded decline wording
+declares both switches `false`. A declined buyer is still told why.
 
 The declined switch is newer than the approved one, so it resolves with
 an inheritance. A declared `intent_declined_notice_enabled` decides.
-Absent that, the notice renders when **either** `intent_declined_notice`
-is non-blank — shipped wording is intent to render — **or**
-`intent_approved_notice_enabled` resolved to `true`. An overlay declaring
-only the approved switch therefore keeps suppressing both, which is what
-it meant before the declined elements existed. A visually-blank
+Absent that, the brand's own wording is used when **either**
+`intent_declined_notice` is non-blank — shipped wording is intent to use
+it — **or** `intent_approved_notice_enabled` resolved to `true`. An overlay
+declaring only the approved switch therefore keeps withholding both, which
+is what it meant before the declined elements existed. A visually-blank
 `intent_declined_notice` is inert here as everywhere: it
 neither renders nor turns the switch on, and non-breaking and zero-width
 spaces both count as blank.
@@ -220,15 +226,14 @@ never return `''`.
 `intent_approved_notice`** with brand-specific copy — falling through to
 the platform default here for a live overlay is a bug, not a valid "no
 opinion" state. `intent_declined_notice` carries no such expectation:
-rewording or suppressing the declined outcome are choices an overlay
-makes or declines to make, and the platform default is a valid resting
-state.
+rewording the declined outcome is a choice an overlay makes or declines to
+make, and the platform default is a valid resting state.
 
 #### Deploy order
 
 **Merge order is `magento-plugin` (parent, owns the parsing) → the brand
 overlay repo → `magento-hyva-extension`.** Out of order there is a window
-in which Hyvä renders the notice for a brand that asked for it off.
+in which Hyvä renders the approved notice for a brand that asked for it off.
 
 The declined switch's fallback to the approved one means an existing
 overlay needs no change to land alongside a parent that parses the

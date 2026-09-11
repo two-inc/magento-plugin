@@ -1017,12 +1017,11 @@ describe('the notices are gated on their own observables, not on capture', () =>
         expect(declinedNoticeVisible(renderer)).toBe(false);
     });
 
-    test('a brand that suppresses both outcomes shows neither variant', () => {
-        // Each outcome has its own switch, so suppressing both means
-        // ConfigProvider ships neither copy object — the config here carries
-        // no notice keys at all. The control's visibility does not read
-        // either observable, so a brand with the notice UI off can never
-        // produce a hidden-with-no-notice dead end.
+    test('a brand that suppresses both outcomes keeps the decline explained', () => {
+        // Suppressing both means ConfigProvider ships neither copy object — the
+        // config here carries no notice keys at all. The approval goes quiet;
+        // the decline falls back to platform wording, because it explains a
+        // disabled Place Order button (ABN-563).
         const { renderer } = loadTile();
 
         renderer.initOrderIntentApprovedNotice({});
@@ -1037,7 +1036,9 @@ describe('the notices are gated on their own observables, not on capture', () =>
         expect(approvedNoticeVisible(renderer)).toBe(false);
 
         declineIntent(renderer);
-        expect(declinedNoticeVisible(renderer)).toBe(false);
+        expect(declinedNoticeText(renderer)).toBe(
+            'This payment method is not available for the selected company.'
+        );
 
         expect(nameFieldVisible(renderer)).toBe(true);
     });

@@ -79,8 +79,10 @@ interface BrandRegistryInterface
     public function getIntentApprovedNotice(): ?string;
 
     /**
-     * Whether the buyer-facing "order intent NOT approved" notice is
-     * rendered at all. `false` emits no DOM element at all.
+     * Whether the brand's OWN wording is used for the "order intent NOT
+     * approved" notice. `false` falls back to platform wording; it does not
+     * silence the notice, because the sentence explains a disabled Place
+     * Order button and the buyer is always told why (ABN-563).
      *
      * A declared brand.xml <intent_declined_notice_enabled> decides.
      * Absent that, it is `true` when either a non-blank
@@ -93,8 +95,8 @@ interface BrandRegistryInterface
 
     /**
      * Per-brand COPY override for the buyer-facing "order intent NOT
-     * approved" notice, from brand.xml <intent_declined_notice>. Wording
-     * only — see isIntentDeclinedNoticeEnabled() for the off switch.
+     * approved" notice, from brand.xml <intent_declined_notice>. Used only
+     * while isIntentDeclinedNoticeEnabled() holds.
      *
      *  - `null`  — no override (element absent or visually blank):
      *              platform default translated copy. Never ''.
