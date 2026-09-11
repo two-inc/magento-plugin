@@ -12,6 +12,7 @@ use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\Backend\SurchargeGrid;
 use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
@@ -458,8 +459,7 @@ class SurchargeGridTest extends TestCase
         $storeManager->method('getWebsite')->willReturn($scoped);
 
         $inject(\Magento\Framework\App\Config\Value::class, '_config', $config);
-        $inject(SurchargeGrid::class, 'settingsProvider', $settings);
-        $inject(SurchargeGrid::class, 'ratesProvider', $rates);
+        $inject(SurchargeGrid::class, 'capProvider', new SurchargeCapProvider($settings, $rates));
         $inject(SurchargeGrid::class, 'storeManager', $storeManager);
 
         $this->assertSame(
@@ -573,7 +573,11 @@ class SurchargeGridTest extends TestCase
         };
         $inject(\Magento\Framework\App\Config\Value::class, '_config', $config);
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
-        $inject(SurchargeGrid::class, 'settingsProvider', $settings);
+        $inject(
+            SurchargeGrid::class,
+            'capProvider',
+            new SurchargeCapProvider($settings, $this->getMockBuilder(CurrencyRatesProviderInterface::class)->getMock())
+        );
         $inject(SurchargeGrid::class, 'configWriter', $writer);
         // The scope config reports what is IN EFFECT (own row or inherited);
         // the DB rows are only what this scope overrides itself.
