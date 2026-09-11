@@ -111,6 +111,17 @@ if (!class_exists(Creditmemo::class, false)) {
     {
         private $order;
 
+        /**
+         * Real Magento returns an array, never null, so a collector may
+         * iterate it unguarded.
+         *
+         * @return array
+         */
+        public function getAllItems(): array
+        {
+            return $this->_data['all_items'] ?? [];
+        }
+
         public function setOrder($order): self
         {
             $this->order = $order;
