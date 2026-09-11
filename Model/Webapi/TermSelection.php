@@ -12,6 +12,7 @@ use Magento\Framework\Exception\InputException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
 use Two\Gateway\Service\Order\TermSurchargePreview;
 use Two\Gateway\Service\RateLimiter;
@@ -65,13 +66,19 @@ class TermSelection implements TermSelectionInterface
      */
     private $rateLimiter;
 
+    /**
+     * @var LogRepository
+     */
+    private $logRepository;
+
     public function __construct(
         CheckoutSession $checkoutSession,
         CartRepositoryInterface $cartRepository,
         CartTotalRepositoryInterface $cartTotalRepository,
         ConfigRepository $configRepository,
         TermSurchargePreview $termSurchargePreview,
-        RateLimiter $rateLimiter
+        RateLimiter $rateLimiter,
+        LogRepository $logRepository
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->cartRepository = $cartRepository;
@@ -79,6 +86,7 @@ class TermSelection implements TermSelectionInterface
         $this->configRepository = $configRepository;
         $this->termSurchargePreview = $termSurchargePreview;
         $this->rateLimiter = $rateLimiter;
+        $this->logRepository = $logRepository;
     }
 
     /**
@@ -113,37 +121,75 @@ class TermSelection implements TermSelectionInterface
             throw new InputException(__('Selected payment term is not available.'));
         }
 
+        $previousTerm = $this->checkoutSession->getTwoSelectedTerm();
         $this->checkoutSession->setTwoSelectedTerm($termDays);
+        $repriced = false;
 
-        $quote->collectTotals();
-        $this->cartRepository->save($quote);
+        try {
+            $quote->collectTotals();
+            $this->cartRepository->save($quote);
+            $repriced = true;
 
-        // Build totals response
-        $totals = $this->cartTotalRepository->get($quote->getId());
-        $segments = [];
-        foreach ($totals->getTotalSegments() as $segment) {
-            $segments[] = [
-                'code' => $segment->getCode(),
-                'title' => $segment->getTitle(),
-                'value' => $segment->getValue(),
-            ];
+            // Build totals response
+            $totals = $this->cartTotalRepository->get($quote->getId());
+            $segments = [];
+            foreach ($totals->getTotalSegments() as $segment) {
+                $segments[] = [
+                    'code' => $segment->getCode(),
+                    'title' => $segment->getTitle(),
+                    'value' => $segment->getValue(),
+                ];
+            }
+
+            // Recalculate surcharges for all terms using the current grand total
+            // (minus the surcharge itself, to avoid circular base)
+            $surchargeGross = (float)$this->checkoutSession->getTwoSurchargeGross();
+            $baseAmount = (float)$totals->getGrandTotal() - $surchargeGross;
+            $termSurcharges = $this->computeAllTermSurcharges($baseAmount, $quote);
+
+            // Wrap in outer array so Magento's webapi serializer preserves keys
+            return [[
+                'grand_total' => $totals->getGrandTotal(),
+                'base_grand_total' => $totals->getBaseGrandTotal(),
+                'tax_amount' => $totals->getTaxAmount(),
+                'total_segments' => $segments,
+                'term_surcharges' => $termSurcharges,
+                'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
+            ]];
+        } catch (\Throwable $error) {
+            $this->restoreTerm($quote, $previousTerm, $repriced);
+            throw $error;
+        }
+    }
+
+    /**
+     * Undo the staged term when the call it was staged for did not answer.
+     *
+     * A term left standing is the one the order is composed and priced on
+     * while the buyer is still shown the previous one (ABN-550).
+     *
+     * @param \Magento\Quote\Model\Quote $quote
+     * @param mixed $previousTerm
+     * @param bool $repriced whether the quote was already saved at the staged term
+     */
+    private function restoreTerm($quote, $previousTerm, bool $repriced): void
+    {
+        $this->checkoutSession->setTwoSelectedTerm($previousTerm);
+        if (!$repriced) {
+            return;
         }
 
-        // Recalculate surcharges for all terms using the current grand total
-        // (minus the surcharge itself, to avoid circular base)
-        $surchargeGross = (float)$this->checkoutSession->getTwoSurchargeGross();
-        $baseAmount = (float)$totals->getGrandTotal() - $surchargeGross;
-        $termSurcharges = $this->computeAllTermSurcharges($baseAmount, $quote);
-
-        // Wrap in outer array so Magento's webapi serializer preserves keys
-        return [[
-            'grand_total' => $totals->getGrandTotal(),
-            'base_grand_total' => $totals->getBaseGrandTotal(),
-            'tax_amount' => $totals->getTaxAmount(),
-            'total_segments' => $segments,
-            'term_surcharges' => $termSurcharges,
-            'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
-        ]];
+        try {
+            $quote->collectTotals();
+            $this->cartRepository->save($quote);
+        } catch (\Throwable $error) {
+            // The saved totals still price the staged term, and only the next
+            // successful collectTotals can settle that.
+            $this->logRepository->addErrorLog(
+                'TermSelectionRollback',
+                sprintf('Quote totals could not be restored to the previous term: %s', $error->getMessage())
+            );
+        }
     }
 
     /**
