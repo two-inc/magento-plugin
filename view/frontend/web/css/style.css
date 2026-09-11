@@ -72,7 +72,10 @@
     min-height: max-content;
 }
 
-.payment-option-title-container span {
+/* The title is a `label` naming the method radio, so it needs the same
+   protection from theme text colours the other title parts have. */
+.payment-option-title-container span,
+.payment-option-title-container label {
     color: inherit;
 }
 
