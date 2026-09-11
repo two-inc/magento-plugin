@@ -92,8 +92,12 @@ describe('closing the sole-trader signup returns focus (ABN-561)', function () {
     );
 });
 
-/** The real panel bound to a real field, so focus and open state are the DOM's. */
-function bindRealPanel() {
+/**
+ * The real panel bound to a real field, so focus and open state are the DOM's.
+ *
+ * @param {Array<object>} [chips] chip definitions to render, none by default
+ */
+function bindRealPanel(chips) {
     document.body.innerHTML =
         '<div class="control"><input id="company_name" type="text"></div>'
         + '<button id="elsewhere" type="button">elsewhere</button>';
@@ -104,7 +108,8 @@ function bindRealPanel() {
         fieldSelector: '#company_name',
         config: { checkoutApiUrl: 'https://api.example.test' },
         getCountryCode: function () { return 'gb'; },
-        getSelectedMode: function () { return 'registered'; }
+        getSelectedMode: function () { return 'registered'; },
+        getChips: function () { return chips || []; }
     });
     panel.bind();
 
@@ -145,5 +150,31 @@ describe('restoreFieldFocus() hands the field back without moving the popover', 
 
         expect(document.activeElement).toBe(document.getElementById('company_name'));
         expect(panelIsOpen()).toBe(expectedOpen);
+    });
+});
+
+describe('a chip-row rebuild hands the buyer\'s focus to the field (ABN-561)', function () {
+    const CHIPS = [
+        { mode: 'registered', text: 'Registered company', onActivate: function () {} },
+        { mode: 'soletrader', text: 'Sole trader', onActivate: function () {} }
+    ];
+
+    test.each([
+        ['soletrader', 'company_name', 'the rebuild deletes the chip the buyer was on'],
+        ['elsewhere', 'elsewhere', 'focus the rebuild did not touch stays where the buyer put it']
+    ])('focus starting on %s ends on #%s (%s)', async function (startOn, expectedId) {
+        const panel = bindRealPanel(CHIPS);
+        panel.syncChips();
+        const start = startOn === 'elsewhere'
+            ? document.getElementById('elsewhere')
+            : document.querySelector('.two-company-mode-chip[data-two-chip="' + startOn + '"]');
+        start.focus();
+        await nextTick();
+        expect(document.activeElement).toBe(start);
+
+        panel.syncChips();
+        await nextTick();
+
+        expect(document.activeElement).toBe(document.getElementById(expectedId));
     });
 });

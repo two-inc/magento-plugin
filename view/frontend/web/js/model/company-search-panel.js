@@ -1005,6 +1005,7 @@
         if (!this._chips) return;
         const selected = this.getSelectedMode();
         this._syncQueryVisibility(selected);
+        const focusedChip = this._chips.contains(document.activeElement) ? document.activeElement : null;
         this._unbind(this._chips);
         this._chips.innerHTML = '';
         let actionable = 0;
@@ -1036,6 +1037,9 @@
             self._chips.appendChild(button);
         });
         this._chips.classList.toggle(HIDDEN_CLASS, actionable === 0);
+        // The rebuild deletes the chip the buyer activated, and focus falls to
+        // the body unless the company field takes it (ABN-561).
+        if (focusedChip && !focusedChip.isConnected) this.restoreFieldFocus();
     };
 
     /**

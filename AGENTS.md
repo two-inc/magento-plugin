@@ -576,20 +576,22 @@ focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
 to be, and the company field takes it. A close the buyer caused by focusing
 another control keeps focus where they put it.
 
-**A handover is told apart by a flag, not by the close watcher reading focus.**
-Handing the popup over to another capture launches that capture's signup, and
-that launch blurs its own chip — so the abandoning capture's close watcher,
-polling 300ms later, sees exactly the unplaced focus it reads as its own to
-reclaim. The handover therefore records whether focus was still on the chip once
-the other capture's chip handler had run, and the close watcher passes that on as
-`returnFocus`.
+**A signup open anywhere on the checkout owns focus, and that is what the close
+watcher asks.** Handing the popup over to another capture launches that
+capture's signup, and that launch blurs its own chip — so focus at the close is
+unplaced either way and says nothing about who owns it. The watcher instead
+polls every live flow for an open popup: one still up is the buyer's place to
+be, and the abandoning capture leaves it alone. A handover to a capture that
+adopts an autofilled sole trader raises no popup, so the reclaim stands.
 
-That test cannot separate a launch blurring the chip from the receiving capture
-re-rendering its own chip row out from under it, which its chip handler does
-before it decides whether to launch anything. So a handover to a capture that
-adopts an autofilled sole trader, or whose popup is blocked, also suppresses the
-reclaim and leaves the buyer with focus unplaced — the same end state as before
-ABN-561, and the adopt path's own gap, which is out of scope here.
+Read at the close, never latched at the handover: a receiving signup the buyer
+has since closed owns nothing.
+
+**A chip-row rebuild hands focus to the company field.** The row is rebuilt from
+scratch, so activating a chip deletes the node the activation arrived on and
+focus falls to the body — including on the adopt path, where the receiving
+capture re-renders and opens nothing. Only a focused chip the rebuild actually
+disconnected is repaired, so focus the buyer put elsewhere is left alone.
 
 The reclaim decision is read BEFORE returning to registered mode, which can
 remount the panel and so unplace focus the buyer had put somewhere themselves.
