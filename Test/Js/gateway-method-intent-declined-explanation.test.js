@@ -114,59 +114,56 @@ function withoutComments(markup) {
 
 describe('a declined order intent always explains itself (ABN-563)', () => {
     test.each([
-        [
-            BRAND_DECLINED_COPY,
-            [false],
-            BRAND_SENTENCE,
-            true,
-            "a decline states the brand's own wording"
-        ],
-        [
-            null,
-            [false],
-            PLATFORM_FALLBACK,
-            true,
-            'a decline on a brand that withheld the copy states platform wording instead'
-        ],
-        [
-            BRAND_DECLINED_COPY,
-            [true],
-            '',
-            false,
-            'an approval leaves the decline region empty'
-        ],
-        [
-            null,
-            [null],
-            '',
-            false,
-            'a FAILED check is not a decline and states nothing in this region'
-        ],
-        [
-            null,
-            [false, true],
-            '',
-            false,
-            'switching back to an approved company clears the decline with no reload'
-        ],
-        [
-            null,
-            [false, null],
-            '',
-            false,
-            'a failed check after a decline retires the decline rather than stacking'
-        ]
-    ])(
-        'the decline region reads %#: $s',
-        (declinedCopy, outcomes, expected, described, description) => {
-            const ctx = makeContext(declinedCopy);
-
-            replay(ctx, outcomes);
-
-            expect(ctx.orderIntentDeclinedNotice()).toBe(expected, description);
-            expect(ctx.isOrderIntentDeclinedNoticeVisible()).toBe(described, description);
+        {
+            copy: BRAND_DECLINED_COPY,
+            outcomes: [false],
+            sentence: BRAND_SENTENCE,
+            visible: true,
+            case: "a decline states the brand's own wording"
+        },
+        {
+            copy: null,
+            outcomes: [false],
+            sentence: PLATFORM_FALLBACK,
+            visible: true,
+            case: 'a decline on a brand that withheld the copy states platform wording instead'
+        },
+        {
+            copy: BRAND_DECLINED_COPY,
+            outcomes: [true],
+            sentence: '',
+            visible: false,
+            case: 'an approval leaves the decline region empty'
+        },
+        {
+            copy: null,
+            outcomes: [null],
+            sentence: '',
+            visible: false,
+            case: 'a FAILED check is not a decline and states nothing in this region'
+        },
+        {
+            copy: null,
+            outcomes: [false, true],
+            sentence: '',
+            visible: false,
+            case: 'switching back to an approved company clears the decline with no reload'
+        },
+        {
+            copy: null,
+            outcomes: [false, null],
+            sentence: '',
+            visible: false,
+            case: 'a failed check after a decline retires the decline rather than stacking'
         }
-    );
+    ])('the decline region: $case', ({ copy, outcomes, sentence, visible }) => {
+        const ctx = makeContext(copy);
+
+        replay(ctx, outcomes);
+
+        expect(ctx.orderIntentDeclinedNotice()).toBe(sentence);
+        expect(ctx.isOrderIntentDeclinedNoticeVisible()).toBe(visible);
+    });
 
     test('a failed check states itself in its own region, not the decline one', () => {
         const ctx = makeContext(null);
