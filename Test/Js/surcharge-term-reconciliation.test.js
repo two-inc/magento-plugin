@@ -136,6 +136,22 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
     });
 
     it.each([
+        [true, 'the webapi serializer answers with the response inside an array'],
+        [false, 'a direct call answers with the object itself']
+    ])('a settled response confirms the term with wrapped=%p (%s)', function (wrapped) {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        ctx.model.selectTerm(90);
+        const answer = settledResponse(200);
+
+        ctx.posts[0].done(wrapped ? [answer] : answer);
+        ctx.posts[0].always();
+
+        expect(ctx.model.isTermReconciled()).toBe(true);
+        expect(shownSurcharge(ctx)).toBe(200);
+    });
+
+    it.each([
         ['failed', 'a refused chip click'],
         ['empty', 'a 200 that carried no re-collected totals'],
         ['blank', 'a 200 whose segment set was empty, which would blank the summary']
