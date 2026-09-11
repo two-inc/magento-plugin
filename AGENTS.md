@@ -658,13 +658,17 @@ added later needs its own region for the same reason.
 
 The order is composed on the term the chips show as selected, so a selection
 the server has not confirmed it priced the quote on can be charged against a
-total the summary never showed (ABN-550). `surchargeModel.isTermReconciled()`
-is the whole invariant — `confirmedTerm === selectedTerm() && !isUpdating()` —
-and `confirmedTerm` moves only when a `/select-term` response actually carries
-the totals it re-collected.
+total the summary never showed (ABN-550). `surchargeModel.termStatusMessage()`
+is the whole invariant: it names the reason placement is refused — a call in
+flight, or a selection no `/select-term` confirmed — and is empty only when the
+chips agree with the priced quote. `isTermReconciled()` is that string being
+empty, so the gate and the buyer's explanation cannot drift apart, and
+`confirmedTerm` moves only when a `/select-term` response actually carries the
+totals it re-collected.
 
 It gates placement twice: `isPlaceOrderEnabled()`, so the button is disabled
-rather than only answering a click, and `placeOrder()` as the belt.
+rather than only answering a click, and `placeOrder()` as the belt, which
+surfaces that same string.
 
 **Do not gate on the chip fees instead.** Comparing the summary's
 `two_surcharge` value against the chip map looks stronger and is weaker: the
@@ -689,11 +693,14 @@ own. **The term is confirmed even when writing the summary partly failed** — t
 server answered, so it holds that term, and reverting the chips against it is
 what charges a term nobody selected.
 
-**The chips say while a call is in flight that the term is being applied.** The
-button is disabled by then, so the click-time message cannot be reached, and a
-primary button greying out on its own for up to the request timeout reads as a
-broken checkout. The status node is rendered unconditionally and its text
-toggled, because a live region created together with its text announces nothing.
+**The chips state every reason the button is dead, and they read that one
+string.** The button is disabled by then, so the click-time message cannot be
+reached, and a primary button greying out against an empty tile reads as a
+broken checkout. A selection outlives the call that would have confirmed or
+reverted it whenever a chip binding throws out of `selectTerm()`: that aborts
+before `/select-term` is sent, so nothing is in flight and nothing reverts. The
+status node is rendered unconditionally and its text toggled, because a live
+region created together with its text announces nothing.
 
 Server side, `Model/Webapi/TermSelection.php` stages the session term. The
 surcharge collector prices on that term, so the rollback restores the session
