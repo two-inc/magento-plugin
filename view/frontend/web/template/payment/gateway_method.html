@@ -98,15 +98,13 @@
             view/frontend/web/js/model/company-capture-component.js.
 
             Persistent inline notices, inside the payment tile next to the
-            term chips. Each is emitted only when its own observable is
-            non-empty, so a brand that suppresses an outcome
-            (<intent_approved_notice_enabled> / <intent_declined_notice_enabled>
-            false in brand.xml) yields no element at all rather than an
-            empty wrapper. The two outcomes carry their own switch and
-            their own copy override, see ConfigProvider. Class names
-            match the PrestaShop / WooCommerce surfaces so the four
-            platforms stay greppable; `declined` is a
-            new modifier alongside the existing `approved` one.
+            term chips. A brand suppressing the APPROVED notice
+            (<intent_approved_notice_enabled> false in brand.xml) yields no
+            element at all rather than an empty wrapper. The DECLINED notice has
+            no such state — resolveOrderIntentDeclinedNotice() falls back to
+            platform wording (ABN-563). Class names match the PrestaShop /
+            WooCommerce surfaces so the four platforms stay greppable;
+            `declined` is a new modifier alongside the existing `approved` one.
         -->
         <!--
             Order-intent spinner, TILE-LOCAL by requirement (TWO-25326): a
@@ -149,13 +147,20 @@
             data-bind="text: orderIntentApprovedNotice"
         ></div>
         <!-- /ko -->
-        <!-- ko if: isOrderIntentDeclinedNoticeVisible() -->
+        <!-- Rendered unconditionally: a `role="alert"` created together with
+             its own text is announced inconsistently (ABN-563). -->
         <div
-            class="two-order-intent-message declined"
-            role="status"
-            data-bind="text: orderIntentDeclinedNotice"
-        ></div>
-        <!-- /ko -->
+            class="two-order-intent-declined-region"
+            role="alert"
+            data-bind="attr: {id: orderIntentDeclinedRegionId()}"
+        >
+            <!-- ko if: isOrderIntentDeclinedNoticeVisible() -->
+            <div
+                class="two-order-intent-message declined"
+                data-bind="text: orderIntentDeclinedNotice"
+            ></div>
+            <!-- /ko -->
+        </div>
         <!--
             TWO-25326 (2026-08-05, four-platform convergence): the THIRD
             outcome of an order-intent check — it errored — now renders in the
@@ -359,7 +364,12 @@
                     data-role="review-save"
                     type="submit"
                     data-bind="
-                        attr: {title: $t('Place Order')},
+                        attr: {
+                            title: $t('Place Order'),
+                            'aria-describedby': isOrderIntentDeclinedNoticeVisible()
+                                ? orderIntentDeclinedRegionId()
+                                : null
+                        },
                         enable: isPlaceOrderEnabled(),
                         click: placeOrder,
                         css: {disabled: !isPlaceOrderEnabled() || !isPlaceOrderActionAllowed()}

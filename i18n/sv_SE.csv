@@ -364,6 +364,7 @@
 "What is %1?","Vad är %1?"
 "%1 is not available for this order","%1 är inte tillgängligt för den här beställningen"
 "%1 is not available for this order by %2 (%3)","%1 är inte tillgängligt för den här beställningen från %2 (%3)"
+"This payment method is not available for the selected company.","Denna betalningsmetod är inte tillgänglig för det valda företaget."
 "This order is likely to be accepted by %1","Den här beställningen kommer sannolikt att accepteras av %1"
 "This order by %2 (%3) is likely to be accepted by %1","Den här beställningen från %2 (%3) kommer sannolikt att accepteras av %1"
 "Show ""What is Two"" link","Visa länken ""Vad är Two"""

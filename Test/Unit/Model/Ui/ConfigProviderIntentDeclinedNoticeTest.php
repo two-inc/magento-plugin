@@ -14,11 +14,12 @@ use Two\Gateway\Model\Ui\ConfigProvider;
 /**
  * ConfigProvider's intent-DECLINED-notice payload resolution.
  *
- * TWO-25326: a brand overlay may reword the declined notice or suppress
- * it, on its own switch and its own copy override, exactly as it may for
- * the approved notice. The switch — not the copy — decides whether a
- * payload reaches the renderer at all; `null` is the renderer's "emit no
- * element" signal.
+ * TWO-25326: a brand overlay may reword the declined notice or withhold its
+ * own wording, on its own switch and its own copy override, exactly as it
+ * may for the approved notice. The switch — not the copy — decides whether a
+ * payload reaches the renderer at all. `null` is not silence: the renderer
+ * substitutes platform wording, pinned in
+ * Test/Js/gateway-method-intent-declined-explanation.test.js (ABN-563).
  */
 class ConfigProviderIntentDeclinedNoticeTest extends TestCase
 {

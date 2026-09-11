@@ -471,6 +471,11 @@ define([
         isOrderIntentDeclinedNoticeVisible: function () {
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
         },
+        // Per payment code: a store offering several brands renders a tile each,
+        // and one id would describe every button from the same region (ABN-563).
+        orderIntentDeclinedRegionId: function () {
+            return 'two-order-intent-declined-' + this.getCode();
+        },
         /**
          * Same guard, for the order-intent ERROR notice (TWO-25326,
          * 2026-08-05 four-platform convergence). The error text renders in
@@ -1035,9 +1040,7 @@ define([
 
             // Before the latch recovery below, so a declined verdict is not re-armed by the click (TWO-25657).
             if (this.isOrderIntentDeclined()) {
-                this.showErrorMessage(
-                    this.resolveOrderIntentDeclinedNotice() || this.generalErrorMessage
-                );
+                this.showErrorMessage(this.resolveOrderIntentDeclinedNotice());
                 return;
             }
 
@@ -1295,11 +1298,12 @@ define([
         },
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
-         * (TWO-25326). Returns '' when the active brand suppressed the
-         * declined notice.
+         * (TWO-25326). Never '' — it explains the disabled Place Order button,
+         * so a brand withholding its own wording gets the platform's (ABN-563).
          */
         resolveOrderIntentDeclinedNotice: function () {
-            return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy);
+            return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||
+                $t('This payment method is not available for the selected company.');
         },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {

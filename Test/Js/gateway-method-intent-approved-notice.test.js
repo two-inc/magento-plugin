@@ -521,9 +521,10 @@ describe('a declined order intent refuses placement (TWO-25657)', () => {
         ctx.processOrderIntentSuccessResponse.call(ctx, DECLINED);
         ctx.placeOrder.call(ctx);
 
-        expect(ctx.orderIntentDeclinedNotice()).toBe('');
         expect(ctx.submits).toBe(0);
-        expect(ctx.errors).toEqual(['Something went wrong.']);
+        expect(ctx.errors).toEqual([
+            'This payment method is not available for the selected company.'
+        ]);
     });
 });
 
