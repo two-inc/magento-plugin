@@ -676,8 +676,10 @@ cannot drop out of the tab order.
 **`termOptions` is a plain array, not a computed.** Knockout's `foreach` over a
 recomputed array rebuilds every chip node, and a `/select-term` response
 rewrites the per-term fee maps on its way back — so a computed drops the focus
-the arrow keys just placed, one round trip later. Each chip's fee is its own
-observable instead, which is what lets the nodes outlive a fee refresh.
+the arrow keys just placed, one round trip later. Each chip reads its fee
+through a computed of its own instead, which is what lets the nodes outlive a
+refresh — and the template calls those, since a containerless `if` over a bare
+computed reads as permanently true.
 
 The focus ring is `:focus-visible`, not `:focus`: the group's single tab stop
 makes the focused chip the only thing saying where the keyboard is, and a

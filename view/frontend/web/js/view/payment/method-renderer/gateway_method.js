@@ -559,16 +559,9 @@ define([
             surchargeModel.selectTerm(days);
         },
         /**
-         * One definition of a selected term for the chip's visual state and for
-         * its aria-checked state, so the tick and what assistive technology is
-         * told cannot drift apart (ABN-554).
-         *
-         * @param {number} days
-         * @returns {boolean}
-         */
-        /**
-         * The chips' own view models: a PLAIN array, each fee an observable of
-         * its own. A `foreach` over a recomputed array rebuilds every chip node,
+         * The chips' own view models: a PLAIN array, each chip reading its fee
+         * through a computed of its own. A `foreach` over a recomputed array
+         * rebuilds every chip node,
          * and a rebuilt chip drops the focus the keyboard traversal put on it
          * (ABN-554), while the fees still follow every totals change.
          *
@@ -611,6 +604,8 @@ define([
                 };
             });
         },
+        // The one definition of a selected term, so the chip's tick and its
+        // aria-checked state cannot drift apart (ABN-554).
         isTermChecked: function (days) {
             return days === this.selectedTerm();
         },

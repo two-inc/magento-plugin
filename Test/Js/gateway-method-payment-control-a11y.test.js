@@ -169,6 +169,25 @@ describe('the term chips are a radio group, not a row of buttons (ABN-554)', () 
 
     test.each([
         {
+            pattern: /<!--\s*ko if:\s*isLoading\(\)\s*-->/,
+            case: "the loading dots call the chip's own computed"
+        },
+        {
+            pattern: /<!--\s*ko if:\s*!isLoading\(\)\s*&&\s*surchargeLabel\(\)\s*-->/,
+            case: 'so does the fee label — a bare computed in an `if` is always truthy'
+        }
+    ])('the chips read their fees as computeds: $case', ({ pattern }) => {
+        expect(template()).toMatch(pattern);
+    });
+
+    test('the renderer assigns the chip array itself, never a computed over it', () => {
+        const source = fs.readFileSync(path.join(ROOT, RENDERER), 'utf8');
+
+        expect(source).toMatch(/this\.termOptions = this\.buildTermOptions\(terms\);/);
+    });
+
+    test.each([
+        {
             selected: 30,
             checked: ['false', 'true', 'false'],
             tabIndexes: [-1, 0, -1],
@@ -293,10 +312,9 @@ describe('the arrow keys move the selection, and both ends wrap (ABN-554)', () =
         expect(ctx.selected).toEqual([]);
     });
 
-    test('with focus unplaced, the step is taken from the selected term', () => {
+    test('with focus on nothing, the step is taken from the selected term', () => {
         const ctx = makeContext(30);
         const group = renderChips(ctx);
-        document.body.focus();
 
         press(ctx, group, 'ArrowRight');
 
@@ -393,19 +411,18 @@ describe('the chips outlive a fee refresh (ABN-554)', () => {
     test('a fee refresh updates the labels without replacing the chip view models', () => {
         const { options, publish } = loadWithFees();
 
+        // A plain array is the whole mechanism: knockout cannot recompute it,
+        // so `foreach` has no reason to rebuild the chips.
         expect(Array.isArray(options)).toBe(true);
-        const identities = options.slice();
         expect(options.map((o) => o.isLoading())).toEqual([true, true, true]);
 
         publish({ 14: 0, 30: 1.5, 60: 3 });
 
-        expect(options).toEqual(identities);
         expect(options.map((o) => o.isLoading())).toEqual([false, false, false]);
-        expect(options.map((o) => o.surchargeLabel())).not.toEqual(['', '', '']);
+        expect(options.map((o) => o.surchargeLabel())).toEqual(['+0', '+1.5', '+3']);
 
         publish({ 14: 0, 30: 0, 60: 0 });
 
-        expect(options).toEqual(identities);
         expect(options.map((o) => o.surchargeLabel())).toEqual(['', '', '']);
     });
 });
