@@ -46,6 +46,7 @@ define([
 
     // The term /select-term answered with re-collected totals for; anything else
     // on the chips means the summary and the order can disagree (ABN-550).
+    // Observable so the placement gate re-evaluates when it moves.
     var confirmedTerm = ko.observable(selectedTerm());
 
     // A chip clicked while a /select-term is in flight, sent once that settles:
@@ -231,6 +232,20 @@ define([
     }
 
     /**
+     * Run fn, keeping a throwing totals subscriber or knockout binding from
+     * aborting the rest of jQuery's callback chain — which would leave the
+     * updating flag latched and the Place Order button disabled for the life of
+     * the page (ABN-550).
+     */
+    function guarded(fn) {
+        try {
+            fn();
+        } catch (error) {
+            console.warn('Two_Gateway: surcharge update only partly applied', error);
+        }
+    }
+
+    /**
      * Write a settled /select-term response into the summary and the chip fees.
      */
     function applyResponse(data) {
@@ -342,38 +357,40 @@ define([
                 if (!data || !Array.isArray(data.total_segments) || data.total_segments.length === 0) {
                     // An empty set would blank the summary, and nothing
                     // confirms the term without the totals it was collected on.
-                    revertSelection();
+                    guarded(revertSelection);
                     return;
                 }
-                try {
+                guarded(function () {
                     applyResponse(data);
-                } catch (error) {
-                    // A subscriber throwing out of setTotals would otherwise
-                    // take the rest of the chain with it and latch the gate.
-                    console.warn('Two_Gateway: select-term response rejected', error);
-                    revertSelection();
-                    return;
-                }
-                confirmedTerm(days);
+                });
+                // Confirmed even if writing the summary partly failed: the
+                // server answered, so it holds this term, and reverting the
+                // chips against it is what charges a term nobody selected.
+                guarded(function () {
+                    confirmedTerm(days);
+                });
             }).fail(function (xhr, status, err) {
                 console.warn('Two_Gateway: select-term failed', status, err);
-                revertSelection();
+                guarded(revertSelection);
             }).always(function () {
                 var next = pendingTerm;
                 pendingTerm = null;
                 isUpdating(false);
-                // A refused call reverted the chips, so its queue is stale.
-                if (next !== null && next === selectedTerm() && next !== confirmedTerm()) {
-                    surchargeModel.recalculateTotals(next);
-                    return;
-                }
-                if (totalsMissedWhileUpdating) {
-                    totalsMissedWhileUpdating = false;
-                    // The snapshot below is of the totals this response merged
-                    // into, so leaving it would dedup the fetch still needed.
-                    lastTotalsSnapshot = null;
-                    loadFees();
-                }
+                guarded(function () {
+                    // A refused call reverted the chips, so its queue is stale.
+                    if (next !== null && next === selectedTerm() && next !== confirmedTerm()) {
+                        surchargeModel.recalculateTotals(next);
+                        return;
+                    }
+                    if (totalsMissedWhileUpdating) {
+                        totalsMissedWhileUpdating = false;
+                        // The snapshot below is of the totals this response
+                        // merged into, so leaving it would dedup the fetch
+                        // still needed.
+                        lastTotalsSnapshot = null;
+                        loadFees();
+                    }
+                });
             });
         }
     };

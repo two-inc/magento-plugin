@@ -557,6 +557,9 @@ define([
         isTermReconciled: function () {
             return surchargeModel.isTermReconciled();
         },
+        isTermUpdating: function () {
+            return surchargeModel.isUpdating();
+        },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
         },

@@ -196,7 +196,7 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         expect(ctx.model.isTermReconciled()).toBe(true);
     });
 
-    it('a totals subscriber throwing leaves the gate and the fee fetch usable', function () {
+    it('a totals subscriber throwing leaves the term confirmed and the fetch usable', function () {
         const ctx = loadModel();
         ctx.captured.get(FEES);
         let thrown = false;
@@ -210,7 +210,9 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         settle(ctx, 0, 'settled', 200);
 
         expect(ctx.model.isUpdating()).toBe(false);
-        expect(ctx.model.selectedTerm()).toBe(30);
+        // The server answered, so it holds 90 — reverting the chips against it
+        // is what charges a term nobody selected.
+        expect(ctx.model.selectedTerm()).toBe(90);
         expect(ctx.model.isTermReconciled()).toBe(true);
 
         // The self-emission flag is released, so a later totals change is still
@@ -298,6 +300,35 @@ function makeRendererContext(component) {
     };
     return ctx;
 }
+
+describe('the chips say why the button is disabled (ABN-550)', function () {
+    it.each([
+        [true, 'a call in flight says so, since the disabled button cannot answer a click'],
+        [false, 'a settled checkout says nothing']
+    ])('updating=%p (%s)', function (updating) {
+        const surchargeMock = defaultMocks()['Two_Gateway/js/model/surcharge'];
+        const component = loadAmdModule(
+            'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
+            {
+                'Two_Gateway/js/model/surcharge': Object.assign({}, surchargeMock, {
+                    isUpdating: function () { return updating; }
+                })
+            }
+        );
+
+        expect(component.isTermUpdating.call(component)).toBe(updating);
+    });
+
+    it('the template shows the status only while a call is in flight', function () {
+        const template = require('fs').readFileSync(
+            require('path').resolve(__dirname, '..', '..', 'view/frontend/web/template/payment/gateway_method.html'),
+            'utf8'
+        );
+
+        expect(template).toContain('<!-- ko if: isTermUpdating() -->');
+        expect(template).toContain('Applying the selected payment term');
+    });
+});
 
 describe('gateway_method reconciliation submit gate (ABN-550)', function () {
     it.each([

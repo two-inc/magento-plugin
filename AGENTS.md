@@ -622,10 +622,18 @@ order to the one they were sent in — so the client's own send order is no
 evidence of which term the session ended on, and confirming from it can leave the
 session holding a term the chips discarded as superseded.
 
-The response is applied inside a `try`. A totals subscriber throwing out of
-`setTotals` would otherwise abort the rest of jQuery's callback chain, leaving
-the updating flag latched and the Place Order button disabled for the life of the
-page, with every later totals emission discarded as this module's own.
+Every write a settled response makes runs inside a `try`. A totals subscriber or
+a knockout binding throwing would otherwise abort the rest of jQuery's callback
+chain, leaving the updating flag latched and the Place Order button disabled for
+the life of the page, with every later totals emission discarded as this module's
+own. **The term is confirmed even when writing the summary partly failed** — the
+server answered, so it holds that term, and reverting the chips against it is
+what charges a term nobody selected.
+
+**The chips say while a call is in flight that the term is being applied.** The
+button is disabled by then, so the click-time message cannot be reached, and a
+primary button greying out on its own for up to the request timeout reads as a
+broken checkout.
 
 The call carries a `timeout`. Without one a hung request holds `isUpdating()`
 true for the rest of the session, and with it the Place Order button disabled.

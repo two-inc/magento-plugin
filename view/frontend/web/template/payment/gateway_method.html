@@ -56,6 +56,10 @@
                 </button>
                 <!-- /ko -->
             </div>
+            <!-- ko if: isTermUpdating() -->
+            <div class="two-term-chips__status" role="status" aria-live="polite"
+                 data-bind="i18n: 'Applying the selected payment term\u2026'"></div>
+            <!-- /ko -->
         </div>
         <!-- /ko -->
         <!-- ko if: showSingleTerm -->
