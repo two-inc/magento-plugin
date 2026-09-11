@@ -200,15 +200,27 @@ describe('the decline sentence is announced, not merely present (ABN-563)', () =
         return { attributes: match[1], body: match[2] };
     }
 
+    /** The knockout containerless bindings still open at the region's element. */
+    function enclosingBindings() {
+        const markup = withoutComments(template());
+        const before = markup.slice(0, markup.indexOf('class="two-order-intent-declined-region"'));
+        const stack = [];
+        (before.match(/<!--\s*(\/?)ko\s*([a-z]*)/g) || []).forEach(function (marker) {
+            if (marker.indexOf('/ko') !== -1) {
+                stack.pop();
+                return;
+            }
+            stack.push(marker.replace(/<!--\s*ko\s*/, ''));
+        });
+        return stack;
+    }
+
     test('the region is rendered unconditionally and the box inside it conditionally', () => {
         const { attributes, body } = region();
-        const markup = withoutComments(template());
 
-        // No `ko if` immediately above the region: its element exists before
-        // any verdict lands, which is what a live region needs.
-        expect(markup).not.toMatch(
-            /<!--\s*ko\s+if:[^>]*-->\s*<div[^>]*class="two-order-intent-declined-region"/
-        );
+        // The element must exist before any verdict lands, which is what a live
+        // region needs — so nothing conditional encloses it, at any depth.
+        expect(enclosingBindings()).toEqual([]);
         expect(attributes).toMatch(/role="alert"/);
         expect(body).toMatch(/<!--\s*ko\s+if:\s*isOrderIntentDeclinedNoticeVisible\(\)\s*-->/);
         expect(body).toMatch(/class="two-order-intent-message declined"/);
