@@ -25,6 +25,8 @@ define([
 ], function (ko, $, quote, messageList, $t, url, brandConfig) {
     'use strict';
 
+    var SELECT_TERM_TIMEOUT_MS = 30000;
+
     // Resolve the active Two-family brand subtree from checkoutConfig
     // rather than hardcoding `.two_payment`. The brand-overlay 2.0
     // architecture lets each overlay (acme_payment, …) ship its own
@@ -44,7 +46,21 @@ define([
 
     // The term /select-term answered with re-collected totals for; anything else
     // on the chips means the summary and the order can disagree (ABN-550).
-    var confirmedTerm = selectedTerm();
+    // Observable so the placement gate re-evaluates when it moves.
+    var confirmedTerm = ko.observable(selectedTerm());
+
+    // A chip clicked while a /select-term is in flight, sent once that settles.
+    // Overlapping calls are what the server serialises on the session lock, and
+    // it can take them in the opposite order to the one they were sent in.
+    var pendingTerm = null;
+
+    // An external totals emission during a chip click is dropped by the
+    // subscriber, so the fees are re-evaluated once the click settles.
+    var totalsMissedWhileUpdating = false;
+
+    // True only while this module is writing the /select-term totals back, whose
+    // re-emission is not a change anything needs to react to.
+    var applyingOwnTotals = false;
 
     // Sequence guard: out-of-order /select-term responses would otherwise
     // confirm a term nobody selected.
@@ -195,7 +211,11 @@ define([
     // loader hanging forever. Values are server-authoritative either way,
     // so no stale-display drift.
     quote.getTotals().subscribe(function (totals) {
-        if (!totals || isUpdating()) {
+        if (!totals || applyingOwnTotals) {
+            return;
+        }
+        if (isUpdating()) {
+            totalsMissedWhileUpdating = true;
             return;
         }
         loadFees();
@@ -209,7 +229,7 @@ define([
      * already looks selected does nothing.
      */
     function revertSelection() {
-        selectedTerm(confirmedTerm);
+        selectedTerm(confirmedTerm());
         messageList.addErrorMessage({
             message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
         });
@@ -249,6 +269,10 @@ define([
                 return;
             }
             selectedTerm(days);
+            if (isUpdating()) {
+                pendingTerm = days;
+                return;
+            }
             this.recalculateTotals(days);
         },
 
@@ -257,7 +281,7 @@ define([
          * priced the quote on. Placement is refused while it is not (ABN-550).
          */
         isTermReconciled: function () {
-            return !isUpdating() && confirmedTerm === selectedTerm();
+            return !isUpdating() && confirmedTerm() === selectedTerm();
         },
 
         /**
@@ -281,6 +305,9 @@ define([
                 url: restUrl,
                 type: 'POST',
                 contentType: 'application/json',
+                // Without it a hung request holds isUpdating() true for the rest
+                // of the session, and with it the Place Order button disabled.
+                timeout: SELECT_TERM_TIMEOUT_MS,
                 data: JSON.stringify({
                     cartId: quote.getQuoteId(),
                     termDays: days
@@ -290,9 +317,9 @@ define([
                     return;
                 }
                 var data = Array.isArray(response) ? response[0] : response;
-                if (!data || !data.total_segments) {
+                if (!data || !Array.isArray(data.total_segments) || data.total_segments.length === 0) {
                     // Nothing confirms the term without the totals it was
-                    // collected on.
+                    // collected on, and an empty set would blank the summary.
                     revertSelection();
                     return;
                 }
@@ -302,7 +329,9 @@ define([
                     currentTotals.base_grand_total = data.base_grand_total;
                     currentTotals.tax_amount = data.tax_amount;
                     currentTotals.total_segments = data.total_segments;
+                    applyingOwnTotals = true;
                     quote.setTotals(currentTotals);
+                    applyingOwnTotals = false;
                     // Record the post-/select-term state so loadFees doesn't
                     // refetch on the totals re-emit setTotals just triggered.
                     lastTotalsSnapshot = snapshotTotals(currentTotals);
@@ -318,7 +347,7 @@ define([
                     applyTermSurcharges(data.term_surcharges);
                 }
 
-                confirmedTerm = days;
+                confirmedTerm(days);
             }).fail(function (xhr, status, err) {
                 if (mySeq !== selectSeq) {
                     return;
@@ -326,8 +355,23 @@ define([
                 console.warn('Two_Gateway: select-term failed', status, err);
                 revertSelection();
             }).always(function () {
-                if (mySeq === selectSeq) {
-                    isUpdating(false);
+                if (mySeq !== selectSeq) {
+                    return;
+                }
+                isUpdating(false);
+                var next = pendingTerm;
+                pendingTerm = null;
+                // A refused call reverted the chips, so its queue is stale.
+                if (next !== null && next === selectedTerm() && next !== confirmedTerm()) {
+                    surchargeModel.recalculateTotals(next);
+                    return;
+                }
+                if (totalsMissedWhileUpdating) {
+                    totalsMissedWhileUpdating = false;
+                    // The snapshot above is of the totals this response merged
+                    // into, so leaving it would dedup the fetch still needed.
+                    lastTotalsSnapshot = null;
+                    loadFees();
                 }
             });
         }

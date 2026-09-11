@@ -14,12 +14,14 @@ const { loadAmdModule, defaultMocks, brandConfigMock } = require('./amd-harness'
 
 function observable(initial) {
     let value = initial;
+    const subscribers = [];
     const fn = function (next) {
         if (arguments.length === 0) return value;
         value = next;
+        subscribers.forEach(function (cb) { cb(next); });
         return undefined;
     };
-    fn.subscribe = function () {};
+    fn.subscribe = function (cb) { subscribers.push(cb); };
     return fn;
 }
 
@@ -50,7 +52,7 @@ function settledResponse(net) {
 function loadModel() {
     const mocks = defaultMocks();
     const posts = [];
-    const captured = { errors: [] };
+    const captured = { errors: [], getCalls: 0 };
     const totalsObservable = observable({ grand_total: 1000, total_segments: [] });
 
     const $ = Object.assign(function () { return mocks.jquery.apply(null, arguments); }, mocks.jquery, {
@@ -64,6 +66,7 @@ function loadModel() {
             if (opts.type === 'POST') {
                 posts.push(bound);
             } else {
+                captured.getCalls++;
                 captured.get = function (data) { bound.done(data); };
             }
             return chain;
@@ -97,6 +100,8 @@ function settle(ctx, index, outcome, net) {
     } else if (outcome === 'empty') {
         // A 200 the server answered without the totals it re-collected.
         post.done({ term_surcharges: FEES.term_surcharges });
+    } else if (outcome === 'blank') {
+        post.done({ grand_total: 1000, total_segments: [], term_surcharges: FEES.term_surcharges });
     } else {
         post.done(settledResponse(net));
     }
@@ -117,7 +122,8 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         ['a chip click in flight is not reconciled — nothing has confirmed it', 'pending', null, false],
         ['a confirmed chip click is reconciled', 'settled', 200, true],
         ['a refused chip click reverts, so the chips and the quote agree again', 'failed', null, true],
-        ['a 200 carrying no totals reverts as well — nothing confirmed the term', 'empty', null, true]
+        ['a 200 carrying no totals reverts as well — nothing confirmed the term', 'empty', null, true],
+        ['a 200 carrying an empty segment set reverts too', 'blank', null, true]
     ])('%s', function (because, outcome, net, expected) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
@@ -130,9 +136,10 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
     });
 
     it.each([
-        ['a refused chip click', 'failed'],
-        ['a 200 that carried no re-collected totals', 'empty']
-    ])('%s puts the chips back on the confirmed term and says so', function (because, outcome) {
+        ['failed', 'a refused chip click'],
+        ['empty', 'a 200 that carried no re-collected totals'],
+        ['blank', 'a 200 whose segment set was empty, which would blank the summary']
+    ])('puts the chips back on the confirmed term and says so: %s (%s)', function (outcome, because) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
         ctx.model.selectTerm(90);
@@ -143,17 +150,34 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         expect(ctx.captured.errors).toEqual(['Could not update payment term. Please try again.']);
     });
 
-    it('a second click while the first is in flight reverts to the last CONFIRMED term', function () {
+    it('a chip clicked while a call is in flight is sent only once it settles', function () {
         const ctx = loadModel();
         ctx.captured.get(FEES);
         ctx.model.selectTerm(90);
         ctx.model.selectTerm(60);
-        // The superseded call answers first and must change nothing.
+
+        expect(ctx.posts).toHaveLength(1);
+
         settle(ctx, 0, 'settled', 200);
+
+        expect(ctx.posts).toHaveLength(2);
         expect(ctx.model.isTermReconciled()).toBe(false);
 
-        settle(ctx, 1, 'failed');
+        settle(ctx, 1, 'settled', 150);
 
+        expect(ctx.model.selectedTerm()).toBe(60);
+        expect(shownSurcharge(ctx)).toBe(150);
+        expect(ctx.model.isTermReconciled()).toBe(true);
+    });
+
+    it('a queued chip is dropped when the call in flight is refused', function () {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        ctx.model.selectTerm(90);
+        ctx.model.selectTerm(60);
+        settle(ctx, 0, 'failed');
+
+        expect(ctx.posts).toHaveLength(1);
         expect(ctx.model.selectedTerm()).toBe(30);
         expect(ctx.model.isTermReconciled()).toBe(true);
     });
@@ -161,14 +185,42 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
     it('a superseded response never writes its own term into the summary', function () {
         const ctx = loadModel();
         ctx.captured.get(FEES);
-        ctx.model.selectTerm(90);
-        ctx.model.selectTerm(60);
+        // recalculateTotals is the raw primitive. selectTerm never overlaps two
+        // calls; the guard is what stops a direct caller doing so.
+        ctx.model.selectedTerm(90);
+        ctx.model.recalculateTotals(90);
+        ctx.model.selectedTerm(60);
+        ctx.model.recalculateTotals(60);
         settle(ctx, 1, 'settled', 150);
         // 90's answer lands late; applying it would show a term nobody selected.
         settle(ctx, 0, 'settled', 200);
 
         expect(shownSurcharge(ctx)).toBe(150);
         expect(ctx.model.isTermReconciled()).toBe(true);
+    });
+
+    it('a settled chip click does not refetch the fees it just received', function () {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        const feeCallsBefore = ctx.captured.getCalls;
+        ctx.model.selectTerm(90);
+
+        settle(ctx, 0, 'settled', 200);
+
+        expect(ctx.captured.getCalls).toBe(feeCallsBefore);
+    });
+
+    it('a totals change dropped during a chip click is re-evaluated after it', function () {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        ctx.model.selectTerm(90);
+        // Shipping settles mid-click: the subscriber cannot refetch yet.
+        ctx.totals({ grand_total: 1400, total_segments: [{ code: 'shipping', title: 'ship', value: 400 }] });
+        const feeCallsBefore = ctx.captured.getCalls;
+
+        settle(ctx, 0, 'settled', 200);
+
+        expect(ctx.captured.getCalls).toBe(feeCallsBefore + 1);
     });
 });
 

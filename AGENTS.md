@@ -614,9 +614,22 @@ step, and `loadFees()`'s own snapshot dedup can then decline to refresh it — s
 a numeric comparison can refuse a settled checkout permanently, behind a
 message that says it is still updating.
 
-`/select-term` carries a sequence guard of its own, as `loadFees()` does. Two
-chip clicks whose responses land out of order would otherwise write the
-superseded term's segments into the summary and confirm a term nobody selected.
+**Only one `/select-term` is ever in flight.** A chip clicked during a call is
+held and sent once that call settles, and dropped if it was refused. Overlapping
+calls are serialised by the server on the session lock, which can take them in
+the opposite order to the one they were sent in — so the client's own send order
+is no evidence of which term the session ended on, and confirming from it can
+leave the session holding a term the chips discarded as superseded.
+`recalculateTotals()` keeps a sequence guard anyway, for a direct caller.
+
+The call carries a `timeout`. Without one a hung request holds `isUpdating()`
+true for the rest of the session, and with it the Place Order button disabled.
+
+A totals emission that arrives during a chip click is dropped by the subscriber,
+so the fees are re-evaluated once the click settles — and the snapshot the
+response wrote is cleared first, or the dedup would suppress exactly the fetch
+the dropped emission needed. The module's own write-back of the response totals
+is excluded, so a settled click does not refetch what it just received.
 
 A `/select-term` the server did not take reverts the chips to the confirmed
 term and says so. A 200 that carried no re-collected total segments counts as
