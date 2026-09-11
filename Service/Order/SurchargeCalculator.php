@@ -16,6 +16,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\RoundingBasis;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 
 /**
  * Resolves the buyer surcharge for a given order and selected term by
@@ -97,6 +98,11 @@ class SurchargeCalculator
     private $json;
 
     /**
+     * @var SurchargeCapProvider
+     */
+    private $capProvider;
+
+    /**
      * Request-scoped cache of resolved surcharges, keyed on the public
      * calculate() inputs. The pricing endpoint is side-effect-free and
      * callers (total collector, ConfigProvider, TermSelection) repeat
@@ -112,7 +118,8 @@ class SurchargeCalculator
         LogRepository $logRepository,
         CurrencyRatesProviderInterface $ratesProvider,
         CacheInterface $cache,
-        Json $json
+        Json $json,
+        SurchargeCapProvider $capProvider
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
@@ -120,6 +127,7 @@ class SurchargeCalculator
         $this->ratesProvider = $ratesProvider;
         $this->cache = $cache;
         $this->json = $json;
+        $this->capProvider = $capProvider;
     }
 
     /**
@@ -131,8 +139,9 @@ class SurchargeCalculator
      * @param string $orderCurrency ISO 4217 currency code of the order
      * @param int|null $storeId
      * @return array{amount: float, tax_rate: float, description: string}
-     * @throws LocalizedException when no FX rate is resolvable for the pair, or when
-     *         the API response is malformed or quotes a currency other than the order's
+     * @throws LocalizedException when no FX rate is resolvable for the pair or for the
+     *         merchant's surcharge cap, or when the API response is malformed or quotes
+     *         a currency other than the order's
      */
     public function calculate(
         float $grossAmount,
@@ -273,9 +282,9 @@ class SurchargeCalculator
      * buyer use another. Callers use this to make that decision before any
      * conversion is attempted.
      *
-     * Config-only and rate-lookup-only — deliberately no pricing API call, so
-     * it is cheap enough for isAvailable(), which runs on every render of the
-     * payment-method list.
+     * Config, merchant record and rate lookups only — deliberately no pricing
+     * API call, so it is cheap enough for isAvailable(), which runs on every
+     * render of the payment-method list.
      *
      * A conversion is only NEEDED when some term actually carries a non-zero
      * fixed amount or cap: convertAmount() short-circuits a zero, and the rate
@@ -288,13 +297,28 @@ class SurchargeCalculator
             return true;
         }
 
+        $hasPercentage = in_array($surchargeType, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE]);
+        $hasFixed = in_array($surchargeType, [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE]);
+
+        // The merchant cap bounds the fixed component, and its currency pair is
+        // its own: an order already in the fixed currency still needs the cap
+        // converted. capFixedSurcharge() refuses to price a fee it cannot
+        // bound, so that verdict has to be reachable before anything is priced.
+        if ($hasFixed) {
+            $cap = $this->capProvider->inCurrency($orderCurrency, $storeId);
+            if ($cap !== null && !$cap['exact']) {
+                $this->logRepository->addErrorLog('Surcharge unresolvable: no FX rate for the merchant cap', [
+                    'to_currency' => $orderCurrency,
+                    'store_id' => $storeId,
+                ]);
+                return false;
+            }
+        }
+
         $fixedCurrency = $this->configRepository->getSurchargeFixedCurrency($storeId);
         if ($fixedCurrency === '' || $fixedCurrency === $orderCurrency) {
             return true;
         }
-
-        $hasPercentage = in_array($surchargeType, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE]);
-        $hasFixed = in_array($surchargeType, [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE]);
 
         $needsConversion = false;
         foreach ($this->configRepository->getAllBuyerTerms($storeId) as $days) {
@@ -329,7 +353,8 @@ class SurchargeCalculator
      *
      * Maps merchant config to the API schema:
      *  - percentage types supply `percentage`
-     *  - fixed types supply `surcharge` (FX-converted to order currency)
+     *  - fixed types supply `surcharge` (FX-converted to order currency, then
+     *    bounded by the merchant's cap — see capFixedSurcharge())
      *  - a non-null limit supplies `cap` (FX-converted to order currency);
      *    an ABSENT limit is a legitimate "no cap" configuration and sends an
      *    uncapped percentage
@@ -361,9 +386,14 @@ class SurchargeCalculator
         ];
 
         if ($hasFixed) {
-            $payload['surcharge'] = $this->convertAmount(
-                (float)$config['fixed'],
-                $fixedCurrency,
+            $payload['surcharge'] = $this->capFixedSurcharge(
+                $this->convertAmount(
+                    (float)$config['fixed'],
+                    $fixedCurrency,
+                    $orderCurrency,
+                    $storeId,
+                    $selectedTermDays
+                ),
                 $orderCurrency,
                 $storeId,
                 $selectedTermDays
@@ -429,6 +459,66 @@ class SurchargeCalculator
         }
 
         return $payload;
+    }
+
+    /**
+     * The fixed surcharge bounded by the merchant's cap, in order currency.
+     *
+     * The admin form refuses an over-cap amount, but it is not the only way one
+     * arrives: a `config.php` import and a direct `core_config_data` write both
+     * reach the per-term surcharge paths without passing any backend model, and
+     * the cap itself can be lowered under an amount that was within it when
+     * saved. The ceiling therefore belongs where the charge is decided, not in
+     * the trust placed on what is stored.
+     *
+     * A cap no rate converts is not a cap this can check, and an unconverted
+     * ceiling in a weaker currency would admit a fee far above the real one, so
+     * that case refuses to price rather than guessing. `isSurchargeResolvable()`
+     * reports it ahead of any pricing so the buyer meets an unofferable method
+     * instead of a checkout error.
+     *
+     * @throws LocalizedException when a cap exists but cannot be converted
+     */
+    private function capFixedSurcharge(
+        float $surcharge,
+        string $orderCurrency,
+        ?int $storeId,
+        int $selectedTermDays
+    ): float {
+        $cap = $this->capProvider->inCurrency($orderCurrency, $storeId);
+        if ($cap === null) {
+            return $surcharge;
+        }
+
+        if (!$cap['exact']) {
+            $this->logRepository->addErrorLog('Surcharge cap unconvertible, fee not priced', [
+                'order_currency' => $orderCurrency,
+                'selected_term' => $selectedTermDays,
+                'store_id' => $storeId,
+            ]);
+            throw new LocalizedException(
+                __(
+                    'Cannot apply the surcharge limit in %1: no exchange rate is currently available.',
+                    $orderCurrency
+                )
+            );
+        }
+
+        if ($surcharge <= (float)$cap['amount']) {
+            return $surcharge;
+        }
+
+        // The merchant's only notice that the fee they configured is not the fee
+        // being charged. Silence here is the concealment this clamp must avoid.
+        $this->logRepository->addErrorLog('Surcharge above the merchant cap was reduced to the cap', [
+            'configured_surcharge' => $surcharge,
+            'merchant_cap' => $cap['amount'],
+            'order_currency' => $orderCurrency,
+            'selected_term' => $selectedTermDays,
+            'store_id' => $storeId,
+        ]);
+
+        return (float)$cap['amount'];
     }
 
     /**

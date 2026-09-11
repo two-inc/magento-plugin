@@ -15,6 +15,8 @@ use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Config\Source\RoundingBasis;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 class SurchargeCalculatorTest extends TestCase
@@ -33,6 +35,9 @@ class SurchargeCalculatorTest extends TestCase
 
     /** @var CacheInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $cache;
+
+    /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $settings;
 
     /** @var SurchargeCalculator */
     private $calculator;
@@ -56,20 +61,42 @@ class SurchargeCalculatorTest extends TestCase
         $this->cache = $this->createMock(CacheInterface::class);
         $this->cache->method('load')->willReturn(false);
 
+        // No merchant cap unless a test stubs one — the mock's own null return
+        // would otherwise make every clamp assertion below vacuous.
+        $this->settings = $this->getMockBuilder(SettingsProvider::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+
         $this->calculator = new SurchargeCalculator(
             $this->config,
             $this->adapter,
             $this->log,
             $this->ratesProvider,
             $this->cache,
-            new Json()
+            new Json(),
+            new SurchargeCapProvider($this->settings, $this->ratesProvider)
         );
     }
 
     /** A calculator wired to a fresh instance — simulates a new PHP request: no per-request memo, only whatever $cache serves. */
     private function freshRequestCalculator(CacheInterface $cache): SurchargeCalculator
     {
-        return new SurchargeCalculator($this->config, $this->adapter, $this->log, $this->ratesProvider, $cache, new Json());
+        return new SurchargeCalculator(
+            $this->config,
+            $this->adapter,
+            $this->log,
+            $this->ratesProvider,
+            $cache,
+            new Json(),
+            new SurchargeCapProvider($this->settings, $this->ratesProvider)
+        );
+    }
+
+    /** The merchant's fixed-surcharge cap, as the merchant record carries it. */
+    private function stubMerchantCap(float $amount, string $currency): void
+    {
+        $this->settings->method('getSurchargeLimit')
+            ->willReturn(['amount' => $amount, 'currency' => $currency]);
     }
 
     /**
