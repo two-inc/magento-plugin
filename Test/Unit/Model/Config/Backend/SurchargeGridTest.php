@@ -483,16 +483,14 @@ class SurchargeGridTest extends TestCase
      *
      * Everything else in this file either drives the SurchargeGridTestable
      * reimplementation or reaches into a single private method, so neither can
-     * see how afterSave() wires the two together. `validateValue()` defaults
-     * $limitColumnVisible to true, so dropping the argument at the call site —
-     * or dropping the `&& $limitColumnVisible` term from the rule — compiles
-     * and leaves every other test in this file green while reintroducing the
-     * failed-section-save regression. This helper exists to make that red.
+     * see how afterSave() wires column visibility into the rules. Dropping the
+     * `&& $columnVisible` term from a rule leaves every other test in this file
+     * green while reintroducing the failed-section-save regression; this helper
+     * exists to make that red.
      *
-     * The model is built without its constructor and has only the
-     * dependencies this path touches injected: at the default scope with no
-     * merchant surcharge limit, the store manager and the FX rates provider
-     * are never reached.
+     * The model is built without its constructor, with only the dependencies
+     * this path touches injected. A cap quoted in the base currency
+     * short-circuits the conversion, so the FX rates provider is never reached.
      *
      * @param array<int, array<string, string>> $grid
      * @param array<string, string> $storedCells surcharge cell values in effect at
@@ -605,11 +603,9 @@ class SurchargeGridTest extends TestCase
      * so a legacy zero must sail through the whole save — not throw, and not
      * be deleted.
      *
-     * Deleting the sixth argument at the call site, or the `&&
-     * $limitColumnVisible` term from the rule itself, turns this red: the
-     * parameter's `true` default means the zero rule fires on a cell the admin
-     * can neither see nor clear, and the merchant's entire payment section
-     * fails to save.
+     * Dropping the `&& $columnVisible` term from the rule turns this red: the
+     * zero rule then fires on a cell the admin can neither see nor clear, and
+     * the merchant's entire payment section fails to save.
      */
     public function testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule(): void
     {
