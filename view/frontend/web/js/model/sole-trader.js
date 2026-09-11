@@ -340,6 +340,7 @@
         const country = this.host().signupCountry();
         if (country) params += `&country=${encodeURIComponent(country)}`;
 
+        this._handedOver = false;
         this._popupWindow = window.open(
             `${config.checkoutPageUrl}/soletrader/signup?${params}`,
             '_blank',
@@ -473,7 +474,7 @@
             // The handshake's buyer lookup can still be out; it owns the
             // outcome from here and will write whatever identity it resolves.
             if (this._signupConfirming) return;
-            this._component.abandonSoleTrader();
+            this._component.abandonSoleTrader({ returnFocus: !this._handedOver });
         }, POPUP_CLOSE_POLL_MS);
     };
 
@@ -523,7 +524,12 @@
             // Another capture's chip is a different control, and its own click handler is the one
             // place a launch is spelled out. Last, so closeSignupPopup() has already released this
             // watcher and the launch's own focus is not judged here again.
-            if (chip && typeof chip.click === 'function') chip.click();
+            // The launch below blurs the chip it was fired from, so the close
+            // watcher cannot tell that focus from focus the buyer never placed.
+            if (chip && typeof chip.click === 'function') {
+                this._handedOver = true;
+                chip.click();
+            }
         };
         document.addEventListener('focusin', this._returnHandler, true);
     };

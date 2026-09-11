@@ -112,10 +112,7 @@
         return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
     }
 
-    /**
-     * Focus is nowhere: the signup launch blurred it (TWO-25658) and no control
-     * has taken it since. A buyer who has moved on keeps where they moved to.
-     */
+    /** Focus is nowhere: the signup launch blurred it (TWO-25658) and nothing took it since. */
     function focusIsUnplaced() {
         const active = document.activeElement;
         return !active || active === document.body || active === document.documentElement;
@@ -1131,14 +1128,17 @@
     };
 
     /** The buyer abandoned signup with nothing captured. */
-    CompanyCaptureComponent.prototype.abandonSoleTrader = function () {
+    /**
+     * @param {object} [options] `returnFocus: false` where the caller knows
+     *        focus has been handed to another capture's signup
+     */
+    CompanyCaptureComponent.prototype.abandonSoleTrader = function (options) {
         if (this._identity.soleTraderAdopted()) return;
         this.registeredMode();
-        // The signup launch blurred whatever held focus (TWO-25658), so a manual
-        // close otherwise leaves the buyer on the document body (ABN-561). Only
-        // where focus is still unplaced: the close can equally have been fired
-        // by the buyer focusing another control, including another capture's
-        // Sole trader chip, and taking that focus back kills the flow it began.
+        if (options && options.returnFocus === false) return;
+        // The signup launch blurred whatever held focus (TWO-25658), so a
+        // manual close otherwise leaves the buyer on the document body
+        // (ABN-561); a buyer who moved to another control keeps it.
         if (this._panel && focusIsUnplaced()) this._panel.restoreFieldFocus();
     };
 

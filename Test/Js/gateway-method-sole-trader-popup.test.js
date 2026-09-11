@@ -174,7 +174,7 @@ function loadFlow(options) {
     const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
     const component = loadCompanyCapture(env.mocks, env.globals).shipping;
     component.adoptSoleTrader = function (buyer) { env.rec.adopted.push(buyer); };
-    component.abandonSoleTrader = function () { env.rec.abandons.push(true); };
+    component.abandonSoleTrader = function (options) { env.rec.abandons.push(options || {}); };
     const flow = new SoleTraderCtor(component);
     return { flow: flow, rec: env.rec, identity: component.identity(), component: component };
 }
@@ -555,6 +555,25 @@ describe('the popup-close watcher', () => {
         poll.fn();
 
         expect(rec.abandons).toHaveLength(expectedAbandons);
+    });
+
+    test.each([
+        ['the buyer closed it, so the focus the launch dropped is handed back', false, true],
+        ['a handover launched another capture\'s signup, which owns focus now', true, false]
+    ])('%s', (because, handOver, expectedReturnFocus) => {
+        const { rec, poll, handle } = openedFlow();
+        if (handOver) {
+            const other = document.createElement('button');
+            other.setAttribute('data-two-chip', 'soletrader');
+            document.body.appendChild(other);
+            dispatchNative(other, 'focusin');
+        }
+
+        handle.closed = true;
+        poll.fn();
+
+        expect(rec.abandons).toHaveLength(1);
+        expect(rec.abandons[0].returnFocus).toBe(expectedReturnFocus);
     });
 
     test('a poll while the popup is still open decides nothing', () => {

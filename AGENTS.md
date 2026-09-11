@@ -574,11 +574,18 @@ with nothing focused, a window return settles nothing.
 focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
 `document.activeElement` on the body or nothing at all has nowhere for the buyer
 to be, and the company field takes it. A close the buyer caused by focusing
-another control — including another capture's Sole trader chip, which hands the
-popup over — keeps focus where they put it: taking it back there would kill the
-flow they just began. The panel's own restore leaves its open state alone, which
-takes cancelling the pending focus-out close, since the company field sits
-outside the panel node and arriving on it otherwise reads as leaving the control.
+another control keeps focus where they put it.
+
+**A handover is told apart by a flag, not by reading focus.** Handing the popup
+over to another capture launches that capture's signup, and that launch blurs
+its own chip — so the abandoning capture's close watcher, polling 300ms later,
+sees exactly the unplaced focus it reads as its own to reclaim. The handover
+therefore says so explicitly when it fires the other chip, and the close watcher
+passes `returnFocus: false` for it.
+
+The panel's own restore leaves its open state alone, which takes cancelling the
+pending focus-out close, since the company field sits outside the panel node and
+arriving on it otherwise reads as leaving the control.
 
 **Focus arriving on ANOTHER capture's Sole trader chip hands the popup over.**
 That chip is a different control, so this popup and popover close first; the new

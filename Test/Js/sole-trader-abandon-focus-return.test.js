@@ -52,15 +52,23 @@ function loadComponentWithPanelDouble() {
 
 describe('closing the sole-trader signup returns focus (ABN-561)', function () {
     test.each([
-        ['focus dropped by the launch is handed back to the company field', false, false, 1],
+        ['focus dropped by the launch is handed back to the company field', false, false, false, 1],
         [
             'the buyer moved to another control, so the close is theirs and focus stays there',
             false,
             true,
+            false,
             0
         ],
-        ['an adopted sole trader is the adopt path\'s business, not this one', true, false, 0]
-    ])('%s', function (because, adopted, focusElsewhere, expectedRestores) {
+        ['an adopted sole trader is the adopt path\'s business, not this one', true, false, false, 0],
+        [
+            'a handover gave focus to another capture\'s signup, whose own launch blurred it',
+            false,
+            false,
+            true,
+            0
+        ]
+    ])('%s', function (because, adopted, focusElsewhere, handedOver, expectedRestores) {
         const ctx = loadComponentWithPanelDouble();
         ctx.component.identity().soleTraderAdopted(adopted);
         // After the load, which resets the fixture: the focused node has to
@@ -73,7 +81,7 @@ describe('closing the sole-trader signup returns focus (ABN-561)', function () {
             document.getElementById('other-control').blur();
         }
 
-        ctx.component.abandonSoleTrader();
+        ctx.component.abandonSoleTrader(handedOver ? { returnFocus: false } : undefined);
 
         expect(ctx.restores.length).toBe(expectedRestores);
     });
