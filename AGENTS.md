@@ -838,3 +838,19 @@ ONLY there fires in CLI processes (cron, indexer) but NOT in HTTP
 requests. If you find yourself reaching for crontab-scope DI, ask
 whether the symmetric case (HTTP request misses the plugin) would
 break correctness — almost always yes; register globally instead.
+
+## A table prefix is not supported, and only one route applies it
+
+**The module is not verified against an installation configured with a
+database table prefix.** The surcharge config queries resolve table names
+prefix-safely (ABN-558); the rest of the module is not audited for it. The gap
+is tolerated because no merchant has reported it, and closing it is an audit
+plus a prefixed-install test run — a project of its own.
+
+Two methods share the name `getTableName()`. The injected `ResourceConnection`'s
+own method prepends the configured prefix, and is the one to call. The database
+adapter's method, reached through `->getConnection()`, only shortens an
+over-long identifier and prepends nothing, so a query built that way addresses
+a table that does not exist on a prefixed install while behaving correctly on
+every unprefixed one. `Test\Unit\Db\TableNameResolutionTest` pins the module
+against that second route.
