@@ -6,6 +6,8 @@ namespace Two\Gateway\Test\Unit\Model\Webapi;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\App\Request\Http as HttpRequest;
+use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\Quote\Api\CartTotalRepositoryInterface;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -24,7 +26,8 @@ class TermSelectionAtomicityTest extends TestCase
     /**
      * Given a select-term call that fails after the term is staged; When it
      * throws; Then the session holds the term it held before the call, and the
-     * quote is repriced back only if it was already saved on the staged term.
+     * quote is repriced back whenever it may already have been saved on the
+     * staged term.
      *
      * @dataProvider failurePoints
      */
@@ -36,8 +39,82 @@ class TermSelectionAtomicityTest extends TestCase
     ): void {
         $session = new CheckoutSession();
         $session->setTwoSelectedTerm(30);
+        $quote = $this->quoteDouble($failAt);
+        $session->setQuote($quote);
+        $cartRepository = $this->cartRepository($failAt);
 
-        $quote = new class ($failAt) {
+        $subject = $this->subject($session, $cartRepository, $this->totalsRepository($failAt), $this->logDouble());
+
+        try {
+            $subject->selectTerm('cart-1', 60);
+            $this->fail('selectTerm was expected to throw for ' . $case);
+        } catch (RuntimeException $error) {
+            $this->assertSame(30, (int)$session->getTwoSelectedTerm(), $case);
+            $this->assertSame($expectedCollects, $quote->collectCalls, $case);
+            $this->assertSame($expectedSaves, $cartRepository->saveCalls, $case);
+        }
+    }
+
+    public static function failurePoints(): array
+    {
+        return [
+            ['collect', 1, 0, 'the repricing itself failed, so nothing was persisted to undo'],
+            ['save', 2, 2, 'a save that threw may still have persisted the staged term'],
+            ['totals', 2, 2, 'the quote was already saved on the staged term'],
+        ];
+    }
+
+    /**
+     * Given the repricing back fails too; When selectTerm throws; Then the
+     * quote is left pricing a term the session no longer holds, and that is
+     * logged rather than swallowed.
+     */
+    public function testARestoreThatAlsoFailsIsLogged(): void
+    {
+        $session = new CheckoutSession();
+        $session->setTwoSelectedTerm(30);
+        $session->setQuote($this->quoteDouble('restore'));
+        $log = $this->logDouble();
+
+        $subject = $this->subject(
+            $session,
+            $this->cartRepository('restore'),
+            $this->totalsRepository('restore'),
+            $log
+        );
+
+        try {
+            $subject->selectTerm('cart-1', 60);
+            $this->fail('selectTerm was expected to throw');
+        } catch (RuntimeException $error) {
+            $this->assertSame(30, (int)$session->getTwoSelectedTerm());
+            $this->assertSame(['TermSelectionRollback'], $log->errors);
+        }
+    }
+
+    private function subject(
+        CheckoutSession $session,
+        CartRepositoryInterface $cartRepository,
+        CartTotalRepositoryInterface $totalsRepository,
+        LogRepository $log
+    ): TermSelection {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('isBuyerTermAvailable')->willReturn(true);
+
+        return new TermSelection(
+            $session,
+            $cartRepository,
+            $totalsRepository,
+            $config,
+            $this->createMock(TermSurchargePreview::class),
+            $this->permissiveLimiter(),
+            $log
+        );
+    }
+
+    private function quoteDouble(string $failAt): object
+    {
+        return new class ($failAt) {
             public int $collectCalls = 0;
 
             public function __construct(private string $failAt)
@@ -60,63 +137,69 @@ class TermSelectionAtomicityTest extends TestCase
                 if ($this->failAt === 'collect') {
                     throw new RuntimeException('pricing upstream unavailable');
                 }
+                if ($this->failAt === 'restore' && $this->collectCalls > 1) {
+                    throw new RuntimeException('repricing back failed too');
+                }
                 return $this;
             }
         };
-        $session->setQuote($quote);
+    }
 
-        $cartRepository = new class implements \Magento\Quote\Api\CartRepositoryInterface {
+    private function cartRepository(string $failAt): CartRepositoryInterface
+    {
+        return new class ($failAt) implements CartRepositoryInterface {
             public int $saveCalls = 0;
+
+            public function __construct(private string $failAt)
+            {
+            }
 
             public function save($quote): void
             {
                 $this->saveCalls++;
+                if ($this->failAt === 'save' && $this->saveCalls === 1) {
+                    throw new RuntimeException('quote save failed');
+                }
             }
         };
+    }
 
-        $cartTotalRepository = new class ($failAt) implements \Magento\Quote\Api\CartTotalRepositoryInterface {
+    private function totalsRepository(string $failAt): CartTotalRepositoryInterface
+    {
+        return new class ($failAt) implements CartTotalRepositoryInterface {
             public function __construct(private string $failAt)
             {
             }
 
             public function get($cartId)
             {
-                if ($this->failAt === 'totals') {
+                if ($this->failAt === 'totals' || $this->failAt === 'restore') {
                     throw new RuntimeException('totals read failed');
                 }
                 return null;
             }
         };
-
-        $config = $this->createMock(ConfigRepository::class);
-        $config->method('isBuyerTermAvailable')->willReturn(true);
-
-        $subject = new TermSelection(
-            $session,
-            $cartRepository,
-            $cartTotalRepository,
-            $config,
-            $this->createMock(TermSurchargePreview::class),
-            $this->permissiveLimiter(),
-            $this->createMock(LogRepository::class)
-        );
-
-        try {
-            $subject->selectTerm('cart-1', 60);
-            $this->fail('selectTerm was expected to throw for ' . $case);
-        } catch (RuntimeException $error) {
-            $this->assertSame(30, (int)$session->getTwoSelectedTerm(), $case);
-            $this->assertSame($expectedCollects, $quote->collectCalls, $case);
-            $this->assertSame($expectedSaves, $cartRepository->saveCalls, $case);
-        }
     }
 
-    public static function failurePoints(): array
+    private function logDouble(): LogRepository
     {
-        return [
-            ['collect', 1, 0, 'the repricing itself failed, so nothing was persisted to undo'],
-            ['totals', 2, 2, 'the quote was already saved on the staged term'],
-        ];
+        return new class implements LogRepository {
+            /** @var string[] */
+            public array $errors = [];
+
+            public function addErrorLog(string $type, $data)
+            {
+                $this->errors[] = $type;
+            }
+
+            public function addDebugLog(string $type, $data)
+            {
+            }
+
+            public function addLog(string $type, $data)
+            {
+            }
+        };
     }
 
     private function permissiveLimiter(): RateLimiter

@@ -127,8 +127,10 @@ class TermSelection implements TermSelectionInterface
 
         try {
             $quote->collectTotals();
-            $this->cartRepository->save($quote);
+            // Set before the save, not after: a save that throws may still
+            // have persisted.
             $repriced = true;
+            $this->cartRepository->save($quote);
 
             // Build totals response
             $totals = $this->cartTotalRepository->get($quote->getId());
