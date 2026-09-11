@@ -570,6 +570,13 @@ that control, so an alt-tab back onto a control is classified like any other
 arrival. Opening the popup blurs whatever held focus for exactly that reason —
 with nothing focused, a window return settles nothing.
 
+**The close is only abandonment while the checkout is still in sole-trader
+mode** (ABN-565). The popup's close is noticed by a 300ms poll, so a chip the
+buyer activated while the signup was up has already written the mode it asked
+for by the time the poll runs — and a poll that returned to registered search
+regardless swallowed that action. Manual entry was the visible loss: the field
+came back a registered-search combobox with the registered chip pressed.
+
 **Closing the signup with nothing captured gives focus back, but only where
 focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
 `document.activeElement` on the body or nothing at all has nowhere for the buyer

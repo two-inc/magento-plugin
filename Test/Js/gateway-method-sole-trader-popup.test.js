@@ -152,6 +152,12 @@ function makeEnv(options) {
                     }
                 });
             }
+            if (String(requestUrl).indexOf('/autofill/v1/buyer/current') !== -1 && opts.autofillBuyer) {
+                return Promise.resolve({
+                    ok: true,
+                    json: function () { return Promise.resolve(opts.autofillBuyer); }
+                });
+            }
             return Promise.resolve({ ok: false, status: 404 });
         }
     };
@@ -679,4 +685,49 @@ describe('the removed in-page iframe modal leaves nothing behind', () => {
     test('no hideIframe reference survives in the flow', () => {
         expect(readSource()).not.toContain('hideIframe');
     });
+});
+
+describe('a chip clicked while the signup is open keeps the mode it asked for (ABN-565)', () => {
+    const TRADER = { company_name: 'Held Trader', organization_number: '' };
+
+    /**
+     * The signup open over the real chips, with its close poll in hand.
+     *
+     * The popup is taken away directly rather than through a focus route: the
+     * code closes it itself when focus arrives outside the chip, and the buyer
+     * can close the window, and both land on this one poll.
+     *
+     * @param {object} [options] forwarded to startStack()
+     * @returns {Promise<object>} the stack plus `poll` and `handle`
+     */
+    async function openedStack(options) {
+        const stack = await startStack(options);
+        chip('soletrader').click();
+        // An autofilled trader is adopted by the first click and the chooser
+        // only comes up on the second, which is the buyer's route to it.
+        if (!stack.rec.opened.length) chip('soletrader').click();
+        expect(stack.rec.opened).toHaveLength(1);
+        return Object.assign({}, stack, {
+            poll: stack.rec.intervals.find((entry) => entry.ms === POPUP_CLOSE_POLL_MS),
+            handle: stack.rec.handles[0]
+        });
+    }
+
+    test.each([
+        ['manual', null, 'manual', null, 'manual entry is a plain field the buyer types into'],
+        ['manual', TRADER, 'manual', null, 'and it is theirs to ask for over an adopted trader too'],
+        ['registered', null, 'registered', 'combobox', 'the search the buyer came back to stands'],
+        ['none', null, 'registered', 'combobox', 'nothing was asked for, so the abandonment decides']
+    ])('the %s chip, autofill=%p -> mode %p role %p (%s)',
+        async (mode, autofillBuyer, expectedMode, expectedRole) => {
+            const ctx = await openedStack({ autofillBuyer: autofillBuyer });
+            if (mode !== 'none') chip(mode).click();
+
+            ctx.handle.closed = true;
+            ctx.poll.fn();
+
+            const field = document.querySelector('#company_name');
+            expect([ctx.identity.captureMode(), field.getAttribute('role')])
+                .toEqual([expectedMode, expectedRole]);
+        });
 });

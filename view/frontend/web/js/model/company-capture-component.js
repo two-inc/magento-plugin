@@ -1137,6 +1137,9 @@
      */
     CompanyCaptureComponent.prototype.abandonSoleTrader = function (options) {
         if (this._identity.soleTraderAdopted()) return;
+        // A mode asked for since the popup was raised is the buyer's answer, not
+        // abandonment to overwrite (ABN-565).
+        if (this._identity.captureMode() !== 'soletrader') return;
         // Read before registeredMode(), which can remount the panel and so
         // unplace focus the buyer had put somewhere.
         const reclaimable = focusIsUnplaced();
