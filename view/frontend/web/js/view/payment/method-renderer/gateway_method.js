@@ -471,14 +471,8 @@ define([
         isOrderIntentDeclinedNoticeVisible: function () {
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
         },
-        /**
-         * Id of the declined notice's live region, so the Place Order button can
-         * point `aria-describedby` at the sentence explaining why it is disabled
-         * (ABN-563). Per payment code: a store offering several brands renders a
-         * tile each, and a duplicate id would describe every button from one.
-         *
-         * @returns {string}
-         */
+        // Per payment code: a store offering several brands renders a tile each,
+        // and one id would describe every button from the same region (ABN-563).
         orderIntentDeclinedRegionId: function () {
             return 'two-order-intent-declined-' + this.getCode();
         },
@@ -1304,12 +1298,8 @@ define([
         },
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
-         * (TWO-25326). Never '': a decline disables the Place Order button, and
-         * a disabled control the buyer is given no reason for is the defect
-         * ABN-563 reports. Brand wording when the brand supplied any, otherwise
-         * this platform sentence — the rule the error notice already follows,
-         * since a brand declining to word a verdict has not asked for a blocked
-         * control to be unexplained.
+         * (TWO-25326). Never '' — it explains the disabled Place Order button,
+         * so a brand withholding its own wording gets the platform's (ABN-563).
          */
         resolveOrderIntentDeclinedNotice: function () {
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||
