@@ -223,12 +223,15 @@ define([
     /**
      * Hand the chips back to the confirmed term: re-clicking the chip that
      * already looks selected does nothing.
+     *
+     * Message before the write: an observable assigns before it notifies, so a
+     * chip binding throwing would revert the chips and lose the explanation.
      */
     function revertSelection() {
-        selectedTerm(confirmedTerm());
         messageList.addErrorMessage({
             message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
         });
+        selectedTerm(confirmedTerm());
     }
 
     /**

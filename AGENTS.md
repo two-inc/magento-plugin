@@ -719,6 +719,12 @@ not taken: nothing confirms the term without them, so leaving the selection
 standing would refuse placement with no message and nothing to click — the
 chip the buyer appears to have selected already is a no-op.
 
+The message is raised before the chips are written back. A knockout observable
+assigns its new value before notifying its subscribers, so a chip binding that
+throws on that notification aborts the rest of the revert — the selection is
+already reverted by then, and the explanation would never be reached, leaving
+Place Order live above a choice the buyer sees silently undone.
+
 ## A popup window is in no tab listing
 
 `window.open` returns a window outside a browser extension's tab group, so a
