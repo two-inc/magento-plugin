@@ -787,15 +787,17 @@
 
     /**
      * Put focus back on the company field, leaving the panel's open state as it
-     * was: `_closing` stops the field's own opener, and the field sits OUTSIDE
-     * the panel node, so arriving on it would otherwise read as leaving the
-     * control.
+     * was: the field sits OUTSIDE the panel node, so arriving on it would
+     * otherwise read as leaving the control.
      */
     CompanySearchPanel.prototype.restoreFieldFocus = function () {
         if (!this._field) return;
         this._closing = true;
-        this._field.focus();
-        this._closing = false;
+        try {
+            this._field.focus();
+        } finally {
+            this._closing = false;
+        }
         this._cancelFocusOutClose();
     };
 

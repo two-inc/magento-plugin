@@ -63,6 +63,12 @@
     /** The one control whose focus raises the signup popup instead of closing it. */
     const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
+    /** Focus is nowhere: a signup launch blurred it (TWO-25658) and nothing took it since. */
+    function focusIsUnplaced() {
+        const active = document.activeElement;
+        return !active || active === document.body || active === document.documentElement;
+    }
+
     /** company-search-panel.js's `CLASSES.PANEL`, which this module cannot import. */
     const CAPTURE_POPOVER_CLASS = 'two-company-dropdown';
 
@@ -150,6 +156,7 @@
         // The handshake's own buyer lookup is still out. The popup can close
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
+        this._handedOver = false;
         this._blockedSignupOptions = null;
         /**
          * Sole-trader identities whose registered address has already been
@@ -524,11 +531,11 @@
             // Another capture's chip is a different control, and its own click handler is the one
             // place a launch is spelled out. Last, so closeSignupPopup() has already released this
             // watcher and the launch's own focus is not judged here again.
-            // The launch below blurs the chip it was fired from, so the close
-            // watcher cannot tell that focus from focus the buyer never placed.
             if (chip && typeof chip.click === 'function') {
-                this._handedOver = true;
                 chip.click();
+                // A launch that took focus off the chip leaves the close watcher
+                // unable to tell it from focus the buyer never placed.
+                this._handedOver = focusIsUnplaced();
             }
         };
         document.addEventListener('focusin', this._returnHandler, true);

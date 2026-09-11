@@ -52,39 +52,44 @@ function loadComponentWithPanelDouble() {
 
 describe('closing the sole-trader signup returns focus (ABN-561)', function () {
     test.each([
-        ['focus dropped by the launch is handed back to the company field', false, false, false, 1],
+        [false, false, false, false, 1, 'focus the launch dropped is handed back to the company field'],
+        [false, true, false, false, 0, 'the buyer moved to another control, so the close is theirs'],
+        [true, false, false, false, 0, 'an adopted sole trader is the adopt path\'s business, not this one'],
+        [false, false, true, false, 0, 'a handover gave focus to another capture\'s signup'],
         [
-            'the buyer moved to another control, so the close is theirs and focus stays there',
             false,
             true,
             false,
-            0
-        ],
-        ['an adopted sole trader is the adopt path\'s business, not this one', true, false, false, 0],
-        [
-            'a handover gave focus to another capture\'s signup, whose own launch blurred it',
-            false,
-            false,
             true,
-            0
+            0,
+            'returning to registered mode unplaced the focus the buyer had put somewhere'
         ]
-    ])('%s', function (because, adopted, focusElsewhere, handedOver, expectedRestores) {
-        const ctx = loadComponentWithPanelDouble();
-        ctx.component.identity().soleTraderAdopted(adopted);
-        // After the load, which resets the fixture: the focused node has to
-        // survive into abandonSoleTrader() for the guard to read it.
-        document.body.innerHTML = '<input id="other-control">';
-        if (focusElsewhere) {
-            document.getElementById('other-control').focus();
-        } else {
-            // What openPopup() leaves behind: nothing focused at all.
-            document.getElementById('other-control').blur();
+    ])(
+        'adopted=%p elsewhere=%p handedOver=%p remountUnplaces=%p -> %p restores (%s)',
+        function (adopted, focusElsewhere, handedOver, remountUnplaces, expectedRestores) {
+            const ctx = loadComponentWithPanelDouble();
+            ctx.component.identity().soleTraderAdopted(adopted);
+            // After the load, which resets the fixture.
+            document.body.innerHTML = '<input id="other-control">';
+            if (focusElsewhere) {
+                document.getElementById('other-control').focus();
+            } else {
+                // What openPopup() leaves behind: nothing focused at all.
+                document.getElementById('other-control').blur();
+            }
+            if (remountUnplaces) {
+                const returnToRegistered = ctx.component.registeredMode.bind(ctx.component);
+                ctx.component.registeredMode = function () {
+                    document.getElementById('other-control').remove();
+                    return returnToRegistered();
+                };
+            }
+
+            ctx.component.abandonSoleTrader(handedOver ? { returnFocus: false } : undefined);
+
+            expect(ctx.restores.length).toBe(expectedRestores);
         }
-
-        ctx.component.abandonSoleTrader(handedOver ? { returnFocus: false } : undefined);
-
-        expect(ctx.restores.length).toBe(expectedRestores);
-    });
+    );
 });
 
 /** The real panel bound to a real field, so focus and open state are the DOM's. */
@@ -121,9 +126,9 @@ function nextTick() {
 
 describe('restoreFieldFocus() hands the field back without moving the popover', function () {
     test.each([
-        ['a closed popover stays closed: the field opener must not fire', 'elsewhere', false],
-        ['an open popover stays open, though the field sits outside its node', 'inside', true]
-    ])('%s', async function (because, startFocus, expectedOpen) {
+        ['elsewhere', false, 'a closed popover stays closed: the field opener must not fire'],
+        ['inside', true, 'an open popover stays open, though the field sits outside its node']
+    ])('from %s the popover stays open=%p (%s)', async function (startFocus, expectedOpen, because) {
         const panel = bindRealPanel();
         if (startFocus === 'inside') {
             // The panel's own opener puts the caret inside the panel node, which

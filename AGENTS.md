@@ -576,12 +576,17 @@ focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
 to be, and the company field takes it. A close the buyer caused by focusing
 another control keeps focus where they put it.
 
-**A handover is told apart by a flag, not by reading focus.** Handing the popup
-over to another capture launches that capture's signup, and that launch blurs
-its own chip — so the abandoning capture's close watcher, polling 300ms later,
-sees exactly the unplaced focus it reads as its own to reclaim. The handover
-therefore says so explicitly when it fires the other chip, and the close watcher
-passes `returnFocus: false` for it.
+**A handover is told apart by a flag, not by the close watcher reading focus.**
+Handing the popup over to another capture launches that capture's signup, and
+that launch blurs its own chip — so the abandoning capture's close watcher,
+polling 300ms later, sees exactly the unplaced focus it reads as its own to
+reclaim. The handover therefore records whether the other capture's launch
+actually took focus off the chip, and the close watcher passes that on as
+`returnFocus`. A handover whose chip opened nothing leaves the buyer on that
+chip and is not suppressed.
+
+The reclaim decision is read BEFORE returning to registered mode, which can
+remount the panel and so unplace focus the buyer had put somewhere themselves.
 
 The panel's own restore leaves its open state alone, which takes cancelling the
 pending focus-out close, since the company field sits outside the panel node and

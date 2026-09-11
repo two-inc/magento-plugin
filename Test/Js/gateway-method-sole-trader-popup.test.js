@@ -557,16 +557,25 @@ describe('the popup-close watcher', () => {
         expect(rec.abandons).toHaveLength(expectedAbandons);
     });
 
+    /** @returns {Element} another capture's Sole trader chip, on the page */
+    function siblingChip() {
+        const node = document.createElement('button');
+        node.setAttribute('data-two-chip', 'soletrader');
+        document.body.appendChild(node);
+        return node;
+    }
+
     test.each([
-        ['the buyer closed it, so the focus the launch dropped is handed back', false, true],
-        ['a handover launched another capture\'s signup, which owns focus now', true, false]
-    ])('%s', (because, handOver, expectedReturnFocus) => {
+        ['none', true, 'the buyer closed it, so the focus the launch dropped is handed back'],
+        ['launched', false, 'a handover launched another capture\'s signup, which owns focus now'],
+        ['inert', true, 'a handover that opened nothing left the buyer on the chip they pressed']
+    ])('after handover=%s the reclaim is %p (%s)', (handover, expectedReturnFocus) => {
         const { rec, poll, handle } = openedFlow();
-        if (handOver) {
-            const other = document.createElement('button');
-            other.setAttribute('data-two-chip', 'soletrader');
-            document.body.appendChild(other);
-            dispatchNative(other, 'focusin');
+        if (handover !== 'none') {
+            const chip = siblingChip();
+            // 'inert' is a chip whose click opens no popup, so nothing blurs it.
+            if (handover === 'inert') chip.focus();
+            dispatchNative(chip, 'focusin');
         }
 
         handle.closed = true;
@@ -574,6 +583,20 @@ describe('the popup-close watcher', () => {
 
         expect(rec.abandons).toHaveLength(1);
         expect(rec.abandons[0].returnFocus).toBe(expectedReturnFocus);
+    });
+
+    test('a handover does not suppress the reclaim on the next launch', () => {
+        const { flow, rec } = openedFlow();
+        dispatchNative(siblingChip(), 'focusin');
+
+        flow.openPopup();
+        const polls = rec.intervals.filter((entry) => entry.ms === POPUP_CLOSE_POLL_MS);
+        const handle = rec.handles[rec.handles.length - 1];
+        handle.closed = true;
+        polls[polls.length - 1].fn();
+
+        expect(rec.abandons).toHaveLength(1);
+        expect(rec.abandons[0].returnFocus).toBe(true);
     });
 
     test('a poll while the popup is still open decides nothing', () => {

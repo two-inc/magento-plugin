@@ -1127,19 +1127,22 @@
         this.syncChips();
     };
 
-    /** The buyer abandoned signup with nothing captured. */
     /**
-     * @param {object} [options] `returnFocus: false` where the caller knows
-     *        focus has been handed to another capture's signup
+     * The buyer abandoned signup with nothing captured. The signup launch
+     * blurred whatever held focus (TWO-25658), so the company field takes it
+     * back unless the buyer has since placed it themselves (ABN-561).
+     *
+     * @param {object} [options] `returnFocus: false` where focus has been handed
+     *        to another capture's signup
      */
     CompanyCaptureComponent.prototype.abandonSoleTrader = function (options) {
         if (this._identity.soleTraderAdopted()) return;
+        // Read before registeredMode(), which can remount the panel and so
+        // unplace focus the buyer had put somewhere.
+        var reclaimable = focusIsUnplaced();
         this.registeredMode();
         if (options && options.returnFocus === false) return;
-        // The signup launch blurred whatever held focus (TWO-25658), so a
-        // manual close otherwise leaves the buyer on the document body
-        // (ABN-561); a buyer who moved to another control keeps it.
-        if (this._panel && focusIsUnplaced()) this._panel.restoreFieldFocus();
+        if (this._panel && reclaimable) this._panel.restoreFieldFocus();
     };
 
     CompanyCaptureComponent.HOST_CONTRACT = HOST_CONTRACT;
