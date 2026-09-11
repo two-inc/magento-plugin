@@ -708,11 +708,20 @@ opens with the visible token because WCAG 2.5.3 requires it to contain the
 visible text, and a standard chip gets no name of its own because one that
 merely restated `30 days` would risk the same criterion.
 
+The name also states the surcharge, because an `aria-label` replaces the whole
+accessible name and the `+€n.nn` rendered inside the chip is then announced
+nowhere: `EOM+30: pay 30 days after the end of the month, plus a €7.25
+surcharge`. Each wording is one translated sentence rather than an assembled
+one, so a translator can order the clauses. A term carrying no surcharge, and a
+term whose quote has not landed yet, name no amount at all.
+
 `isEndOfMonthTerms` reaches the renderer from `ConfigProvider`; the chip text and
 the explanation are built by `termChipText()` and `termChipExplanation()`, which
-the sole-term branch reads too. An empty explanation reaches the `attr` binding
-as `false`, not as `''`, because knockout renders a blank attribute and removes a
-false one.
+the sole-term branch reads too. The explanation is a computed over the same fee
+map the visible amount reads, so the name follows the quote in. An empty
+explanation reaches the `attr` binding as `false`, not as `''`, because knockout
+renders a blank attribute and removes a false one — which is why both bindings
+call the computed rather than passing it unwrapped.
 
 ## The selected term must be CONFIRMED before submit
 

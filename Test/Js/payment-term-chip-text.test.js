@@ -2,9 +2,11 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554: what a payment-term chip says the term is. An end-of-month term
- * falls due that many days after the end of the month, so a chip reading
- * "30 days" under that setting states the wrong due date.
+ * ABN-554: what a payment-term chip says the term is, and what its accessible
+ * name states. An end-of-month term falls due that many days after the end of
+ * the month, so a chip reading "30 days" under that setting states the wrong
+ * due date; and an `aria-label` replaces the whole accessible name, so the
+ * chip's own surcharge stops being announced unless the name carries it.
  *
  * jsdom has no accessibility layer, so the accessible name is asserted as the
  * `aria-label` the template binds; what a screen reader utters is a browser
@@ -15,19 +17,56 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, makeObservable } = require('./amd-harness');
 
 const ROOT = path.join(__dirname, '..', '..');
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 
 const EOM_30 = 'EOM+30: pay 30 days after the end of the month';
+const EOM_30_FEE = 'EOM+30: pay 30 days after the end of the month, plus a €7.25 surcharge';
+const TERMS = [14, 30, 60];
 
 /** A `this` carrying only what the label accessors read. */
 function ctx(isEndOfMonthTerms) {
     return Object.assign({}, loadAmdModule(RENDERER), {
         isEndOfMonthTerms: isEndOfMonthTerms
     });
+}
+
+/** The renderer over a surcharge model whose fee map a spec can write. */
+function loadWithFees(isEndOfMonthTerms) {
+    // The harness's own observable: the ko double tracks a dependency only on
+    // one of its own, so a local stub would make the specs vacuous.
+    const fees = makeObservable({});
+    const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+        getPriceFormat: function () {
+            return { pattern: '%s' };
+        }
+    });
+    const component = Object.assign(
+        loadAmdModule(RENDERER, {
+            'Magento_Checkout/js/model/quote': quote,
+            'Two_Gateway/js/model/surcharge': {
+                selectedTerm: makeObservable(null),
+                taxDisplay: makeObservable('excl'),
+                currencySymbol: '€',
+                selectTerm: function () {},
+                isTermReconciled: function () {
+                    return true;
+                },
+                displayedTermSurcharges: function () {
+                    return fees();
+                }
+            }
+        }),
+        { isEndOfMonthTerms: isEndOfMonthTerms }
+    );
+
+    return {
+        options: component.buildTermOptions.call(component, TERMS.slice()),
+        publish: fees
+    };
 }
 
 describe('payment-term chip text', () => {
@@ -73,12 +112,45 @@ describe('payment-term chip text', () => {
     });
 
     test.each([
-        { days: 30, case: 'the term the default configuration offers' },
-        { days: 1, case: 'the shortest term' },
-        { days: 120, case: 'a three-digit term' }
-    ])('the accessible name contains the visible text: $case', ({ days }) => {
+        {
+            eom: true,
+            fee: '€7.25',
+            explanation: EOM_30_FEE,
+            case: 'a priced term states the fee, which the label would otherwise silence'
+        },
+        {
+            eom: true,
+            fee: '',
+            explanation: EOM_30,
+            case: 'a term carrying no fee states no amount'
+        },
+        {
+            eom: true,
+            fee: null,
+            explanation: EOM_30,
+            case: 'a quote still in flight states no amount either'
+        },
+        {
+            eom: false,
+            fee: '€7.25',
+            explanation: '',
+            case: 'a standard term is left unnamed whatever it costs'
+        }
+    ])('the accessible name folds in the surcharge: $case', ({ eom, fee, explanation }) => {
+        expect(ctx(eom).termChipExplanation(30, fee)).toBe(explanation);
+    });
+
+    test.each([
+        { days: 30, fee: undefined, case: 'unpriced' },
+        { days: 30, fee: '€7.25', case: 'priced' },
+        { days: 1, fee: '€0.10', case: 'the shortest term' },
+        { days: 120, fee: '€1,000.00', case: 'a three-digit term at a four-figure fee' }
+    ])('the accessible name contains the visible text: $case', ({ days, fee }) => {
         // WCAG 2.5.3 Label in Name.
-        expect(ctx(true).termChipExplanation(days)).toContain(ctx(true).termChipText(days));
+        expect(ctx(true).termChipExplanation(days, fee)).toContain(ctx(true).termChipText(days));
+        if (fee) {
+            expect(ctx(true).termChipExplanation(days, fee)).toContain(fee);
+        }
     });
 
     test.each([
@@ -91,25 +163,58 @@ describe('payment-term chip text', () => {
         {
             eom: true,
             text: 'Payment Terms EOM+30',
-            explanation: EOM_30,
-            case: 'the sole end-of-month term carries the explanation too'
+            explanation: EOM_30_FEE,
+            case: 'the sole end-of-month term carries the explanation and the fee'
         }
     ])('a single offered term: $case', ({ eom, text, explanation }) => {
         expect(ctx(eom).singleTermText(30)).toBe(text);
-        expect(ctx(eom).termChipExplanation(30)).toBe(explanation);
+        expect(ctx(eom).termChipExplanation(30, '€7.25')).toBe(explanation);
     });
 
     test('every chip gets its own text and its own explanation', () => {
-        const standard = loadAmdModule(RENDERER).buildTermOptions.call(ctx(false), [14, 30]);
-        const endOfMonth = loadAmdModule(RENDERER).buildTermOptions.call(ctx(true), [14, 30]);
+        const standard = loadWithFees(false);
+        const endOfMonth = loadWithFees(true);
+        endOfMonth.publish({ 14: 1, 30: 7.25, 60: 0 });
 
-        expect(standard.map((option) => option.daysLabel)).toEqual(['14 days', '30 days']);
-        expect(standard.map((option) => option.explanation)).toEqual(['', '']);
-        expect(endOfMonth.map((option) => option.daysLabel)).toEqual(['EOM+14', 'EOM+30']);
-        expect(endOfMonth.map((option) => option.explanation)).toEqual([
-            'EOM+14: pay 14 days after the end of the month',
-            EOM_30
+        expect(standard.options.map((option) => option.daysLabel)).toEqual([
+            '14 days',
+            '30 days',
+            '60 days'
         ]);
+        expect(standard.options.map((option) => option.explanation())).toEqual(['', '', '']);
+        expect(endOfMonth.options.map((option) => option.daysLabel)).toEqual([
+            'EOM+14',
+            'EOM+30',
+            'EOM+60'
+        ]);
+        expect(endOfMonth.options.map((option) => option.explanation())).toEqual([
+            'EOM+14: pay 14 days after the end of the month, plus a 1 surcharge',
+            'EOM+30: pay 30 days after the end of the month, plus a 7.25 surcharge',
+            'EOM+60: pay 60 days after the end of the month, plus a 0 surcharge'
+        ]);
+    });
+
+    test('the accessible name picks the fee up when the quote lands', () => {
+        const { options, publish } = loadWithFees(true);
+
+        expect(options.map((option) => option.explanation())).toEqual([
+            'EOM+14: pay 14 days after the end of the month',
+            EOM_30,
+            'EOM+60: pay 60 days after the end of the month'
+        ]);
+
+        publish({ 14: 1, 30: 7.25, 60: 3 });
+
+        expect(options[1].explanation()).toBe(
+            'EOM+30: pay 30 days after the end of the month, plus a 7.25 surcharge'
+        );
+        expect(options[1].surchargeLabel()).toBe('+7.25');
+
+        // Every term ~zero shows no fee on any chip, so none is claimed either.
+        publish({ 14: 0, 30: 0, 60: 0 });
+
+        expect(options[1].explanation()).toBe(EOM_30);
+        expect(options[1].surchargeLabel()).toBe('');
     });
 
     test.each([
@@ -119,23 +224,23 @@ describe('payment-term chip text', () => {
             case: 'its text'
         },
         {
-            pattern:
-                /this\.singleTermExplanation =\s+terms\.length === 1 \? this\.termChipExplanation\(terms\[0\]\)/,
-            case: 'its explanation'
+            pattern: /self\.termChipExplanation\(terms\[0\], self\.singleTermSurchargeAmount\(\)\)/,
+            case: 'its explanation, over the same fee the chip displays'
         }
     ])('the sole-term chip reads the shared accessors: $case', ({ pattern }) => {
         expect(fs.readFileSync(path.join(ROOT, RENDERER), 'utf8')).toMatch(pattern);
     });
 
     test.each([
-        { pattern: "'aria-label': explanation || false", case: 'the chip name' },
-        { pattern: 'title: explanation || false', case: 'the chip tooltip' },
-        { pattern: "'aria-label': singleTermExplanation || false", case: 'the sole chip name' },
-        { pattern: 'title: singleTermExplanation || false', case: 'the sole chip tooltip' }
+        { pattern: "'aria-label': explanation() || false", case: 'the chip name' },
+        { pattern: 'title: explanation() || false', case: 'the chip tooltip' },
+        { pattern: "'aria-label': singleTermExplanation() || false", case: 'the sole chip name' },
+        { pattern: 'title: singleTermExplanation() || false', case: 'the sole chip tooltip' }
     ])(
         'an empty explanation reaches the binding as false, not as a blank string: $case',
         ({ pattern }) => {
-            // knockout removes an attribute bound to false and renders one bound to ''.
+            // knockout removes an attribute bound to false and renders one bound
+            // to ''; an unwrapped computed is always truthy, so the binding calls it.
             expect(fs.readFileSync(path.join(ROOT, TEMPLATE), 'utf8')).toContain(pattern);
         }
     );

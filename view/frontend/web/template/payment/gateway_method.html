@@ -63,8 +63,8 @@
                                    attr: {
                                        'aria-checked': $parent.isTermChecked(days) ? 'true' : 'false',
                                        tabindex: $parent.termTabIndex(days),
-                                       'aria-label': explanation || false,
-                                       title: explanation || false
+                                       'aria-label': explanation() || false,
+                                       title: explanation() || false
                                    }"
                 >
                     <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
@@ -91,8 +91,8 @@
                 <span
                     class="two-term-chip two-term-chip--single"
                     data-bind="attr: {
-                                   'aria-label': singleTermExplanation || false,
-                                   title: singleTermExplanation || false
+                                   'aria-label': singleTermExplanation() || false,
+                                   title: singleTermExplanation() || false
                                }"
                 >
                     <span class="two-term-chip__days" data-bind="text: singleTermLabel"></span>
