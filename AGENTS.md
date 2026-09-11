@@ -647,6 +647,13 @@ the button points `aria-describedby` at that region while the decline stands.
 Note that a natively `disabled` button is not focusable, so the announcement
 comes from the region, not the association.
 
+**Two unrelated conditions disable that button, and each owns its own region.**
+A declined intent speaks through the decline region; an unreconciled term
+speaks through the chips' status region (below). Neither reads the other's
+state, so a buyer held for a stale total is never told they were declined, and
+a declined buyer is never told their term is still applying. A third condition
+added later needs its own region for the same reason.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection
