@@ -260,4 +260,15 @@ describe('the caret stays where the buyer is typing while the search is withdraw
 
         expect(document.activeElement).toBe(document.querySelector(QUERY));
     });
+
+    test('the field keeps the caret across its own input event, so a space is text and not a chip press', () => {
+        const { panel } = setup({ mode: 'registered', offered: ['manual'] });
+        panel.setDisabled(true);
+        const field = document.querySelector(FIELD);
+
+        field.value = 'f';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(document.activeElement).toBe(field);
+    });
 });
