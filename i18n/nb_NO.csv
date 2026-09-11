@@ -232,8 +232,6 @@
 "Company number is not valid.","Organisasjonsnummer er ikke gyldig."
 "Last Name is not valid.","Etternavn er ikke gyldig."
 "Payment surcharge configuration","Konfigurasjon av betalingstillegg"
-"Payment Terms %1 days","Betalingsvilkårs %1 dager"
-"Payment Terms EOM+%1","Betalingsvilkårs EOM+%1"
 "Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).","Utfør en sjekk under utsjekk for å informere kjøperen om en bestilling sannsynligvis vil bli akseptert før den legges inn (anbefalt)."
 "Phone Number is not valid.","Telefonnummer er ikke gyldig."
 "Specific Countries","Spesifikke land"

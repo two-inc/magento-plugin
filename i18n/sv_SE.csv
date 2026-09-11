@@ -229,8 +229,6 @@
 "Company number is not valid.","Organisationsnummer är inte giltigt."
 "Last Name is not valid.","Efternamn är inte giltigt."
 "Payment surcharge configuration","Konfiguration av tilläggsavgift"
-"Payment Terms %1 days","Betalningsvillkors %1 dagar"
-"Payment Terms EOM+%1","Betalningsvillkors EOM+%1"
 "Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).","Gör en kontroll under kassan för att informera köparen om en order sannolikt kommer att accepteras innan den läggs (rekommenderas)."
 "Phone Number is not valid.","Telefonnummer är inte giltigt."
 "Specific Countries","Specifika länder"

@@ -310,7 +310,8 @@ define([
             this.isEndOfMonthTerms = !!config.isEndOfMonthTerms;
             this.showTermSelector = terms.length > 1;
             this.showSingleTerm = terms.length === 1;
-            this.singleTermLabel = terms.length === 1 ? this.singleTermText(terms[0]) : '';
+            this.showTermChips = terms.length > 0;
+            this.singleTermLabel = terms.length === 1 ? this.termChipText(terms[0]) : '';
 
             // Empty-object termSurcharges → loading state (template shows the
             // three-dot loader), signalled as null. Once populated, '€n.nn' or
@@ -631,18 +632,6 @@ define([
             return this.isEndOfMonthTerms
                 ? $t('EOM+%1').replace('%1', days)
                 : days + ' ' + $t('days');
-        },
-        /**
-         * The sole offered term's chip text, which names the term because that
-         * branch renders no heading above it.
-         *
-         * @param {number} days
-         * @returns {string}
-         */
-        singleTermText: function (days) {
-            return this.isEndOfMonthTerms
-                ? $t('Payment Terms EOM+%1').replace('%1', days)
-                : $t('Payment Terms %1 days').replace('%1', days);
         },
         /**
          * What `EOM+30` means, spelled out, and empty under standard terms where

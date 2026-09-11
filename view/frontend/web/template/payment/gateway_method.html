@@ -37,13 +37,16 @@
     </div>
 
     <div class="payment-method-content">
-        <!-- ko if: showTermSelector -->
+        <!-- ko if: showTermChips -->
         <div class="field two-term-chips">
             <!-- A `span`, not a `label`: it names the chip group through
-                 aria-labelledby, and a `label` names a single form control. -->
+                 aria-labelledby, and a `label` names a single form control.
+                 Outside both branches: the chip text states only the term, so
+                 a lone chip is unnamed without it (ABN-554). -->
             <span class="label" data-bind="attr: {id: termGroupLabelId()}">
                 <span data-bind="i18n: 'Selected payment terms'"></span>
             </span>
+            <!-- ko if: showTermSelector -->
             <!-- A radio group, not a row of buttons: the roles come with the
                  single tab stop and the arrow keys, or they describe nothing
                  (ABN-554). -->
@@ -83,11 +86,13 @@
                  is created together with its text. -->
             <div class="two-term-chips__status" role="status" aria-live="polite"
                  data-bind="text: isTermUpdating() ? $t('Applying the selected payment term…') : ''"></div>
-        </div>
-        <!-- /ko -->
-        <!-- ko if: showSingleTerm -->
-        <div class="field two-term-chips">
-            <div class="two-term-chips__container">
+            <!-- /ko -->
+            <!-- ko if: showSingleTerm -->
+            <div
+                class="two-term-chips__container"
+                role="group"
+                data-bind="attr: {'aria-labelledby': termGroupLabelId()}"
+            >
                 <!-- A sole offered term is not a choice, so the chip is a
                      disabled button: ARIA forbids naming a role-less element,
                      which left its explanatory name reaching a tooltip and no
@@ -115,6 +120,7 @@
                     <!-- /ko -->
                 </button>
             </div>
+            <!-- /ko -->
         </div>
         <!-- /ko -->
         <!--

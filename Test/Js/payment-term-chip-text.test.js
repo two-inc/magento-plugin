@@ -69,6 +69,44 @@ function loadWithFees(isEndOfMonthTerms) {
     };
 }
 
+/**
+ * A renderer taken through its own `initialize`, which is where the lone chip's
+ * visible text is decided. The heavy collaborators are stubbed; the chip label
+ * path is real.
+ */
+function initialised(isEndOfMonthTerms, terms) {
+    const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+        getPriceFormat: function () {
+            return { pattern: '%s' };
+        }
+    });
+    // A callable carrying getActiveTwoBrandCode: company-capture.js loads for
+    // real through the renderer's dep list and reads that member off it.
+    const brandConfig = function () {
+        return { availableBuyerTerms: terms, isEndOfMonthTerms: isEndOfMonthTerms };
+    };
+    brandConfig.getActiveTwoBrandCode = function () {
+        return null;
+    };
+    const module = loadAmdModule(RENDERER, {
+        'Magento_Checkout/js/model/quote': quote,
+        'Two_Gateway/js/model/brand-config': brandConfig
+    });
+    const component = Object.assign(Object.create(module), {
+        _super: function () {},
+        getCode: function () {
+            return 'two_payment';
+        },
+        initOrderIntentApprovedNotice: function () {},
+        fillCustomerData: function () {},
+        configureFormValidation: function () {},
+        showWhatIsTwo: makeObservable(false)
+    });
+    module.initialize.call(component);
+
+    return component;
+}
+
 describe('payment-term chip text', () => {
     test.each([
         {
@@ -156,20 +194,58 @@ describe('payment-term chip text', () => {
     test.each([
         {
             eom: false,
-            text: 'Payment Terms 30 days',
+            days: 30,
+            text: '30 days',
             explanation: '',
-            case: 'the sole standard term names itself, with nothing to explain'
+            case: 'a standard term states the days and nothing else'
+        },
+        {
+            eom: false,
+            days: 1,
+            text: '1 days',
+            explanation: '',
+            case: 'so does the shortest one'
         },
         {
             eom: true,
-            text: 'Payment Terms EOM+30',
+            days: 30,
+            text: 'EOM+30',
             explanation: EOM_30_FEE,
-            case: 'the sole end-of-month term carries the explanation and the fee'
+            case: 'an end-of-month term carries the explanation and the fee'
+        },
+        {
+            eom: true,
+            days: 120,
+            text: 'EOM+120',
+            explanation: EOM_30_FEE,
+            case: 'and a three-digit one'
         }
-    ])('a single offered term: $case', ({ eom, text, explanation }) => {
-        expect(ctx(eom).singleTermText(30)).toBe(text);
-        expect(ctx(eom).termChipExplanation(30, '€7.25')).toBe(explanation);
-    });
+    ])(
+        'the sole offered term chip reads exactly as the same term does in a row: $case',
+        ({ eom, days, text, explanation }) => {
+            // The prefix this replaces ("Payment Terms 30 days") was the chip
+            // naming its own group; the group heading now does that.
+            expect(initialised(eom, [days]).singleTermLabel).toBe(text);
+            expect(initialised(eom, [days, 999]).singleTermLabel).toBe('');
+            expect(initialised(eom, [days]).singleTermLabel).toBe(ctx(eom).termChipText(days));
+            expect(ctx(eom).termChipExplanation(30, '€7.25')).toBe(explanation);
+        }
+    );
+
+    test.each([
+        { terms: [], chips: false, selector: false, single: false, case: 'no offered term' },
+        { terms: [30], chips: true, selector: false, single: true, case: 'one' },
+        { terms: [14, 30], chips: true, selector: true, single: false, case: 'several' }
+    ])(
+        'the heading wrapper is on whenever any chip is: $case',
+        ({ terms, chips, selector, single }) => {
+            const component = initialised(false, terms);
+
+            expect(component.showTermChips).toBe(chips);
+            expect(component.showTermSelector).toBe(selector);
+            expect(component.showSingleTerm).toBe(single);
+        }
+    );
 
     test('every chip gets its own text and its own explanation', () => {
         const standard = loadWithFees(false);
@@ -220,8 +296,8 @@ describe('payment-term chip text', () => {
     test.each([
         {
             pattern:
-                /this\.singleTermLabel = terms\.length === 1 \? this\.singleTermText\(terms\[0\]\)/,
-            case: 'its text'
+                /this\.singleTermLabel = terms\.length === 1 \? this\.termChipText\(terms\[0\]\)/,
+            case: 'its text, from the accessor every chip reads'
         },
         {
             pattern: /self\.termChipExplanation\(terms\[0\], self\.singleTermSurchargeAmount\(\)\)/,
@@ -244,6 +320,25 @@ describe('payment-term chip text', () => {
             expect(fs.readFileSync(path.join(ROOT, TEMPLATE), 'utf8')).toContain(pattern);
         }
     );
+
+    test.each([
+        {
+            pattern: /<!-- ko if: showTermChips -->/,
+            case: 'one wrapper over both branches, so the heading cannot be in only one'
+        },
+        {
+            pattern: /<span class="label" data-bind="attr: \{id: termGroupLabelId\(\)\}">[\s\S]*?<!-- ko if: showTermSelector -->/,
+            case: 'the heading ahead of the multi-term branch, not inside it'
+        },
+        {
+            pattern:
+                /<!-- ko if: showSingleTerm -->\s*<div\s+class="two-term-chips__container"\s+role="group"\s+data-bind="attr: \{'aria-labelledby': termGroupLabelId\(\)\}"/,
+            case: 'the lone chip in a group named by that same heading'
+        }
+    ])('the chip group is named whether one term is offered or several: $case', ({ pattern }) => {
+        // The chip text states only the term, so nothing else names the group.
+        expect(fs.readFileSync(path.join(ROOT, TEMPLATE), 'utf8')).toMatch(pattern);
+    });
 
     test.each([
         {
