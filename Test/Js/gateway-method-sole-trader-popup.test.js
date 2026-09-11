@@ -441,6 +441,20 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(held.closed).toBe(false);
     });
 
+    test('Enter on the chip leaves the popover up and nothing focused (TWO-25658)', async () => {
+        // Given: the keyboard route, where the chip really does hold focus, so
+        // the rebuild that the launch runs through deletes a focused node.
+        const { rec } = await startStack();
+        const node = chip('soletrader');
+        node.focus();
+
+        node.click();
+
+        const popover = document.querySelector('.two-company-dropdown');
+        expect([rec.opened.length, popover.hasAttribute('hidden'), document.activeElement])
+            .toEqual([1, false, document.body]);
+    });
+
     test.each([
         [false, 'the launching control does not keep focus'],
         [true, 'so a window return re-focuses nothing and the signup survives the tab switch']
