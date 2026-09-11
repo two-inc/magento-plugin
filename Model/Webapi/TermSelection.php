@@ -159,7 +159,7 @@ class TermSelection implements TermSelectionInterface
                 'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
             ]];
         } catch (\Throwable $error) {
-            $this->restoreTerm($quote, $previousTerm, $repriced);
+            $this->restoreTerm($quote, $previousTerm, $termDays, $repriced);
             throw $error;
         }
     }
@@ -167,29 +167,29 @@ class TermSelection implements TermSelectionInterface
     /**
      * Undo the staged term when the call it was staged for did not answer.
      *
-     * A term left standing is the one the order is composed and priced on
-     * while the buyer is still shown the previous one (ABN-550).
+     * The totals collector prices on the session term, so the restore happens
+     * before the repricing, and the session is left holding whatever term the
+     * last persisted save priced (ABN-550).
      *
      * @param \Magento\Quote\Model\Quote $quote
      * @param mixed $previousTerm
+     * @param int $stagedTerm
      * @param bool $repriced whether the quote was already saved at the staged term
      */
-    private function restoreTerm($quote, $previousTerm, bool $repriced): void
+    private function restoreTerm($quote, $previousTerm, int $stagedTerm, bool $repriced): void
     {
+        $this->checkoutSession->setTwoSelectedTerm($previousTerm);
         if (!$repriced) {
-            $this->checkoutSession->setTwoSelectedTerm($previousTerm);
             return;
         }
 
         try {
             $quote->collectTotals();
             $this->cartRepository->save($quote);
-            $this->checkoutSession->setTwoSelectedTerm($previousTerm);
         } catch (\Throwable $error) {
-            // The session is deliberately left on the staged term, which is
-            // what the saved quote prices: a session disagreeing with the quote
-            // lets the order carry one term's fee against another, while this
-            // way placement refuses the disagreement it can see.
+            // The saved quote still prices the staged term, so the session keeps
+            // it: a disagreement placement can see is refused rather than charged.
+            $this->checkoutSession->setTwoSelectedTerm($stagedTerm);
             $this->logRepository->addErrorLog(
                 'TermSelectionRollback',
                 sprintf('Quote totals could not be restored to the previous term: %s', $error->getMessage())

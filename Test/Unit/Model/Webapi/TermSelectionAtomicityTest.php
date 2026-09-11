@@ -26,20 +26,20 @@ class TermSelectionAtomicityTest extends TestCase
     /**
      * Given a select-term call that fails after the term is staged; When it
      * throws; Then the session holds the term it held before the call, and the
-     * quote is repriced back whenever it may already have been saved on the
-     * staged term.
+     * quote is repriced on that term whenever it may already have been saved on
+     * the staged one.
      *
      * @dataProvider failurePoints
      */
     public function testAFailedCallLeavesThePreviousTermInTheSession(
         string $failAt,
-        int $expectedCollects,
+        array $expectedTermsPriced,
         int $expectedSaves,
         string $case
     ): void {
         $session = new CheckoutSession();
         $session->setTwoSelectedTerm(30);
-        $quote = $this->quoteDouble($failAt);
+        $quote = $this->quoteDouble($failAt, $session);
         $session->setQuote($quote);
         $cartRepository = $this->cartRepository($failAt);
 
@@ -50,7 +50,7 @@ class TermSelectionAtomicityTest extends TestCase
             $this->fail('selectTerm was expected to throw for ' . $case);
         } catch (RuntimeException $error) {
             $this->assertSame(30, (int)$session->getTwoSelectedTerm(), $case);
-            $this->assertSame($expectedCollects, $quote->collectCalls, $case);
+            $this->assertSame($expectedTermsPriced, $quote->termsPriced, $case);
             $this->assertSame($expectedSaves, $cartRepository->saveCalls, $case);
         }
     }
@@ -58,9 +58,9 @@ class TermSelectionAtomicityTest extends TestCase
     public static function failurePoints(): array
     {
         return [
-            ['collect', 1, 0, 'the repricing itself failed, so nothing was persisted to undo'],
-            ['save', 2, 2, 'a save that threw may still have persisted the staged term'],
-            ['totals', 2, 2, 'the quote was already saved on the staged term'],
+            ['collect', [60], 0, 'the repricing itself failed, so nothing was persisted to undo'],
+            ['save', [60, 30], 2, 'a save that threw may still have persisted the staged term'],
+            ['totals', [60, 30], 2, 'the quote was already saved on the staged term'],
         ];
     }
 
@@ -74,7 +74,8 @@ class TermSelectionAtomicityTest extends TestCase
     {
         $session = new CheckoutSession();
         $session->setTwoSelectedTerm(30);
-        $session->setQuote($this->quoteDouble('restore'));
+        $quote = $this->quoteDouble('restore', $session);
+        $session->setQuote($quote);
         $log = $this->logDouble();
 
         $subject = $this->subject(
@@ -89,6 +90,7 @@ class TermSelectionAtomicityTest extends TestCase
             $this->fail('selectTerm was expected to throw');
         } catch (RuntimeException $error) {
             $this->assertSame(60, (int)$session->getTwoSelectedTerm());
+            $this->assertSame([60, 30], $quote->termsPriced);
             $this->assertSame(['TermSelectionRollback'], $log->errors);
         }
     }
@@ -113,12 +115,14 @@ class TermSelectionAtomicityTest extends TestCase
         );
     }
 
-    private function quoteDouble(string $failAt): object
+    /** Records the session term each repricing saw — what the collector prices on. */
+    private function quoteDouble(string $failAt, CheckoutSession $session): object
     {
-        return new class ($failAt) {
-            public int $collectCalls = 0;
+        return new class ($failAt, $session) {
+            /** @var int[] */
+            public array $termsPriced = [];
 
-            public function __construct(private string $failAt)
+            public function __construct(private string $failAt, private CheckoutSession $session)
             {
             }
 
@@ -134,11 +138,11 @@ class TermSelectionAtomicityTest extends TestCase
 
             public function collectTotals(): self
             {
-                $this->collectCalls++;
+                $this->termsPriced[] = (int)$this->session->getTwoSelectedTerm();
                 if ($this->failAt === 'collect') {
                     throw new RuntimeException('pricing upstream unavailable');
                 }
-                if ($this->failAt === 'restore' && $this->collectCalls > 1) {
+                if ($this->failAt === 'restore' && count($this->termsPriced) > 1) {
                     throw new RuntimeException('repricing back failed too');
                 }
                 return $this;

@@ -636,11 +636,14 @@ primary button greying out on its own for up to the request timeout reads as a
 broken checkout. The status node is rendered unconditionally and its text
 toggled, because a live region created together with its text announces nothing.
 
-Server side, `Model/Webapi/TermSelection.php` stages the session term. If the
-repricing back after a failure fails in turn, the session is deliberately LEFT on
-the staged term — that is what the saved quote prices, and a session disagreeing
-with the quote is what lets an order carry one term's fee against another, while
-agreeing means placement refuses the disagreement it can see.
+Server side, `Model/Webapi/TermSelection.php` stages the session term. The
+surcharge collector prices on that term, so the rollback restores the session
+first and only then reprices — repricing while the staged term still stands
+prices the staged term again. The session ends up holding whatever term the last
+persisted save priced: if the repricing back fails in turn, it is deliberately
+LEFT on the staged term, because a session that agrees with the saved quote lets
+placement refuse the disagreement it can see, while one that disagrees lets an
+order carry one term's fee against another.
 
 The call carries a `timeout`. Without one a hung request holds `isUpdating()`
 true for the rest of the session, and with it the Place Order button disabled.
