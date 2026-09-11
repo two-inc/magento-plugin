@@ -110,9 +110,9 @@ describe('surcharge model term revert', function () {
         }
         captured.always();
 
-        expect(messages).toEqual(testCase.messages, testCase.description);
-        expect(model.selectedTerm()).toBe(testCase.term, testCase.description);
+        expect(messages).toEqual(testCase.messages);
+        expect(model.selectedTerm()).toBe(testCase.term);
         // Placement stays open on the term the quote is actually priced on.
-        expect(model.isTermReconciled()).toBe(true, testCase.description);
+        expect(model.isTermReconciled()).toBe(true);
     });
 });
