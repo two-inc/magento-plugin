@@ -655,7 +655,7 @@
     CompanySearchPanel.prototype._onQueryKeydown = function (event) {
         if (event.key === 'Escape') {
             event.preventDefault();
-            this.close({ returnFocus: true });
+            this.close();
             return;
         }
         if (event.key === 'Enter') {
@@ -759,12 +759,13 @@
     /**
      * Close the panel and drop whatever the last search left in it.
      *
-     * @param {object} [options]
-     * @param {boolean} [options.returnFocus] put focus back on the field —
-     *        what Escape means. Left off for a click elsewhere, where the
-     *        buyer has already chosen where to go.
+     * Focus goes back to the company field however the close was reached, so
+     * the buyer is never left standing on a control that has just gone
+     * (ABN-554). The field's own open-on-focus opener is held off for that one
+     * programmatic focus alone, so the next keystroke, click or Tab arrival
+     * reopens.
      */
-    CompanySearchPanel.prototype.close = function (options) {
+    CompanySearchPanel.prototype.close = function () {
         if (!this._panel || !this._open) return;
         this._open = false;
         releaseOpenSlot(this);
@@ -780,9 +781,7 @@
         this._items = [];
         this._activeIndex = -1;
         if (this._field) this._field.setAttribute('aria-expanded', 'false');
-        if (options && options.returnFocus) {
-            this.restoreFieldFocus();
-        }
+        this.restoreFieldFocus();
     };
 
     /**
