@@ -105,9 +105,9 @@ function boot(surchargeType) {
 }
 
 /**
- * The fields Magento's admin validator would validate on submit, mirroring
- * mage/backend/validation.js `Elements()`. Rules reach a field either through
- * `data-validate` or through a `validate-*` / `required-entry` class.
+ * The fields Magento's admin validator would validate on submit: the ignore
+ * filter from mage/backend/validation.js `elements()`, then the rule-bearing
+ * forms this screen uses — `data-validate` and the `validate-*` classes.
  */
 function validatedFieldIds() {
     return $('#config-edit-form')

@@ -495,8 +495,9 @@ class SurchargeGridTest extends TestCase
      * are never reached.
      *
      * @param array<int, array<string, string>> $grid
-     * @param array<string, string> $storedCells stored surcharge cell rows at
-     *        this scope, as the stale-zero scan and the unchanged-value check read them
+     * @param array<string, string> $storedCells surcharge cell values already in
+     *        effect at this scope, as both the stale-zero scan and the
+     *        unchanged-value check read them
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
     private function runProductionAfterSave(
@@ -505,10 +506,39 @@ class SurchargeGridTest extends TestCase
         array $storedCells = [],
         ?array $surchargeLimit = null
     ): array {
+        return $this->runProductionAfterSaveAtScope(
+            'default',
+            0,
+            $postedType,
+            $grid,
+            $storedCells,
+            $surchargeLimit
+        );
+    }
+
+    /**
+     * As runProductionAfterSave(), at an arbitrary config scope.
+     *
+     * @param array<int, array<string, string>> $grid
+     * @param array<string, string> $storedCells
+     * @return list<array{0: string, 1: string}>
+     */
+    private function runProductionAfterSaveAtScope(
+        string $scope,
+        int $scopeId,
+        string $postedType,
+        array $grid,
+        array $storedCells = [],
+        ?array $surchargeLimit = null
+    ): array {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
         $config->method('getValue')->willReturnCallback(
-            static function ($path) {
-                return $path === 'currency/options/base' ? 'EUR' : null;
+            static function ($path) use ($storedCells) {
+                if ($path === 'currency/options/base') {
+                    return 'EUR';
+                }
+
+                return $storedCells[$path] ?? null;
             }
         );
 
@@ -542,9 +572,10 @@ class SurchargeGridTest extends TestCase
         $inject(SurchargeGrid::class, 'settingsProvider', $settings);
         $inject(SurchargeGrid::class, 'configWriter', $writer);
         $inject(SurchargeGrid::class, 'resourceConnection', $this->makeResourceConnection($storedCells));
+        $inject(SurchargeGrid::class, 'storeManager', $this->makeStoreManager());
 
-        $model->setData('scope', 'default');
-        $model->setData('scope_id', 0);
+        $model->setData('scope', $scope);
+        $model->setData('scope_id', $scopeId);
         $model->setData('groups', [
             'payment_terms' => [
                 'fields' => [
@@ -621,6 +652,26 @@ class SurchargeGridTest extends TestCase
     }
 
     /**
+     * The grid renders inherited values, so a first override at a store scope
+     * posts the parent's stranded amount back with no row of its own. Reading
+     * only scope-local rows would call that a change and refuse the save over a
+     * cell the hidden column never shows.
+     */
+    public function testProductionAfterSaveExcusesAnInheritedStrandedAmountAtAStoreScope(): void
+    {
+        $saved = $this->runProductionAfterSaveAtScope(
+            'stores',
+            1,
+            'percentage',
+            [30 => ['fixed' => '999', 'percentage' => '5', 'limit' => '50']],
+            ['payment/two_payment/surcharge_30_fixed' => '999'],
+            ['amount' => 25, 'currency' => 'EUR']
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_fixed', '999'], $saved);
+    }
+
+    /**
      * The excuse covers a value the merchant cannot reach, not a new one. A
      * direct POST can set an over-cap amount on a hidden cell, and storing that
      * unvalidated would charge buyers over the merchant's cap.
@@ -653,31 +704,52 @@ class SurchargeGridTest extends TestCase
     }
 
     /**
-     * The same for the percentage ceiling, whose column is hidden by a
-     * fixed-only surcharge.
+     * The percentage ceiling is a code constant that never falls under a
+     * merchant, so no stored value can be stranded above it and hiding the
+     * column earns no excuse.
      */
-    public function testProductionAfterSaveSkipsThePercentageCeilingWhileThatColumnIsHidden(): void
-    {
-        $saved = $this->runProductionAfterSave(
-            'fixed',
-            [30 => ['fixed' => '10', 'percentage' => '101']],
-            ['payment/two_payment/surcharge_30_percentage' => '101']
-        );
-
-        $this->assertContains(['payment/two_payment/surcharge_30_percentage', '101'], $saved);
-    }
-
-    /**
-     * The mirror for the percentage ceiling.
-     */
-    public function testProductionAfterSaveStillRefusesAnOverCapPercentageWhileVisible(): void
+    public function testProductionAfterSaveRefusesAnOverCapPercentageEvenWhileHidden(): void
     {
         $this->expectException(LocalizedException::class);
         $this->expectExceptionMessage('percentage: maximum is');
         $this->runProductionAfterSave(
-            'fixed_and_percentage',
-            [30 => ['fixed' => '10', 'percentage' => '101', 'limit' => '50']]
+            'fixed',
+            [30 => ['fixed' => '10', 'percentage' => '101']],
+            ['payment/two_payment/surcharge_30_percentage' => '101']
         );
+    }
+
+    /**
+     * A store manager whose stores and websites all report the base currency
+     * the scope config reports, so a non-default scope resolves it without FX.
+     */
+    private function makeStoreManager(): object
+    {
+        $currencyHolder = new class {
+            public function getBaseCurrencyCode(): string
+            {
+                return 'EUR';
+            }
+        };
+
+        return new class ($currencyHolder) {
+            private object $holder;
+
+            public function __construct(object $holder)
+            {
+                $this->holder = $holder;
+            }
+
+            public function getStore($id = null): object
+            {
+                return $this->holder;
+            }
+
+            public function getWebsite($id = null): object
+            {
+                return $this->holder;
+            }
+        };
     }
 
     /**

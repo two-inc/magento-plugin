@@ -172,8 +172,6 @@ class SurchargeGrid extends Value
             $this->assertNoStaleZeroLimits(array_keys($gridValues), $scope, $scopeId);
         }
 
-        $storedCells = $this->storedSurchargeCells($scope, $scopeId);
-
         foreach ($gridValues as $days => $fields) {
             if (!is_array($fields)) {
                 continue;
@@ -200,18 +198,13 @@ class SurchargeGrid extends Value
                 // the JS pass; normalise server-side too.
                 $value = str_replace(',', '.', $value);
 
-                // The Limit column rides with the percentage it caps.
+                // The Limit column shows and hides with the percentage it caps.
                 $columnVisible = $type === 'fixed' ? $fixedColumnVisible : $limitColumnVisible;
 
                 // A hidden cell is excused its ceiling only while it posts back
-                // what is already stored — the case the limit rule above
-                // describes, and the case of a merchant cap that has since
-                // fallen below an amount that was legal when it was entered. A
-                // CHANGED value is an assertion, and a direct POST
-                // (app:config:import, curl) can make one on a cell no screen
-                // ever showed, so it is judged whether or not it shows.
-                $unchanged = array_key_exists($path, $storedCells)
-                    && $this->sameAmount((string)$storedCells[$path], $value);
+                // the value already in effect.
+                $inEffect = $this->effectiveCellValue($path, $scope, $scopeId);
+                $unchanged = $inEffect !== null && $this->sameAmount($inEffect, $value);
 
                 $this->validateValue(
                     $type,
@@ -240,17 +233,7 @@ class SurchargeGrid extends Value
 
     /**
      * Whether the surcharge type being saved carries a percentage component,
-     * i.e. whether the grid's Limit column is visible. Read from the POSTed
-     * group first — the type and the grid are saved in the same request, so
-     * the stored value is the PREVIOUS one and would misjudge a merchant
-     * switching type.
-     *
-     * The config fallback is NOT an edge case: when the type field is left on
-     * "Use Default Value" its `<select>` is rendered disabled, browsers do not
-     * submit disabled inputs, and so nothing is posted for it. It is therefore
-     * resolved AT THE SAVING SCOPE — an unscoped read returns the default
-     * scope's value, which is the wrong answer for exactly the store that
-     * inherits a different one.
+     * i.e. whether the grid's Limit column is visible.
      *
      * @param array<string, mixed> $groups
      */
@@ -264,6 +247,16 @@ class SurchargeGrid extends Value
     }
 
     /**
+     * The surcharge type this request is saving. Read from the POSTed group
+     * first — the type and the grid are saved together, so the stored value is
+     * the PREVIOUS one and would misjudge a merchant switching type.
+     *
+     * The config fallback is NOT an edge case: a type left on "Use Default
+     * Value" renders as a disabled `<select>`, which browsers do not submit. It
+     * is resolved AT THE SAVING SCOPE — an unscoped read returns the default
+     * scope's value, the wrong answer for exactly the store that inherits a
+     * different one.
+     *
      * @param array<string, mixed> $groups
      */
     private function resolveSavedSurchargeType(array $groups, string $scope, int $scopeId): string
@@ -281,22 +274,17 @@ class SurchargeGrid extends Value
     }
 
     /**
-     * Stored surcharge cells at the scope being saved, as path => value.
-     *
-     * @return array<string, string>
+     * The value already in effect for a cell at the scope being saved: that
+     * scope's own override if it has one, otherwise what it inherits. The grid
+     * renders the inherited value, so a first override posts it back unchanged.
      */
-    private function storedSurchargeCells(string $scope, int $scopeId): array
+    private function effectiveCellValue(string $path, string $scope, int $scopeId): ?string
     {
-        $conn = $this->resourceConnection->getConnection();
+        $value = $scope === 'default'
+            ? $this->_config->getValue($path)
+            : $this->_config->getValue($path, $scope, $scopeId);
 
-        return $conn->fetchPairs(
-            $conn->select()
-                ->from($conn->getTableName('core_config_data'), ['path', 'value'])
-                ->where('scope = ?', $scope)
-                ->where('scope_id = ?', $scopeId)
-                ->where('path LIKE ?', 'payment/' . $this->methodCode() . '/surcharge%')
-                ->where('path REGEXP ?', 'surcharge_[0-9]+_(fixed|percentage|limit)$')
-        );
+        return $value === null ? null : (string)$value;
     }
 
     /**
@@ -535,7 +523,7 @@ class SurchargeGrid extends Value
                 __('%1 days - fixed amount: maximum is %2.', $days, $maxFixed)
             );
         }
-        if ($type === 'percentage' && $columnVisible && $value > $maxPercentage) {
+        if ($type === 'percentage' && $value > $maxPercentage) {
             throw new LocalizedException(
                 __('%1 days - percentage: maximum is %2.', $days, $maxPercentage)
             );

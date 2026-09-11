@@ -116,14 +116,33 @@ class CustomerTotalsLayoutTest extends TestCase
     }
 
     /**
-     * `sales_order_invoice_view` is an adminhtml-only handle, so a frontend file
-     * under that name reads as coverage while rendering nothing.
+     * A layout file named after a handle Magento never dispatches on the
+     * storefront — `sales_order_invoice_view` is adminhtml-only — reads as
+     * coverage while rendering nothing, so the file set is pinned rather than
+     * just its known-bad member.
      */
-    public function testNoFrontendLayoutUsesAnAdminOnlyHandleName(): void
+    public function testEveryFrontendSalesLayoutNamesAHandleMagentoDispatches(): void
     {
-        $this->assertFileDoesNotExist(
-            $this->layoutDir() . '/sales_order_invoice_view.xml',
-            'sales_order_invoice_view is an adminhtml handle; the frontend invoice handle is sales_order_invoice.'
+        $expected = array_map(
+            static fn (array $case): string => $case[0],
+            array_values(self::surfaceProvider())
+        );
+        // The transactional-email handles, which core dispatches separately.
+        $expected[] = 'sales_email_order_items';
+        $expected[] = 'sales_email_order_invoice_items';
+        $expected[] = 'sales_email_order_creditmemo_items';
+        sort($expected);
+
+        $found = array_map(
+            static fn (string $path): string => basename($path, '.xml'),
+            (array) glob($this->layoutDir() . '/sales_*.xml')
+        );
+        sort($found);
+
+        $this->assertSame(
+            $expected,
+            $found,
+            'A frontend sales layout file names a handle that is not in the dispatched set.'
         );
     }
 
