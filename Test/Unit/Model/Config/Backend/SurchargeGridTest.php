@@ -482,11 +482,10 @@ class SurchargeGridTest extends TestCase
      * Build the REAL backend model and run its REAL afterSave().
      *
      * Everything else in this file either drives the SurchargeGridTestable
-     * reimplementation or reaches into a single private method, so neither can
-     * see how afterSave() wires column visibility into the rules. Dropping the
-     * `&& $columnVisible` term from a rule leaves every other test in this file
-     * green while reintroducing the failed-section-save regression; this helper
-     * exists to make that red.
+     * reimplementation or reaches into a single private method, so none of it
+     * sees which visibility afterSave() hands each cell. Replacing that
+     * per-cell expression with a constant is invisible to every other test in
+     * the file; the tests built on this helper are the ones it reds.
      *
      * The model is built without its constructor, with only the dependencies
      * this path touches injected. A cap quoted in the base currency
@@ -495,8 +494,8 @@ class SurchargeGridTest extends TestCase
      * @param array<int, array<string, string>> $grid
      * @param array<string, string> $storedCells surcharge cell values in effect at
      *        this scope, as the unchanged-value check reads them
-     * @param array<string, string>|null $scopeLocalRows rows this scope overrides
-     *        itself, as the stale-zero scan reads them; defaults to $storedCells
+     * @param array<string, string>|null $surchargeLimit the merchant's fixed-fee
+     *        cap, as ['amount' => int, 'currency' => string]; null for no cap
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
     private function runProductionAfterSave(
@@ -520,6 +519,10 @@ class SurchargeGridTest extends TestCase
      *
      * @param array<int, array<string, string>> $grid
      * @param array<string, string> $storedCells
+     * @param array<string, string>|null $surchargeLimit
+     * @param object|null $resource stands in for the injected ResourceConnection
+     * @param array<string, string>|null $scopeLocalRows rows this scope overrides
+     *        itself, as the stale-zero scan reads them; defaults to $storedCells
      * @return list<array{0: string, 1: string}>
      */
     private function runProductionAfterSaveAtScope(
