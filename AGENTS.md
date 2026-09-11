@@ -136,6 +136,60 @@ runtime rule being misread. If you are asked to make the runtime
 throw on a zero cap, that is the reverted guard being reintroduced.
 Neither follows from the other.
 
+## The merchant's fixed-surcharge cap is enforced where the fee is CHARGED
+
+**Not the cap the section above is about.** That one is the per-term **Limit**
+column: a merchant-configured ceiling on the fee, relayed to the pricing API as
+`cap` and never guarded at runtime. This one is `surcharge_limit_amount` and
+`surcharge_limit_currency` on the merchant record — the largest FIXED surcharge
+the merchant is permitted to configure at all. Neither rule transfers to the
+other.
+
+**The admin form is the early warning, not the guarantee.**
+`Model\Config\Backend\SurchargeGrid::validateValue()` refuses a fixed amount
+above the cap and that refusal stays. It cannot be the only enforcement, for two
+reasons neither of which is fixable at the form:
+
+-   The per-term paths
+    `payment/<code>/surcharge_<days>_{fixed,percentage,limit}` are **not
+    declared in `system.xml`** — that backend model writes them itself, and
+    `surcharge_grid` is the only declared field. They therefore carry no backend
+    model at all, so a `config.php` import or a direct `core_config_data` write
+    applies one with no plugin code running. Magento's importer invokes only
+    `beforeSave()`/`afterSave()` on a declared path's model and never supplies
+    the posted `groups` the grid reads, so even a save that does reach this model
+    validates nothing.
+-   The cap lives on the merchant record and is refreshed by cron, so it can be
+    **lowered under an amount that was within it when saved**. No write happens
+    at that moment, so no write-time check of any kind can ever observe it.
+
+**`SurchargeCalculator::capFixedSurcharge()` is the guarantee.** It bounds the
+converted `surcharge` member in the order currency, immediately before the
+pricing request carries it, so no stored value and no write route reaches a
+buyer above the cap.
+
+**A reduction is always reported.** The admin grid goes on showing the
+configured amount, so reducing the fee silently would be a fresh defect rather
+than a fix: the clamp error-logs the configured amount, the cap, the currency
+and the term. Do not quieten it to a debug line, and do not "fix" any of this by
+removing the cap, the setting or the field.
+
+**A cap no rate converts refuses to price.**
+`SurchargeCapProvider::inCurrency()` reports that case as `exact => false`
+rather than handing back a figure in the wrong currency, and the charging path
+raises instead of guessing — an unconverted ceiling quoted in a weaker currency
+would admit a fee many times the real cap. `isSurchargeResolvable()` reports it
+as well, so the method is withheld ahead of pricing and the buyer meets an
+unofferable method rather than a checkout error. The admin form does compare
+against that unconverted figure, which can only refuse MORE than the real cap
+would; that asymmetry is deliberate, and is why one resolver serves both sides
+with the distinction exposed rather than buried.
+
+Both sides read the cap through `SurchargeCapProvider`, so the arithmetic cannot
+drift: the cap is truncated to whole units, and a converted figure is rounded
+up. An amount the form accepted must never be reduced when the buyer is charged,
+and that only holds while a single implementation answers for both.
+
 ## Admin settings fail loud: an unrecognised stored value is never priced
 
 The standard for EVERY admin setting, not only the surcharge method.
@@ -143,6 +197,11 @@ The standard for EVERY admin setting, not only the surcharge method.
 **Save refuses it.** A value outside the field's known set is rejected by the
 field's backend model. A crafted POST, a hand-edited row, `config:set` or an
 import therefore cannot leave behind a value nothing understands.
+
+That holds for a path DECLARED as a field in `system.xml`. A path some other
+backend model writes has no model of its own, so nothing runs on it — see the
+surcharge grid's per-term cells in the section above, where the read path
+carries the guarantee instead.
 
 **Read paths raise.** The config repository is the single choke point for the
 runtime read: it maps only the explicit unset key to the field's default and
