@@ -403,7 +403,7 @@ describe('the chips outlive a fee refresh (ABN-554)', () => {
             }
         });
         return {
-            options: component.buildTermOptions.call({}, TERMS.slice()),
+            options: component.buildTermOptions.call(component, TERMS.slice()),
             publish: fees
         };
     }

@@ -697,6 +697,23 @@ stay outside that label. The consent checkbox is named by `aria-labelledby` at
 the consent sentence instead, because that sentence carries the terms link and a
 link inside a label makes activation ambiguous.
 
+## A chip states its term type, not just a day count
+
+An end-of-month term falls due that many days after the end of the month, so a
+chip reading "30 days" on an end-of-month shop states the wrong due date. The
+visible text is `30 days` under standard terms and `EOM+30` under end of month,
+and only the end-of-month chip carries a `title` and an `aria-label` spelling
+that out: `EOM+30: pay 30 days after the end of the month`. The accessible name
+opens with the visible token because WCAG 2.5.3 requires it to contain the
+visible text, and a standard chip gets no name of its own because one that
+merely restated `30 days` would risk the same criterion.
+
+`isEndOfMonthTerms` reaches the renderer from `ConfigProvider`; the chip text and
+the explanation are built by `termChipText()` and `termChipExplanation()`, which
+the sole-term branch reads too. An empty explanation reaches the `attr` binding
+as `false`, not as `''`, because knockout renders a blank attribute and removes a
+false one.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection

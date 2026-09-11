@@ -18,6 +18,7 @@ use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Two;
 
 /**
@@ -260,6 +261,10 @@ class ConfigProvider implements ConfigProviderInterface
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'availableBuyerTerms' => $this->configRepository->getAllBuyerTerms(),
+                    // The chip text has to name the term type: an end-of-month
+                    // term falls due that many days after the end of the month
+                    // (ABN-554).
+                    'isEndOfMonthTerms' => $this->configRepository->getPaymentTermsType() === PaymentTermsType::END_OF_MONTH,
                     // 0, not a day count, when no term is offered (ABN-544).
                     'defaultPaymentTerm' => $defaultPaymentTerm,
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
