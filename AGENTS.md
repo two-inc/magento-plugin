@@ -536,14 +536,13 @@ offered chip where the query row is withdrawn, so no mode opens the panel with
 focus nowhere. Same state a click leaves it in, and the same on every platform
 that carries this control.
 
-**Closing the panel puts focus back on the company field**, however the close was
-reached — Escape, a pointer press outside, focus leaving the panel, a company
-adopted from the results, manual entry taking the field over, or the capture
-controller closing it when the hosted signup answers (ABN-554). The field's own
-focus opener is held off for that one programmatic focus alone, so any keydown on
-the field, a click on it, or focus arriving from anywhere else brings the popover
-straight back; a flag left set is a popover that never reopens, which is worse
-than the close that has nowhere to land.
+**Closing the panel puts focus back on the company field** — Escape, a pointer
+press outside, a company adopted from the results, manual entry taking the field
+over, or the capture controller closing it when the hosted signup answers
+(ABN-554). The field's own focus opener is held off for that one programmatic
+focus alone, so any keydown on the field, a click on it, or focus arriving from
+anywhere else brings the popover straight back; a flag left set is a popover that
+never reopens.
 
 **The close-on-focus-leave path is the exception, and deliberately so.** It only
 fires once focus has settled on another control, so taking focus back would undo
