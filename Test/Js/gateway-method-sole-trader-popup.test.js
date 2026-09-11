@@ -174,9 +174,15 @@ function loadFlow(options) {
     const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
     const component = loadCompanyCapture(env.mocks, env.globals).shipping;
     component.adoptSoleTrader = function (buyer) { env.rec.adopted.push(buyer); };
-    component.abandonSoleTrader = function () { env.rec.abandons.push(true); };
+    component.abandonSoleTrader = function (options) { env.rec.abandons.push(options || {}); };
     const flow = new SoleTraderCtor(component);
-    return { flow: flow, rec: env.rec, identity: component.identity(), component: component };
+    return {
+        flow: flow,
+        rec: env.rec,
+        identity: component.identity(),
+        component: component,
+        SoleTrader: SoleTraderCtor
+    };
 }
 
 /**
@@ -435,6 +441,20 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(held.closed).toBe(false);
     });
 
+    test('Enter on the chip leaves the popover up and nothing focused (TWO-25658)', async () => {
+        // Given: the keyboard route, where the chip really does hold focus, so
+        // the rebuild that the launch runs through deletes a focused node.
+        const { rec } = await startStack();
+        const node = chip('soletrader');
+        node.focus();
+
+        node.click();
+
+        const popover = document.querySelector('.two-company-dropdown');
+        expect([rec.opened.length, popover.hasAttribute('hidden'), document.activeElement])
+            .toEqual([1, false, document.body]);
+    });
+
     test.each([
         [false, 'the launching control does not keep focus'],
         [true, 'so a window return re-focuses nothing and the signup survives the tab switch']
@@ -556,6 +576,67 @@ describe('the popup-close watcher', () => {
 
         expect(rec.abandons).toHaveLength(expectedAbandons);
     });
+
+    /** @returns {Element} another capture's Sole trader chip, on the page */
+    function siblingChip() {
+        const node = document.createElement('button');
+        node.setAttribute('data-two-chip', 'soletrader');
+        document.body.appendChild(node);
+        return node;
+    }
+
+    /**
+     * Another capture's flow, reachable the way the handover reaches it: through
+     * a Sole trader chip of its own, on the page, whose click is its launch.
+     *
+     * @param {object} ctx the opened flow's context
+     * @param {boolean} launches whether that capture's click raises a signup
+     * @returns {Element} the sibling chip
+     */
+    function siblingCapture(ctx, launches) {
+        const receiving = new ctx.SoleTrader(ctx.component);
+        const node = siblingChip();
+        node.addEventListener('click', () => {
+            if (launches) receiving.openPopup();
+        });
+        return node;
+    }
+
+    test.each([
+        ['none', false, true, 'the buyer closed it, so the focus the launch dropped is handed back'],
+        ['handover', true, false, 'the receiving capture raised a signup, which owns focus now'],
+        ['handover', false, true, 'the receiving capture raised nothing, so focus is still this flow\'s to place']
+    ])('%s, receiving launch=%p -> reclaim %p (%s)', (handover, launches, expectedReturnFocus) => {
+        const ctx = openedFlow();
+        if (handover === 'handover') {
+            dispatchNative(siblingCapture(ctx, launches), 'focusin');
+        }
+
+        ctx.handle.closed = true;
+        ctx.poll.fn();
+
+        expect(ctx.rec.abandons).toHaveLength(1);
+        expect(ctx.rec.abandons[0].returnFocus).toBe(expectedReturnFocus);
+    });
+
+    test('a handover whose signup has since closed leaves the reclaim standing', () => {
+        // The signal is read at the close, not latched at the handover: the
+        // receiving capture's popup is gone by then and owns nothing.
+        const ctx = openedFlow();
+        dispatchNative(siblingCapture(ctx, true), 'focusin');
+        rec2Close(ctx);
+
+        ctx.handle.closed = true;
+        ctx.poll.fn();
+
+        expect(ctx.rec.abandons).toHaveLength(1);
+        expect(ctx.rec.abandons[0].returnFocus).toBe(true);
+    });
+
+    /** @param {object} ctx close the LAST popup the fixture opened */
+    function rec2Close(ctx) {
+        ctx.rec.handles[ctx.rec.handles.length - 1].closed = true;
+    }
 
     test('a poll while the popup is still open decides nothing', () => {
         const { rec, poll, identity } = openedFlow();

@@ -63,6 +63,7 @@
     /** The one control whose focus raises the signup popup instead of closing it. */
     const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
+
     /** company-search-panel.js's `CLASSES.PANEL`, which this module cannot import. */
     const CAPTURE_POPOVER_CLASS = 'two-company-dropdown';
 
@@ -166,6 +167,17 @@
      * pair a signup opened from another panel is running on.
      */
     const liveFlows = new Set();
+
+    /**
+     * @returns {boolean} whether a hosted signup is up anywhere on the checkout
+     */
+    function anySignupOpen() {
+        let open = false;
+        liveFlows.forEach(function (flow) {
+            if (flow.isPopupOpen()) open = true;
+        });
+        return open;
+    }
 
     /** @returns {boolean} whether any flow on the page has a round trip out */
     function anyFlowBusy() {
@@ -473,7 +485,9 @@
             // The handshake's buyer lookup can still be out; it owns the
             // outcome from here and will write whatever identity it resolves.
             if (this._signupConfirming) return;
-            this._component.abandonSoleTrader();
+            // A signup still up anywhere on the checkout is a handover: that
+            // popup owns focus, and this flow's field must not take it back.
+            this._component.abandonSoleTrader({ returnFocus: !anySignupOpen() });
         }, POPUP_CLOSE_POLL_MS);
     };
 
@@ -521,8 +535,7 @@
             // Outside the popover the buyer has left capture, not just the signup.
             if (!inside && panel && panel.close) panel.close();
             // Another capture's chip is a different control, and its own click handler is the one
-            // place a launch is spelled out. Last, so closeSignupPopup() has already released this
-            // watcher and the launch's own focus is not judged here again.
+            // place a launch is spelled out.
             if (chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);

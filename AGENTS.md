@@ -570,6 +570,36 @@ that control, so an alt-tab back onto a control is classified like any other
 arrival. Opening the popup blurs whatever held focus for exactly that reason —
 with nothing focused, a window return settles nothing.
 
+**Closing the signup with nothing captured gives focus back, but only where
+focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
+`document.activeElement` on the body or nothing at all has nowhere for the buyer
+to be, and the company field takes it. A close the buyer caused by focusing
+another control keeps focus where they put it.
+
+**A signup open anywhere on the checkout owns focus, and that is what the close
+watcher asks.** Handing the popup over to another capture launches that
+capture's signup, and that launch blurs its own chip — so focus at the close is
+unplaced either way and says nothing about who owns it. The watcher instead
+polls every live flow for an open popup: one still up is the buyer's place to
+be, and the abandoning capture leaves it alone. A handover to a capture that
+adopts an autofilled sole trader raises no popup, so the reclaim stands.
+
+Read at the close, never latched at the handover: a receiving signup the buyer
+has since closed owns nothing.
+
+**A chip-row rebuild hands focus to the company field.** The row is rebuilt from
+scratch, so activating a chip deletes the node the activation arrived on and
+focus falls to the body — including on the adopt path, where the receiving
+capture re-renders and opens nothing. Only a focused chip the rebuild actually
+disconnected is repaired, so focus the buyer put elsewhere is left alone.
+
+The reclaim decision is read BEFORE returning to registered mode, which can
+remount the panel and so unplace focus the buyer had put somewhere themselves.
+
+The panel's own restore leaves its open state alone, which takes cancelling the
+pending focus-out close, since the company field sits outside the panel node and
+arriving on it otherwise reads as leaving the control.
+
 **Focus arriving on ANOTHER capture's Sole trader chip hands the popup over.**
 That chip is a different control, so this popup and popover close first; the new
 one is then raised by invoking that chip's own click handler, the single place a
