@@ -203,3 +203,38 @@ describe('Escape closes from anywhere inside the popover', () => {
         expect(panelIsOpen()).toBe(true);
     });
 });
+
+describe('a press on the popover\'s dead space changes nothing', () => {
+    test.each([
+        {
+            target: () => document.querySelector(PANEL),
+            cancelled: true,
+            description: 'the panel\'s own padding'
+        },
+        {
+            target: () => document.querySelector(MESSAGE),
+            cancelled: true,
+            description: 'the message line'
+        },
+        {
+            target: () => document.querySelector(QUERY),
+            cancelled: false,
+            description: 'the query field, which the press must still be able to place the caret in'
+        },
+        {
+            target: () => document.querySelector('.two-company-mode-chips'),
+            cancelled: true,
+            description: 'the chip row between two chips'
+        }
+    ])('$description', ({ target, cancelled }) => {
+        const ctx = setup();
+        ctx.panel.open();
+        const before = document.activeElement;
+
+        const event = pressMouse(target());
+
+        expect(event.defaultPrevented).toBe(cancelled);
+        expect(panelIsOpen()).toBe(true);
+        expect(document.activeElement).toBe(before);
+    });
+});
