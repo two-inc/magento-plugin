@@ -167,3 +167,39 @@ describe('a mode change leaves the buyer somewhere', () => {
         expect(document.activeElement).toBe(focused());
     });
 });
+
+describe('Escape closes from anywhere inside the popover', () => {
+    test.each([
+        {
+            reach: () => document.querySelector(QUERY),
+            description: 'the query field'
+        },
+        {
+            reach: () => chipFor('manual'),
+            description: 'a mode chip, which is what holds focus once the query row is withdrawn'
+        }
+    ])('Escape on $description closes it and hands the field back', ({ reach }) => {
+        const ctx = setup();
+        ctx.panel.open();
+        const from = reach();
+        from.focus();
+
+        pressKey(from, 'Escape');
+
+        expect(panelIsOpen()).toBe(false);
+        expect(document.activeElement).toBe(fieldNode());
+    });
+
+    test('the opener suppression covers that focus and nothing after it', () => {
+        const ctx = setup();
+        ctx.panel.open();
+        clickChip('soletrader');
+
+        pressKey(document.activeElement, 'Escape');
+        expect(panelIsOpen()).toBe(false);
+
+        pressKey(fieldNode(), 'a');
+
+        expect(panelIsOpen()).toBe(true);
+    });
+});

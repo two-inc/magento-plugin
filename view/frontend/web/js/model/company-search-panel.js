@@ -533,6 +533,16 @@
         this._bindEvent(this._panel, 'focusout', function () {
             self._scheduleFocusOutClose();
         });
+
+        // On the panel, not the query field: outside registered-company mode
+        // the query row is withdrawn and a chip is what holds focus, and the
+        // panel drawn over the next control left that buyer no way out
+        // (ABN-554).
+        this._bindEvent(this._panel, 'keydown', function (event) {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            self.close();
+        });
     };
 
     /** @returns {boolean} whether focus is somewhere inside the panel */
@@ -656,7 +666,8 @@
     };
 
     /**
-     * Arrow keys walk the results, Enter takes the active one, Escape closes.
+     * Arrow keys walk the results and Enter takes the active one. Escape is the
+     * whole panel's, bound where every control inside it is reachable.
      *
      * Tab is deliberately untouched: the next tab stop is the chips, which is
      * the tab order the DOM already describes.
@@ -664,11 +675,6 @@
      * @param {object} event keydown event
      */
     CompanySearchPanel.prototype._onQueryKeydown = function (event) {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            this.close();
-            return;
-        }
         if (event.key === 'Enter') {
             event.preventDefault();
             if (this._activeIndex >= 0) this._selectIndex(this._activeIndex);
