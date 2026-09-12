@@ -258,13 +258,20 @@ describe('the character typed straight after a mode change', () => {
     test.each([
         {
             withdraw: () => { clickChip('soletrader'); },
+            focused: fieldNode,
             description: 'a mode change that withdraws the query row'
         },
         {
             withdraw: (ctx) => { ctx.panel.setDisabled(true); },
+            focused: fieldNode,
             description: 'a country the registry search does not cover'
+        },
+        {
+            withdraw: () => {},
+            focused: () => chipFor('manual'),
+            description: 'registered company, which has a query row of its own'
         }
-    ])('a printable key on a chip after $description goes to the company field', ({ withdraw }) => {
+    ])('a printable key on a chip in $description', ({ withdraw, focused }) => {
         const ctx = setup();
         ctx.panel.open();
         withdraw(ctx);
@@ -273,7 +280,22 @@ describe('the character typed straight after a mode change', () => {
 
         pressKey(chip, 'a');
 
-        expect(document.activeElement).toBe(fieldNode());
+        expect(document.activeElement).toBe(focused());
+    });
+
+    test('a mode with no query row leaves the buyer\'s text where they can see it', () => {
+        const ctx = setup();
+        ctx.panel.open();
+        clickChip('soletrader');
+        ctx.panel.restoreFieldFocus();
+        const field = fieldNode();
+        field.value = 'ab';
+
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(field.value).toBe('ab');
+        expect(document.querySelector(QUERY).value).toBe('ab');
+        expect(document.activeElement).toBe(field);
     });
 
     test('the character the field opener moves across outlives the next chip sync', () => {
