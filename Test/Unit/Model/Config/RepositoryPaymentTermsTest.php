@@ -294,16 +294,49 @@ class RepositoryPaymentTermsTest extends TestCase
 
     // ── getSurchargeLineDescription ─────────────────────────────────
 
-    public function testGetSurchargeLineDescriptionDefault(): void
-    {
-        $this->stubConfig([]);
-        $this->assertEquals('Payment terms fee - %1 days', $this->repository->getSurchargeLineDescription());
+    /**
+     * @dataProvider surchargeLineDescriptions
+     */
+    public function testGetSurchargeLineDescription(
+        ?string $stored,
+        string $termsType,
+        int $days,
+        string $expected,
+        string $case
+    ): void {
+        $this->stubConfig([
+            'payment/two_payment/surcharge_line_description' => $stored,
+            'payment/two_payment/payment_terms_type' => $termsType,
+        ]);
+
+        $rendered = (string)__($this->repository->getSurchargeLineDescription(), $days);
+
+        $this->assertSame($expected, $rendered, $case);
     }
 
-    public function testGetSurchargeLineDescriptionCustom(): void
+    public static function surchargeLineDescriptions(): array
     {
-        $this->stubConfig(['payment/two_payment/surcharge_line_description' => 'Extended terms fee']);
-        $this->assertEquals('Extended terms fee', $this->repository->getSurchargeLineDescription());
+        $shipped = 'Payment terms fee - %1 days';
+        $custom = 'Extended terms fee - %1 days';
+
+        return [
+            [$shipped, 'standard', 14, 'Payment terms fee - 14 days', 'standard, 14 days'],
+            [$shipped, 'standard', 30, 'Payment terms fee - 30 days', 'standard, 30 days'],
+            [$shipped, 'standard', 90, 'Payment terms fee - 90 days', 'standard, 90 days'],
+            [$shipped, 'end_of_month', 30, 'Payment terms fee - 30 days from end of month', 'EOM, 30 days'],
+            [$shipped, 'end_of_month', 45, 'Payment terms fee - 45 days from end of month', 'EOM, 45 days'],
+            [$shipped, 'end_of_month', 60, 'Payment terms fee - 60 days from end of month', 'EOM, 60 days'],
+            [null, 'standard', 30, 'Payment terms fee - 30 days', 'empty stored value, standard'],
+            [
+                null,
+                'end_of_month',
+                30,
+                'Payment terms fee - 30 days from end of month',
+                'empty stored value, EOM',
+            ],
+            [$custom, 'standard', 30, 'Extended terms fee - 30 days', 'merchant template wins, standard'],
+            [$custom, 'end_of_month', 30, 'Extended terms fee - 30 days', 'merchant template wins, EOM'],
+        ];
     }
 
     // ── getCustomSurchargeTaxRate (deprecated flat rate) ─────────────

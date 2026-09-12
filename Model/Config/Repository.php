@@ -19,6 +19,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 use Two\Gateway\Model\Provenance;
@@ -35,6 +36,10 @@ class Repository implements RepositoryInterface
      * ship on top of it and are surfaced per-module in the admin panel.
      */
     private const PROVENANCE_MODULE = 'Two_Gateway';
+
+    // etc/config.xml ships the standard default, so a stored value equal to it is not a merchant customisation.
+    private const SURCHARGE_LINE_DESCRIPTION_DEFAULT = 'Payment terms fee - %1 days';
+    private const SURCHARGE_LINE_DESCRIPTION_EOM_DEFAULT = 'Payment terms fee - %1 days from end of month';
 
     /**
      * @var ScopeConfigInterface
@@ -711,8 +716,14 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
-        return (string)$this->getConfig($this->path('surcharge_line_description'), $storeId)
-            ?: 'Payment terms fee - %1 days';
+        $stored = (string)$this->getConfig($this->path('surcharge_line_description'), $storeId);
+        if ($stored !== '' && $stored !== self::SURCHARGE_LINE_DESCRIPTION_DEFAULT) {
+            return $stored;
+        }
+
+        return $this->getPaymentTermsType($storeId) === PaymentTermsType::END_OF_MONTH
+            ? self::SURCHARGE_LINE_DESCRIPTION_EOM_DEFAULT
+            : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
     }
 
     /**
