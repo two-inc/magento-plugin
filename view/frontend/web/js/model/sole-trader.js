@@ -148,6 +148,8 @@
         this._popupCloseWatcherId = null;
         this._messageHandler = null;
         this._returnHandler = null;
+        /** Where the launch parked the focus the popup took; the return watch reads it as its own. */
+        this._parkedFocus = null;
         // The handshake's own buyer lookup is still out. The popup can close
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
@@ -362,6 +364,7 @@
             if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
             this.watchPopupClose(this._popupWindow);
             this.watchForReturnToCheckout();
+            this.parkFocusDroppedByPopup();
         }
         return this._popupWindow;
     };
@@ -504,6 +507,27 @@
     };
 
     /**
+     * Put the focus the signup popup took onto the company field (ABN-554).
+     *
+     * The blur above leaves the popover on screen around a document focusing
+     * nothing, where no keystroke reaches any control. Deferred a tick so the
+     * launching click's own rebuild of the chips has settled first, and
+     * skipped where focus has landed somewhere the buyer put it.
+     */
+    SoleTrader.prototype.parkFocusDroppedByPopup = function () {
+        setTimeout(() => {
+            const active = document.activeElement;
+            if (active && active !== document.body && active !== document.documentElement) return;
+            const panel = this._component.panel();
+            const field = panel && panel.getField && panel.getField()[0];
+            if (!field || !document.contains(field)) return;
+            // Before the focus, which the return watch sees synchronously.
+            this._parkedFocus = field;
+            panel.restoreFieldFocus();
+        }, 0);
+    };
+
+    /**
      * Focus arriving on THIS capture's Sole trader chip moves the signup popup neither way;
      * arriving on another control closes the popup, and on one outside the capture popover
      * closes the popover too (TWO-25658). The company field counts as inside: it is the
@@ -511,13 +535,21 @@
      * event order. Another capture's Sole trader chip is one of those other controls, and
      * gets a popup of its own.
      *
-     * A focusin a browser re-fires on window return counts as the buyer focusing that control.
+     * A focusin a browser re-fires on window return counts as the buyer focusing that
+     * control, unless it is the field the launch parked focus on and focus has not left it.
      */
     SoleTrader.prototype.watchForReturnToCheckout = function () {
         if (this._returnHandler) return;
         this._returnHandler = (event) => {
+            // Focus that LEAVES is what tells a window return's re-fire apart from the
+            // buyer arriving on the parked field: the re-fire carries no focusout (ABN-554).
+            if (event.type === 'focusout') {
+                if (event.target === this._parkedFocus) this._parkedFocus = null;
+                return;
+            }
             if (!this.isPopupOpen()) return;
             const target = event.target;
+            if (target === this._parkedFocus) return;
             const panel = this._component.panel();
             const field = panel && panel.getField && panel.getField()[0];
             // Off the field, never `getPanelElement()`: a morph re-render deletes the wrap and the
@@ -539,13 +571,16 @@
             if (chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);
+        document.addEventListener('focusout', this._returnHandler, true);
     };
 
     /** Release the watcher with the popup it was armed for. */
     SoleTrader.prototype.stopReturnToCheckoutWatcher = function () {
         if (!this._returnHandler) return;
         document.removeEventListener('focusin', this._returnHandler, true);
+        document.removeEventListener('focusout', this._returnHandler, true);
         this._returnHandler = null;
+        this._parkedFocus = null;
     };
 
     /** Close the popup this flow opened, if it is still up. */
