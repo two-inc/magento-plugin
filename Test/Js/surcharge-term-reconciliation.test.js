@@ -374,7 +374,8 @@ describe('the chips say why the button is disabled (ABN-550)', function () {
     it.each([
         ['', true, 'a settled checkout says nothing and the button is live'],
         [APPLYING, false, 'a call in flight says so, since the disabled button cannot answer a click'],
-        [NOT_APPLIED, false, 'a selection nothing confirmed says why, instead of greying the button in silence']
+        [NOT_APPLIED, false, 'a selection nothing confirmed says why, instead of greying the button in silence'],
+        [REFUSED, false, 'a term the server refused says so, on chips that are back on the confirmed term']
     ])('status %p leaves the button enabled=%p (%s)', function (message, enabled) {
         const component = loadRenderer(message);
         const ctx = makeRendererContext(component);
@@ -410,6 +411,13 @@ describe('gateway_method reconciliation submit gate (ABN-550)', function () {
             [NOT_APPLIED],
             false,
             'a selection nothing confirmed is refused with the same reason the chips carry'
+        ],
+        [
+            REFUSED,
+            0,
+            [REFUSED],
+            false,
+            'a term the server refused is not placed on the term the revert put the chips back to'
         ]
     ])('status %p -> %p placements, %p errors, enabled=%p (%s)', function (message, expectedCalls, expectedErrors, expectedEnabled) {
         const component = loadRenderer(message);
