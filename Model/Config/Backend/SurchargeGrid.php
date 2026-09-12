@@ -20,10 +20,9 @@ use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\Source\SurchargeType;
-use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 
 /**
  * Backend model for the surcharge grid.
@@ -50,14 +49,11 @@ class SurchargeGrid extends Value
     /** @var StoreManagerInterface */
     private $storeManager;
 
-    /** @var CurrencyRatesProviderInterface */
-    private $ratesProvider;
-
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
-    /** @var SettingsProvider */
-    private $settingsProvider;
+    /** @var SurchargeCapProvider */
+    private $capProvider;
 
     /** @var ResourceConnection */
     private $resourceConnection;
@@ -69,9 +65,8 @@ class SurchargeGrid extends Value
         TypeListInterface $cacheTypeList,
         WriterInterface $configWriter,
         StoreManagerInterface $storeManager,
-        CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
-        SettingsProvider $settingsProvider,
+        SurchargeCapProvider $capProvider,
         ResourceConnection $resourceConnection,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -80,9 +75,8 @@ class SurchargeGrid extends Value
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->configWriter = $configWriter;
         $this->storeManager = $storeManager;
-        $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
-        $this->settingsProvider = $settingsProvider;
+        $this->capProvider = $capProvider;
         $this->resourceConnection = $resourceConnection;
     }
 
@@ -420,32 +414,21 @@ class SurchargeGrid extends Value
      * converted into the merchant's base currency. Returns null when
      * there is no upper bound; validateValue() must skip the
      * upper-bound check in that case.
+     *
+     * A cap no rate converts is compared against unconverted, which can only
+     * refuse more than the real cap would. The charging path cannot take that
+     * reading — see SurchargeCapProvider::inCurrency().
      */
     private function getConvertedFixedMax(string $scope, int $scopeId): ?int
     {
         [$readId, $readScope] = AdminScope::fromScope($scope, $scopeId);
-        $limit = $this->settingsProvider->getSurchargeLimit($readId, $readScope);
-        if ($limit === null) {
-            return null;
-        }
-        $limitAmount = (int)$limit['amount'];
-        $limitCurrency = $limit['currency'];
-        $baseCurrency = $this->resolveBaseCurrency($scope, $scopeId);
-
-        if ($baseCurrency === $limitCurrency) {
-            return $limitAmount;
-        }
-
-        $rate = $this->ratesProvider->getRate(
-            $limitCurrency,
-            $baseCurrency,
-            AdminScope::isStoreScope($readScope) ? $readId : null
+        $cap = $this->capProvider->inCurrency(
+            $this->resolveBaseCurrency($scope, $scopeId),
+            $readId,
+            $readScope
         );
-        if ($rate !== null && $rate > 0) {
-            return (int)ceil($limitAmount * $rate);
-        }
 
-        return $limitAmount;
+        return $cap === null ? null : $cap['amount'];
     }
 
     /**

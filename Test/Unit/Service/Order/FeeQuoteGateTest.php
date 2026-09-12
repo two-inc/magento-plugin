@@ -18,6 +18,8 @@ use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\FeeQuoteGate;
@@ -264,7 +266,11 @@ class FeeQuoteGateTest extends TestCase
             $this->createMock(LogRepository::class),
             $this->createMock(CurrencyRatesProviderInterface::class),
             $cache,
-            new Json()
+            new Json(),
+            new SurchargeCapProvider(
+                $this->getMockBuilder(SettingsProvider::class)->disableOriginalConstructor()->getMock(),
+                $this->createMock(CurrencyRatesProviderInterface::class)
+            )
         );
 
         $appState = new AppState();

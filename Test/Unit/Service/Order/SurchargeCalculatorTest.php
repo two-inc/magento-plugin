@@ -15,6 +15,8 @@ use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Config\Source\RoundingBasis;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 class SurchargeCalculatorTest extends TestCase
@@ -33,6 +35,9 @@ class SurchargeCalculatorTest extends TestCase
 
     /** @var CacheInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $cache;
+
+    /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $settings;
 
     /** @var SurchargeCalculator */
     private $calculator;
@@ -56,20 +61,43 @@ class SurchargeCalculatorTest extends TestCase
         $this->cache = $this->createMock(CacheInterface::class);
         $this->cache->method('load')->willReturn(false);
 
+        // No merchant cap unless a test stubs one — the mock's own null return
+        // would otherwise make every clamp assertion below vacuous.
+        $this->settings = $this->getMockBuilder(SettingsProvider::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+
         $this->calculator = new SurchargeCalculator(
             $this->config,
             $this->adapter,
             $this->log,
             $this->ratesProvider,
             $this->cache,
-            new Json()
+            new Json(),
+            new SurchargeCapProvider($this->settings, $this->ratesProvider)
         );
     }
 
     /** A calculator wired to a fresh instance — simulates a new PHP request: no per-request memo, only whatever $cache serves. */
     private function freshRequestCalculator(CacheInterface $cache): SurchargeCalculator
     {
-        return new SurchargeCalculator($this->config, $this->adapter, $this->log, $this->ratesProvider, $cache, new Json());
+        return new SurchargeCalculator(
+            $this->config,
+            $this->adapter,
+            $this->log,
+            $this->ratesProvider,
+            $cache,
+            new Json(),
+            new SurchargeCapProvider($this->settings, $this->ratesProvider)
+        );
+    }
+
+    /** The merchant's fixed-surcharge cap, as the merchant record carries it; null for no cap. */
+    private function stubMerchantCap(?float $amount, string $currency = 'EUR'): void
+    {
+        $this->settings->method('getSurchargeLimit')->willReturn(
+            $amount === null ? null : ['amount' => $amount, 'currency' => $currency]
+        );
     }
 
     /**
@@ -1259,5 +1287,176 @@ class SurchargeCalculatorTest extends TestCase
         } catch (\Magento\Framework\Exception\LocalizedException $e) {
             // expected
         }
+    }
+
+    // ── The merchant's fixed-surcharge cap ───────────────────────────
+
+    /**
+     * The cap bounds the fee that is CHARGED, not merely the value that is
+     * stored.
+     *
+     * Every row is a stored configuration the admin form would have refused, or
+     * would have accepted under a cap that has since changed. By the time a fee
+     * is priced the route that stored it leaves no trace — a config import and a
+     * direct config-table write are the same stored value here — so the rows
+     * differ by the numbers that reach the buyer, not by a write mechanism.
+     *
+     * The fake pricing endpoint bills the surcharge it is sent, which for a
+     * fixed-only fee is the whole fee, so the asserted figure is the charge.
+     *
+     * @dataProvider cappedChargeCases
+     */
+    public function testTheChargedSurchargeNeverExceedsTheMerchantCap(
+        float $storedFixed,
+        ?float $capAmount,
+        string $orderCurrency,
+        ?float $rate,
+        float $expectedCharge,
+        string $case
+    ): void {
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, $storedFixed);
+        $this->stubFixedCurrency('EUR');
+        $this->stubMerchantCap($capAmount);
+        $this->ratesProvider->method('getRate')->willReturn($rate);
+
+        $sent = null;
+        $this->adapter->method('execute')->willReturnCallback(
+            function ($path, $payload) use (&$sent) {
+                $sent = $payload['buyer_fee_share']['surcharge'];
+                return ['buyer_fee_share' => $sent];
+            }
+        );
+
+        $charged = $this->calculator->calculate(1000.0, 30, 'NO', $orderCurrency)['amount'];
+
+        $this->assertSame($expectedCharge, $sent, $case . ' — asked of the pricing API');
+        $this->assertSame($expectedCharge, $charged, $case . ' — charged to the buyer');
+    }
+
+    /**
+     * @return array<int, array<int, mixed>>
+     */
+    public static function cappedChargeCases(): array
+    {
+        return [
+            [10.0, 25.0, 'EUR', null, 10.0, 'an in-cap amount is charged unchanged'],
+            [25.0, 25.0, 'EUR', null, 25.0, 'an amount exactly at the cap is charged unchanged'],
+            [999.0, 25.0, 'EUR', null, 25.0, 'an amount above the cap is charged at the cap, whatever wrote it'],
+            [30.0, 25.0, 'EUR', null, 25.0, 'an amount valid when saved is charged at a cap since lowered'],
+            [999.0, null, 'EUR', null, 999.0, 'no merchant cap leaves the configured amount alone'],
+            [999.0, 25.0, 'SEK', 10.0, 250.0, 'the cap bounds the fee in the order currency, not the stored one'],
+            [10.0, 25.0, 'SEK', 10.0, 100.0, 'an in-cap amount converts without being clamped'],
+        ];
+    }
+
+    /**
+     * A cap no rate expresses in the order currency bounds nothing. The fee
+     * itself is already in the order currency here, so the cap is the only
+     * conversion failing — and the fee must still not be priced.
+     */
+    public function testAnUnconvertibleCapRefusesToPriceTheFee(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 999);
+        $this->stubFixedCurrency('SEK');
+        $this->stubMerchantCap(25.0, 'EUR');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->adapter->expects($this->never())->method('execute');
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Cannot apply the surcharge limit in SEK');
+
+        $this->calculator->calculate(1000.0, 30, 'NO', 'SEK');
+    }
+
+    /**
+     * The buyer meets an unofferable payment method rather than the checkout
+     * error the refusal above would otherwise become.
+     */
+    public function testAnUnconvertibleCapWithholdsTheMethod(): void
+    {
+        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
+        $this->config->method('getSurchargeFixedCurrency')->willReturn('SEK');
+        $this->config->method('getAllBuyerTerms')->willReturn([30]);
+        $this->stubSurchargeConfig(0, 999);
+        $this->stubMerchantCap(25.0, 'EUR');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->assertFalse(
+            $this->calculator->isSurchargeResolvable('SEK', 1),
+            'a cap with no rate into the order currency makes the surcharge unresolvable'
+        );
+    }
+
+    /**
+     * An unconvertible cap is only a problem for a fee there is something to
+     * bound. Withholding the method over a cap on a fee of nothing would take
+     * the tile off a working checkout.
+     */
+    public function testAnUnconvertibleCapOverNoFeeIsHarmless(): void
+    {
+        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
+        $this->config->method('getSurchargeFixedCurrency')->willReturn('SEK');
+        $this->config->method('getAllBuyerTerms')->willReturn([30]);
+        $this->config->method('isSurchargeDifferential')->willReturn(false);
+        $this->config->method('getPaymentTermsType')->willReturn('standard');
+        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(0.0);
+        $this->stubSurchargeConfig(0, 0.0);
+        $this->stubMerchantCap(25.0, 'EUR');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->assertTrue(
+            $this->calculator->isSurchargeResolvable('SEK', 1),
+            'no term carries a fixed amount, so the method stays on offer'
+        );
+
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 0.0]);
+        $this->assertSame(
+            0.0,
+            $this->calculator->calculate(1000.0, 30, 'NO', 'SEK')['amount'],
+            'and the fee still prices rather than refusing'
+        );
+    }
+
+    /**
+     * A clamp the merchant cannot see is a second defect, not a fix: the admin
+     * grid still shows the configured amount.
+     */
+    public function testAClampedSurchargeIsReported(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 999);
+        $this->stubFixedCurrency('EUR');
+        $this->stubMerchantCap(25.0);
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 25.0]);
+
+        $reported = [];
+        $this->log->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$reported) {
+                $reported[$type] = $data;
+            }
+        );
+
+        $this->calculator->calculate(1000.0, 30, 'NO', 'EUR');
+
+        $this->assertArrayHasKey(
+            'Surcharge above the merchant cap was reduced to the cap',
+            $reported,
+            'the reduction must be reported'
+        );
+        $this->assertSame(
+            [
+                'configured_surcharge' => 999.0,
+                'merchant_cap' => 25,
+                'order_currency' => 'EUR',
+                'selected_term' => 30,
+                'store_id' => null,
+            ],
+            $reported['Surcharge above the merchant cap was reduced to the cap'],
+            'the report names the configured amount and the cap that displaced it'
+        );
     }
 }

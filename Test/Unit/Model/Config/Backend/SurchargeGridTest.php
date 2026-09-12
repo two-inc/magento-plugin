@@ -12,6 +12,7 @@ use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\Backend\SurchargeGrid;
 use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
@@ -458,8 +459,7 @@ class SurchargeGridTest extends TestCase
         $storeManager->method('getWebsite')->willReturn($scoped);
 
         $inject(\Magento\Framework\App\Config\Value::class, '_config', $config);
-        $inject(SurchargeGrid::class, 'settingsProvider', $settings);
-        $inject(SurchargeGrid::class, 'ratesProvider', $rates);
+        $inject(SurchargeGrid::class, 'capProvider', new SurchargeCapProvider($settings, $rates));
         $inject(SurchargeGrid::class, 'storeManager', $storeManager);
 
         $this->assertSame(
@@ -573,7 +573,11 @@ class SurchargeGridTest extends TestCase
         };
         $inject(\Magento\Framework\App\Config\Value::class, '_config', $config);
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
-        $inject(SurchargeGrid::class, 'settingsProvider', $settings);
+        $inject(
+            SurchargeGrid::class,
+            'capProvider',
+            new SurchargeCapProvider($settings, $this->getMockBuilder(CurrencyRatesProviderInterface::class)->getMock())
+        );
         $inject(SurchargeGrid::class, 'configWriter', $writer);
         // The scope config reports what is IN EFFECT (own row or inherited);
         // the DB rows are only what this scope overrides itself.
@@ -966,6 +970,61 @@ class SurchargeGridTest extends TestCase
         $model->setTestValue('');
         $model->setTestScope('default', 0);
         $model->callAfterSave();
+    }
+
+    /**
+     * Why the merchant cap cannot be enforced here alone.
+     *
+     * A config import invokes a field's backend model with the stored value and
+     * no posted `groups`, and the per-term surcharge paths are not declared as
+     * fields at all — they are written by this model, so an import carrying one
+     * reaches no backend model whatsoever. Either way nothing on this path sees
+     * the amount, so it is neither refused nor written, and an over-cap fixed
+     * amount arrives at runtime intact. `SurchargeCalculator` bounds it there.
+     *
+     * Nothing is thrown: a backend model that raised during
+     * `bin/magento app:config:import` would abort the whole import, and the
+     * paths applied before it are not rolled back.
+     */
+    public function testASaveCarryingNoPostedGroupsValidatesAndWritesNothing(): void
+    {
+        $saved = [];
+        $writer = $this->getMockBuilder(WriterInterface::class)->getMock();
+        $writer->method('save')->willReturnCallback(
+            function ($path, $value) use (&$saved) {
+                $saved[] = [$path, $value];
+            }
+        );
+
+        $settings = $this->getMockBuilder(SettingsProvider::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $settings->method('getSurchargeLimit')->willReturn(['amount' => 25.0, 'currency' => 'EUR']);
+
+        $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
+        $inject = static function (string $class, string $property, $value) use ($model): void {
+            $reflected = new \ReflectionProperty($class, $property);
+            $reflected->setAccessible(true);
+            $reflected->setValue($model, $value);
+        };
+        $inject(SurchargeGrid::class, 'configWriter', $writer);
+        $inject(
+            SurchargeGrid::class,
+            'capProvider',
+            new SurchargeCapProvider($settings, $this->getMockBuilder(CurrencyRatesProviderInterface::class)->getMock())
+        );
+
+        $model->setData('scope', 'default');
+        $model->setData('scope_id', 0);
+        $model->setData('value', '999');
+
+        $model->afterSave();
+
+        $this->assertSame(
+            [],
+            $saved,
+            'an over-cap amount arriving without posted groups is neither refused nor written'
+        );
     }
 }
 
