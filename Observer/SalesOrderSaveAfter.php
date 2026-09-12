@@ -132,6 +132,9 @@ class SalesOrderSaveAfter implements ObserverInterface
 
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
+            [],
+            'POST',
+            (int)$order->getStoreId()
         );
 
         $this->parseFulfillResponse($response, $order);

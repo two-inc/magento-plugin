@@ -15,6 +15,7 @@ use Magento\Framework\Filesystem\DirectoryList;
 use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Provenance;
 
 /**
  * Renders the admin "Version" panel: one row per gateway-stack module
@@ -29,8 +30,8 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * Rows come from the active brand's `<module_label_chain>` declared
  * in its `etc/brand.xml`, resolved at request time via
  * BrandRegistryInterface. Vanilla Two ships ["Payment Method" =>
- * Two_Gateway, "Hyva Extension" => Two_GatewayHyva]; ABN adds
- * "Payment Theme" / "Hyva Theme" rows. Unregistered entries (e.g.
+ * Two_Gateway, "Hyva Extension" => Two_GatewayHyva]; a partner
+ * overlay adds its own brand rows. Unregistered entries (e.g.
  * Hyva when not installed) are silently skipped.
  */
 class Version extends Field
@@ -50,6 +51,16 @@ class Version extends Field
     private DirectoryList $directoryList;
     private TimezoneInterface $timezone;
     private BrandRegistryInterface $brandRegistry;
+
+    /**
+     * Commit-SHA resolution, shared with Model\Config\Repository (which
+     * stamps the same SHA onto the `client_v` telemetry parameter).
+     * Protected so a constructor-free test double can supply it.
+     *
+     * @var Provenance
+     */
+    protected $provenance;
+
     private string $moduleName;
 
     /**
@@ -61,9 +72,10 @@ class Version extends Field
      * @param BrandRegistryInterface $brandRegistry Source of the per-brand
      *        version-panel row chain. Each brand declares
      *        `<module_label_chain>` in its `etc/brand.xml`; the registry
-     *        exposes it via `getModuleLabelChain()`. ABN adds
-     *        "Payment Theme"/"Hyva Theme" rows; vanilla Two ships only
+     *        exposes it via `getModuleLabelChain()`. A partner overlay
+     *        adds its own brand rows; vanilla Two ships only
      *        the parent-runtime rows.
+     * @param Provenance $provenance Shared commit-SHA resolver.
      * @param string $moduleName Primary module — used by getVersion() fallback
      *                           and for any caller still expecting a single
      *                           module identity. Defaults to Two_Gateway
@@ -79,6 +91,7 @@ class Version extends Field
         DirectoryList $directoryList,
         TimezoneInterface $timezone,
         BrandRegistryInterface $brandRegistry,
+        Provenance $provenance,
         string $moduleName = 'Two_Gateway',
         array $data = []
     ) {
@@ -87,6 +100,7 @@ class Version extends Field
         $this->directoryList = $directoryList;
         $this->timezone = $timezone;
         $this->brandRegistry = $brandRegistry;
+        $this->provenance = $provenance;
         $this->moduleName = $moduleName;
         parent::__construct($context, $data);
     }
@@ -201,7 +215,7 @@ class Version extends Field
 
     private function readComposerVersion(string $modulePath): ?string
     {
-        // Monorepo sub-path modules (e.g. ABN_Gateway at <repo>/plugin)
+        // Monorepo sub-path modules (e.g. an overlay gateway module at <repo>/plugin)
         // keep their composer.json one level up; check both.
         foreach ([$modulePath, dirname($modulePath)] as $dir) {
             $composer = @file_get_contents($dir . '/composer.json');
@@ -256,38 +270,16 @@ class Version extends Field
     }
 
     /**
-     * 7-char SHA of the gitSync-pulled commit.
+     * 7-char SHA of the commit this module's code was built from, or ''.
      *
-     * gitSync v4 writes worktrees at `<root>/.git/worktrees/<sha>/` and
-     * names each worktree directory after the SHA it points at. The
-     * module's `.git` file (a single line `gitdir: <relpath>`) references
-     * that directory. Read it directly — robust whether the module path
-     * is a symlink straight to the worktree (older layout) or a real
-     * directory whose contents were copied/hardlinked at init (current
-     * Magento init job behaviour, which makes the realpath of
-     * registration.php contain no worktree segment).
+     * Delegates to the shared Provenance service, which owns both
+     * resolution paths (Composer installed-registry reference for
+     * Packagist deploys, gitlink worktree parse for gitSync dev installs).
+     * Kept as a protected method so subclasses/tests retain the seam.
      */
-    private function extractCommit(string $modulePath): string
+    protected function extractCommit(string $modulePath): string
     {
-        $gitFile = $modulePath . '/.git';
-        if (is_file($gitFile)) {
-            // .git is always `gitdir: <relpath>\n`; cap the read defensively
-            // and trim before anchoring the regex to end-of-string so a
-            // worktrees/<sha> segment elsewhere in the path can't shadow
-            // the real SHA at the tail.
-            $content = @file_get_contents($gitFile, false, null, 0, 1024);
-            if ($content !== false
-                && preg_match('#worktrees/([a-f0-9]{7,40})/?$#', trim($content), $m)
-            ) {
-                return substr($m[1], 0, 7);
-            }
-        }
-        // Legacy fallback: module path is a symlink through the worktree.
-        $real = @realpath($modulePath . '/registration.php');
-        if ($real && preg_match('#\.worktrees/([a-f0-9]{7,40})/#', $real, $m)) {
-            return substr($m[1], 0, 7);
-        }
-        return '';
+        return $this->provenance->commitForPath($modulePath);
     }
 
     private function getCodeTs(string $modulePath): int

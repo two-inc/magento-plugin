@@ -1,7 +1,7 @@
 <?php
 /**
- * ComponentRegistrar stub with the getPaths surface intact — required
- * before the catch-all autoloader so Loader tests can mock module
+ * ComponentRegistrar stub with the getPaths/getPath surface intact
+ * — required before the catch-all autoloader so Loader tests can mock module
  * enumeration (the catch-all would stub an empty class without the
  * method, and onlyMethods() refuses methods that don't exist).
  *
@@ -18,6 +18,11 @@ namespace Magento\Framework\Component {
             public function getPaths($type)
             {
                 return [];
+            }
+
+            public function getPath($type, $componentName)
+            {
+                return null;
             }
         }
     }

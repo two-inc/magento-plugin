@@ -31,6 +31,20 @@ class ComposeRefund extends OrderService
     public function execute(Creditmemo $creditmemo, float $amount, Order $order): array
     {
         $lineItems = array_values($this->getLineItemsCreditmemo($order, $creditmemo));
+
+        // Reconcile any known third-party fee (via a registered
+        // FeeLineProviderInterface — a provider only needs to return a
+        // line here if the fee it targets was actually refunded on this
+        // credit memo, no proration is guessed at this call site) and,
+        // failing that, any genuinely untaxed residual. See
+        // Order::reconcileOtherCharges() docblock.
+        $lineItems = $this->reconcileOtherCharges(
+            $lineItems,
+            $creditmemo,
+            (float)$creditmemo->getGrandTotal(),
+            (float)$creditmemo->getTaxAmount()
+        );
+
         // Use creditmemo->getGrandTotal() rather than re-summing line items.
         // It's the canonical post-collector refund value Magento records
         // and avoids per-line 2dp-rounding drift that re-summing would
@@ -119,8 +133,8 @@ class ComposeRefund extends OrderService
             $taxRatePercent = (float)$creditmemo->getTwoSurchargeTaxRate();
             $description = (string)$creditmemo->getTwoSurchargeDescription() ?: (string)__('Payment terms fee');
 
-            // order_item_id 'surcharge' must match ComposeOrder so Two's API
-            // allocates the refund to the BUYER_FEE line on the original order.
+            // order_item_id is not interpreted by the API (ABN-554); matching
+            // ComposeOrder keeps the fee line traceable across payloads.
             $items['surcharge'] = [
                 'order_item_id'   => 'surcharge',
                 'name'            => $description,

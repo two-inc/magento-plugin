@@ -11,7 +11,7 @@
         <column name="two_surcharge_amount" class="Magento\Sales\Ui\Component\Listing\Column\Price">
             <settings>
                 <filter>textRange</filter>
-                <label translate="true">Two Surcharge</label>
+                <label translate="true">Two surcharge</label>
                 <visible>false</visible>
             </settings>
         </column>

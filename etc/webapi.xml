@@ -6,8 +6,38 @@
             <resource ref="anonymous"/>
         </resources>
     </route>
+    <route url="/V1/two/supported-company-types/:countryCode" method="GET">
+        <service class="Two\Gateway\Api\Webapi\SoleTraderInterface" method="getSupportedCompanyTypes"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
     <route url="/V1/two/select-term" method="POST">
         <service class="Two\Gateway\Api\Webapi\TermSelectionInterface" method="selectTerm"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/two/company-search" method="POST">
+        <service class="Two\Gateway\Api\Webapi\CompanyLookupInterface" method="search"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/two/company" method="POST">
+        <service class="Two\Gateway\Api\Webapi\CompanyLookupInterface" method="get"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/two/supported-countries" method="GET">
+        <service class="Two\Gateway\Api\Webapi\CompanyLookupInterface" method="supportedCountries"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/two/order-intent" method="POST">
+        <service class="Two\Gateway\Api\Webapi\OrderIntentInterface" method="place"/>
         <resources>
             <resource ref="anonymous"/>
         </resources>

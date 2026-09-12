@@ -7,4 +7,14 @@
         <span class="price" data-bind="text: getValue()"></span>
     </td>
 </tr>
+<!-- ko if: hasInclTaxRow() -->
+<tr class="totals surcharge incl">
+    <th class="mark" scope="row">
+        <span class="title" data-bind="text: getInclTaxTitle()"></span>
+    </th>
+    <td class="amount">
+        <span class="price" data-bind="text: getInclTaxValue()"></span>
+    </td>
+</tr>
+<!-- /ko -->
 <!-- /ko -->

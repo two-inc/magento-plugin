@@ -14,6 +14,7 @@ use Psr\Log\LoggerInterface;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Payment\OrderService;
 
 /**
@@ -46,6 +47,9 @@ class SalesOrderCancelAfter implements ObserverInterface
     /** @var BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var LifecycleEventDispatcher */
+    private $lifecycleEvents;
+
     /**
      * @param OrderService $orderService
      * @param LoggerInterface $logger
@@ -54,12 +58,14 @@ class SalesOrderCancelAfter implements ObserverInterface
         OrderService $orderService,
         LoggerInterface $logger,
         BrandRegistryInterface $brandRegistry,
-        BrandOverlayRegistryInterface $overlayRegistry
+        BrandOverlayRegistryInterface $overlayRegistry,
+        LifecycleEventDispatcher $lifecycleEvents
     ) {
         $this->orderService = $orderService;
         $this->logger = $logger;
         $this->brandRegistry = $brandRegistry;
         $this->overlayRegistry = $overlayRegistry;
+        $this->lifecycleEvents = $lifecycleEvents;
     }
 
     /**
@@ -78,6 +84,7 @@ class SalesOrderCancelAfter implements ObserverInterface
 
         try {
             $this->orderService->cancelTwoOrder($order);
+            $this->lifecycleEvents->dispatchCancelled($order);
         } catch (LocalizedException $e) {
             // Already user-friendly — let it propagate so the admin sees
             // the API's reason. The Magento cancel will not be persisted.

@@ -33,6 +33,11 @@ class ComposeShipment extends OrderService
     {
         $shipmentItems = $this->getLineItemsShipment($order, $shipment);
 
+        // Deliberately no getFeeLines()/getOtherChargesLineItem() call here,
+        // unlike ComposeOrder/ComposeCapture/ComposeRefund: every total
+        // below is summed directly from $shipmentItems, so they cannot
+        // diverge from sum(line_items) by construction. There is no
+        // independent grand-total column to reconcile against.
         return [
             'discount_amount' => $this->getSum($shipmentItems, 'discount_amount'),
             'gross_amount' => $this->getSum($shipmentItems, 'gross_amount'),

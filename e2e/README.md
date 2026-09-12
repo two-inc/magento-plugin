@@ -1,6 +1,6 @@
 # e2e
 
-Playwright suite that drives the Two BNPL plugin on a staging store and captures
+Playwright suite that drives the Two BNPL plugin on the dev store and captures
 the screenshots used in the docs (`two-inc/docs` → `static/images/magento/`).
 
 ## Specs
@@ -18,11 +18,20 @@ the screenshots used in the docs (`two-inc/docs` → `static/images/magento/`).
 cd e2e
 npm ci
 npx playwright install chromium
-# STORE_URL defaults to the staging store; ADMIN_PASS enables the admin specs.
+# STORE_URL defaults to the dev store, which git-syncs `staging` and so runs the
+# code the suite is checked out from; ADMIN_PASS enables the admin specs.
 ADMIN_PASS="<magento admin password>" npx playwright test
 ```
 
 Screenshots land in `e2e/screenshots/`.
+
+`global-setup.ts` runs first and aborts the whole suite unless the store returns
+200 and its served `Two_Gateway/css/style.css` matches the checked-out
+`view/frontend/web/css/style.css` — a mismatch means the store is running a
+different ref, so every assertion afterwards would be meaningless. It polls both
+for up to five minutes, longer than the in-place static redeploy a plugin merge
+triggers. The digest only moves when that stylesheet does, so the check catches a
+store on a different plugin release rather than every possible divergence.
 
 ## Run on demand in CI
 

@@ -15,11 +15,12 @@ use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
  *
  * Default behaviour: refund the surcharge proportionally to the items being
  * refunded (creditmemo subtotal / order subtotal). When the merchant types an
- * explicit value into the creditmemo override field (Phase 5), that value is
- * pre-set on the creditmemo before collectTotals runs and we honour it here.
+ * explicit value into the creditmemo override field, that value is pre-set on
+ * the creditmemo before collectTotals runs and we honour it here.
  *
- * The override path covers Doug's "valued buyer refuses surcharge" case:
- * a creditmemo with zero items but the full surcharge in the override input.
+ * The override path is what allows the surcharge to be refunded in full on a
+ * creditmemo with no items at all: zero items, the whole surcharge typed into
+ * the override input.
  */
 class Surcharge extends AbstractTotal
 {
@@ -45,28 +46,18 @@ class Surcharge extends AbstractTotal
         $baseAlreadyRefunded = (float)$order->getBaseTwoSurchargeRefunded();
         $baseMaxRefundable = $baseOrderSurcharge - $baseAlreadyRefunded;
 
-        // Phase 5 plugin sets `two_surcharge_amount` directly on the
-        // creditmemo from request data. hasData() distinguishes "explicit
-        // merchant override" (including 0) from "never set, use default".
-        // Normalise to 6dp on entry — admin input is parsed by
-        // CreditmemoSurchargeOverride at locale precision (often 2dp,
-        // potentially more) and we keep 6dp internally so the refund
-        // line gross matches what ComposeOrder declared at placement.
-        // See Model/Total/Surcharge for the 6dp invariant rationale.
-        // The proportional default is the surcharge net Magento's native tax
-        // collector has ALREADY refunded VAT for on this credit memo (it
-        // prorates order tax by subtotal). Compute it regardless of any
-        // override so we can reconcile the tax line to what's actually
-        // refunded. Keep 6dp internally (a 2dp round here previously lost up
-        // to half a cent and defeated the Total\Surcharge precision fix).
+        // The default refund is proportional to the items on this memo. 6dp
+        // deliberately — a 2dp round here loses up to half a cent.
         $orderSubtotal = (float)$order->getSubtotal();
         $cmSubtotal = (float)$creditmemo->getSubtotal();
         $proportion = $orderSubtotal > 0 ? $cmSubtotal / $orderSubtotal : 0.0;
         $defaultNet = round($orderSurcharge * $proportion, 6);
 
-        // Phase 5 plugin sets `two_surcharge_amount` directly on the creditmemo
-        // from request data. hasData() distinguishes "explicit merchant
-        // override" (including 0) from "never set, use proportional default".
+        // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
+        // creditmemo from request data. hasData() distinguishes "explicit
+        // merchant override" (including 0) from "never set, use proportional
+        // default". Admin input arrives at locale precision, often 2dp but
+        // potentially finer than the 6dp we keep internally, hence the round.
         $hasOverride = $creditmemo->hasData('two_surcharge_amount')
             && $creditmemo->getData('two_surcharge_amount') !== null
             && $creditmemo->getData('two_surcharge_amount') !== '';
@@ -95,16 +86,31 @@ class Surcharge extends AbstractTotal
         }
         $baseAmount = max(0.0, min(round($amount / $rate, 6), $baseMaxRefundable));
         $baseTaxAmount = round($taxAmount / $rate, 6);
-        $baseDefaultNet = round($defaultNet / $rate, 6);
 
-        // Tax delta: native already refunded VAT on the proportional default
-        // surcharge net, so adjust the tax line ONLY for the difference an
-        // override introduces. This is exactly zero on the non-override path,
-        // preserving the #201 de-dup guarantee (surcharge VAT counted once);
-        // when the merchant edits the surcharge it moves the Tax line to the
-        // VAT on the surcharge actually refunded (refunded net × rate).
-        $taxDelta = round(($amount - $defaultNet) * ($taxRatePercent / 100), 6);
-        $baseTaxDelta = round(($baseAmount - $baseDefaultNet) * ($taxRatePercent / 100), 6);
+        // The surcharge VAT core already granted this memo, measured rather
+        // than assumed: its credit-memo tax collector hands the last memo the
+        // order's whole remaining tax allowance, but gives an earlier one only
+        // the tax its item and shipping rows carry, which no surcharge VAT
+        // reaches (ABN-560). Capped by the VAT still-refundable surcharge
+        // carries, because that allowance also covers other charges.
+        $grantedTax = $this->grantedSurchargeTax(
+            $creditmemo,
+            round($maxRefundable * ($taxRatePercent / 100), 6),
+            base: false
+        );
+        $baseGrantedTax = $this->grantedSurchargeTax(
+            $creditmemo,
+            round($baseMaxRefundable * ($taxRatePercent / 100), 6),
+            base: true
+        );
+
+        // Move the Tax line to the VAT on the surcharge this memo actually
+        // refunds. Zero wherever core granted exactly that, preserving the
+        // de-dup guarantee from magento-plugin PR #201 (surcharge VAT counted
+        // once). Each leg takes the VAT on its own clamped net — a base net a
+        // ceiling cut back must not keep the order-currency VAT.
+        $taxDelta = round($taxAmount - $grantedTax, 6);
+        $baseTaxDelta = round(round($baseAmount * ($taxRatePercent / 100), 6) - $baseGrantedTax, 6);
 
         $creditmemo->setTwoSurchargeAmount($amount);
         $creditmemo->setBaseTwoSurchargeAmount($baseAmount);
@@ -113,11 +119,10 @@ class Surcharge extends AbstractTotal
         $creditmemo->setTwoSurchargeDescription((string)$order->getTwoSurchargeDescription());
         $creditmemo->setTwoSurchargeTaxRate($taxRatePercent);
 
-        // Grand total gets the surcharge net plus the tax delta. The base
-        // surcharge VAT is already in tax_amount via Magento's native tax
-        // propagation (re-adding the full VAT was the ABN-443 double-count);
-        // we only move the Tax line and grand total by the override delta so
-        // both stay consistent with the surcharge actually refunded.
+        // Grand total gets the surcharge net plus the tax delta. Adding the
+        // whole surcharge VAT here was the surcharge-VAT double-count; only
+        // the delta moves, so the Tax line and grand total both end on the
+        // surcharge this memo actually refunds.
         $creditmemo->setGrandTotal((float)$creditmemo->getGrandTotal() + $amount + $taxDelta);
         $creditmemo->setBaseGrandTotal((float)$creditmemo->getBaseGrandTotal() + $baseAmount + $baseTaxDelta);
         $creditmemo->setTaxAmount((float)$creditmemo->getTaxAmount() + $taxDelta);
@@ -130,5 +135,31 @@ class Surcharge extends AbstractTotal
         // is-new so retries / re-saves don't compound.
 
         return $this;
+    }
+
+    /**
+     * The surcharge VAT core granted this memo: the memo tax no line it
+     * itemizes carries, read the way Creditmemo\OtherCharges reads its own
+     * grant so the two cannot disagree, bounded by $ceiling and never
+     * negative — another total's shortfall is not the surcharge's to pay.
+     *
+     * @param Creditmemo $creditmemo
+     * @param float $ceiling
+     * @param bool $base
+     * @return float
+     */
+    private function grantedSurchargeTax(Creditmemo $creditmemo, float $ceiling, bool $base): float
+    {
+        $itemised = $base
+            ? (float)$creditmemo->getBaseShippingTaxAmount()
+            : (float)$creditmemo->getShippingTaxAmount();
+
+        foreach ($creditmemo->getAllItems() as $item) {
+            $itemised += $base ? (float)$item->getBaseTaxAmount() : (float)$item->getTaxAmount();
+        }
+
+        $memoTax = $base ? (float)$creditmemo->getBaseTaxAmount() : (float)$creditmemo->getTaxAmount();
+
+        return max(0.0, min(round($memoTax - $itemised, 6), $ceiling));
     }
 }

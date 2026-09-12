@@ -14,7 +14,8 @@ use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
-use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\TermSurchargePreview;
+use Two\Gateway\Service\RateLimiter;
 
 /**
  * Sets the buyer's selected payment term and returns recalculated totals.
@@ -26,6 +27,15 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
  */
 class TermSelection implements TermSelectionInterface
 {
+    /**
+     * A chip click per term the merchant offers, with room to change mind.
+     * Metered despite being session-scoped: the recompute below spends one
+     * upstream pricing call per configured term on the merchant's key.
+     */
+    private const LIMIT_PER_MINUTE = 30;
+
+    private const WINDOW_SECONDS = 60;
+
     /**
      * @var CheckoutSession
      */
@@ -47,9 +57,14 @@ class TermSelection implements TermSelectionInterface
     private $configRepository;
 
     /**
-     * @var SurchargeCalculator
+     * @var TermSurchargePreview
      */
-    private $surchargeCalculator;
+    private $termSurchargePreview;
+
+    /**
+     * @var RateLimiter
+     */
+    private $rateLimiter;
 
     /**
      * @var LogRepository
@@ -61,14 +76,16 @@ class TermSelection implements TermSelectionInterface
         CartRepositoryInterface $cartRepository,
         CartTotalRepositoryInterface $cartTotalRepository,
         ConfigRepository $configRepository,
-        SurchargeCalculator $surchargeCalculator,
+        TermSurchargePreview $termSurchargePreview,
+        RateLimiter $rateLimiter,
         LogRepository $logRepository
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->cartRepository = $cartRepository;
         $this->cartTotalRepository = $cartTotalRepository;
         $this->configRepository = $configRepository;
-        $this->surchargeCalculator = $surchargeCalculator;
+        $this->termSurchargePreview = $termSurchargePreview;
+        $this->rateLimiter = $rateLimiter;
         $this->logRepository = $logRepository;
     }
 
@@ -77,6 +94,8 @@ class TermSelection implements TermSelectionInterface
      */
     public function selectTerm(string $cartId, int $termDays): array
     {
+        $this->rateLimiter->assertWithinLimit('two_select_term', self::LIMIT_PER_MINUTE, self::WINDOW_SECONDS);
+
         // Session is the auth boundary on this anonymous webapi route —
         // $cartId is unverifiable here (UserContextInterface doesn't
         // populate when the framework skips auth) and is therefore
@@ -98,50 +117,92 @@ class TermSelection implements TermSelectionInterface
         // reference a term the merchant never offered. Validate
         // BEFORE any state mutation so an invalid call doesn't poison
         // the session even on the throw path.
-        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
-        if (!in_array($termDays, $allowedTerms, true)) {
+        if (!$this->configRepository->isBuyerTermAvailable($termDays, $storeId)) {
             throw new InputException(__('Selected payment term is not available.'));
         }
 
+        $previousTerm = $this->checkoutSession->getTwoSelectedTerm();
         $this->checkoutSession->setTwoSelectedTerm($termDays);
+        $repriced = false;
 
-        $quote->collectTotals();
-        $this->cartRepository->save($quote);
+        try {
+            $quote->collectTotals();
+            // Set before the save, not after: a save that throws may still
+            // have persisted.
+            $repriced = true;
+            $this->cartRepository->save($quote);
 
-        // Build totals response
-        $totals = $this->cartTotalRepository->get($quote->getId());
-        $segments = [];
-        foreach ($totals->getTotalSegments() as $segment) {
-            $segments[] = [
-                'code' => $segment->getCode(),
-                'title' => $segment->getTitle(),
-                'value' => $segment->getValue(),
-            ];
+            // Build totals response
+            $totals = $this->cartTotalRepository->get($quote->getId());
+            $segments = [];
+            foreach ($totals->getTotalSegments() as $segment) {
+                $segments[] = [
+                    'code' => $segment->getCode(),
+                    'title' => $segment->getTitle(),
+                    'value' => $segment->getValue(),
+                ];
+            }
+
+            // Recalculate surcharges for all terms using the current grand total
+            // (minus the surcharge itself, to avoid circular base)
+            $surchargeGross = (float)$this->checkoutSession->getTwoSurchargeGross();
+            $baseAmount = (float)$totals->getGrandTotal() - $surchargeGross;
+            $termSurcharges = $this->computeAllTermSurcharges($baseAmount, $quote);
+
+            // Wrap in outer array so Magento's webapi serializer preserves keys
+            return [[
+                'grand_total' => $totals->getGrandTotal(),
+                'base_grand_total' => $totals->getBaseGrandTotal(),
+                'tax_amount' => $totals->getTaxAmount(),
+                'total_segments' => $segments,
+                'term_surcharges' => $termSurcharges,
+                'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
+            ]];
+        } catch (\Throwable $error) {
+            $this->restoreTerm($quote, $previousTerm, $termDays, $repriced);
+            throw $error;
         }
-
-        // Recalculate surcharges for all terms using the current grand total
-        // (minus the surcharge itself, to avoid circular base)
-        $surchargeGross = (float)$this->checkoutSession->getTwoSurchargeGross();
-        $baseAmount = (float)$totals->getGrandTotal() - $surchargeGross;
-        $termSurcharges = $this->computeAllTermSurcharges($baseAmount, $quote);
-
-        // Wrap in outer array so Magento's webapi serializer preserves keys
-        return [[
-            'grand_total' => $totals->getGrandTotal(),
-            'base_grand_total' => $totals->getBaseGrandTotal(),
-            'tax_amount' => $totals->getTaxAmount(),
-            'total_segments' => $segments,
-            'term_surcharges' => $termSurcharges,
-        ]];
     }
 
     /**
-     * Compute net surcharges for all available terms.
+     * Undo the staged term when the call it was staged for did not answer.
+     *
+     * The totals collector prices on the session term, so the restore happens
+     * before the repricing, and the session is left holding whatever term the
+     * last persisted save priced (ABN-550).
+     *
+     * @param \Magento\Quote\Model\Quote $quote
+     * @param mixed $previousTerm
+     * @param int $stagedTerm
+     * @param bool $repriced whether the quote was already saved at the staged term
+     */
+    private function restoreTerm($quote, $previousTerm, int $stagedTerm, bool $repriced): void
+    {
+        $this->checkoutSession->setTwoSelectedTerm($previousTerm);
+        if (!$repriced) {
+            return;
+        }
+
+        try {
+            $quote->collectTotals();
+            $this->cartRepository->save($quote);
+        } catch (\Throwable $error) {
+            // The saved quote still prices the staged term, so the session keeps
+            // it: a disagreement placement can see is refused rather than charged.
+            $this->checkoutSession->setTwoSelectedTerm($stagedTerm);
+            $this->logRepository->addErrorLog(
+                'TermSelectionRollback',
+                sprintf('Quote totals could not be restored to the previous term: %s', $error->getMessage())
+            );
+        }
+    }
+
+    /**
+     * Compute per-term surcharge previews (net and gross) for all terms.
      */
     private function computeAllTermSurcharges(float $baseAmount, $quote): array
     {
         $storeId = (int)$quote->getStoreId();
-        $terms = $this->configRepository->getAllBuyerTerms($storeId);
         $currency = $quote->getQuoteCurrencyCode()
             ?: $quote->getStore()->getBaseCurrencyCode();
 
@@ -154,30 +215,14 @@ class TermSelection implements TermSelectionInterface
             $country = $shipping->getCountryId();
         }
 
-        $surcharges = [];
-        foreach ($terms as $days) {
-            try {
-                $result = $this->surchargeCalculator->calculate(
-                    $baseAmount,
-                    $days,
-                    $country,
-                    $currency,
-                    $storeId
-                );
-                $surcharges[] = ['days' => $days, 'net' => (float)$result['amount']];
-            } catch (\Exception $e) {
-                // Per-term failure: keep the other terms responsive, but
-                // log loudly so the silent zero doesn't mask a broken
-                // pricing path that will later detonate at checkout when
-                // the buyer actually picks this term.
-                $this->logRepository->addErrorLog(
-                    sprintf('TermSelection webapi: term %d failed', $days),
-                    $e->getMessage()
-                );
-                $surcharges[] = ['days' => $days, 'net' => 0.0];
-            }
-        }
-
-        return $surcharges;
+        return $this->termSurchargePreview->build(
+            $quote,
+            $baseAmount,
+            $this->configRepository->getAllBuyerTerms($storeId),
+            $country,
+            $currency,
+            $storeId,
+            'TermSelection webapi'
+        );
     }
 }

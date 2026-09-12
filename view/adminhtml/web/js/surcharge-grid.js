@@ -1,5 +1,61 @@
-define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
+define([
+    'jquery',
+    'mage/translate',
+    'Two_Gateway/js/default-term',
+    'Two_Gateway/js/config-field-visibility',
+    'mage/validation',
+    'domReady!'
+], function ($, $t, resolveDefaultTerm, toggleField) {
     'use strict';
+
+    // Browser-side mirror of the server-side refusal of a zero limit
+    // (Model\Config\Backend\SurchargeGrid::validateValue, TWO-25289). The
+    // backend is the authority; this only saves the admin a round trip.
+    //
+    // Registered rather than reusing Magento's own
+    // validate-greater-than-zero for the same reason validate-number is
+    // omitted from this grid's rules: that rule is locale-blind, and
+    // parseFloat('0,5') is 0 for a Dutch admin, so it would reject a
+    // legitimate half-unit limit as if it were zero. $.mage.parseNumber
+    // normalises the comma first.
+    //
+    // EMPTY passes: an absent limit means "no limit" and is a legitimate
+    // configuration. Non-numeric input also passes here — that is
+    // validate-zero-or-greater's job, and two rules reporting the same
+    // typo is noise.
+    // NOT guarded on `$.validator` being truthy: `mage/validation` is a hard
+    // dependency above, so an absent validator is a broken build, and
+    // skipping registration silently would leave the rendered
+    // data-validate attribute naming a rule that does not exist — which makes
+    // jquery.validate throw on submit and kills validation of the WHOLE form.
+    // Fail at load instead of silently at submit.
+    if (!$.validator.methods['validate-two-nonzero-limit']) {
+        $.validator.addMethod(
+            'validate-two-nonzero-limit',
+            function (value) {
+                var parsed;
+
+                if (value === undefined || value === null || String(value).trim() === '') {
+                    return true;
+                }
+                parsed = $.mage.parseNumber(value);
+
+                // Rounded, mirroring the backend: a sub-cent limit is sent as
+                // 0.00 and suppresses the whole fee, so it is refused too.
+                return isNaN(parsed) || Math.round(parsed * 100) !== 0;
+            },
+            // A FUNCTION, not a resolved string: evaluated at define time,
+            // $t() can run before the translation dictionary is registered and
+            // would bake in the English text. And ONE unbroken literal,
+            // because Magento's JS phrase collector only harvests
+            // single-literal $t('…') calls — a `+`-concatenated argument never
+            // reaches js-translation.json, so the i18n rows for it would be
+            // dead and the message would stay English regardless.
+            function () {
+                return $t('A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.');
+            }
+        );
+    }
 
     return function (config, element) {
         var $container = $(element);
@@ -59,7 +115,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 terms.push(Number($(this).val()));
             });
             terms = terms.filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = Number($customDays.find('option:selected').attr('data-two-term')) || 0;
             if (custom > 0) {
                 terms.push(custom);
             }
@@ -75,7 +131,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             // inherited Percentage type must still render the grid; returning
             // 'none' on inherit (the old behaviour) hid the grid at store
             // scope and stranded any store-scope override out of sight
-            // (ABN-440).
+            // (the store-scope orphaned-override bug).
             return $surchargeType.val() || 'none';
         }
 
@@ -83,8 +139,28 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             return $differential.val() === '1';
         }
 
+        // The term the server will price against, which is not the select's
+        // value while that reads Automatic.
         function getDefaultTerm() {
-            return parseInt($defaultTerm.val(), 10) || 0;
+            return resolveDefaultTerm(
+                getSelectedTerms(),
+                getMerchantOfferedTerms(),
+                parseInt($defaultTerm.val(), 10) || 0,
+                parseInt($termsContainer.data('merchant-default-term'), 10) || 0
+            );
+        }
+
+        // Every term the merchant's record offers: the checkboxes are rendered
+        // one per offered term, ticked or not.
+        function getMerchantOfferedTerms() {
+            var terms = [];
+            $termsContainer.find('.two-term-checkboxes__input').each(function () {
+                var days = Number($(this).val());
+                if (days > 0) {
+                    terms.push(days);
+                }
+            });
+            return terms;
         }
 
         // ── Row management ───────────────────────────────────────────────
@@ -105,6 +181,10 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     validateRules.push('"validate-number-range":"0-' + maxFixed + '"');
                 } else if (col === 'percentage') {
                     validateRules.push('"validate-number-range":"0-' + maxPercentage + '"');
+                } else if (col === 'limit') {
+                    // Mirrors surcharge-grid.phtml — a row added live must
+                    // carry the same zero-limit refusal as a rendered one.
+                    validateRules.push('"validate-two-nonzero-limit":true');
                 }
                 var dataValidate = validateRules.join(',');
 
@@ -132,11 +212,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 var term = parseInt($row.data('term'), 10);
                 existingTerms[term] = $row;
 
-                if (activeTerms.indexOf(term) === -1) {
-                    $row.hide();
-                } else {
-                    $row.show();
-                }
+                toggleField($row, activeTerms.indexOf(term) !== -1);
             });
 
             // Create rows for new terms (e.g. custom term just entered)
@@ -165,11 +241,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
             // Show table or "no terms" message
             if (activeTerms.length > 0) {
-                $table.show();
+                toggleField($table, true);
                 $currencyNote.show();
                 $noTermsMsg.hide();
             } else {
-                $table.hide();
+                toggleField($table, false);
                 $currencyNote.hide();
                 $noTermsMsg.show();
             }
@@ -182,9 +258,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var showFixed = type === 'fixed' || type === 'fixed_and_percentage';
             var showPct = type === 'percentage' || type === 'fixed_and_percentage';
 
-            $container.find('.surcharge-grid__fixed').toggle(showFixed);
-            $container.find('.surcharge-grid__percentage').toggle(showPct);
-            $container.find('.surcharge-grid__limit').toggle(showPct);
+            toggleField($container.find('.surcharge-grid__fixed'), showFixed);
+            toggleField($container.find('.surcharge-grid__percentage'), showPct);
+            toggleField($container.find('.surcharge-grid__limit'), showPct);
         }
 
         // ── Differential mode ────────────────────────────────────────────
@@ -199,23 +275,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 var disabled = differential && term === defaultDays;
 
                 $row.attr('data-differential-disabled', disabled ? '1' : '0');
+                // ABN-554: a disabled cell never posts, so zeroing it hid the live config and changed nothing else.
                 $row.find('.surcharge-grid__input').each(function () {
                     var $input = $(this);
                     if (!$input.data('inherit-disabled')) {
                         $input.prop('disabled', disabled);
-                    }
-                    // Differential mode: default term never surcharges. Zero
-                    // the UI values, snapshotting whatever was there so we
-                    // can restore if the merchant toggles differential off
-                    // (or picks a different default term) before saving.
-                    if (disabled) {
-                        if ($input.data('differential-snapshot') === undefined) {
-                            $input.data('differential-snapshot', $input.val());
-                        }
-                        $input.val('0');
-                    } else if ($input.data('differential-snapshot') !== undefined) {
-                        $input.val($input.data('differential-snapshot'));
-                        $input.removeData('differential-snapshot');
                     }
                 });
             });
@@ -234,7 +298,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         function updateContainerVisibility() {
             var type = getSurchargeType();
             var hasSurcharge = type !== 'none';
-            $container.closest('tr').toggle(hasSurcharge);
+            toggleField($container.closest('tr'), hasSurcharge);
         }
 
         // ── Grid-level inherit ("Use Website/Default") ─────────────────────
@@ -269,112 +333,18 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             // state, overriding column/differential toggles when the whole
             // grid is inheriting.
             applyGridInherit();
-            // Fee-preview column removed (ABN-356 / ABN-401-F12); skip the
-            // loadFees() AJAX whose response would have no cells to populate.
         }
 
         // ── Event bindings ───────────────────────────────────────────────
 
         $termsContainer.on('change', '.two-term-checkboxes__input', update);
-        $customDays.on('change keyup', update);
+        $customDays.on('change', update);
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);
         $('#' + prefix + 'surcharge_type_inherit').on('change', update);
         $inheritToggle.on('change', applyGridInherit);
 
-        // ── Fee column (read-only, fetched from Two API via admin proxy) ─
-
-        // Memoise the term-set we last fetched so rapid re-fires (keystrokes
-        // in the custom-days input, unrelated update() calls) collapse into
-        // one network round-trip per genuine change. Declared before the
-        // init update() call below so the assignment doesn't shadow what
-        // loadFees() writes during init.
-        var lastFeesKey = null;
-
         update();
-
-        function loadFees() {
-            var url = $container.data('fees-url');
-            if (!url) {
-                return;
-            }
-            var terms = getSelectedTerms();
-            if (!terms.length) {
-                return;
-            }
-            var key = terms.join(',');
-            if (key === lastFeesKey) {
-                return;
-            }
-            lastFeesKey = key;
-            var $formKey = $('input[name="form_key"]').first();
-            $.ajax({
-                url: url,
-                type: 'POST',
-                dataType: 'json',
-                data: {
-                    form_key: $formKey.val() || (window.FORM_KEY || ''),
-                    terms: JSON.stringify(terms),
-                    scope: String($container.data('scope') || 'default'),
-                    scopeId: parseInt($container.data('scope-id'), 10) || 0
-                }
-            }).done(function (response) {
-                if (!response || !response.success || !response.fees) {
-                    return; // leave "—" in cells
-                }
-                var gridCurrency = String($container.data('base-currency') || '').toUpperCase();
-                var responseCurrency = String(response.currency || '').toUpperCase();
-                var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
-                var suffix = degraded ? ' ' + responseCurrency : '';
-                var decimalSep = String($container.data('decimal-separator') || '.');
-                function formatAmount(n) {
-                    var s = Number(n).toFixed(2);
-                    return decimalSep === '.' ? s : s.replace('.', decimalSep);
-                }
-                var zero = formatAmount(0);
-                $container.find('td.surcharge-grid__fee').each(function () {
-                    var $cell = $(this);
-                    var term = String($cell.data('term'));
-                    var fee = response.fees[term];
-                    if (!fee) {
-                        return;
-                    }
-                    var pctStr = formatAmount(fee.percentage || 0);
-                    var fixedStr = formatAmount(fee.fixed || 0);
-                    var pctZero = pctStr === zero;
-                    var fixedZero = fixedStr === zero;
-                    var text;
-                    if (pctZero && fixedZero) {
-                        text = zero + suffix;
-                    } else if (pctZero) {
-                        text = fixedStr + suffix;
-                    } else if (fixedZero) {
-                        text = pctStr + '%';
-                    } else {
-                        text = pctStr + '% + ' + fixedStr + suffix;
-                    }
-                    $cell.text(text);
-                });
-                var $note = $currencyNote.find('span');
-                var noteText = degraded
-                    ? $currencyNote.attr('data-text-degraded')
-                    : $currencyNote.attr('data-text-default');
-                if (noteText) {
-                    $note.text(noteText);
-                }
-            }).fail(function () {
-                // Allow a retry on the same term-set after a transient error,
-                // and fall back to "—" on any cell still showing the loading
-                // animation so the user isn't watching dots forever.
-                lastFeesKey = null;
-                $container.find('td.surcharge-grid__fee').each(function () {
-                    var $cell = $(this);
-                    if ($cell.find('.surcharge-grid__loading').length) {
-                        $cell.text('—');
-                    }
-                });
-            });
-        }
     };
 });

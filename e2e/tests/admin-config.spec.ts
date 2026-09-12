@@ -1,32 +1,8 @@
 import { test, expect, Locator, Page } from '@playwright/test';
-import { adminLogin } from './_helpers';
+import { adminLogin, gotoConfigSection } from './_helpers';
 
 // "Two" admin config (Stores -> Configuration -> Two) -> docs screenshots.
 const OUT = process.env.OUT_DIR || 'screenshots';
-
-async function hideSystemMessages(page: Page) {
-    await page
-        .addStyleTag({
-            content: '.message-system, .message-system-collapsible { display: none !important; }'
-        })
-        .catch(() => {});
-}
-
-async function gotoSection(page: Page, section: string) {
-    const cfg = await page.locator('a[href*="admin/system_config/"]').first().getAttribute('href');
-    if (!cfg) throw new Error('could not find a system_config link (admin login likely failed)');
-    // Loading a Two section expands the Two tab in the nav with valid secret keys.
-    await page.goto(cfg.replace(/\/?$/, '') + '/section/two_payment/', {
-        waitUntil: 'domcontentloaded'
-    });
-    await page.waitForSelector('.entry-edit', { timeout: 30_000 }).catch(() => {});
-    const href = await page.locator(`a[href*="/section/${section}/"]`).first().getAttribute('href');
-    if (!href) throw new Error(`could not find the nav link for section ${section}`);
-    await page.goto(href, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.entry-edit', { timeout: 30_000 }).catch(() => {});
-    await hideSystemMessages(page);
-    await page.waitForTimeout(600);
-}
 
 // The open config section is the tallest .entry-edit (others are collapsed headers).
 async function openSection(page: Page): Promise<Locator> {
@@ -49,16 +25,14 @@ test.describe('Two admin config', () => {
 
     test('config_tabs', async ({ page }) => {
         await adminLogin(page);
-        await gotoSection(page, 'two_general');
+        await gotoConfigSection(page, 'two_general');
         // Anchor the clip on the section links, which reliably render in the nav
         // (the other config specs resolve them the same way). Top = just above the
-        // General link to include the "Two" tab header; bottom = the last section
-        // link present (Version if the user sees it, else Search).
+        // General link to include the "Two" tab header; bottom = the Diagnostics
+        // section, id `two_version`, which sorts last.
         const nav = page.locator('.admin__page-nav, #system_config_tabs').first();
         const general = page.locator('a[href*="/section/two_general/"]').first();
-        const bottom = page
-            .locator('a[href*="/section/two_version/"], a[href*="/section/two_search/"]')
-            .last();
+        const bottom = page.locator('a[href*="/section/two_version/"]').last();
         await expect(nav).toBeVisible({ timeout: 15_000 });
         await expect(general).toBeVisible({ timeout: 15_000 });
         await expect(bottom).toBeVisible({ timeout: 15_000 });
@@ -77,14 +51,14 @@ test.describe('Two admin config', () => {
 
     test('config_general', async ({ page }) => {
         await adminLogin(page);
-        await gotoSection(page, 'two_general');
+        await gotoConfigSection(page, 'two_general');
         await (await openSection(page)).screenshot({ path: `${OUT}/config_general.png` });
         console.log('config_general ok');
     });
 
     test('config_payment split', async ({ page }) => {
         await adminLogin(page);
-        await gotoSection(page, 'two_payment');
+        await gotoConfigSection(page, 'two_payment');
         const box = await (await openSection(page)).boundingBox();
         if (!box) throw new Error('two_payment section has no bounding box');
         const half = Math.ceil(box.height / 2);
@@ -110,8 +84,17 @@ test.describe('Two admin config', () => {
 
     test('config_search', async ({ page }) => {
         await adminLogin(page);
-        await gotoSection(page, 'two_search');
-        await (await openSection(page)).screenshot({ path: `${OUT}/config_search.png` });
+        // TWO-25386 folded the standalone two_search section into
+        // two_checkout_fields as its own collapsible group.
+        await gotoConfigSection(page, 'two_checkout_fields');
+        const head = page.locator('#two_checkout_fields_search-head');
+        await expect(head).toBeVisible({ timeout: 15_000 });
+        const group = page.locator('#two_checkout_fields_search');
+        if (!(await group.isVisible())) {
+            await head.click();
+        }
+        await expect(group).toBeVisible({ timeout: 15_000 });
+        await group.screenshot({ path: `${OUT}/config_search.png` });
         console.log('config_search ok');
     });
 });

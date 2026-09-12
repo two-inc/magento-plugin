@@ -9,7 +9,6 @@
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <head>
         <css src="Two_Gateway::css/style.css"/>
-	<css src="Two_Gateway::select2-4.1.0/css/select2.min.css"/>
     </head>
     <body>
         <referenceBlock name="checkout.root">
@@ -63,6 +62,30 @@
                                 </item>
                                 <item name="sidebar" xsi:type="array">
                                     <item name="children" xsi:type="array">
+                                        <!--
+                                            Headless: re-runs server-side payment
+                                            availability when the totals change so the
+                                            method shows/hides as the basket crosses the
+                                            minimum-order threshold. Mounted here (always
+                                            present) rather than under the payment renderer,
+                                            which is absent while the method is hidden.
+                                        -->
+                                        <item name="two-payment-availability" xsi:type="array">
+                                            <item name="component" xsi:type="string">Two_Gateway/js/view/payment-availability</item>
+                                        </item>
+                                        <!--
+                                            TWO-25503: boots the one company-capture
+                                            component. Declared HERE, and nowhere else,
+                                            for the same reason as the node above: a
+                                            payment renderer is created per Two-family
+                                            brand and destroyed on every totals change,
+                                            so a component booted from one is neither
+                                            single nor durable. Two declarations would
+                                            mean two mounts writing one identity.
+                                        -->
+                                        <item name="two-company-search-boot" xsi:type="array">
+                                            <item name="component" xsi:type="string">Two_Gateway/js/view/company-search-boot</item>
+                                        </item>
                                         <item name="summary" xsi:type="array">
                                             <item name="children" xsi:type="array">
                                                 <item name="totals" xsi:type="array">

@@ -27,3 +27,12 @@ class LocalizedException extends \Exception
         return $this->phrase->render();
     }
 }
+
+/**
+ * InputException is thrown for a rejected payment-term selection, on both
+ * the chip-click endpoint and final order composition, so it has to be
+ * throwable rather than the catch-all's method-less class.
+ */
+class InputException extends LocalizedException
+{
+}

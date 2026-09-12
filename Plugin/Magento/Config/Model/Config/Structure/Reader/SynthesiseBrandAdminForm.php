@@ -15,11 +15,11 @@ use Two\Gateway\Model\Brand\Descriptor;
 use Two\Gateway\Model\Brand\Loader;
 
 /**
- * Synthesises a brand's admin Configuration surface — tab plus
- * the four canonical sections (`{prefix}_general`, `{prefix}_payment`,
- * `{prefix}_search`, `{prefix}_version`) — by stamping
- * `etc/adminhtml/brand_form_template.xml` against each brand's
- * `Brand\Descriptor` and feeding the result through
+ * Synthesises a brand's admin Configuration surface — tab plus the
+ * five canonical sections (`{prefix}_general`, `{prefix}_checkout_fields`,
+ * `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version`) —
+ * by stamping `etc/adminhtml/brand_form_template.xml` against each
+ * brand's `Brand\Descriptor` and feeding the result through
  * `Magento\Config\Model\Config\Structure\Converter::convert`. The
  * converted tabs and sections are then merged into the Structure
  * result that `Reader::read` returns.
@@ -28,19 +28,18 @@ use Two\Gateway\Model\Brand\Loader;
  * what's already in the Structure: synthesis only contributes
  * section/tab IDs that aren't already statically declared.
  * First-writer-wins applies per-element, so an overlay module's
- * slim suppression-only `system.xml` (the Option B mechanism)
- * merges via Magento's native merge AFTER synthesis: synthesis
- * injects the canonical surface, overlay attributes hide what
- * each brand suppresses.
+ * slim suppression-only `system.xml` merges via Magento's native
+ * merge AFTER synthesis: synthesis injects the canonical surface,
+ * overlay attributes hide what each brand suppresses.
  *
  * Synthesis is unconditional. The previous `system/two_brand_synthesis/
  * admin_form/enabled` flag-gate was a transition kill-switch from
- * before strip-down. It was removed in PR #181 because we suspected
- * a cold-cache race on the flag was the cause of ABN-415 (admin tab
- * vanishes post-restart). That fix closed a real race but the
- * symptom kept recurring.
+ * before strip-down. It was removed in magento-plugin PR #181
+ * because we suspected a cold-cache race on the flag was the cause
+ * of the admin-tab-vanishes-post-restart bug. That fix closed a real
+ * race but the symptom kept recurring.
  *
- * Evidence-driven follow-up (ABN-423 diagnostic harness on staging)
+ * Evidence-driven follow-up (a diagnostic harness run on staging)
  * showed the actual root cause: this plugin used to be registered
  * in `etc/adminhtml/di.xml`. CLI invocations of bin/magento
  * (`config:set`, `app:config:import`, `deploy:mode:set`, and similar)
@@ -62,8 +61,8 @@ use Two\Gateway\Model\Brand\Loader;
  * with static overlays for any brand that later opts into a stub
  * system.xml.
  *
- * Design v6 §3.5 verified: `brand_code` survives Converter conversion
- * at section / group / field levels (PR #160's probe). Synthesised
+ * `brand_code` survives Converter conversion at section / group /
+ * field levels (probed in magento-plugin PR #160). Synthesised
  * elements carry `brand_code="{code}"` so downstream code can
  * discriminate by brand when iterating Structure (e.g. brand-aware
  * admin-block headers).
@@ -269,7 +268,7 @@ class SynthesiseBrandAdminForm
      *
      * @param array<string,mixed> $section
      * @param string $sectionId Full section id, e.g. `acme_payment`.
-     * @param string $sectionPrefix Brand's section prefix, e.g. `abn`.
+     * @param string $sectionPrefix Brand's section prefix, e.g. `acme`.
      * @param string[] $suppressedPaths `section_suffix/group/field` paths.
      * @return array<string,mixed>
      */
@@ -383,6 +382,17 @@ class SynthesiseBrandAdminForm
             '{{code}}' => $this->escapeXmlAttribute($brand->getCode()),
             '{{section_prefix}}' => $this->escapeXmlAttribute($brand->getSectionPrefix()),
             '{{provider}}' => $this->escapeXmlAttribute($brand->getProvider()),
+            // Distinct from {{provider}} above: substituted RAW, with no
+            // entity-escaping, because its only use site
+            // (disable_ssl_verify's comment) is inside a CDATA section.
+            // CDATA content is never entity-decoded by the XML parser, so
+            // running a provider name through escapeXmlAttribute() there
+            // would bake the escaped entities in literally (e.g. a legal
+            // entity name containing "&" would render as "&amp;" to the
+            // merchant). CDATA syntactically only forbids the literal
+            // sequence "]]>", which no realistic brand/provider name
+            // contains.
+            '{{provider_cdata}}' => $brand->getProvider(),
             '{{tab_label}}' => $this->escapeXmlAttribute($brand->getTabLabel()),
             '{{tab_css_class}}' => $this->escapeXmlAttribute($brand->getTabCssClass()),
             '{{tab_sort_order}}' => (string)$brand->getTabSortOrder(),

@@ -18,10 +18,13 @@ define([
     'ko',
     'jquery',
     'Magento_Checkout/js/model/quote',
+    'mage/translate',
     'mage/url',
     'Two_Gateway/js/model/brand-config'
-], function (ko, $, quote, url, brandConfig) {
+], function (ko, $, quote, $t, url, brandConfig) {
     'use strict';
+
+    var SELECT_TERM_TIMEOUT_MS = 30000;
 
     // Resolve the active Two-family brand subtree from checkoutConfig
     // rather than hardcoding `.two_payment`. The brand-overlay 2.0
@@ -34,7 +37,35 @@ define([
     var selectedTerm = ko.observable(config.selectedPaymentTerm || config.defaultPaymentTerm || 0);
     // Empty by default — template renders loader until the latest loadFees() resolves.
     var termSurcharges = ko.observable({});
+    var termSurchargesGross = ko.observable({});
+    // 'excl' | 'incl' | 'both', mirroring tax/cart_display/price. Server-
+    // supplied on every surcharge response; 'excl' until the first answers.
+    var taxDisplay = ko.observable('excl');
     var isUpdating = ko.observable(false);
+
+    // The term /select-term answered with re-collected totals for; anything else
+    // on the chips means the summary and the order can disagree (ABN-550).
+    // Observable so the placement gate re-evaluates when it moves.
+    var confirmedTerm = ko.observable(selectedTerm());
+
+    // A /select-term the server would not take. Held until the buyer's next
+    // chip click: the revert puts the chips back on the confirmed term, so
+    // neither the tile's live region nor the placement gate can see the
+    // refusal in the terms themselves (ABN-550).
+    var termRefused = ko.observable(false);
+
+    // A chip clicked while a /select-term is in flight, sent once that settles:
+    // the server serialises overlapping calls on the session lock and can take
+    // them in the opposite order to the one they were sent in.
+    var pendingTerm = null;
+
+    // An external totals emission during a chip click is dropped by the
+    // subscriber, so the fees are re-evaluated once the click settles.
+    var totalsMissedWhileUpdating = false;
+
+    // True while this module writes the /select-term totals back, whose
+    // re-emission is not a change to react to.
+    var applyingOwnTotals = false;
 
     // Fetch sequence guard. Magento fires quote.getTotals() once on bootstrap
     // (often with subtotal-only basis) and again after /totals-information
@@ -51,6 +82,23 @@ define([
     // total + every segment's code/value/title — and skip the fetch when
     // the snapshot matches the previous one.
     var lastTotalsSnapshot = null;
+
+    /**
+     * Both maps are replaced together so a chip can never pair one term's net
+     * with another response's gross.
+     *
+     * @param {Array} items per-term entries from either surcharge endpoint
+     */
+    function applyTermSurcharges(items) {
+        var net = {};
+        var gross = {};
+        items.forEach(function (item) {
+            net[item.days] = item.net;
+            gross[item.days] = typeof item.gross === 'number' ? item.gross : item.net;
+        });
+        termSurcharges(net);
+        termSurchargesGross(gross);
+    }
 
     /**
      * Build a deterministic snapshot of the totals payload covering every
@@ -138,12 +186,11 @@ define([
                 console.warn('Two_Gateway: surcharges response not parseable', e);
                 return;
             }
+            if (data && data.tax_display) {
+                taxDisplay(data.tax_display);
+            }
             if (data && Array.isArray(data.term_surcharges) && data.term_surcharges.length) {
-                var updated = {};
-                data.term_surcharges.forEach(function (item) {
-                    updated[item.days] = item.net;
-                });
-                termSurcharges(updated);
+                applyTermSurcharges(data.term_surcharges);
             }
         }).fail(function (xhr, status, err) {
             console.warn('Two_Gateway: surcharges fetch failed', status, err);
@@ -165,7 +212,11 @@ define([
     // loader hanging forever. Values are server-authoritative either way,
     // so no stale-display drift.
     quote.getTotals().subscribe(function (totals) {
-        if (!totals || isUpdating()) {
+        if (!totals || applyingOwnTotals) {
+            return;
+        }
+        if (isUpdating()) {
+            totalsMissedWhileUpdating = true;
             return;
         }
         loadFees();
@@ -174,18 +225,105 @@ define([
         loadFees();
     }
 
+    /**
+     * Hand the chips back to the confirmed term, recording the term that was
+     * refused.
+     *
+     * Refusal before the write: an observable assigns before it notifies, so a
+     * chip binding throwing would revert the chips and lose the explanation.
+     */
+    function revertSelection() {
+        termRefused(true);
+        selectedTerm(confirmedTerm());
+    }
+
+    /**
+     * Run fn, keeping a throwing totals subscriber or knockout binding from
+     * aborting the rest of jQuery's callback chain — which would leave the
+     * updating flag latched and the Place Order button disabled for the life of
+     * the page (ABN-550).
+     */
+    function guarded(fn) {
+        try {
+            fn();
+        } catch (error) {
+            console.warn('Two_Gateway: surcharge update only partly applied', error);
+        }
+    }
+
+    /**
+     * The reason placement is refused, or '' when the chips agree with the term
+     * the quote is priced on. The placement gate is derived from this, so a
+     * disabled Place Order button can never be silent (ABN-550).
+     */
+    function termStatusMessage() {
+        if (isUpdating()) {
+            return $t('Applying the selected payment term…');
+        }
+        if (termRefused()) {
+            return $t('Could not update payment term.') + ' ' + $t('Please try again.');
+        }
+        if (confirmedTerm() !== selectedTerm()) {
+            return $t('The selected payment term was not applied. Reload the page and select it again.');
+        }
+        return '';
+    }
+
+    /**
+     * Write a settled /select-term response into the summary and the chip fees.
+     */
+    function applyResponse(data) {
+        var currentTotals = quote.getTotals()();
+        if (currentTotals) {
+            currentTotals.grand_total = data.grand_total;
+            currentTotals.base_grand_total = data.base_grand_total;
+            currentTotals.tax_amount = data.tax_amount;
+            currentTotals.total_segments = data.total_segments;
+            applyingOwnTotals = true;
+            try {
+                quote.setTotals(currentTotals);
+            } finally {
+                applyingOwnTotals = false;
+            }
+            // Record the post-/select-term state so loadFees doesn't refetch on
+            // the totals re-emit setTotals just triggered.
+            lastTotalsSnapshot = snapshotTotals(currentTotals);
+        }
+        if (data.tax_display) {
+            taxDisplay(data.tax_display);
+        }
+        if (data.term_surcharges) {
+            // Bump fetchSeq so any in-flight loadFees can't clobber the
+            // authoritative values returned by /select-term.
+            fetchSeq++;
+            applyTermSurcharges(data.term_surcharges);
+        }
+    }
+
     var surchargeModel = {
         selectedTerm: selectedTerm,
         isUpdating: isUpdating,
         termSurcharges: termSurcharges,
+        termSurchargesGross: termSurchargesGross,
+        taxDisplay: taxDisplay,
         currencySymbol: config.currencySymbol || '',
 
         /**
          * Get the surcharge for the current term (for chip labels).
          */
         getAmount: function () {
-            var surcharges = termSurcharges();
+            var surcharges = this.displayedTermSurcharges();
             return parseFloat(surcharges[selectedTerm()] || 0);
+        },
+
+        /**
+         * The per-term map the chips must render: gross only when the store
+         * shows gross-only prices at checkout ('incl'); net for 'excl' and
+         * for 'both' — a chip is one compact value and has no room for the
+         * excl/incl pair, which belongs to the order-summary rows instead.
+         */
+        displayedTermSurcharges: function () {
+            return taxDisplay() === 'incl' ? termSurchargesGross() : termSurcharges();
         },
 
         /**
@@ -193,6 +331,9 @@ define([
          */
         selectTerm: function (days) {
             if (days === selectedTerm()) {
+                // Re-clicking the chip the quote is priced on is the only way
+                // out of a refusal that does not need a page reload.
+                termRefused(false);
                 return;
             }
             selectedTerm(days);
@@ -200,11 +341,26 @@ define([
         },
 
         /**
+         * Whether the chips' selection is the term the server confirmed it
+         * priced the quote on. Placement is refused while it is not (ABN-550).
+         */
+        isTermReconciled: function () {
+            return termStatusMessage() === '';
+        },
+
+        termStatusMessage: termStatusMessage,
+
+        /**
          * Call /select-term to update totals with the new surcharge.
          */
         recalculateTotals: function (days) {
             var restUrl = url.build('rest/V1/two/select-term');
 
+            if (isUpdating()) {
+                pendingTerm = days;
+                return;
+            }
+            termRefused(false);
             isUpdating(true);
             // Do NOT clear termSurcharges here. A chip click only changes
             // which term is selected; the per-chip fees themselves are
@@ -219,39 +375,57 @@ define([
                 url: restUrl,
                 type: 'POST',
                 contentType: 'application/json',
+                // A hung request would otherwise hold the Place Order button
+                // disabled for the rest of the session.
+                timeout: SELECT_TERM_TIMEOUT_MS,
                 data: JSON.stringify({
                     cartId: quote.getQuoteId(),
                     termDays: days
                 })
             }).done(function (response) {
                 var data = Array.isArray(response) ? response[0] : response;
-                if (data && data.total_segments) {
-                    var currentTotals = quote.getTotals()();
-                    if (currentTotals) {
-                        currentTotals.grand_total = data.grand_total;
-                        currentTotals.base_grand_total = data.base_grand_total;
-                        currentTotals.tax_amount = data.tax_amount;
-                        currentTotals.total_segments = data.total_segments;
-                        quote.setTotals(currentTotals);
-                        // Record the post-/select-term state so loadFees
-                        // doesn't refetch on the totals re-emit that
-                        // setTotals just triggered.
-                        lastTotalsSnapshot = snapshotTotals(currentTotals);
-                    }
+                if (!data || !Array.isArray(data.total_segments) || data.total_segments.length === 0) {
+                    // An empty set would blank the summary, and nothing
+                    // confirms the term without the totals it was collected on.
+                    guarded(revertSelection);
+                    return;
                 }
-
-                if (data && data.term_surcharges) {
-                    var updated = {};
-                    data.term_surcharges.forEach(function (item) {
-                        updated[item.days] = item.net;
-                    });
-                    // Bump fetchSeq so any in-flight loadFees can't clobber
-                    // the authoritative values returned by /select-term.
-                    fetchSeq++;
-                    termSurcharges(updated);
-                }
+                guarded(function () {
+                    applyResponse(data);
+                });
+                // Confirmed even if writing the summary partly failed: the
+                // server answered, so it holds this term, and reverting the
+                // chips against it is what charges a term nobody selected.
+                guarded(function () {
+                    confirmedTerm(days);
+                });
+            }).fail(function (xhr, status, err) {
+                console.warn('Two_Gateway: select-term failed', status, err);
+                guarded(revertSelection);
             }).always(function () {
-                isUpdating(false);
+                var next = pendingTerm;
+                pendingTerm = null;
+                // Guarded apart from the flush below: this write re-renders the
+                // chip bindings, and a throw out of one must not strand the
+                // queued term.
+                guarded(function () {
+                    isUpdating(false);
+                });
+                guarded(function () {
+                    // A refused call reverted the chips, so its queue is stale.
+                    if (next !== null && next === selectedTerm() && next !== confirmedTerm()) {
+                        surchargeModel.recalculateTotals(next);
+                        return;
+                    }
+                    if (totalsMissedWhileUpdating) {
+                        totalsMissedWhileUpdating = false;
+                        // The snapshot below is of the totals this response
+                        // merged into, so leaving it would dedup the fetch
+                        // still needed.
+                        lastTotalsSnapshot = null;
+                        loadFees();
+                    }
+                });
             });
         }
     };

@@ -1,0 +1,357 @@
+<?php
+declare(strict_types=1);
+
+namespace Two\Gateway\Test\Unit\Model\Config\Backend;
+
+use Magento\Framework\App\Cache\TypeListInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Model\Context;
+use Magento\Framework\Registry;
+use PHPUnit\Framework\TestCase;
+use Two\Gateway\Model\Config\Backend\SurchargeType;
+use Two\Gateway\Model\Config\NeverTaxedTreatment;
+
+/**
+ * Tests the section-save half of the surcharge tax treatment invariant.
+ *
+ * The Surcharge method field is posted on every admin save of the payment
+ * section, so this guard is what catches a save triggered by any other
+ * field — including a shop already stored in the enabled-with-blank-
+ * treatment state. A pre-existing legacy flat rate counts as an explicit
+ * choice (including a rate of 0).
+ */
+class SurchargeTypeTest extends TestCase
+{
+    /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $scopeConfig;
+
+    /** @var NeverTaxedTreatment|\PHPUnit\Framework\MockObject\MockObject */
+    private $neverTaxedTreatment;
+
+    protected function setUp(): void
+    {
+        $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->neverTaxedTreatment = $this->createMock(NeverTaxedTreatment::class);
+    }
+
+    private function buildModel(array $data): SurchargeType
+    {
+        return new SurchargeType(
+            $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
+            $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
+            $this->scopeConfig,
+            $this->createMock(TypeListInterface::class),
+            $this->neverTaxedTreatment,
+            null,
+            null,
+            $data
+        );
+    }
+
+    private function stubStoredConfig(array $map): void
+    {
+        $this->scopeConfig->method('getValue')->willReturnCallback(
+            function ($path) use ($map) {
+                return $map[$path] ?? null;
+            }
+        );
+    }
+
+    public function testEnablingSurchargeWithNoTreatmentAnywhereIsRejected(): void
+    {
+        $this->stubStoredConfig([]);
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => [
+                'surcharge_type' => 'percentage',
+                'surcharge_tax_class' => '',
+            ],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('Please select a surcharge tax treatment');
+        $model->beforeSave();
+    }
+
+    public function testAlreadyBrokenShopSavingAnUnrelatedFieldIsRejected(): void
+    {
+        // Stored state: surcharge enabled, treatment blank. The merchant edits
+        // some other field in the section; surcharge_type is posted unchanged
+        // and the treatment field is not part of this save at all.
+        $this->stubStoredConfig([
+            'payment/two_payment/surcharge_type' => 'fixed',
+            'payment/two_payment/surcharge_tax_class' => null,
+            'payment/two_payment/surcharge_tax_rate' => null,
+        ]);
+        $model = $this->buildModel([
+            'value' => 'fixed',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'fixed'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('Surcharge tax treatment field');
+        $model->beforeSave();
+    }
+
+    public function testLegacyFlatRateCountsAsAnExplicitTreatment(): void
+    {
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_rate' => '21']);
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => [
+                'surcharge_type' => 'percentage',
+                'surcharge_tax_class' => '',
+            ],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testLegacyFlatRateOfZeroCountsAsAnExplicitTreatment(): void
+    {
+        // Falsy-zero guard: a configured rate of "0" is a real value.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => [
+                'surcharge_type' => 'percentage',
+                'surcharge_tax_class' => '',
+            ],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testDisabledSurchargeWithBlankTreatmentIsAccepted(): void
+    {
+        $this->stubStoredConfig([]);
+        $model = $this->buildModel([
+            'value' => 'none',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => [
+                'surcharge_type' => 'none',
+                'surcharge_tax_class' => '',
+            ],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testEnablingAndPickingATreatmentInTheSameSaveIsAccepted(): void
+    {
+        // Nothing stored yet — the treatment only exists in the posted data.
+        $this->stubStoredConfig([]);
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => [
+                'surcharge_type' => 'percentage',
+                'surcharge_tax_class' => '4',
+            ],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testStoredTreatmentSatisfiesTheGuardWhenNotPosted(): void
+    {
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '4']);
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testOwnValueWinsOverStoredSurchargeType(): void
+    {
+        // Stored config says enabled; this save switches it off, so the blank
+        // treatment must be accepted.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_type' => 'percentage']);
+        $model = $this->buildModel([
+            'value' => 'none',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => [
+                'surcharge_type' => 'none',
+                'surcharge_tax_class' => '',
+            ],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    /**
+     * ABN-497: the section-save half also refuses a stored never-taxed
+     * treatment. Only for a save the treatment field is part of — a save
+     * without it cannot overwrite the stored value, and refusing one would
+     * brick the section for a brand that suppresses the field or a scope
+     * inheriting it. Ungated on enablement: the 'none' rows pin that.
+     *
+     * @dataProvider storedSentinelSaves
+     */
+    public function testAStoredNeverTaxedTreatmentIsRefusedUntilReplaced(
+        string $method,
+        ?string $submittedTreatment,
+        ?string $refusedWith,
+        string $case
+    ): void {
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturnCallback(
+            static fn (string $value): bool => $value === '0'
+        );
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '0']);
+        $fieldsetData = ['surcharge_type' => $method];
+        if ($submittedTreatment !== null) {
+            $fieldsetData['surcharge_tax_class'] = $submittedTreatment;
+        }
+        $model = $this->buildModel([
+            'value' => $method,
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => $fieldsetData,
+        ]);
+
+        if ($refusedWith === null) {
+            $this->assertSame($model, $model->beforeSave(), $case);
+            return;
+        }
+
+        try {
+            $model->beforeSave();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            $this->assertStringContainsString($refusedWith, $e->getMessage(), $case);
+        }
+    }
+
+    public static function storedSentinelSaves(): array
+    {
+        return [
+            ['percentage', '', 'Please select a surcharge tax treatment', 'cleared to the placeholder while enabled — the selection rule refuses first'],
+            ['percentage', '0', 'untaxed in every jurisdiction', 'the sentinel re-submitted verbatim'],
+            ['percentage', '4', null, 'the merchant replacing it with a real tax class'],
+            ['none', '', 'untaxed in every jurisdiction', 'surcharge off, so only the stored-sentinel rule can refuse'],
+            ['none', '4', null, 'surcharge off and the sentinel replaced in the same save'],
+            ['none', null, null, 'the treatment field not in the save at all — suppressed for this brand or inherited at this scope, so no control exists to fix it and this save cannot overwrite it either'],
+        ];
+    }
+
+    public function testSystemXmlWiresTheGuardOntoBothFields(): void
+    {
+        // The wiring IS the fix: without the backend_model on surcharge_type
+        // the invariant is only enforced when the treatment field itself is
+        // part of the save.
+        $systemXml = dirname(__DIR__, 5) . '/etc/adminhtml/system.xml';
+        $xml = new \SimpleXMLElement((string)file_get_contents($systemXml));
+
+        $backendModels = [];
+        foreach (['surcharge_type', 'surcharge_tax_class'] as $fieldId) {
+            $nodes = $xml->xpath(sprintf('//field[@id="%s"]/backend_model', $fieldId));
+            $backendModels[$fieldId] = $nodes ? (string)$nodes[0] : null;
+        }
+
+        $this->assertSame(
+            \Two\Gateway\Model\Config\Backend\SurchargeType::class,
+            $backendModels['surcharge_type']
+        );
+        $this->assertSame(
+            \Two\Gateway\Model\Config\Backend\SurchargeTaxClass::class,
+            $backendModels['surcharge_tax_class']
+        );
+    }
+
+    public function testOwnValueEnablesTheGuardWhenNoFieldsetDataIsPresent(): void
+    {
+        // PreparedValueFactory-style saves (app:config:import and friends) set
+        // path/value/scope with no fieldset_data at all. The field's own value
+        // must still drive the check — stored config still says "none".
+        $this->stubStoredConfig([
+            'payment/two_payment/surcharge_type' => 'none',
+            'payment/two_payment/surcharge_tax_class' => '',
+            'payment/two_payment/surcharge_tax_rate' => '',
+        ]);
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $model->beforeSave();
+    }
+
+    /**
+     * @dataProvider refusedMethods
+     */
+    public function testUnknownMethodIsRefusedOnSave(string $posted, string $case): void
+    {
+        // A treatment is stored, so only the method-set guard can refuse.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '3']);
+        $model = $this->buildModel([
+            'value' => $posted,
+            'path' => 'payment/two_payment/surcharge_type',
+            'fieldset_data' => ['surcharge_type' => $posted, 'surcharge_tax_class' => '3'],
+        ]);
+
+        try {
+            $model->beforeSave();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            $this->assertStringContainsString('Unrecognised surcharge method', $e->getMessage(), $case);
+        }
+    }
+
+    public function refusedMethods(): array
+    {
+        return [
+            ['wat', 'a crafted POST of a method that does not exist'],
+            ['PERCENTAGE', 'the right method in the wrong case'],
+            ['', 'a blank submission — the field always posts, so this is a real value'],
+            ['0', 'a falsy value that a truthiness check would have read as unset'],
+            ['<script>x</script>', 'a crafted value is still refused; core escapes on render'],
+        ];
+    }
+
+
+    public function testSiblingPathsAreDerivedBrandAware(): void
+    {
+        // Synthesized brand forms save under payment/<brand_code>/ — sibling
+        // lookups must follow the field's own path, not two_payment.
+        $queried = [];
+        $this->scopeConfig->method('getValue')->willReturnCallback(
+            function ($path) use (&$queried) {
+                $queried[] = $path;
+                return null;
+            }
+        );
+        $model = $this->buildModel([
+            'value' => 'percentage',
+            'path' => 'payment/overlay_payment/surcharge_type',
+            'scope' => 'websites',
+            'scope_id' => 2,
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        try {
+            $model->beforeSave();
+            $this->fail('Expected LocalizedException');
+        } catch (LocalizedException $e) {
+            $this->assertContains('payment/overlay_payment/surcharge_tax_class', $queried);
+            $this->assertContains('payment/overlay_payment/surcharge_tax_rate', $queried);
+        }
+    }
+}

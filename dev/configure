@@ -39,6 +39,12 @@ $entries = [
     ['payment/two_payment/mode', 'sandbox', false],
     ['payment/two_payment/api_key', $providedApiKey, true],
     ['general/country/default', getenv('TWO_STORE_COUNTRY') ?: null, false],
+    // TWO-25503: fresh-install parity with WooCommerce/PrestaShop — all four
+    // durations offered and a merchant-facing title with no day-count baked
+    // in (Model\Two::getTitle() appends "- N days" itself once a term is
+    // actually selected).
+    ['payment/two_payment/payment_terms', '14,30,60,90', false],
+    ['payment/two_payment/title', 'Business invoice', false],
 ];
 
 foreach ($entries as [$path, $newValue, $encrypted]) {

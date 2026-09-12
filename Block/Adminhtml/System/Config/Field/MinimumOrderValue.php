@@ -14,7 +14,7 @@ use Magento\Store\Model\StoreManagerInterface;
 
 /**
  * Renders the merchant minimum-order-value field with the store base
- * currency in the label ("Minimum Order Value, EUR") - the value is
+ * currency in the label ("Minimum order value, EUR") - the value is
  * interpreted in that currency, so the label must say which one the
  * current config scope resolves to.
  */
@@ -41,7 +41,7 @@ class MinimumOrderValue extends Field
     {
         $currency = $this->resolveScopeBaseCurrency();
         if ($currency !== '') {
-            $element->setLabel(__('Minimum Order Value, %1', $currency));
+            $element->setLabel(__('Minimum order value, %1', $currency));
         }
         return parent::render($element);
     }

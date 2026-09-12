@@ -13,10 +13,12 @@ use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Json;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
-use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Model\Config\AdminScope;
+use Two\Gateway\Service\Merchant\FeeRatesProvider;
 
 /**
  * AJAX endpoint for the surcharge grid's "Fee" column.
@@ -25,9 +27,12 @@ use Two\Gateway\Service\Api\Adapter;
  * scope and asks the Two API for the merchant fee (percentage + fixed) per
  * term. Returns JSON the admin grid can render read-only.
  *
- * Failure mode: on any upstream error, returns {success:false}. The JS
- * leaves "—" in the fee cells so the admin config page never breaks on a
- * Two API outage.
+ * A failed fetch falls back to the last fee set retrieved for this identity
+ * and says so through `stale` + `fetched_at`, so the screen can tell the
+ * merchant the figures are not current. With nothing cached at all the
+ * response carries no fees and names why — 'upstream' for a service that could
+ * not answer, 'not_configured' for a scope with no API key saved — and the
+ * screen says that instead of leaving the fee area blank (ABN-512).
  */
 class Fees extends Action
 {
@@ -39,9 +44,9 @@ class Fees extends Action
     private $resultJsonFactory;
 
     /**
-     * @var Adapter
+     * @var FeeRatesProvider
      */
-    private $apiAdapter;
+    private $feeRates;
 
     /**
      * @var StoreManagerInterface
@@ -58,20 +63,27 @@ class Fees extends Action
      */
     private $currencyRates;
 
+    /**
+     * @var TimezoneInterface
+     */
+    private $localeDate;
+
     public function __construct(
         Action\Context $context,
         JsonFactory $resultJsonFactory,
-        Adapter $apiAdapter,
+        FeeRatesProvider $feeRates,
         StoreManagerInterface $storeManager,
         ScopeConfigInterface $scopeConfig,
-        CurrencyRatesProviderInterface $currencyRates
+        CurrencyRatesProviderInterface $currencyRates,
+        TimezoneInterface $localeDate
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
-        $this->apiAdapter = $apiAdapter;
+        $this->feeRates = $feeRates;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
         $this->currencyRates = $currencyRates;
+        $this->localeDate = $localeDate;
     }
 
     /**
@@ -86,30 +98,29 @@ class Fees extends Action
             return $result->setData(['success' => false, 'error' => 'no terms']);
         }
 
-        $storeId = $this->resolveStoreId();
+        [$scopeId, $scope] = $this->resolveScope();
         $targetCurrency = $this->resolveTargetCurrency();
 
-        $response = $this->apiAdapter->execute(
-            '/pricing/v1/merchant/rates',
-            [
-                'buyer_country_code' => $this->resolveBuyerCountry($storeId),
-                // TODO: no admin recourse-pricing config exists yet.
-                'recourse_pricing' => false,
-                // payout_schedule intentionally omitted — server infers from
-                // the merchant's payee accounts. Only set if/when we expose
-                // an explicit override in admin config.
-                'net_terms' => array_values($terms),
-            ],
-            'POST',
-            $storeId
+        $rates = $this->feeRates->getRates(
+            $terms,
+            $this->resolveBuyerCountry($scopeId, $scope),
+            $scopeId,
+            $scope
         );
-
-        $normalised = $this->normaliseRatesResponse($response);
-        if (!$normalised['success']) {
-            return $result->setData($normalised);
+        if (!$rates['success']) {
+            return $result->setData($rates);
+        }
+        if (!empty($rates['stale']) && isset($rates['fetched_at'])) {
+            // Formatted here, in the admin's own locale and timezone, rather
+            // than in the browser's.
+            $rates['fetched_at_display'] = $this->localeDate->formatDateTime(
+                (new \DateTime())->setTimestamp((int)$rates['fetched_at'])
+            );
         }
 
-        return $result->setData($this->convertFees($normalised, $targetCurrency, $storeId));
+        return $result->setData(
+            $this->convertFees($rates, $targetCurrency, AdminScope::isStoreScope($scope) ? $scopeId : null)
+        );
     }
 
     /**
@@ -135,30 +146,17 @@ class Fees extends Action
     }
 
     /**
-     * Map scope + scopeId POSTed by the grid JS to a concrete store ID, so
-     * the API call uses the same merchant credentials as the scope the user
-     * is configuring.
+     * Scope + scopeId POSTed by the grid JS, so the fee call uses the merchant
+     * credentials of the scope being configured (ABN-530).
+     *
+     * @return array{int|null, string}
      */
-    private function resolveStoreId(): ?int
+    private function resolveScope(): array
     {
-        $scope = (string)$this->getRequest()->getParam('scope', 'default');
-        $scopeId = (int)$this->getRequest()->getParam('scopeId', 0);
-
-        if ($scope === ScopeInterface::SCOPE_STORES || $scope === 'stores') {
-            return $scopeId > 0 ? $scopeId : null;
-        }
-        if ($scope === ScopeInterface::SCOPE_WEBSITES || $scope === 'websites') {
-            if ($scopeId > 0) {
-                try {
-                    $website = $this->storeManager->getWebsite($scopeId);
-                    $store = $website->getDefaultStore();
-                    return $store ? (int)$store->getId() : null;
-                } catch (\Exception $e) {
-                    return null;
-                }
-            }
-        }
-        return null;
+        return AdminScope::fromScope(
+            (string)$this->getRequest()->getParam('scope', 'default'),
+            $this->getRequest()->getParam('scopeId', 0)
+        );
     }
 
     /**
@@ -202,9 +200,10 @@ class Fees extends Action
         if (empty($raw['success']) || empty($raw['fees'])) {
             return $raw;
         }
+        // A set with no source currency never reaches here — it is not a
+        // renderable answer, so the provider does not return one.
         $sourceCurrency = (string)($raw['currency'] ?? '');
         if ($sourceCurrency === '' || $sourceCurrency === $targetCurrency) {
-            $raw['currency'] = $targetCurrency;
             return $raw;
         }
 
@@ -227,41 +226,9 @@ class Fees extends Action
      * this — use the Magento store's base country as a stand-in. Merchant
      * can override later (e.g. a dropdown) if the proxy turns out wrong.
      */
-    private function resolveBuyerCountry(?int $storeId): string
+    private function resolveBuyerCountry(?int $scopeId, string $scope): string
     {
-        $scope = $storeId !== null ? ScopeInterface::SCOPE_STORES : 'default';
-        $country = (string)$this->scopeConfig->getValue('general/country/default', $scope, $storeId);
+        $country = (string)$this->scopeConfig->getValue('general/country/default', $scope, $scopeId);
         return $country !== '' ? strtoupper($country) : 'NL';
-    }
-
-    /**
-     * Flatten the merchant/rates response into the shape the grid JS
-     * consumes: {success, currency, fees: {"<days>": {percentage, fixed}}}.
-     * Handles the Adapter's failure envelope too.
-     */
-    private function normaliseRatesResponse(array $response): array
-    {
-        if (isset($response['error_code']) || !isset($response['rates'])) {
-            return ['success' => false, 'error' => 'upstream'];
-        }
-
-        $fees = [];
-        foreach ((array)$response['rates'] as $rate) {
-            if (!isset($rate['net_terms'])) {
-                continue;
-            }
-            $days = (int)$rate['net_terms'];
-            $fees[(string)$days] = [
-                // API sends strings — cast for JSON numeric output.
-                'percentage' => (float)($rate['percentage_fee'] ?? 0),
-                'fixed' => (float)($rate['fixed_fee'] ?? 0),
-            ];
-        }
-
-        return [
-            'success' => true,
-            'currency' => (string)($response['currency'] ?? ''),
-            'fees' => $fees,
-        ];
     }
 }

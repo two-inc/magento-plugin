@@ -7,14 +7,24 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config;
 
+use Magento\Framework\App\Config\Initial;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
+use Psr\Log\LoggerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
+use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
+use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
+use Two\Gateway\Model\Provenance;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * Config Repository
@@ -22,9 +32,30 @@ use Two\Gateway\Api\Config\RepositoryInterface;
 class Repository implements RepositoryInterface
 {
     /**
+     * Module whose deployed commit stamps the reported `client_v`. The
+     * base gateway runtime is what the API cares about; brand overlays
+     * ship on top of it and are surfaced per-module in the admin panel.
+     */
+    private const PROVENANCE_MODULE = 'Two_Gateway';
+
+    // Only reached when the shipped config.xml default cannot be read.
+    private const SURCHARGE_LINE_DESCRIPTION_DEFAULT = 'Payment terms fee - %1 days';
+
+    /**
      * @var ScopeConfigInterface
      */
     private $scopeConfig;
+
+    /**
+     * @var Initial|null
+     */
+    private $initialConfig;
+
+    /**
+     * @var string|null
+     */
+    private $shippedSurchargeLineDescription;
+
     /**
      * @var EncryptorInterface
      */
@@ -47,6 +78,38 @@ class Repository implements RepositoryInterface
     private $brandRegistry;
 
     /**
+     * @var SettingsProvider Injected via \Proxy in di.xml — this
+     *                       Repository owns the API key that the
+     *                       provider resolves the merchant record with,
+     *                       so a direct binding would be a construction
+     *                       cycle. The proxy defers instantiation until
+     *                       getDefaultPaymentTerm() first calls it.
+     */
+    private $settingsProvider;
+
+    /**
+     * @var Provenance Resolves the commit the deployed module was built
+     *                 from, so outbound telemetry (`client_v`) identifies
+     *                 the exact code running, not just the release line.
+     *                 Shared with the admin Version panel.
+     */
+    private $provenance;
+
+    /**
+     * \Proxy in di.xml — a direct binding is a construction cycle, as $settingsProvider.
+     *
+     * @var LogRepository
+     */
+    private $logRepository;
+
+    /**
+     * Keyed by scoped path and value, so one request reports one bad method once.
+     *
+     * @var array<string,bool>
+     */
+    private $reportedSurchargeTypes = [];
+
+    /**
      * @var string|null Optional explicit override. Null = resolve
      *                  lazily from BrandRegistryInterface::getCode().
      *                  Kept as a ctor arg for unit-test injection and
@@ -55,12 +118,14 @@ class Repository implements RepositoryInterface
      */
     private $code;
 
+    private $logger;
+
     /**
      * @param ?string $code Payment-method code. Null (the shipped
      *                      default) defers to the brand registry —
      *                      every `payment/<code>/<key>` path is
      *                      built against the active brand resolved
-     *                      from brand.xml at request time. ABN and
+     *                      from brand.xml at request time. Existing and
      *                      future overlays no longer need a virtualType
      *                      of this Repository.
      */
@@ -71,7 +136,12 @@ class Repository implements RepositoryInterface
         ProductMetadataInterface $productMetadata,
         TaxCalculation $taxCalculation,
         BrandRegistryInterface $brandRegistry,
-        ?string $code = null
+        SettingsProvider $settingsProvider,
+        Provenance $provenance,
+        LogRepository $logRepository,
+        ?string $code = null,
+        ?LoggerInterface $logger = null,
+        ?Initial $initialConfig = null
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -79,7 +149,12 @@ class Repository implements RepositoryInterface
         $this->productMetadata = $productMetadata;
         $this->taxCalculation = $taxCalculation;
         $this->brandRegistry = $brandRegistry;
+        $this->settingsProvider = $settingsProvider;
+        $this->provenance = $provenance;
+        $this->logRepository = $logRepository;
         $this->code = $code;
+        $this->logger = $logger;
+        $this->initialConfig = $initialConfig;
     }
 
     /**
@@ -130,13 +205,14 @@ class Repository implements RepositoryInterface
      *
      * @param string $configPath
      * @param int|null $storeId
+     * @param string|null $scope
      * @return mixed
      */
-    private function getConfig(string $configPath, ?int $storeId = null)
+    private function getConfig(string $configPath, ?int $storeId = null, ?string $scope = null)
     {
         return $this->scopeConfig->getValue(
             $configPath,
-            ScopeInterface::SCOPE_STORE,
+            $scope ?? ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }
@@ -144,9 +220,9 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getApiKey(?int $storeId = null): string
+    public function getApiKey(?int $storeId = null, ?string $scope = null): string
     {
-        return (string)$this->encryptor->decrypt($this->getConfig($this->path('api_key'), $storeId));
+        return (string)$this->encryptor->decrypt($this->getConfig($this->path('api_key'), $storeId, $scope));
     }
 
     /**
@@ -160,14 +236,6 @@ class Repository implements RepositoryInterface
             $storeId,
             $scope
         );
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getDueInDays(?int $storeId = null): int
-    {
-        return (int)$this->getConfig($this->path('days_on_invoice'), $storeId);
     }
 
     /**
@@ -221,6 +289,29 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function getDefaultShippingTaxRate(?int $storeId = null): ?float
+    {
+        return StoredRate::normalise($this->getConfig($this->path('default_shipping_tax_rate'), $storeId));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int
+    {
+        $configured = $this->getConfig($this->path('default_shipping_tax_class'), $storeId);
+        // Unselected ('' / unset) or non-numeric never int-casts to 0 —
+        // class id 0 is a real selection ("None"), same convention as
+        // getSurchargeTaxClassId().
+        if ($configured === null || $configured === '' || !is_numeric($configured)) {
+            return null;
+        }
+        return (int)$configured;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDepartmentEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('enable_department'), $storeId);
@@ -269,9 +360,9 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getMode(?int $storeId = null): string
+    public function getMode(?int $storeId = null, ?string $scope = null): string
     {
-        return (string)$this->getConfig($this->path('mode'), $storeId);
+        return (string)$this->getConfig($this->path('mode'), $storeId, $scope);
     }
 
     /**
@@ -356,7 +447,7 @@ class Repository implements RepositoryInterface
      * Get brand version for checkout page URL decoration.
      *
      * Resolved by Makefile: 'qa' for @two.inc gcloud users, empty otherwise.
-     * Overridable via TWO_BRAND_VERSION in .env.local. Returns empty in
+     * Overridable via TWO_BRAND_VERSION in .env. Returns empty in
      * production — see getBrand().
      *
      * @return string
@@ -395,6 +486,45 @@ class Repository implements RepositoryInterface
     }
 
     /**
+     * Extension version as recorded in config (`payment/<code>/version`),
+     * with no provenance suffix. This is the release line only.
+     */
+    private function getConfiguredVersion()
+    {
+        return $this->getConfig($this->path('version'));
+    }
+
+    /**
+     * Version string reported to the API: the configured release version
+     * suffixed with `+<sha7>` of the commit the deployed code was built
+     * from, e.g. `2.0.1+6f8534e` (TWO-25197).
+     *
+     * The suffix is appended ONLY when a SHA actually resolves — a bare
+     * trailing `+` would be worse than no provenance at all, since it
+     * reads as a truncated value rather than an absent one. An install
+     * with neither Composer metadata nor a git checkout reports the bare
+     * version, unchanged from before.
+     *
+     * `+` is not URL-safe in a query value (it decodes to a space), but
+     * addVersionDataInURL() emits this through http_build_query(), which
+     * percent-encodes it as `%2B`.
+     */
+    private function getReportedVersion(): ?string
+    {
+        $version = $this->getConfiguredVersion();
+        if ($version === null) {
+            return null;
+        }
+        $version = (string)$version;
+        if ($version === '') {
+            return '';
+        }
+        $commit = $this->provenance->commitForModule(self::PROVENANCE_MODULE);
+
+        return $commit === '' ? $version : $version . '+' . $commit;
+    }
+
+    /**
      * Returns extension version Array
      *
      * @return array
@@ -403,7 +533,7 @@ class Repository implements RepositoryInterface
     {
         return [
             'client' => 'Magento',
-            'client_v' => $this->getConfig($this->path('version'))
+            'client_v' => $this->getReportedVersion()
         ];
     }
 
@@ -412,12 +542,12 @@ class Repository implements RepositoryInterface
      */
     public function getExtensionDBVersion(): ?string
     {
-        $versionData = $this->getExtensionVersionData();
-        if (isset($versionData['client_v'])) {
-            return $versionData['client_v'];
-        }
+        // Deliberately the bare configured version, NOT the `+<sha>`
+        // provenance-stamped one: this is the DB/config schema version
+        // that callers compare against release numbers.
+        $version = $this->getConfiguredVersion();
 
-        return null;
+        return $version === null ? null : (string)$version;
     }
 
     /**
@@ -442,8 +572,15 @@ class Repository implements RepositoryInterface
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag($this->path('enable_company_search'), $storeId) &&
-            $this->isSetFlag($this->path('enable_address_search'), $storeId);
+        // TWO-25503: `enable_company_search` OFF relocates company search to
+        // the payment tile — it does not disable it — but it retires the
+        // convenience "Autofill company address" exists for, so autofill is
+        // OFF too. Gating the READ, not just the admin save
+        // (AddressSearchToggle), so a row stored before this coupling
+        // existed — or written by config:set/import — can never disagree
+        // with what the admin form shows (matches the PrestaShop resolver).
+        return $this->isCompanySearchEnabled($storeId)
+            && $this->isSetFlag($this->path('enable_address_search'), $storeId);
     }
 
     /**
@@ -459,7 +596,8 @@ class Repository implements RepositoryInterface
      */
     public function getPaymentTermsDurationDays(?int $storeId = null): int
     {
-        return (int)$this->getConfig($this->path('payment_terms_duration_days'), $storeId);
+        // StoredTerm, not a cast: a cast reads '1e2' as 100 where the admin reads it as no term (ABN-522).
+        return StoredTerm::days($this->getConfig($this->path('payment_terms_duration_days'), $storeId)) ?? 0;
     }
 
     /**
@@ -479,32 +617,71 @@ class Repository implements RepositoryInterface
      */
     public function getAllBuyerTerms(?int $storeId = null): array
     {
+        // EOM: offered days are not filtered to the API-eligible set. TWO-25656.
         $terms = $this->getPaymentTerms($storeId);
         $custom = $this->getPaymentTermsDurationDays($storeId);
         if ($custom > 0) {
             $terms[] = $custom;
         }
-        $terms = array_unique($terms);
+        $terms = array_values(array_unique($terms));
         sort($terms);
-        return $terms;
+
+        // config:set bypasses the fields' save-time entitlement check (ABN-493).
+        $offered = array_map('intval', $this->settingsProvider->getAvailableTerms($storeId));
+        // An unresolvable record offers nothing: no term may be offered on trust (ABN-493).
+        if ($offered === []) {
+            if ($terms !== [] && $this->logger !== null) {
+                $this->logger->debug(
+                    'Merchant payment terms could not be resolved - no terms offered to the buyer.'
+                );
+            }
+            return [];
+        }
+
+        $dropped = array_values(array_diff($terms, $offered));
+        if ($dropped !== [] && $this->logger !== null) {
+            $this->logger->debug(sprintf(
+                'Payment terms %s are configured but not offered by the merchant record (offered: %s) - not offered to the buyer.',
+                implode(', ', $dropped),
+                implode(', ', $offered)
+            ));
+        }
+
+        return array_values(array_intersect($terms, $offered));
     }
 
     /**
      * @inheritDoc
      */
-    public function getDefaultPaymentTerm(?int $storeId = null): int
+    public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool
+    {
+        return in_array($termDays, $this->getAllBuyerTerms($storeId), true);
+    }
+
+    public function getDefaultPaymentTerm(?int $storeId = null): ?int
     {
         $terms = $this->getAllBuyerTerms($storeId);
+        // An admin who has explicitly configured a default term owns that
+        // choice — the merchant API must not silently override it. Honour
+        // the configured value whenever it is one of the offered buyer
+        // terms. (There is no config.xml fallback for this path, so a value
+        // here means the admin actually saved one — see etc/config.xml.)
         $default = (int)$this->getConfig($this->path('default_payment_term'), $storeId);
-        // Only honour the configured default if it's actually an available
-        // buyer term. Otherwise fall back to the lowest available term so the
-        // buyer always lands on a real, selectable term — in particular a
-        // single available term is always the default (and thus preselected),
-        // even if a stale default_payment_term points elsewhere (ABN-439).
         if ($default > 0 && in_array($default, $terms, true)) {
             return $default;
         }
-        return $terms ? min($terms) : 30;
+        // No explicit admin choice: the merchant's API default (due_in_days)
+        // when it is an offered term (TWO-24859).
+        $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
+        if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
+            return $apiDefault;
+        }
+        if (in_array(self::PREFERRED_DEFAULT_TERM, $terms, true)) {
+            return self::PREFERRED_DEFAULT_TERM;
+        }
+        // With nothing offered there is no default: an invented one offers a
+        // term the merchant's account cannot honour (ABN-544).
+        return $terms ? min($terms) : null;
     }
 
     /**
@@ -512,7 +689,31 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeType(?int $storeId = null): string
     {
-        return (string)$this->getConfig($this->path('surcharge_type'), $storeId) ?: 'none';
+        $raw = $this->getConfig($this->path('surcharge_type'), $storeId);
+        // '0' is falsy in PHP, so the old `?: 'none'` read a stored '0' as none.
+        $stored = ($raw === null || $raw === '') ? SurchargeTypeSource::NONE : (string)$raw;
+        // The choke point for every runtime read, so `config:set` and imports are guarded too.
+        if (!SurchargeTypeSource::isKnown($stored)) {
+            // The only place this is reported; the catchers downstream stay quiet.
+            $reportKey = $this->path('surcharge_type') . '|' . (string)$storeId . '|' . $stored;
+            if (!isset($this->reportedSurchargeTypes[$reportKey])) {
+                $this->reportedSurchargeTypes[$reportKey] = true;
+                $this->logRepository->addErrorLog('Unrecognised stored surcharge method', [
+                    'path' => $this->path('surcharge_type'),
+                    'store_id' => $storeId,
+                    'value' => $stored,
+                ]);
+            }
+            // Generic, because it reaches the BUYER; placement uses this wording too.
+            throw new LocalizedException(
+                __(
+                    'Invoice purchase with %1 is not available for this order.',
+                    $this->brandRegistry->getProductName()
+                )
+            );
+        }
+
+        return $stored;
     }
 
     /**
@@ -528,20 +729,91 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
-        return (string)$this->getConfig($this->path('surcharge_line_description'), $storeId)
-            ?: 'Payment terms fee - %1 days';
+        $stored = (string)$this->getConfig($this->path('surcharge_line_description'), $storeId);
+        if ($stored !== '' && $stored !== $this->shippedSurchargeLineDescription()) {
+            return $stored;
+        }
+
+        if ($this->getPaymentTermsType($storeId) === PaymentTermsType::END_OF_MONTH) {
+            $eom = (string)$this->getConfig($this->path('surcharge_line_description_eom'), $storeId);
+            if ($eom !== '') {
+                return $eom;
+            }
+        }
+
+        return $this->shippedSurchargeLineDescription();
+    }
+
+    /** Each brand overlay ships its own wording, so a stored value equal to it is not a merchant customisation. */
+    private function shippedSurchargeLineDescription(): string
+    {
+        if ($this->shippedSurchargeLineDescription === null) {
+            $shipped = $this->initialConfig
+                ? ($this->initialConfig->getData('default')['payment'][$this->code()]['surcharge_line_description']
+                    ?? null)
+                : null;
+            $this->shippedSurchargeLineDescription = is_scalar($shipped)
+                ? (string)$shipped
+                : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+        }
+
+        return $this->shippedSurchargeLineDescription;
     }
 
     /**
      * @inheritDoc
      */
-    public function getSurchargeTaxRate(?int $storeId = null): float
+    public function getCustomSurchargeTaxRate(?int $storeId = null): float
     {
+        // DEPRECATED FIELD: initial attempt at tax support, superseded
+        // by the tax-rule-based configurable selector (surcharge_tax_class),
+        // retained only for pre-existing merchants. Stored config key
+        // stays `surcharge_tax_rate` on purpose — renaming the persisted
+        // core_config_data path would be a data migration with zero
+        // benefit; only the code-level name changed.
         $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId);
         if ($configured !== null && $configured !== '') {
             return (float)$configured;
         }
         return $this->getDefaultTaxRate($storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function hasCustomSurchargeTaxRate(?int $storeId = null, ?string $scope = null): bool
+    {
+        // Existence, not truthiness: a merchant-configured rate of 0 or
+        // "0.00" is still a real value and must keep the deprecated
+        // "Custom" treatment available (falsy-zero bug guard). '' is
+        // excluded because etc/config.xml declares an empty
+        // <surcharge_tax_rate/> initial node, so scopeConfig yields ''
+        // (not null) even when no merchant ever touched the field.
+        $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId, $scope);
+        return $configured !== null && $configured !== '';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeTaxClassId(?int $storeId = null): ?int
+    {
+        $configured = $this->getConfig($this->path('surcharge_tax_class'), $storeId);
+        // Unselected ('' / unset) or the deprecated "custom" flat-rate
+        // treatment means the flat-rate path — upgrading merchants who
+        // never re-save the config keep their existing behaviour, and
+        // "custom" is the explicit spelling of that same choice. The
+        // non-numeric guard is deliberate: any unknown token must never
+        // int-cast to 0, because class id 0 is a real selection ("None"
+        // = never taxed).
+        if ($configured === null
+            || $configured === ''
+            || $configured === SurchargeTaxClassSource::CUSTOM
+            || !is_numeric($configured)
+        ) {
+            return null;
+        }
+        return (int)$configured;
     }
 
     /**
@@ -567,12 +839,51 @@ class Repository implements RepositoryInterface
     public function getSurchargeConfig(int $days, ?int $storeId = null): array
     {
         $prefix = sprintf('payment/%s/surcharge_%d_', $this->code(), $days);
-        $limitValue = $this->getConfig($prefix . 'limit', $storeId);
         return [
             'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),
             'fixed' => (float)$this->getConfig($prefix . 'fixed', $storeId),
-            'limit' => $limitValue !== null ? (float)$limitValue : null,
+            'limit' => $this->configuredLimit($this->getConfig($prefix . 'limit', $storeId)),
         ];
+    }
+
+    /**
+     * The surcharge limit stored for one grid row, or null when there is none.
+     *
+     * Only EMPTINESS means "no limit" as far as the admin is concerned, and a
+     * limit of exactly 0 is a real instruction that is relayed verbatim: a cap
+     * of zero clamps the buyer fee to zero, which is a different instruction
+     * from an ABSENT cap (absence is what means uncapped). So this boundary
+     * must not normalise a zero away.
+     *
+     * Everything that is not a usable number does resolve to absent. The admin
+     * grid refuses junk on save (TWO-25289), but the stored row can still be
+     * written by a hand edit, `bin/magento config:set` or a config import, and
+     * those are exactly the routes that justify relaying a stored zero — so
+     * they have to be handled here rather than assumed away. A bare `(float)`
+     * cast turned `abc` into a hard cap of 0 and suppressed the fee, and let a
+     * negative through as `cap => -10.0`, which is refused upstream and
+     * surfaces to the buyer as a generic failure. `1e400` casts to INF and
+     * would fail the pricing request at serialisation time instead. A
+     * non-scalar (an array, from the same hand-edit routes) is a warning when
+     * cast to string.
+     *
+     * @param mixed $stored
+     */
+    private function configuredLimit($stored): ?float
+    {
+        if ($stored === null || !is_scalar($stored)) {
+            return null;
+        }
+        $raw = trim((string)$stored);
+        if ($raw === '' || !is_numeric($raw)) {
+            return null;
+        }
+        $limit = (float)$raw;
+        if (!is_finite($limit) || $limit < 0) {
+            return null;
+        }
+
+        return $limit;
     }
 
     /**
@@ -597,5 +908,126 @@ class Repository implements RepositoryInterface
     public function getSurchargeRoundingStep(?int $storeId = null): float
     {
         return (float)$this->getConfig($this->path('surcharge_rounding_step'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getVendorSiteName(?int $storeId = null): string
+    {
+        return (string)$this->getConfig($this->path('vendor_site_name'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isAboutLinkEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('show_about_link'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isDisplayTooltipsEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('display_tooltips'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isClearSettingsOnUninstallEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('clear_settings_on_uninstall'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSubtitle(?int $storeId = null): string
+    {
+        return (string)$this->getConfig($this->path('subtitle'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isSslVerificationDisabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('disable_ssl_verify'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getCustomHeaders(?int $storeId = null): array
+    {
+        return $this->customHeaders($storeId, false);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getBrowserCustomHeaders(?int $storeId = null): array
+    {
+        return $this->customHeaders($storeId, true);
+    }
+
+    /**
+     * The admin table refuses an unsendable row at entry, but a stored value
+     * can still arrive from `config:set` or an import, so the same rules are
+     * re-applied here rather than trusted.
+     *
+     * @return array<string, string>
+     */
+    private function customHeaders(?int $storeId, bool $browserOnly): array
+    {
+        $stored = (string)$this->getConfig($this->path('custom_headers'), $storeId);
+
+        $headers = [];
+        $seen = [];
+        foreach (CustomHeadersBackend::decode($stored) as $rawRow) {
+            $row = CustomHeadersBackend::normaliseRow($rawRow);
+            if (!CustomHeadersBackend::isUsableName($row['name'])
+                || !CustomHeadersBackend::isSendableValue($row['value'])
+            ) {
+                continue;
+            }
+            if ($browserOnly && $row['send_from_browser'] === '') {
+                continue;
+            }
+
+            // Field names are case-insensitive, so two rows differing only in
+            // case are one header; the first is kept.
+            $key = strtolower($row['name']);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $headers[$row['name']] = $row['value'];
+        }
+
+        return $headers;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getTrustedProxies(?int $storeId = null): array
+    {
+        $configured = (string)$this->getConfig($this->path('trusted_proxies'), $storeId);
+        $entries = preg_split('/[\s,;]+/', $configured) ?: [];
+
+        return array_values(array_unique(array_filter($entries, static fn($entry) => $entry !== '')));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isRateLimitDisabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('disable_rate_limit'), $storeId);
     }
 }

@@ -12,7 +12,7 @@ namespace Two\Gateway\Api;
  * Registry of brand-overlay packages that have declared themselves
  * present in this Magento install.
  *
- * Overlay packages (e.g. ABN_Gateway) register their payment method
+ * Overlay packages (e.g. Overlay_Gateway) register their payment method
  * code with the registry via DI, telling Two_Gateway "an alternative
  * brand-bound payment method is installed alongside me". Two_Gateway
  * uses this to drive UX decisions like hiding the parent-brand
@@ -24,7 +24,7 @@ namespace Two\Gateway\Api;
  *     install. Admin shows `two_payment` as normal.
  *   - Non-empty registry = at least one overlay installed. Admin
  *     hides `two_payment` by default; merchant opts in to re-show
- *     via `payment/two_payment/hide_when_overlay_installed = 0`.
+ *     via `two_brand_synthesis/hide_payment_section/enabled = 0`.
  */
 interface BrandOverlayRegistryInterface
 {

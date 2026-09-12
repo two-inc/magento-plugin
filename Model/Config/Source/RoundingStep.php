@@ -11,7 +11,7 @@ use Magento\Framework\Data\OptionSourceInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 
 /**
- * Admin "Rounding Step" dropdown options. The selectable steps are
+ * Admin "Rounding step" dropdown options. The selectable steps are
  * brand-driven: each brand declares its set in brand.xml
  * (<surcharge_rounding_steps>), so a brand can offer a narrower set
  * (e.g. 0.50 / 1.00) than the parent default. Values are emitted in a

@@ -21,6 +21,11 @@ use Two\Gateway\Service\Payment\OrderService;
 
 /**
  * Payment confirm controller
+ *
+ * This controller identifies the callback solely by the
+ * `_two_order_reference` param (see OrderService::getOrderByReference()),
+ * which is always checked — there is no separate session/token layer on
+ * top of it to skip.
  */
 class Confirm extends Action
 {

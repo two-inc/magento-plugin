@@ -12,9 +12,10 @@ use Magento\Backend\Block\Template\Context;
 use Magento\Framework\DataObject;
 use Magento\Framework\Locale\FormatInterface;
 use Magento\Framework\Registry;
+use Two\Gateway\Api\BrandRegistryInterface;
 
 /**
- * Renders the "Refund Two Surcharge" override input on the new-creditmemo
+ * Renders the "Refund [Brand] surcharge" override input on the new-creditmemo
  * form. Pre-fills with the proportional default the collector would compute,
  * so the merchant only has to type when overriding.
  */
@@ -30,15 +31,34 @@ class SurchargeOverride extends Template
      */
     private $localeFormat;
 
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
     public function __construct(
         Context $context,
         Registry $registry,
         FormatInterface $localeFormat,
+        BrandRegistryInterface $brandRegistry,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->registry = $registry;
         $this->localeFormat = $localeFormat;
+        $this->brandRegistry = $brandRegistry;
+    }
+
+    /**
+     * Wrapped behind a method (rather than reading $this->brandRegistry
+     * directly from getLabel()) so unit tests that construct this block via
+     * an anonymous subclass with a no-op constructor — the existing pattern
+     * in SurchargeOverrideTest, which never sets $brandRegistry — can
+     * override just this accessor instead of standing up a full Context.
+     */
+    protected function getBrandRegistry(): BrandRegistryInterface
+    {
+        return $this->brandRegistry;
     }
 
     /**
@@ -104,7 +124,7 @@ class SurchargeOverride extends Template
     /**
      * Default value for the input. Prefers whatever collectTotals just
      * produced on the creditmemo (which honours any merchant override
-     * stamped via the Plugin\Model\Sales\CreditmemoSurchargeOverride
+     * stamped via the Plugin\Model\Sales\CreditmemoFeeOverride
      * beforeCollectTotals plugin), falling back to the proportional
      * default when the field has not been collected yet.
      */
@@ -153,7 +173,7 @@ class SurchargeOverride extends Template
         if ($description !== '') {
             return (string)__('Refund %1', $description);
         }
-        return (string)__('Refund Two Surcharge');
+        return (string)__('Refund %1 surcharge', $this->getBrandRegistry()->getProductName());
     }
 
     public function formatPrice($value): string
@@ -181,7 +201,7 @@ class SurchargeOverride extends Template
      * Decimal separator for the current admin locale (',' for nl_NL, '.' for
      * en_*). No grouping separator is emitted by the caller — refund
      * surcharges are small by construction and the override parser
-     * (Plugin\Model\Sales\CreditmemoSurchargeOverride) intentionally rejects
+     * (Plugin\Model\Sales\CreditmemoFeeOverride) intentionally rejects
      * thousands separators.
      */
     protected function localeDecimalSymbol(): string

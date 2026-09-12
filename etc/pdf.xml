@@ -33,5 +33,13 @@
             <display_zero>false</display_zero>
             <sort_order>280</sort_order>
         </total>
+        <total name="two_other_charges">
+            <title translate="true">Other charges</title>
+            <source_field>two_other_charges_amount</source_field>
+            <model>Two\Gateway\Model\Pdf\Total\OtherCharges</model>
+            <font_size>7</font_size>
+            <display_zero>false</display_zero>
+            <sort_order>285</sort_order>
+        </total>
     </totals>
 </config>

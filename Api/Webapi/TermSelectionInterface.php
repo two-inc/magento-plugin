@@ -23,7 +23,7 @@ interface TermSelectionInterface
      * endpoints).
      *
      * $termDays is validated against the merchant's configured terms
-     * (ConfigRepository::getAllBuyerTerms) before any state mutation —
+     * (ConfigRepository::isBuyerTermAvailable) before any state mutation —
      * an unconfigured term would otherwise persist to the session via
      * setTwoSelectedTerm and flow through to ComposeOrder at checkout
      * completion, causing the Two API to receive a term the merchant

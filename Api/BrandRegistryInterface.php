@@ -42,33 +42,69 @@ interface BrandRegistryInterface
     public function getCheckoutUrlTemplate(): string;
 
     /**
-     * Buyer-selectable payment terms (in days) supported by this
-     * brand's commercial agreement.
-     *
-     * @return int[]
-     */
-    public function getAvailablePaymentTerms(): array;
-
-    /**
-     * Maximum allowed value of a fixed-amount surcharge configured
-     * by the merchant, expressed in a specific currency. Returning
-     * null means there is no upper bound — any positive value is
-     * acceptable. Calling code must interpret null as "no max" and
-     * skip the upper-bound check.
-     *
-     * @return array{amount: float, currency: string}|null
-     */
-    public function getSurchargeFixedMax(): ?array;
-
-    /**
      * Buyer-surcharge rounding steps (in major currency units) offered
-     * in the admin "Rounding Step" dropdown, ascending. Brand overlays
+     * in the admin "Rounding step" dropdown, ascending. Brand overlays
      * narrow the set via brand.xml <surcharge_rounding_steps>; the
      * default binding returns the parent default set. Never empty.
      *
      * @return float[]
      */
     public function getSurchargeRoundingSteps(): array;
+
+    /**
+     * Whether the buyer-facing "order intent approved" reassurance
+     * notice is rendered at all. Sourced from brand.xml
+     * <intent_approved_notice_enabled>; absent means the documented
+     * default `true`, so a brand overlay that declares nothing keeps the
+     * notice ON.
+     *
+     * `false` suppresses the notice entirely — no DOM element is emitted
+     * at all, not an empty wrapper.
+     */
+    public function isIntentApprovedNoticeEnabled(): bool;
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent
+     * approved" reassurance notice rendered inline in the checkout
+     * payment tile. Sourced from brand.xml <intent_approved_notice>.
+     * Wording only — it is NOT an off switch; see
+     * isIntentApprovedNoticeEnabled() for that.
+     *
+     *  - `null`  — no override (element absent or visually blank):
+     *              platform default translated copy. Never ''.
+     *  - non-''  — used verbatim as the company-known copy template
+     *              (%1 = brand product name, %2 = buyer company name,
+     *              %3 = buyer organisation number).
+     */
+    public function getIntentApprovedNotice(): ?string;
+
+    /**
+     * Whether the brand's OWN wording is used for the "order intent NOT
+     * approved" notice. `false` falls back to platform wording; it does not
+     * silence the notice, because the sentence explains a disabled Place
+     * Order button and the buyer is always told why (ABN-563).
+     *
+     * A declared brand.xml <intent_declined_notice_enabled> decides.
+     * Absent that, it is `true` when either a non-blank
+     * <intent_declined_notice> or isIntentApprovedNoticeEnabled() says so.
+     *
+     * So it is independent of the approved switch only once the declined
+     * switch is declared or declined copy is non-blank.
+     */
+    public function isIntentDeclinedNoticeEnabled(): bool;
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent NOT
+     * approved" notice, from brand.xml <intent_declined_notice>. Used only
+     * while isIntentDeclinedNoticeEnabled() holds.
+     *
+     *  - `null`  — no override (element absent or visually blank):
+     *              platform default translated copy. Never ''.
+     *  - non-''  — used verbatim as the company-known copy template
+     *              (%1 = brand product name, %2 = buyer company name,
+     *              %3 = buyer organisation number).
+     */
+    public function getIntentDeclinedNotice(): ?string;
 
     /**
      * Short brand tag used to decorate non-production checkout URLs
@@ -87,6 +123,12 @@ interface BrandRegistryInterface
      * so an unmapped key can never leak into the storefront.
      */
     public function getCheckoutSubtitle(): string;
+
+    /** Checkout "What is <product>?" link target from brand.xml <about_url>; '' renders no link (ABN-496). */
+    public function getAboutUrl(): string;
+
+    /** Fills the %1/%2 link args of <checkout_subtitle>; '' renders no tagline (ABN-496). */
+    public function getCheckoutSubtitleFaqUrl(): string;
 
     /**
      * Merchant sign-up URL shown on the admin config header block.

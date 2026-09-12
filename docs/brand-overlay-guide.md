@@ -14,15 +14,15 @@ brand for the install. Brand-aware code reads identity values through
 `Two\Gateway\Api\BrandRegistryInterface`, whose default DI binding
 (`Two\Gateway\Brand\DescriptorBackedBrandRegistry`) delegates to the
 resolved descriptor. An overlay therefore changes behaviour by
-*declaring data*, not by overriding classes.
+_declaring data_, not by overriding classes.
 
 ## The single-overlay invariant
 
 `ActiveBrandResolver` enforces **max one overlay brand atop Two**:
 
-- Two alone → Two is active.
-- Two + one overlay → the overlay is active.
-- Three or more brands → `DomainException` at first `resolve()`.
+-   Two alone → Two is active.
+-   Two + one overlay → the overlay is active.
+-   Three or more brands → `DomainException` at first `resolve()`.
 
 The resolver caches the active descriptor in-process. There is no
 per-store-view brand switching; one install, one brand.
@@ -101,37 +101,185 @@ across modules). Elements may appear in any order (`xs:all`).
 
 **`<brand>` attributes**
 
-| Attribute | Required | Controls |
-|---|---|---|
-| `code` | yes | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs. |
-| `tab_sort_order` | yes | Admin Configuration tab ordering. |
-| `section_prefix` | no | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_payment`, …) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
+| Attribute        | Required | Controls                                                                                                                                                                |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code`           | yes      | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs.                       |
+| `tab_sort_order` | yes      | Admin Configuration tab ordering.                                                                                                                                       |
+| `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_checkout_fields`, `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version`, per TWO-25386; company lookup is a group inside `{prefix}_checkout_fields`) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
 
 **Elements**
 
-| Element | Required | Type | Controls |
-|---|---|---|---|
-| `provider` | yes | string | Short provider name (admin/UI copy). |
-| `provider_full_name` | no | string | Legal entity name. |
-| `product_name` | yes | string | Customer-facing product name (checkout, emails, admin). |
-| `tab_label` | yes | string | Admin Configuration tab label. |
-| `tab_css_class` | no | string | CSS class on the admin tab. |
-| `checkout_subtitle` | no | string | Subtitle under the method title at checkout. |
-| `checkout_url_template` | yes | string | Hosted-checkout URL template (`https://%s.…`). |
-| `brand_tag` | no | string | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.** |
-| `sign_up_url` | no | string | Merchant signup link in admin. |
-| `documentation_url` | no | string | Docs link in admin. |
-| `api_base_url` | yes | string | Two API base for this brand. |
-| `available_payment_terms` | yes | `<term>` list | Day counts offered (positive integers). |
-| `surcharge_fixed_max` | no | `amount` + `currency` attrs | Cap on the fixed surcharge component. |
-| `csp_origins` | no | `<origin>` list | Extra CSP origins. |
-| `admin_resource` | yes | string | ACL resource gating the admin section. |
-| `module_label_chain` | no | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip. |
-| `allowed_currencies` | no | `<currency>` list | Currency allow-list. |
-| `allowed_countries` | no | `<country>` list | Country allow-list. |
-| `extra_http_headers` | no | `<header name="…">` list | Extra headers on API calls. |
-| `suppressed_fields` | no | `<field path="…">` list | Hides admin controls for this brand (below). |
-| `inline_term_fees` | no | boolean | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true). |
+| Element                          | Required | Type                      | Controls                                                                                                                                                        |
+| -------------------------------- | -------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`                       | yes      | string                    | Short provider name (admin/UI copy).                                                                                                                            |
+| `provider_full_name`             | no       | string                    | Legal entity name.                                                                                                                                              |
+| `product_name`                   | yes      | string                    | Customer-facing product name (checkout, emails, admin).                                                                                                         |
+| `tab_label`                      | yes      | string                    | Admin Configuration tab label.                                                                                                                                  |
+| `tab_css_class`                  | no       | string                    | CSS class on the admin tab.                                                                                                                                     |
+| `checkout_subtitle`              | no       | string                    | i18n source key for the tagline under the method title at checkout. Absent or empty renders no tagline.                                                         |
+| `checkout_url_template`          | yes      | string                    | Hosted-checkout URL template (`https://%s.…`).                                                                                                                  |
+| `brand_tag`                      | no       | string                    | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**                                                                                 |
+| `sign_up_url`                    | no       | string                    | Merchant signup link in admin.                                                                                                                                  |
+| `documentation_url`              | no       | string                    | Docs link in admin.                                                                                                                                             |
+| `about_url`                      | no       | string                    | Target of the checkout "What is <product>?" explainer link. Absent or empty renders no link.                                                                    |
+| `checkout_subtitle_faq_url`      | no       | string                    | Supplies the `%1`/`%2` link arguments of `checkout_subtitle`. Absent or empty renders no tagline, so a tagline key that wants a link needs both.                |
+| `api_base_url`                   | yes      | string                    | Two API base for this brand.                                                                                                                                    |
+| `surcharge_rounding_steps`       | no       | `<step>` list             | Narrows the admin "Rounding step" dropdown (major units, each `> 0`). Absent or empty inherits the parent default set. Values are deduped and sorted ascending. |
+| `csp_origins`                    | no       | `<origin>` list           | Extra CSP origins.                                                                                                                                              |
+| `admin_resource`                 | yes      | string                    | ACL resource gating the admin section.                                                                                                                          |
+| `module_label_chain`             | no       | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip.                                                                                               |
+| `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                     |
+| `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                    |
+| `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
+| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent approved" notice. Default `true`. **See below.**                                                                            |
+| `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                     |
+| `intent_declined_notice_enabled` | no       | `true` \| `false`         | Whether the brand's own wording is used for the "order intent declined" notice; it cannot silence it. Undeclared, it inherits the approved switch. **See below.** |
+| `intent_declined_notice`         | no       | string                    | Copy override for the declined notice. Never an off switch, but non-blank copy turns an undeclared declined switch ON. **See below.**                            |
+
+### The intent notices — a switch and a wording override per outcome
+
+The notices are buyer-facing "order intent approved" / "order intent not
+approved" lines rendered inline in the checkout payment tile — as of
+TWO-25326, this is the ONLY place the buyer's captured company NAME is
+displayed in the tile; the earlier standalone `.two-company-label`
+element is gone, not relocated. The company NUMBER renders separately,
+independent of these notices, in the `.two-company-id-text` label each
+capture panel paints under its own company field. Each outcome has its
+**own** on/off switch and its **own** wording override, and the four
+elements are four independent decisions: a brand may reword the declined
+notice, suppress it, or leave it on the platform default, whatever it did
+with the approved one.
+
+The switches govern the buyer-facing COPY only. A not-approved order intent
+also blocks placement — the renderer records the verdict against the
+captured organisation number and `placeOrder()` refuses on it, so a brand
+with the notices off still cannot submit an order Two has declined
+(TWO-25657). The buyer then gets `generalErrorMessage` instead of the
+declined sentence.
+
+**Do not overload a switch with wording meaning** — an off switch
+expressed as the absence of content is indistinguishable from an
+unfinished string, and any tidy-up that deletes the "empty, unused"
+declaration silently turns the notice back on.
+
+#### `intent_approved_notice_enabled` / `intent_declined_notice_enabled` — the switches
+
+Explicit boolean only, each governing its own outcome. **They are not
+symmetrical.** The approved switch is an on/off switch. The declined one
+chooses between the brand's wording and the platform's, because that
+sentence is the buyer's only account of why the Place Order button is
+disabled, and a switchable explanation for a blocked control is the defect
+ABN-563 reports.
+
+| brand.xml                                          | Behaviour                                                                                                                    |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `<…_notice_enabled>true</…_notice_enabled>`        | That notice **ON**.                                                                                                          |
+| `<…_notice_enabled>false</…_notice_enabled>`       | Approved: **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. Declined: the brand's own copy is not used and **platform wording renders instead**. The other outcome is unaffected once its own switch is declared or its own copy is non-blank. |
+| element absent                                     | Approved: documented explicit default **`true`**. Declined: see the precedence below.                                        |
+| anything else (`1`, `0`, `yes`, empty, whitespace) | **Error.** Never a silent third behaviour.                                                                                   |
+
+An overlay that wants no approved notice and no branded decline wording
+declares both switches `false`. A declined buyer is still told why.
+
+The declined switch is newer than the approved one, so it resolves with
+an inheritance. A declared `intent_declined_notice_enabled` decides.
+Absent that, the brand's own wording is used when **either**
+`intent_declined_notice` is non-blank — shipped wording is intent to use
+it — **or** `intent_approved_notice_enabled` resolved to `true`. An overlay
+declaring only the approved switch therefore keeps withholding both, which
+is what it meant before the declined elements existed. A visually-blank
+`intent_declined_notice` is inert here as everywhere: it
+neither renders nor turns the switch on, and non-breaking and zero-width
+spaces both count as blank.
+
+Absent-means-`true` is deliberate for `intent_approved_notice_enabled`
+(and so, through the inheritance above, for an overlay declaring neither
+switch): it keeps a third-party overlay that declares nothing on ON. Base
+plugins declare both switches `true` explicitly anyway, so the file states
+its position rather than relying on omission.
+
+The invalid case is caught twice, because `brand.xsd` is not validated at
+runtime (see the validation warning below):
+
+-   `brand.xsd` restricts the element to the enumeration `true|false`, so
+    developer-mode config validation fails loudly; and
+-   `Model\Brand\Loader` throws a `\DomainException` naming the offending
+    `brand.xml` path, the element and the bad value — the same treatment
+    `<surcharge_rounding_steps>` gets in the same method.
+
+Note `xs:boolean` is deliberately **not** used: it would also accept `1`
+and `0`, and this switch is meant to read as a decision.
+
+#### `intent_approved_notice` / `intent_declined_notice` — the copy overrides
+
+| brand.xml                          | Behaviour                                                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| element absent                     | Platform default translated copy.                                                                                                            |
+| visually blank (empty, whitespace, non-breaking or zero-width space) | **Inert** — same as absent. It does **not** mean "off".                                                                    |
+| `<…_notice>…</…_notice>`           | Used verbatim as that outcome's company-known variant. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number. |
+
+`Descriptor::getIntentApprovedNotice()` and `getIntentDeclinedNotice()`
+return `null` for the first two rows and the template for the third; they
+never return `''`.
+
+**Every white-label brand overlay is expected to declare
+`intent_approved_notice`** with brand-specific copy — falling through to
+the platform default here for a live overlay is a bug, not a valid "no
+opinion" state. `intent_declined_notice` carries no such expectation:
+rewording the declined outcome is a choice an overlay makes or declines to
+make, and the platform default is a valid resting state.
+
+#### Deploy order
+
+**Merge order is `magento-plugin` (parent, owns the parsing) → the brand
+overlay repo → `magento-hyva-extension`.** Out of order there is a window
+in which Hyvä renders the approved notice for a brand that asked for it off.
+
+The declined switch's fallback to the approved one means an existing
+overlay needs no change to land alongside a parent that parses the
+declined pair: an overlay declaring only the approved switch behaves
+byte-identically before and after.
+
+Hyvä honours the declined pair only from its own parity change,
+`magento-hyva-extension` PR #141. Until that lands, Hyvä renders the
+declined notice regardless of what an overlay declares.
+
+An overlay that declares an empty `<intent_approved_notice>` and no
+`<intent_approved_notice_enabled>` resolves to notice **ON** — wrong for a
+brand that wants it off, but not broken. Empty deliberately stays inert
+rather than being a hard error: that would turn a wrong notice into a
+broken store. Declare the boolean.
+
+Hyvä guards the reverse skew with `method_exists()` against a parent that
+lacks the registry method — a missing method means "no brand opinion",
+i.e. notice ON.
+
+The company-unknown copy variant always stays on the platform default.
+In practice it is unreachable: an order intent is only ever placed once
+the buyer's company name **and** company number are known.
+
+A company number is not always DISPLAYABLE, though, even when it is
+known. A value beginning with the literal prefix `TWO:` is an internal
+reference rather than a registry number and is never shown to the buyer
+on any surface. In the notice sentence the renderer then removes the
+company-number token **together with the brackets around it**, so the
+copy reads `… by Acme Ltd …`, never `… by Acme Ltd () …`. An override
+that places `%3` outside brackets is handled the same way. If you are
+writing override copy, do not assume the number will be present.
+
+**Keep `%3` inside round or square brackets in override copy.** The
+renderer removes the token together with a bracket pair around it; it
+does not know about other separators, so copy shaped `%2 – %3` or
+`%2, %3` leaves the dangling separator behind when the number is
+withheld.
+
+This plugin's storefront renderer (Luma/Amasty/Fire, one shared code
+path) emits each notice as a persistent inline element with class
+`two-order-intent-message approved` / `two-order-intent-message declined`
+inside the payment-method tile.
+
+Both `_enabled` switches are XSD enumerations here, so an invalid value
+throws rather than falling back to a default.
 
 ### A warning about validation
 
@@ -145,7 +293,9 @@ passive). Two consequences:
    parse it produces a silently-absent feature, not a deploy failure.
    Always verify the feature's observable behaviour after deploy.
 2. Where silent mis-parsing would be dangerous, `Loader` carries its own
-   guards (duplicate/empty `code`) that throw `DomainException` at load.
+   guards (duplicate/empty `code`, `<surcharge_rounding_steps>`,
+   `<intent_approved_notice_enabled>`, `<intent_declined_notice_enabled>`)
+   that throw `DomainException` at load.
    Follow that pattern when you add fields whose zero-value would
    silently disable a constraint.
 
@@ -157,39 +307,79 @@ passive). Two consequences:
 </suppressed_fields>
 ```
 
+A brand's admin surface comes ENTIRELY from
+`etc/adminhtml/brand_form_template.xml`:
+`Plugin\Config\Structure\HidePaymentSection` hides the static Two sections
+once an overlay is installed, and the deep merge with `system.xml` only
+overrides fields the template already declares. So a field — or a field's
+`source_model`, `backend_model` or `frontend_model` — added to `system.xml`
+alone is wired on no brand at all, and a missing `backend_model` means a
+save-time guard that silently does not exist for every partner while it
+still passes on Two. Declare both, in both files;
+`BrandFormModelWiringParityTest` and `DiagnosticsSectionParityTest` are the
+guards.
+
 `path` is `section_suffix/group/field` against the synthesised section
 (`{section_prefix}_payment` → `payment_terms` group here).
 `SynthesiseBrandAdminForm` sets `showInDefault/Website/Store="0"` on
 the matching field during section injection: the control stays declared
-in the canonical template but doesn't render for this brand. Use this
+in the canonical template but doesn't render for this brand.
+
+**A suppressed field is not POSTED**, so any save-time guard that reads
+its submitted value silently stops enforcing for this brand — and a
+guard that refused the save on the strength of that read would brick the
+whole section, since the merchant has no control to fix. Suppressing a
+field whose invariant is enforced elsewhere is a decision to drop the
+invariant for this brand, not just to hide a control. Use this
 instead of shipping a `<section>` stub in the overlay's system.xml —
 a static stub inserts itself into the merged Structure first and
 short-circuits the synthesised section ordering.
 
+**TWO-25386 moved some fields to a different section suffix.** `title`,
+`subtitle`, `sort_order`, `sallowspecific`/`specificcountry`,
+`merchant_minimum_order(_basis)` and `enable_order_intent` now live
+under `{section_prefix}_checkout_fields` (groups `display`/
+`availability`) instead of `{section_prefix}_payment`;
+`fulfill_trigger`, `fulfill_order_status` and `enable_tax_subtotals`
+now live under `{section_prefix}_order_management` (group
+`order_management`) instead of `{section_prefix}_payment`/`advanced`.
+Any `suppressed_fields` entry targeting one of those fields by its old
+`payment/advanced/…` or `payment/payment_method/…` path needs its
+`section_suffix` segment updated to match, or the suppression silently
+stops matching and the field reappears for that brand.
+
+`trusted_proxies` lives under `{section_prefix}_version` (group
+`admin_controls`) instead of `{section_prefix}_general` (group `general`).
+An overlay's `suppressed_fields` entry for it needs its path updated from
+`general/general/…` to `version/admin_controls/…`.
+
+**Two fields were retired.** `firewall_token` (under `general/general`)
+and `firewall_token_browser` (under `version/admin_controls`) are replaced
+by `custom_headers`, a header table under `version/admin_controls`. A
+`suppressed_fields` entry naming either retired field matches nothing and
+should suppress `version/admin_controls/custom_headers` instead.
+
 ## Worked example: adding a brand-driven field
 
-`surcharge_fixed_max` is the recipe for extending
+`surcharge_rounding_steps` is the reference implementation for extending
 `BrandRegistryInterface` with a new brand-driven value. Six touch
 points, in dependency order:
 
 1. **Schema** — `etc/brand.xsd`: add the element to `brandType`
    (optional, `minOccurs="0"`, so existing brand.xml files stay valid)
-   plus its complexType (attribute-pair idiom:
-   `<surcharge_fixed_max amount="25.0" currency="EUR"/>`).
+   plus its type. Constrain what you can there
+   (`surchargeRoundingStepsType` → `positiveDecimalType`), and document
+   the accepted values in an XSD comment.
 
 2. **Loader** — `Model/Brand/Loader.php` `buildDescriptor()`: parse the
    element, **normalise and validate** — because nothing validates the
-   xsd at runtime, a typo'd amount would otherwise coerce to `0.0` and
-   silently disable whatever the value drives. Throw `DomainException`
-   on malformed input. Pass the value as a constructor argument to
-   `Descriptor`.
+   xsd at runtime, a typo'd value would otherwise coerce to `0.0` and
+   silently disable whatever it drives. Throw `DomainException` naming
+   the brand.xml path, the element and the bad value. Pass the result as
+   a constructor argument to `Descriptor`.
 
 3. **Value object** — `Model/Brand/Descriptor.php`: append a readonly
-   constructor property + getter. Mirror the same getter on the legacy
-   `Model/Brand.php` value object — both implement
-   `BrandRegistryInterface` and must stay in lockstep until the legacy
-   interface is deleted (see the deprecation note in
-   `Brand/DescriptorBackedBrandRegistry.php`).
+   constructor property + getter.
 
 4. **Interface + adapter** — `Api/BrandRegistryInterface.php`: declare
    the getter with the full return-shape docblock (null = feature
@@ -209,14 +399,27 @@ warning above), so verify the feature's observable behaviour after
 deploy.
 
 **brand.xml or the API?** Reserve brand.xml for values that are
-intrinsically brand-static (URLs, labels, payment terms, CSP origins).
-A value the platform owns and may change per merchant — the minimum
-order value is the canonical case — belongs in the Two API instead:
-the gate reads `GET /v1/merchant`'s `min_order_amount/currency/basis`
-via `Service/Order/MinimumOrderProvider` (TWO-24775), so the storefront
-and checkout-api can never disagree on the threshold. The brand.xml
-`<minimum_order>` element that originally shipped with TWO-24743 was
-removed in favour of that lookup.
+intrinsically brand-static: URLs, labels, CSP origins, admin-form shape.
+
+Anything the platform owns and may change per merchant comes from
+`GET /v1/merchant`, never brand.xml, so the storefront and the API
+can never disagree:
+
+-   minimum order value — `min_order_amount/currency/basis`, read via
+    `Service/Order/MinimumOrderProvider` and enforced by
+    `Service/Order/MinimumOrderGate`;
+-   offerable payment terms — `available_terms`, read via
+    `Service/Merchant/SettingsProvider`;
+-   buyer-surcharge cap — `surcharge_limit`, same provider;
+-   buyer-country allowlist — `supported_buyer_countries`, read via
+    `Service/Merchant/SupportedCountriesProvider` and applied by
+    `Model\Two::canUseForCountry()` alongside core's own
+    `sallowspecific`/`specificcountry` restriction, then again at
+    placement (`Model\Two::authorize()`) and on the order-intent route.
+    Both gates must concede. A record with no allowlist field restricts
+    nothing; a field that is present but empty, null or malformed allows
+    no country at all, as does a restricted merchant whose buyer country
+    cannot be resolved.
 
 ## Local development
 

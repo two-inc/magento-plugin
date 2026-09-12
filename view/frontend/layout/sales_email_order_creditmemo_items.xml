@@ -10,6 +10,7 @@
     <body>
         <referenceBlock name="creditmemo_totals">
             <block class="Two\Gateway\Block\Sales\Total\Surcharge" name="creditmemo_totals.two_surcharge"/>
+            <block class="Two\Gateway\Block\Sales\Total\OtherCharges" name="creditmemo_totals.two_other_charges"/>
         </referenceBlock>
     </body>
 </page>

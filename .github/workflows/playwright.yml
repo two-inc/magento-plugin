@@ -1,6 +1,6 @@
 name: playwright
 
-# Runs the Playwright suite that drives the plugin on a staging store and captures
+# Runs the Playwright suite that drives the plugin on the dev store and captures
 # the docs screenshots (admin config tabs + storefront checkout journey). The
 # checkout journey runs with no credentials; the admin-gated specs (admin config,
 # minimum-order gate) need a Magento admin password (ADMIN_PASS) and skip cleanly
@@ -16,21 +16,22 @@ on:
       store_url:
         description: "Storefront base URL"
         required: false
-        default: "https://magento.staging.two.inc"
+        default: "https://magento-dev.staging.two.inc"
       grep:
         description: "Only run tests whose title matches (blank = all)"
         required: false
         default: ""
-  # Only trigger on changes to the suite itself. The tests run against the
-  # *deployed* staging store, so a PR's plugin changes aren't live yet at PR time
-  # and can't be meaningfully exercised here; scoping to e2e/** validates test
-  # changes against the current deployment without gating undeployed plugin code.
+  # Only trigger on changes to the suite itself. The tests run against the dev
+  # store, which git-syncs `staging` — so a PR's own plugin changes aren't live
+  # yet at PR time and can't be meaningfully exercised here; scoping to e2e/**
+  # validates test changes against deployed `staging` without gating undeployed
+  # plugin code.
   pull_request:
     paths:
       - "e2e/**"
       - ".github/workflows/playwright.yml"
 
-# One global group: the minimum-order spec temporarily rewrites shared staging
+# One global group: the minimum-order spec temporarily rewrites shared dev
 # store config (and restores it), so two runs must never overlap. Queue rather
 # than cancel — cancelling a run mid-test could skip the config restore.
 concurrency:
@@ -45,7 +46,7 @@ jobs:
       run:
         working-directory: e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Dedicated e2e WIF service account (set as repo vars once provisioned).
       # Runs only on trusted events (same-repo PRs / push / dispatch): fork PRs
@@ -61,7 +62,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v3
         if: ${{ vars.E2E_SA != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
       - run: npm ci
@@ -101,7 +102,7 @@ jobs:
           else
             npx playwright test
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: screenshots

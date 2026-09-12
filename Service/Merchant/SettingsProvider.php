@@ -1,0 +1,177 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+namespace Two\Gateway\Service\Merchant;
+
+/**
+ * Merchant commercial settings, sourced from GET /v1/merchant/{id}.
+ *
+ * These values used to live in each brand's etc/brand.xml as
+ * install-time constants. They are per-merchant commercial terms —
+ * they vary between merchants of the same brand — so the merchant API
+ * is their authoritative source, resolved server-side from the
+ * merchant's pricing package / config with any partner or per-merchant
+ * override already applied.
+ *
+ * Each accessor degrades to the same "nothing configured" outcome the
+ * brand default used to express when the record cannot be resolved
+ * (empty term set, no surcharge cap, no default term): an unconfigured
+ * or invalid API key, or an API blip, must not harden into a wrong
+ * commercial constraint.
+ */
+class SettingsProvider
+{
+    /**
+     * @var RecordProvider
+     */
+    private $recordProvider;
+
+    public function __construct(RecordProvider $recordProvider)
+    {
+        $this->recordProvider = $recordProvider;
+    }
+
+    /**
+     * Offerable buyer payment terms (in net days) for the merchant.
+     * The admin narrows the buyer-facing set from this; an empty array
+     * means the set could not be resolved (the admin surfaces cannot
+     * offer terms until a valid API key resolves).
+     *
+     * @return int[]
+     */
+    public function getAvailableTerms(?int $storeId = null, ?string $scope = null): array
+    {
+        $record = $this->recordProvider->getRecord($storeId, $scope);
+        if ($record === null) {
+            return [];
+        }
+        $terms = $record['available_terms'] ?? null;
+        if (!is_array($terms)) {
+            return [];
+        }
+        $days = array_filter(
+            array_map('intval', $terms),
+            static fn(int $t): bool => $t > 0
+        );
+        $days = array_values(array_unique($days));
+        sort($days);
+        return $days;
+    }
+
+    /**
+     * Maximum allowed value of a fixed-amount buyer surcharge the
+     * merchant may configure, in a specific currency. Null means no
+     * upper bound (any positive value is acceptable) — calling code
+     * must interpret null as "no max" and skip the upper-bound check.
+     *
+     * The two surcharge_limit_* fields on the merchant record travel
+     * together; a partial or malformed tuple is treated as "no cap".
+     *
+     * @return array{amount: float, currency: string}|null
+     */
+    public function getSurchargeLimit(?int $storeId = null, ?string $scope = null): ?array
+    {
+        $record = $this->recordProvider->getRecord($storeId, $scope);
+        if ($record === null) {
+            return null;
+        }
+        $amount = $record['surcharge_limit_amount'] ?? null;
+        $currency = $record['surcharge_limit_currency'] ?? null;
+        if (!is_numeric($amount)
+            || (float)$amount <= 0
+            || !is_string($currency)
+            || $currency === ''
+        ) {
+            return null;
+        }
+        return [
+            'amount' => (float)$amount,
+            'currency' => strtoupper($currency),
+        ];
+    }
+
+    /**
+     * The merchant's default invoice payment term (due_in_days), in net
+     * days, or null when none is set or it cannot be resolved. Not
+     * guaranteed to be a member of getAvailableTerms(); callers honour
+     * it only when it is an offered term (see TWO-24859).
+     */
+    public function getDefaultTerm(?int $storeId = null, ?string $scope = null): ?int
+    {
+        $record = $this->recordProvider->getRecord($storeId, $scope);
+        if ($record === null) {
+            return null;
+        }
+        $due = $record['due_in_days'] ?? null;
+        if (!is_numeric($due) || (int)$due <= 0) {
+            return null;
+        }
+        return (int)$due;
+    }
+
+    /**
+     * The merchant's identity off the never-expiring record — the
+     * last-known-good `id` and `short_name` from GET /v1/merchant.
+     *
+     * ABN-533: the verification verdict carries a merchant only on a success,
+     * so the surfaces that keep serving a buyer through an upstream failure
+     * read their identity from here instead. Null when nothing has resolved
+     * yet, which is the one state that genuinely has no identity to send.
+     *
+     * @return array{id: string, short_name: string|null}|null
+     */
+    public function getMerchantIdentity(?int $storeId = null): ?array
+    {
+        return $this->identityFrom($this->recordProvider->getRecord($storeId));
+    }
+
+    /**
+     * The identity a merchant payload carries, or null when it names no
+     * merchant. The callers prefer the verification verdict's own merchant and
+     * reach for the record only when it has none, so both sources normalise
+     * here and cannot drift.
+     *
+     * `mixed`, not `?array`: the verdict is served from a cache whose only
+     * structural guarantee is a `status` key, so a scalar or an array naming no
+     * merchant must resolve to null rather than throw out of a checkout render
+     * or an anonymous REST route. Both sources decode JSON, so an object never
+     * reaches here — one would still fatal.
+     *
+     * @param mixed $merchant
+     * @return array{id: string, short_name: string|null}|null
+     */
+    public function identityFrom($merchant): ?array
+    {
+        $id = $merchant['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            return null;
+        }
+        $shortName = $merchant['short_name'] ?? null;
+
+        return [
+            'id' => $id,
+            'short_name' => is_string($shortName) && $shortName !== '' ? $shortName : null,
+        ];
+    }
+
+    /**
+     * Whether the merchant self-distributes their own invoices to the
+     * buyer (invoice_distributed_by_merchant on the merchant record).
+     * Absent, unresolvable, or malformed all degrade to false — the
+     * plugin only ever generates/uploads an invoice PDF when the
+     * merchant record explicitly says so. This is the sole gate: there
+     * is deliberately no admin-configurable override (TWO-25106).
+     */
+    public function isInvoiceDistributedByMerchant(?int $storeId = null, ?string $scope = null): bool
+    {
+        $record = $this->recordProvider->getRecord($storeId, $scope);
+        if ($record === null) {
+            return false;
+        }
+        return ($record['invoice_distributed_by_merchant'] ?? false) === true;
+    }
+}

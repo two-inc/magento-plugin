@@ -10,8 +10,10 @@ namespace Two\Gateway\Plugin\Magento\Quote\Model\Cart;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Magento\Quote\Api\Data\TotalsInterface;
+use Magento\Quote\Api\Data\TotalSegmentInterface;
 use Magento\Quote\Api\Data\TotalSegmentInterfaceFactory;
 use Magento\Framework\Phrase;
+use Two\Gateway\Service\Order\SurchargeDisplay;
 
 /**
  * Append the `two_surcharge` total segment to the cart-totals API response
@@ -47,7 +49,8 @@ class CartTotalRepositoryAppendSurcharge
 {
     public function __construct(
         private readonly CartRepositoryInterface $quoteRepository,
-        private readonly TotalSegmentInterfaceFactory $totalSegmentFactory
+        private readonly TotalSegmentInterfaceFactory $totalSegmentFactory,
+        private readonly SurchargeDisplay $surchargeDisplay
     ) {
     }
 
@@ -90,17 +93,43 @@ class CartTotalRepositoryAppendSurcharge
             $title = (string) (new Phrase('Payment terms fee'));
         }
 
-        $segment = $this->totalSegmentFactory->create();
-        $segment->setData([
-            'code'  => 'two_surcharge',
-            'title' => $title,
-            'value' => $surchargeAmount,
-            'area'  => null,
-        ]);
+        $tax = (float) $address->getData('two_surcharge_tax_amount');
+        $mode = $this->surchargeDisplay->forCart($quote->getStore());
 
-        $segments[] = $segment;
+        if ($mode === SurchargeDisplay::BOTH) {
+            $segments[] = $this->buildSegment(
+                'two_surcharge',
+                (string) __('%1 (Excl. Tax)', $title),
+                $surchargeAmount
+            );
+            $segments[] = $this->buildSegment(
+                'two_surcharge_incl',
+                (string) __('%1 (Incl. Tax)', $title),
+                $surchargeAmount + $tax
+            );
+        } else {
+            $segments[] = $this->buildSegment(
+                'two_surcharge',
+                $title,
+                $this->surchargeDisplay->pick($mode, $surchargeAmount, $tax)
+            );
+        }
+
         $result->setTotalSegments($segments);
 
         return $result;
+    }
+
+    private function buildSegment(string $code, string $title, float $value): TotalSegmentInterface
+    {
+        $segment = $this->totalSegmentFactory->create();
+        $segment->setData([
+            'code'  => $code,
+            'title' => $title,
+            'value' => $value,
+            'area'  => null,
+        ]);
+
+        return $segment;
     }
 }

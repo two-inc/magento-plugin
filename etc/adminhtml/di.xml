@@ -10,8 +10,8 @@
         <plugin name="orderFormToolbarButtons" type="Two\Gateway\Plugin\Block\Widget\Button\Toolbar" />
     </type>
     <type name="Magento\Sales\Model\Order\Creditmemo">
-        <plugin name="two-creditmemo-surcharge-override"
-                type="Two\Gateway\Plugin\Model\Sales\CreditmemoSurchargeOverride" sortOrder="10"/>
+        <plugin name="two-creditmemo-fee-override"
+                type="Two\Gateway\Plugin\Model\Sales\CreditmemoFeeOverride" sortOrder="10"/>
     </type>
     <!--
         Hide Two_Gateway admin config sections when a brand overlay is
@@ -28,6 +28,26 @@
                 type="Two\Gateway\Plugin\Config\Structure\HidePaymentSection"
                 sortOrder="10"/>
     </type>
+    <!-- Hides the fields below (keyed section_suffix/group/field, as brand.xml suppressed_fields) unless already configured at the scope being edited. -->
+    <type name="Magento\Config\Model\Config\Structure\Element\Field">
+        <plugin name="two-hide-fields-unless-configured"
+                type="Two\Gateway\Plugin\Config\Structure\HideFieldsUnlessConfigured"
+                sortOrder="10"/>
+    </type>
+    <type name="Two\Gateway\Plugin\Config\Structure\HideFieldsUnlessConfigured">
+        <arguments>
+            <argument name="predicates" xsi:type="array">
+                <item name="order_management/order_management/default_shipping_tax_rate" xsi:type="object">Two\Gateway\Model\Config\FieldGate\UsableRate</item>
+                <item name="payment/payment_terms/payment_terms_type" xsi:type="object">Two\Gateway\Model\Config\FieldGate\EndOfMonth</item>
+                <item name="payment/payment_terms/payment_terms_duration_days" xsi:type="object">Two\Gateway\Model\Config\FieldGate\StoredValue</item>
+            </argument>
+        </arguments>
+    </type>
+    <type name="Magento\Config\Model\Config">
+        <plugin name="two-refuse-unusable-custom-term"
+                type="Two\Gateway\Plugin\Config\RefuseUnusableCustomTerm"
+                sortOrder="10"/>
+    </type>
     <!--
         SynthesiseBrandAdminForm is registered globally in etc/di.xml,
         not here. CLI commands (bin/magento config:set, app:config:import,
@@ -37,6 +57,13 @@
         etc/adminhtml/di.xml. Registering the plugin here meant CLI-driven
         cache writes never invoked synthesis; the cache then served the
         un-synthesised result to subsequent admin web requests and the
-        ABN admin tab disappeared (ABN-415).
+        brand-overlay admin tab disappeared.
     -->
+    <type name="Magento\Framework\Notification\MessageList">
+        <arguments>
+            <argument name="messages" xsi:type="array">
+                <item name="twoGatewayTrustedProxiesUnset" xsi:type="string">Two\Gateway\Model\AdminNotification\TrustedProxiesMessage</item>
+            </argument>
+        </arguments>
+    </type>
 </config>

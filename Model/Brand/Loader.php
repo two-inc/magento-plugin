@@ -105,22 +105,7 @@ class Loader
             ));
         }
 
-        $terms = [];
-        if (isset($brand->available_payment_terms->term)) {
-            foreach ($brand->available_payment_terms->term as $term) {
-                $terms[] = (int)$term;
-            }
-        }
-
-        $surchargeFixedMax = null;
-        if (isset($brand->surcharge_fixed_max)) {
-            $surchargeFixedMax = [
-                'amount' => (float)$brand->surcharge_fixed_max['amount'],
-                'currency' => (string)$brand->surcharge_fixed_max['currency'],
-            ];
-        }
-
-        // Brand-driven Rounding Step dropdown options. Validate at load
+        // Brand-driven Rounding step dropdown options. Validate at load
         // time — nothing validates brand.xsd at runtime, so a malformed
         // <step> would otherwise coerce to 0.0 and silently offer a
         // bogus option. Absent/empty falls back to the parent default.
@@ -163,20 +148,6 @@ class Loader
             }
         }
 
-        $allowedCurrencies = [];
-        if (isset($brand->allowed_currencies->currency)) {
-            foreach ($brand->allowed_currencies->currency as $currency) {
-                $allowedCurrencies[] = (string)$currency;
-            }
-        }
-
-        $allowedCountries = [];
-        if (isset($brand->allowed_countries->country)) {
-            foreach ($brand->allowed_countries->country as $country) {
-                $allowedCountries[] = (string)$country;
-            }
-        }
-
         $extraHttpHeaders = [];
         if (isset($brand->extra_http_headers->header)) {
             foreach ($brand->extra_http_headers->header as $header) {
@@ -190,6 +161,22 @@ class Loader
                 $suppressedFields[] = (string)$field['path'];
             }
         }
+
+        $intentApprovedNoticeEnabled = $this->readNoticeSwitch(
+            $brand,
+            'intent_approved_notice_enabled',
+            $sourcePath
+        );
+        $intentApprovedNotice = $this->readNoticeCopy($brand, 'intent_approved_notice');
+        $intentDeclinedNotice = $this->readNoticeCopy($brand, 'intent_declined_notice');
+
+        // A declared switch decides. Otherwise the brand's own declined
+        // wording is used if non-blank declined copy asked for it OR the
+        // approved switch is on, so an overlay predating the declined
+        // elements — approved switch only — still withholds both.
+        $intentDeclinedNoticeEnabled = isset($brand->intent_declined_notice_enabled)
+            ? $this->readNoticeSwitch($brand, 'intent_declined_notice_enabled', $sourcePath)
+            : ($intentDeclinedNotice !== null || $intentApprovedNoticeEnabled);
 
         $inlineTermFees = true;
         if (isset($brand->inline_term_fees)) {
@@ -214,18 +201,64 @@ class Loader
             (string)($brand->sign_up_url ?? ''),
             (string)($brand->documentation_url ?? ''),
             (string)$brand->api_base_url,
-            $terms,
-            $surchargeFixedMax,
             $cspOrigins,
             (string)$brand->admin_resource,
             $moduleLabelChain,
-            $allowedCurrencies,
-            $allowedCountries,
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
             (string)($brand->checkout_subtitle ?? ''),
-            $roundingSteps
+            $roundingSteps,
+            $intentApprovedNotice,
+            $intentApprovedNoticeEnabled,
+            trim((string)($brand->about_url ?? '')),
+            trim((string)($brand->checkout_subtitle_faq_url ?? '')),
+            $intentDeclinedNotice,
+            $intentDeclinedNoticeEnabled
         );
+    }
+
+    /**
+     * Duplicates brand.xsd's enumeration because nothing validates
+     * brand.xsd in production mode.
+     */
+    private function readNoticeSwitch(
+        \SimpleXMLElement $brand,
+        string $element,
+        string $sourcePath
+    ): bool {
+        if (!isset($brand->{$element})) {
+            return true;
+        }
+
+        $raw = trim((string)$brand->{$element});
+        if ($raw !== 'true' && $raw !== 'false') {
+            throw new \DomainException(sprintf(
+                'brand.xml at %s declares an invalid <%s> value "%s"; it must '
+                . 'be exactly "true" or "false".',
+                $sourcePath,
+                $element,
+                $raw
+            ));
+        }
+
+        return $raw === 'true';
+    }
+
+    /**
+     * A visually-blank element is inert, never an off switch — TWO-25218
+     * superseded that three-state contract. \pZ and \p{Cf} so a
+     * copy-pasted non-breaking or zero-width space, both of which
+     * trim() keeps, cannot become a template that renders as an empty
+     * notice.
+     */
+    private function readNoticeCopy(\SimpleXMLElement $brand, string $element): ?string
+    {
+        $raw = (string)($brand->{$element} ?? '');
+        // An unreadable subject is treated as blank, the safe direction;
+        // the parser rejects malformed UTF-8 first, so this is unreachable.
+        $copy = preg_replace('/^[\pZ\p{Cf}\s]+|[\pZ\p{Cf}\s]+$/u', '', $raw) ?? '';
+
+        return $copy === '' ? null : $copy;
     }
 }

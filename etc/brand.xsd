@@ -34,22 +34,98 @@
             <xs:element name="brand_tag" type="xs:string" minOccurs="0"/>
             <xs:element name="sign_up_url" type="xs:string" minOccurs="0"/>
             <xs:element name="documentation_url" type="xs:string" minOccurs="0"/>
+            <!-- Checkout "What is <product>?" link target; empty renders no link. -->
+            <xs:element name="about_url" type="xs:string" minOccurs="0"/>
+            <!-- Supplies the %1/%2 link args of <checkout_subtitle>; empty renders no tagline. -->
+            <xs:element name="checkout_subtitle_faq_url" type="xs:string" minOccurs="0"/>
             <xs:element name="api_base_url" type="xs:string"/>
-            <xs:element name="available_payment_terms" type="paymentTermsType"/>
+            <!--
+                DEPRECATED, ignored by Loader: the offerable payment terms
+                and the buyer-surcharge cap are now sourced per-merchant
+                from GET /v1/merchant (available_terms / surcharge_limit),
+                not from brand.xml. Kept optional in the schema so brand.xml
+                files carrying the legacy elements still validate during the
+                transition; remove once no brand.xml declares them.
+            -->
+            <xs:element name="available_payment_terms" type="paymentTermsType" minOccurs="0"/>
             <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
             <!--
                 Buyer-surcharge rounding steps offered in the admin
-                "Rounding Step" dropdown (major currency units). Brand
+                "Rounding step" dropdown (major currency units). Brand
                 overlays narrow the parent default set (e.g. to 0.50 /
                 1.00). Omit the element to inherit the parent default
                 set; an empty element is treated as omitted.
             -->
             <xs:element name="surcharge_rounding_steps" type="surchargeRoundingStepsType" minOccurs="0"/>
+            <!--
+                On/off switch for the buyer-facing "order intent
+                approved" reassurance notice rendered inline inside the
+                checkout payment tile. Explicit boolean ONLY:
+
+                  true    ⇒ notice ON
+                  false   ⇒ notice suppressed entirely; no element is
+                            emitted into the DOM, not an empty wrapper
+                  absent  ⇒ documented explicit default `true`, which is
+                            what keeps a third-party overlay that
+                            declares nothing on ON
+                  anything else ⇒ an error. The enumeration below fails
+                            config validation in developer mode, and
+                            Model\Brand\Loader additionally throws a
+                            \DomainException, because nothing validates
+                            brand.xsd in production mode.
+
+                Base plugins declare it explicitly `true`; brand
+                overlays that do not want the notice declare it
+                explicitly `false`.
+            -->
+            <xs:element name="intent_approved_notice_enabled" type="explicitBooleanType" minOccurs="0"/>
+            <!--
+                COPY OVERRIDE ONLY — this element does NOT switch the
+                notice off. That is <intent_approved_notice_enabled>
+                above.
+
+                  absent / visually blank
+                          ⇒ INERT: platform default translated copy
+                  non-blank
+                          ⇒ used verbatim as the company-known copy
+                            template (%1 = brand product name,
+                            %2 = buyer company name,
+                            %3 = buyer organisation number)
+
+                An empty element used to mean "notice off" (TWO-25213).
+                It no longer does — it is inert (TWO-25218), so an
+                overlay carrying one resolves to notice ON. Suppression
+                is <intent_approved_notice_enabled>false. Do not
+                resurrect empty-means-off.
+            -->
+            <xs:element name="intent_approved_notice" type="xs:string" minOccurs="0"/>
+            <!--
+                On/off switch for the buyer-facing "order intent NOT
+                approved" tile notice, the counterpart of
+                <intent_approved_notice_enabled> above. Same
+                explicit-boolean-only rule.
+
+                This element is newer than the approved switch, so it
+                carries an inheritance: declared here ⇒ that value;
+                undeclared ⇒ ON when either <intent_declined_notice>
+                is non-blank or <intent_approved_notice_enabled>
+                resolved to true. Declare this element to decide the
+                declined outcome independently of the approved one.
+            -->
+            <xs:element name="intent_declined_notice_enabled" type="explicitBooleanType" minOccurs="0"/>
+            <!--
+                COPY OVERRIDE ONLY for the "order intent NOT approved"
+                notice — the counterpart of <intent_approved_notice>
+                above, with the same absent/visually-blank ⇒ INERT
+                rule and the same %1/%2/%3 template arguments.
+                Suppression is <intent_declined_notice_enabled>false.
+                Non-blank copy here also turns an undeclared declined
+                switch ON.
+            -->
+            <xs:element name="intent_declined_notice" type="xs:string" minOccurs="0"/>
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
-            <xs:element name="allowed_currencies" type="allowedCurrenciesType" minOccurs="0"/>
-            <xs:element name="allowed_countries" type="allowedCountriesType" minOccurs="0"/>
             <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
             <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
             <!--
@@ -67,13 +143,27 @@
         <!--
             Short identifier used as the prefix for synthesised admin
             Configuration section IDs (e.g. `two` → `two_general`,
-            `two_payment`, `two_search`, `two_version`) and the
-            synthesised admin tab id (`{prefix}_gateway`). Optional —
-            when absent, derived by stripping a trailing `_payment`
-            suffix from `code`.
+            `two_checkout_fields`, `two_search`, `two_payment`,
+            `two_order_management`, `two_version` — TWO-25386's A-F
+            regroup) and the synthesised admin tab id
+            (`{prefix}_gateway`). Optional — when absent, derived by
+            stripping a trailing `_payment` suffix from `code`.
         -->
         <xs:attribute name="section_prefix" type="brandCodeType" use="optional"/>
     </xs:complexType>
+
+    <!--
+        A boolean that must be spelled out. Deliberately NOT xs:boolean:
+        xs:boolean also accepts `1` / `0`, and this switch is meant to
+        read as a decision in the brand.xml, not as a flag. Lowercase
+        `true` / `false` only.
+    -->
+    <xs:simpleType name="explicitBooleanType">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="true"/>
+            <xs:enumeration value="false"/>
+        </xs:restriction>
+    </xs:simpleType>
 
     <xs:simpleType name="brandCodeType">
         <xs:restriction base="xs:string">
@@ -121,18 +211,6 @@
                     </xs:simpleContent>
                 </xs:complexType>
             </xs:element>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="allowedCurrenciesType">
-        <xs:sequence>
-            <xs:element name="currency" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="allowedCountriesType">
-        <xs:sequence>
-            <xs:element name="country" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
         </xs:sequence>
     </xs:complexType>
 

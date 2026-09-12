@@ -1,4 +1,10 @@
-define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
+define([
+    'jquery',
+    'mage/translate',
+    'Two_Gateway/js/default-term',
+    'Two_Gateway/js/config-field-visibility',
+    'domReady!'
+], function ($, $t, resolveDefaultTerm, toggleField) {
     'use strict';
 
     function initPaymentTermsConfig() {
@@ -24,8 +30,15 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         var $defaultTerm    = $('#' + prefix + 'default_payment_term');
         var $surchargeType  = $('#' + prefix + 'surcharge_type');
         var $differential   = $('#' + prefix + 'surcharge_differential');
+        var $termsInherit   = $('#' + prefix + 'payment_terms_inherit');
 
         // ── Helpers ──────────────────────────────────────────────────────
+
+        // Server-normalised term for the current selection; parsing the raw value here would
+        // disagree with the save on shapes like '1e2' (ABN-522).
+        function getCustomTerm() {
+            return Number($customDays.find('option:selected').attr('data-two-term')) || 0;
+        }
 
         function getSelectedTerms() {
             var terms = [];
@@ -33,7 +46,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 terms.push(Number($(this).val()));
             });
             terms = terms.filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = getCustomTerm();
             if (custom > 0) {
                 terms.push(custom);
             }
@@ -43,13 +56,26 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             return terms;
         }
 
+        // Every term the merchant's record offers: the checkboxes are rendered
+        // one per offered term, ticked or not.
+        function getMerchantOfferedTerms() {
+            var terms = [];
+            $termsContainer.find('.two-term-checkboxes__input').each(function () {
+                var days = Number($(this).val());
+                if (days > 0) {
+                    terms.push(days);
+                }
+            });
+            return terms;
+        }
+
         function getSurchargeType() {
             // Effective (resolved) type, scope-aware. When the type field's
             // "Use Website/Default" is ticked the <select> is disabled but
             // still carries the inherited value, so read it directly. An
             // inherited Percentage type must still surface the surcharge
             // fields; returning 'none' on inherit (the old behaviour) hid
-            // them at store scope (ABN-440).
+            // them at store scope (the store-scope orphaned-override bug).
             return $surchargeType.val() || 'none';
         }
 
@@ -61,24 +87,24 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             return parseInt($defaultTerm.val(), 10) || 0;
         }
 
-        // ── Default Payment Term dropdown ────────────────────────────────
+        // ── Default payment term dropdown ────────────────────────────────
 
         function updateDefaultTermOptions() {
             var terms = getSelectedTerms();
             var currentDefault = getDefaultTermValue();
 
             $defaultTerm.empty();
+            // First, so a selection that is no longer offered lands here rather
+            // than on a day count nobody chose (ABN-548).
+            $defaultTerm.append($('<option></option>').attr('value', '').text($t('Automatic')));
             $.each(terms, function (_, days) {
                 $defaultTerm.append(
                     $('<option></option>').attr('value', days).text($t('%1 days').replace('%1', days))
                 );
             });
 
-            // Keep current selection if still valid, otherwise pick lowest
             if (terms.indexOf(currentDefault) !== -1) {
                 $defaultTerm.val(currentDefault);
-            } else if (terms.length) {
-                $defaultTerm.val(terms[0]);
             }
 
             $defaultTerm.trigger('change');
@@ -91,38 +117,72 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function showField(fieldId) {
-            getFieldRow(fieldId).show();
+            toggleField(getFieldRow(fieldId), true);
         }
 
         function hideField(fieldId) {
-            getFieldRow(fieldId).hide();
+            toggleField(getFieldRow(fieldId), false);
         }
 
         function updateSurchargeVisibility() {
             var type = getSurchargeType();
             var hasSurcharge = type !== 'none';
 
-            // Global surcharge fields
+            // Global surcharge fields. The deprecated
+            // custom_surcharge_tax_rate row is NOT managed here — its
+            // visibility is owned by the system.xml <depends> on the
+            // surcharge tax treatment ("custom" only), and a jQuery
+            // show() would fight Magento's dependence controller.
             var surchargeFields = [
                 'surcharge_differential',
-                'surcharge_tax_rate'
+                'surcharge_line_description',
+                'surcharge_tax_class'
             ];
             $.each(surchargeFields, function (_, id) {
                 hasSurcharge ? showField(id) : hideField(id);
             });
         }
 
+        // ── Custom payment terms visibility ──────────────────────────────
+
+        // The marker carries what the server settles before the post; the sibling's inherit box is
+        // the rest of it, and an inheriting sibling makes the save keep the value (ABN-522).
+        function customDaysFoldsIn() {
+            return $customDays.closest('tr').find('.two-legacy-term-folds-in').length > 0
+                && !$termsInherit.is(':checked');
+        }
+
+        function updateCustomDaysVisibility() {
+            // Hidden, not removed: the row must still post for the fold-in save to happen.
+            if (customDaysFoldsIn()) {
+                hideField('payment_terms_duration_days');
+            } else {
+                showField('payment_terms_duration_days');
+            }
+        }
+
         // ── Differential option label ────────────────────────────────────
 
         function updateDifferentialOptionLabel() {
-            var defaultDays = parseInt($defaultTerm.val(), 10) || 0;
+            var defaultDays = resolveDefaultTerm(
+                getSelectedTerms(),
+                getMerchantOfferedTerms(),
+                getDefaultTermValue(),
+                parseInt($termsContainer.data('merchant-default-term'), 10) || 0
+            );
             var $option = $differential.find('option[value="1"]');
-            if ($option.length && defaultDays > 0) {
-                $option.text(
-                    $t('Fee difference vs default payment term') +
-                    ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
-                );
+            var label = $t('Fee difference vs default payment term');
+
+            if (!$option.length) {
+                return;
             }
+            // Named only while a term resolves, and never left naming a stale
+            // one once it stops resolving.
+            $option.text(
+                defaultDays > 0
+                    ? label + ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
+                    : label
+            );
         }
 
         // ── Event bindings ───────────────────────────────────────────────
@@ -142,11 +202,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         $termsContainer.on('change', '.two-term-checkboxes__input', onTermsChanged);
-        $customDays.on('change keyup', onTermsChanged);
+        $customDays.on('change', onTermsChanged);
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
         $('#' + prefix + 'surcharge_type_inherit').on('change', onSurchargeChanged);
+        $termsInherit.on('change', updateCustomDaysVisibility);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
@@ -237,8 +298,36 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // Fetched async from admin proxy `two/config/fees` (same endpoint
         // the old surcharge-grid Fee column used). Each `.two-term-
         // checkboxes__fee` span is populated with text like " (1.50% + 0.50)"
-        // when the response arrives. On failure the span stays empty.
+        // when the response arrives.
+        //
+        // An empty span means that term carries no fee, so a failed fetch says
+        // so in the notice rather than leaving the spans empty (ABN-512).
         var lastFeesKey = null;
+
+        function setFeeNotice(text) {
+            var $notice = $termsContainer.find('.two-term-checkboxes__fee-notice');
+            if (!$notice.length) {
+                if (!text) {
+                    return;
+                }
+                $notice = $('<div class="two-term-checkboxes__fee-notice admin__field-note"></div>')
+                    .appendTo($termsContainer);
+            }
+            $notice.text(text || '');
+        }
+
+        function showFeesUnavailable(reason) {
+            $termsContainer.find('.two-term-checkboxes__fee').text('');
+            setFeeNotice(
+                reason === 'not_configured'
+                    ? $t('Fees cannot be shown until an API key is saved for this scope.')
+                    : $t('Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.')
+            );
+        }
+
+        // Only the newest request may paint: a slow answer landing after a
+        // later one would otherwise re-state figures that are already replaced.
+        var feesRequestId = 0;
 
         function loadFees() {
             var url = $termsContainer.data('fees-url');
@@ -254,7 +343,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var terms = $termsContainer.find('.two-term-checkboxes__input').map(function () {
                 return Number(this.value);
             }).get().filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = getCustomTerm();
             if (custom > 0 && terms.indexOf(custom) === -1) {
                 terms.push(custom);
             }
@@ -267,6 +356,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 return;
             }
             lastFeesKey = key;
+            feesRequestId += 1;
+            var requestId = feesRequestId;
             var $formKey = $('input[name="form_key"]').first();
             $.ajax({
                 url: url,
@@ -279,13 +370,35 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     scopeId: parseInt($termsContainer.data('scope-id'), 10) || 0
                 }
             }).done(function (response) {
-                if (!response || !response.success || !response.fees) {
-                    return; // leave spans empty
+                if (requestId !== feesRequestId) {
+                    return;
                 }
-                // Currency MUST come from the API response — the fee
-                // values do too, and we don't get to guess what currency
-                // they're in. If the API omits it, we cannot safely
-                // render any fixed amount.
+                var terminal = response && response.error === 'not_configured';
+                // Anything but a fresh, renderable set may be asked again for
+                // the same terms — the server's own cooldown, not this key, is
+                // what stops an outage becoming a call per render. An unsaved
+                // key is the exception: nothing changes until it is saved.
+                if (!terminal && (!response || !response.success || !response.fees || response.stale)) {
+                    lastFeesKey = null;
+                }
+                if (!response || !response.success || !response.fees) {
+                    showFeesUnavailable(response && response.error);
+                    return;
+                }
+                if (response.stale) {
+                    var retrieved = String(response.fetched_at_display || '');
+                    setFeeNotice(
+                        retrieved === ''
+                            ? $t('Fees could not be refreshed, so the figures last retrieved are shown.')
+                            : $t('Fees could not be refreshed, so the figures retrieved on %1 are shown.')
+                                .replace('%1', retrieved)
+                    );
+                } else {
+                    setFeeNotice('');
+                }
+                // Currency comes from the API response, never guessed: the fee
+                // values are its too. A set without one is refused server-side
+                // rather than drawn.
                 var currency = String(response.currency || '').toUpperCase().trim();
                 var suffix = currency !== '' ? ' ' + currency : '';
                 // Admin locale's decimal separator, sourced server-side
@@ -302,7 +415,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var term = String($span.data('term'));
                     var fee = response.fees[term];
                     if (!fee) {
-                        $span.text('');
+                        // An empty span reads as "no fee for this term", so a
+                        // term the answer did not price says so instead.
+                        $span.text(' (' + $t('no figure') + ')');
                         return;
                     }
                     var pctStr = formatAmount(fee.percentage || 0);
@@ -310,18 +425,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var zero = formatAmount(0);
                     var pctZero = pctStr === zero;
                     var fixedZero = fixedStr === zero;
-                    // Without an API-supplied currency, any fixed
-                    // component would be ambiguous. Drop the fixed
-                    // portion entirely in that case; percentage can
-                    // stand alone since it carries its own unit (%).
-                    if (currency === '') {
-                        if (pctZero) {
-                            $span.text('');
-                            return;
-                        }
-                        $span.text(' (' + pctStr + '%)');
-                        return;
-                    }
                     var inner;
                     if (pctZero && fixedZero) {
                         inner = zero + suffix;
@@ -335,23 +438,25 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     $span.text(' (' + inner + ')');
                 });
             }).fail(function () {
-                // Allow a retry on the same term-set after a transient error,
-                // and clear any half-populated spans.
+                if (requestId !== feesRequestId) {
+                    return;
+                }
                 lastFeesKey = null;
-                $termsContainer.find('.two-term-checkboxes__fee').text('');
+                showFeesUnavailable();
             });
         }
 
         // Additional handlers for fee refresh — fire alongside the term-set
         // change handlers without disturbing their existing wiring.
         $termsContainer.on('change', '.two-term-checkboxes__input', loadFees);
-        $customDays.on('change keyup', loadFees);
+        $customDays.on('change', loadFees);
 
         // ── Initialize ───────────────────────────────────────────────────
 
         updateDefaultTermOptions();
         updateDifferentialOptionLabel();
         updateSurchargeVisibility();
+        updateCustomDaysVisibility();
         initInheritResetBehavior();
         initTermCheckboxInherit();
         loadFees();

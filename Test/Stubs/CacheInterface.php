@@ -37,3 +37,51 @@ interface CacheInterface
      */
     public function clean($tags = []);
 }
+
+namespace Magento\Framework\App\Cache;
+
+/**
+ * Stub of the cache-type registry with the real signatures, so data
+ * patches that invalidate a cache type can be mocked.
+ */
+interface TypeListInterface
+{
+    /**
+     * @return array
+     */
+    public function getTypes();
+
+    /**
+     * @param string|array $typeCode
+     * @return void
+     */
+    public function invalidate($typeCode);
+
+    /**
+     * @return array
+     */
+    public function getInvalidated();
+
+    /**
+     * @param string $typeCode
+     * @return void
+     */
+    public function cleanType($typeCode);
+}
+
+/**
+ * Stub of the cache status manager with the real signature, so a data
+ * patch that enables a cache type can be mocked.
+ */
+class Manager
+{
+    /**
+     * @param array $types
+     * @param bool $isEnabled
+     * @return array
+     */
+    public function setEnabled(array $types, $isEnabled)
+    {
+        return $types;
+    }
+}

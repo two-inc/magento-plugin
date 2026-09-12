@@ -20,6 +20,8 @@
     <section name="order_creditmemo">
         <group name="totals">
             <item name="two_surcharge" instance="Two\Gateway\Model\Total\Creditmemo\Surcharge" sort_order="600"/>
+            <!-- After every other collector: the residual it reconciles is what nothing else claimed. -->
+            <item name="two_other_charges" instance="Two\Gateway\Model\Total\Creditmemo\OtherCharges" sort_order="900"/>
         </group>
     </section>
 </config>

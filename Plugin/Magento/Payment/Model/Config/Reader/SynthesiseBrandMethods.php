@@ -45,8 +45,8 @@ class SynthesiseBrandMethods
         ScopeConfigInterface $scopeConfig,
         private readonly Loader $loader
     ) {
-        // Read once at construction; per design v6 §16.3 the synthesis
-        // flags are cached for the request lifetime.
+        // Read once at construction; the synthesis flags are cached for
+        // the request lifetime.
         $this->enabled = $scopeConfig->isSetFlag(self::FLAG_PATH);
     }
 

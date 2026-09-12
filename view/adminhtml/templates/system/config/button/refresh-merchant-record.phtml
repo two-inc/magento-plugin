@@ -1,0 +1,21 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+
+use Two\Gateway\Block\Adminhtml\System\Config\Button\RefreshMerchantRecord;
+
+/**
+ * @var RefreshMerchantRecord $block
+ */
+?>
+<div class="two-refresh-merchant-record"
+     data-refresh-url="<?= $block->escapeHtmlAttr($block->getRefreshUrl()); ?>"
+     data-scope="<?= $block->escapeHtmlAttr($block->getScope()); ?>"
+     data-scope-id="<?= (int)$block->getScopeId(); ?>">
+    <button type="button" class="action-default two-refresh-merchant-record__button">
+        <span><?= $block->escapeHtml(__('Refresh merchant profile')); ?></span>
+    </button>
+    <div class="two-refresh-merchant-record__status"></div>
+</div>

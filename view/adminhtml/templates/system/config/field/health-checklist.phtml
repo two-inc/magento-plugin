@@ -1,0 +1,33 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+
+use Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist;
+
+/**
+ * @var HealthChecklist $block
+ */
+
+$rows = $block->getChecklistRows();
+?>
+<div class="two-health-checklist" style="line-height:1.6;">
+    <div style="display:flex;flex-wrap:wrap;gap:8px 24px;">
+        <?php foreach ($rows as $row): ?>
+            <div>
+                <strong><?= $block->escapeHtml($row['label']); ?>:</strong>
+                <span style="color:<?= $row['ok'] ? '#079633' : '#e02b27'; ?>;">
+                    <?= $block->escapeHtml($row['value']); ?>
+                </span>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php if ($block->isProductionWithSslDisabled()): ?>
+        <div style="margin-top:0.75em;color:#e02b27;font-weight:bold;">
+            <?= $block->escapeHtml(
+                __('Security warning: SSL verification is disabled while the Environment is set to Production.')
+            ); ?>
+        </div>
+    <?php endif; ?>
+</div>

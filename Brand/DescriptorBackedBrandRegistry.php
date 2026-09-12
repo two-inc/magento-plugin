@@ -46,19 +46,29 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getCheckoutUrlTemplate();
     }
 
-    public function getAvailablePaymentTerms(): array
-    {
-        return $this->activeBrandResolver->resolve()->getAvailablePaymentTerms();
-    }
-
-    public function getSurchargeFixedMax(): ?array
-    {
-        return $this->activeBrandResolver->resolve()->getSurchargeFixedMax();
-    }
-
     public function getSurchargeRoundingSteps(): array
     {
         return $this->activeBrandResolver->resolve()->getSurchargeRoundingSteps();
+    }
+
+    public function isIntentApprovedNoticeEnabled(): bool
+    {
+        return $this->activeBrandResolver->resolve()->isIntentApprovedNoticeEnabled();
+    }
+
+    public function getIntentApprovedNotice(): ?string
+    {
+        return $this->activeBrandResolver->resolve()->getIntentApprovedNotice();
+    }
+
+    public function isIntentDeclinedNoticeEnabled(): bool
+    {
+        return $this->activeBrandResolver->resolve()->isIntentDeclinedNoticeEnabled();
+    }
+
+    public function getIntentDeclinedNotice(): ?string
+    {
+        return $this->activeBrandResolver->resolve()->getIntentDeclinedNotice();
     }
 
     public function getSignUpUrl(): string
@@ -79,6 +89,16 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
     public function getCheckoutSubtitle(): string
     {
         return $this->activeBrandResolver->resolve()->getCheckoutSubtitle();
+    }
+
+    public function getAboutUrl(): string
+    {
+        return $this->activeBrandResolver->resolve()->getAboutUrl();
+    }
+
+    public function getCheckoutSubtitleFaqUrl(): string
+    {
+        return $this->activeBrandResolver->resolve()->getCheckoutSubtitleFaqUrl();
     }
 
     public function getCode(): string

@@ -18,6 +18,21 @@ class DataObject
         $this->_data = $data;
     }
 
+    /**
+     * Explicit setData, matching the real DataObject. Without it the __call
+     * fallback below parses `setData` as a magic setter for a field literally
+     * named "data" and the value is silently unreachable through getData().
+     */
+    public function setData($key, $value = null)
+    {
+        if (is_array($key)) {
+            $this->_data = $key;
+            return $this;
+        }
+        $this->_data[$key] = $value;
+        return $this;
+    }
+
     public function getData($key = '')
     {
         if ($key === '') {

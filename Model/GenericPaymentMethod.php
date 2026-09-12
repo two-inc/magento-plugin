@@ -9,6 +9,7 @@ namespace Two\Gateway\Model;
 
 use Magento\Framework\Api\AttributeValueFactory;
 use Magento\Framework\Api\ExtensionAttributesFactory;
+use Magento\Config\Model\ResourceModel\Config\Data\CollectionFactory as ConfigDataCollectionFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\Collection\AbstractDb;
@@ -24,11 +25,19 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\FeeQuoteGate;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 
 /**
@@ -43,18 +52,8 @@ use Two\Gateway\Service\UrlCookie;
  *
  * Brand\BrandPaymentMethodFactory instantiates this class with the
  * active brand's code and the DI-resolved BrandRegistryInterface
- * (DescriptorBackedBrandRegistry), so legacy overlay virtualTypes
- * keep working alongside the brand.xml-sourced descriptor pipeline.
- *
- * Example brand-overlay binding (legacy, still supported):
- *
- *   <virtualType name="ABN\Gateway\Model\AbnPayment"
- *                type="Two\Gateway\Model\GenericPaymentMethod">
- *       <arguments>
- *           <argument name="code" xsi:type="string">acme_payment</argument>
- *           <argument name="brand" xsi:type="object">ABN\Gateway\Model\AbnBrand</argument>
- *       </arguments>
- *   </virtualType>
+ * (DescriptorBackedBrandRegistry), so an overlay declares only its
+ * `etc/brand.xml` — the `brand` argument has no other supported binding.
  */
 class GenericPaymentMethod extends Two
 {
@@ -85,6 +84,15 @@ class GenericPaymentMethod extends Two
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
+        ConfigDataCollectionFactory $configDataCollectionFactory,
+        ApiKeyStatus $apiKeyStatus,
+        SurchargeCalculator $surchargeCalculator,
+        FeeQuoteGate $feeQuoteGate,
+        LifecycleEventDispatcher $lifecycleEvents,
+        BuyerCountryResolver $buyerCountryResolver,
+        SupportedCountriesProvider $supportedCountriesProvider,
+        SettingsProvider $settingsProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -111,6 +119,15 @@ class GenericPaymentMethod extends Two
             $logRepository,
             $minimumOrderGate,
             $minimumOrderProvider,
+            $merchantMinimumResolver,
+            $configDataCollectionFactory,
+            $apiKeyStatus,
+            $surchargeCalculator,
+            $feeQuoteGate,
+            $lifecycleEvents,
+            $buyerCountryResolver,
+            $supportedCountriesProvider,
+            $settingsProvider,
             $resource,
             $resourceCollection,
             $data

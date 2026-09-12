@@ -17,8 +17,8 @@ class BrandOverlayRegistryTest extends TestCase
 
     public function testReportsInstalledWhenConstructorReceivesEntries(): void
     {
-        $registry = new BrandOverlayRegistry(['abn' => 'abn_payment']);
+        $registry = new BrandOverlayRegistry(['overlay' => 'overlay_payment']);
         $this->assertTrue($registry->isOverlayInstalled());
-        $this->assertSame(['abn' => 'abn_payment'], $registry->getOverlays());
+        $this->assertSame(['overlay' => 'overlay_payment'], $registry->getOverlays());
     }
 }
