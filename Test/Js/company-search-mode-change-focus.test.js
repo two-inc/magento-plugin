@@ -255,6 +255,27 @@ describe('the character typed straight after a mode change', () => {
         expect(document.activeElement).toBe(fieldNode());
     });
 
+    test.each([
+        {
+            withdraw: () => { clickChip('soletrader'); },
+            description: 'a mode change that withdraws the query row'
+        },
+        {
+            withdraw: (ctx) => { ctx.panel.setDisabled(true); },
+            description: 'a country the registry search does not cover'
+        }
+    ])('a printable key on a chip after $description goes to the company field', ({ withdraw }) => {
+        const ctx = setup();
+        ctx.panel.open();
+        withdraw(ctx);
+        const chip = chipFor('manual');
+        chip.focus();
+
+        pressKey(chip, 'a');
+
+        expect(document.activeElement).toBe(fieldNode());
+    });
+
     test('the character the field opener moves across outlives the next chip sync', () => {
         const ctx = setup();
         ctx.panel.open();
@@ -267,6 +288,9 @@ describe('the character typed straight after a mode change', () => {
         ctx.panel.syncChips();
 
         expect(document.querySelector(QUERY).value).toBe('a');
+        // The sync still drops the message, which explains a search row the
+        // buyer cannot see.
+        expect(document.querySelector(MESSAGE).textContent).toBe('');
     });
 });
 
