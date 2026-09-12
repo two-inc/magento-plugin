@@ -324,6 +324,9 @@ class RepositoryPaymentTermsTest extends TestCase
             $reads,
             "$case: store scope forwarded"
         );
+        $misscoped = array_filter($reads, static fn (array $r): bool => $r[1] !== ScopeInterface::SCOPE_STORE
+            || $r[2] !== 7);
+        $this->assertSame([], $misscoped, "$case: every config read carries the caller's scope");
     }
 
     public static function surchargeLineDescriptions(): array

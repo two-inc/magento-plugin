@@ -741,7 +741,7 @@ class Repository implements RepositoryInterface
             }
         }
 
-        return $stored !== '' ? $stored : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+        return $this->shippedSurchargeLineDescription();
     }
 
     /** Each brand overlay ships its own wording, so a stored value equal to it is not a merchant customisation. */
