@@ -634,6 +634,11 @@ not a descendant: a mode change, and the sole-trader signup launch that parks
 focus there while the popover is deliberately held open, both leave the
 dismissal key on a node the panel's handler never sees (ABN-554).
 
+**The field's own keydown opener hands the caret straight back whenever the mode
+leaves no query row.** `open()` parks it on a mode chip in that case, and a
+`<button>` destroys the character the buyer is part-way through typing
+(ABN-554).
+
 **A press on the panel's own dead space is a no-op.** Its default action would
 blur the caret out of the query field and leave the open popover holding
 nothing, so the press is cancelled — except on a control, which a press is

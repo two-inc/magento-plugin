@@ -232,6 +232,44 @@ describe('Escape closes from anywhere inside the popover', () => {
     });
 });
 
+describe('the character typed straight after a mode change', () => {
+    test.each([
+        {
+            withdraw: (ctx) => { clickChip('soletrader'); },
+            description: 'a mode change that withdraws the query row'
+        },
+        {
+            withdraw: (ctx) => { ctx.panel.setDisabled(true); },
+            description: 'a country the registry search does not cover'
+        }
+    ])('after $description the caret is on the company field, not on a chip', ({ withdraw }) => {
+        const ctx = setup();
+        ctx.panel.open();
+        withdraw(ctx);
+        // Where the signup launch parks it, and where a buyer who clicked the
+        // field is already standing.
+        ctx.panel.restoreFieldFocus();
+
+        pressKey(fieldNode(), 'a');
+
+        expect(document.activeElement).toBe(fieldNode());
+    });
+
+    test('the character the field opener moves across outlives the next chip sync', () => {
+        const ctx = setup();
+        ctx.panel.open();
+        clickChip('soletrader');
+        ctx.panel.restoreFieldFocus();
+        const field = fieldNode();
+        field.value = 'a';
+
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+        ctx.panel.syncChips();
+
+        expect(document.querySelector(QUERY).value).toBe('a');
+    });
+});
+
 describe('a press on the popover\'s dead space changes nothing', () => {
     test.each([
         {
