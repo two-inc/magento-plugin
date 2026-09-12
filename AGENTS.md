@@ -450,8 +450,9 @@ withdrew has no matching option, so the select reads Automatic.
 
 **The admin surfaces that NAME the default term resolve it, never read the
 select.** With Automatic selected the select carries no day count, while the
-surcharge grid still has to disable and zero the row differential mode prices
-against and the differential option still has to name it. `SurchargeGrid` and
+surcharge grid still has to disable the row differential mode prices against —
+showing its stored amounts, which a disabled cell never posts anyway (ABN-554) —
+and the differential option still has to name it. `SurchargeGrid` and
 `Two_Gateway/js/default-term` each apply the resolver's order — the JS from the
 ticked terms plus the merchant's own default term, published as
 `data-merchant-default-term` on the checkboxes container. Reading
@@ -560,14 +561,24 @@ buyer. The field help says so; nothing enforces it.
 
 ## The company-search panel is ONE module, vendored twice
 
-`view/frontend/web/js/model/company-search-panel.js` is the implementation and
-the WooCommerce plugin carries a copy of the same file, so **a change to shared
-panel behaviour is TWO edits**. Nothing links the two copies; whoever changes
-one and stops has fixed one platform, and the divergence is invisible to both
-reviewers. **Nothing compares the two copies** — the other repo's guard locks its
-copy against an in-place edit without ever seeing this one — so re-copying the
-whole file is the only thing that puts them back in step, and a panel change made
-here and nowhere else has landed on one platform (TWO-25503).
+`view/frontend/web/js/model/company-search-panel.js` and the WooCommerce
+plugin's copy are BYTE-IDENTICAL. `EDIT_LOCK_SHA256` in
+`Test/Js/company-search-panel-vendored.test.js` fails this suite on any edit to
+the file that did not move the digest with it, and the other plugin's suite
+holds the same digest for its copy. **Two matching digests are the parity
+check**; two different ones are the drift, and comparing them is the one thing
+either repo can do alone (TWO-25503).
+
+**A change to shared panel behaviour is TWO edits in ONE change set**: edit here,
+apply the identical edit there, re-run both JS suites, and move both digests.
+Re-copying the whole file is NOT a way to re-sync: once the copies differ it
+reverts whatever only the target side held, and while they agree there is
+nothing to copy.
+
+**Everything platform-specific is an OPTION the host passes**, never an edit to
+the file: the transport, the chips and their modes, the country source, the
+rate-limit scope. A difference that cannot be expressed as an option is a
+divergence, and it divides the two checkouts.
 
 It is framework-free with a UMD tail — no RequireJS, jQuery or Knockout DEPENDENCY —
 which is what lets the Hyvä checkout load this repo's own copy by
