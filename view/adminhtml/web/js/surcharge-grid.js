@@ -275,23 +275,11 @@ define([
                 var disabled = differential && term === defaultDays;
 
                 $row.attr('data-differential-disabled', disabled ? '1' : '0');
+                // ABN-554: a disabled cell never posts, so zeroing it hid the live config and changed nothing else.
                 $row.find('.surcharge-grid__input').each(function () {
                     var $input = $(this);
                     if (!$input.data('inherit-disabled')) {
                         $input.prop('disabled', disabled);
-                    }
-                    // Differential mode: default term never surcharges. Zero
-                    // the UI values, snapshotting whatever was there so we
-                    // can restore if the merchant toggles differential off
-                    // (or picks a different default term) before saving.
-                    if (disabled) {
-                        if ($input.data('differential-snapshot') === undefined) {
-                            $input.data('differential-snapshot', $input.val());
-                        }
-                        $input.val('0');
-                    } else if ($input.data('differential-snapshot') !== undefined) {
-                        $input.val($input.data('differential-snapshot'));
-                        $input.removeData('differential-snapshot');
                     }
                 });
             });
