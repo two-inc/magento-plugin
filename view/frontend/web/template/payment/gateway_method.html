@@ -13,7 +13,13 @@
                 visible: isRadioButtonVisible()"
             />
             <div class="two-title-block">
-                <span class="two-payment-title" data-bind="text: getTitle()"></span>
+                <!-- The method radio takes its accessible name from this label
+                     (ABN-554); the subtitle and the about link stay outside it
+                     so neither is read as part of the name. -->
+                <label
+                    class="two-payment-title"
+                    data-bind="attr: {'for': getCode()}, text: getTitle()"
+                ></label>
                 <!-- ko if: twoSubtitleHtml -->
                 <div class="two-payment-subtitle" data-bind="html: twoSubtitleHtml"></div>
                 <!-- /ko -->
@@ -31,26 +37,46 @@
     </div>
 
     <div class="payment-method-content">
-        <!-- ko if: showTermSelector -->
+        <!-- ko if: showTermChips -->
         <div class="field two-term-chips">
-            <label class="label">
+            <!-- A `span`, not a `label`: it names the chip group through
+                 aria-labelledby, and a `label` names a single form control.
+                 Outside both branches: the chip text states only the term, so
+                 a lone chip is unnamed without it (ABN-554). -->
+            <span class="label" data-bind="attr: {id: termGroupLabelId()}">
                 <span data-bind="i18n: 'Selected payment terms'"></span>
-            </label>
-            <div class="two-term-chips__container">
+            </span>
+            <!-- ko if: showTermSelector -->
+            <!-- A radio group, not a row of buttons: the roles come with the
+                 single tab stop and the arrow keys, or they describe nothing
+                 (ABN-554). -->
+            <div
+                class="two-term-chips__container"
+                role="radiogroup"
+                data-bind="attr: {'aria-labelledby': termGroupLabelId()},
+                               event: {keydown: onTermKeydown}"
+            >
                 <!-- ko foreach: termOptions -->
                 <button
                     type="button"
                     class="two-term-chip"
+                    role="radio"
                     data-bind="click: function() { $parent.selectTerm(days) },
-                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }"
+                                   css: { 'two-term-chip--selected': $parent.isTermChecked(days) },
+                                   attr: {
+                                       'aria-checked': $parent.isTermChecked(days) ? 'true' : 'false',
+                                       tabindex: $parent.termTabIndex(days),
+                                       'aria-label': explanation() || false,
+                                       title: explanation() || false
+                                   }"
                 >
                     <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
-                    <!-- ko if: isLoading -->
+                    <!-- ko if: isLoading() -->
                     <span class="two-term-chip__loading" aria-hidden="true"
                         ><span>.</span><span>.</span><span>.</span></span
                     >
                     <!-- /ko -->
-                    <!-- ko if: !isLoading && surchargeLabel -->
+                    <!-- ko if: !isLoading() && surchargeLabel() -->
                     <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
                     <!-- /ko -->
                 </button>
@@ -60,12 +86,26 @@
                  is created together with its text. -->
             <div class="two-term-chips__status" role="status" aria-live="polite"
                  data-bind="text: termStatusMessage()"></div>
-        </div>
-        <!-- /ko -->
-        <!-- ko if: showSingleTerm -->
-        <div class="field two-term-chips">
-            <div class="two-term-chips__container">
-                <span class="two-term-chip two-term-chip--single">
+            <!-- /ko -->
+            <!-- ko if: showSingleTerm -->
+            <div
+                class="two-term-chips__container"
+                role="group"
+                data-bind="attr: {'aria-labelledby': termGroupLabelId()}"
+            >
+                <!-- A sole offered term is not a choice, so the chip is a
+                     disabled button: ARIA forbids naming a role-less element,
+                     which left its explanatory name reaching a tooltip and no
+                     screen reader (ABN-554). -->
+                <button
+                    type="button"
+                    class="two-term-chip two-term-chip--single"
+                    disabled
+                    data-bind="attr: {
+                                   'aria-label': singleTermExplanation() || false,
+                                   title: singleTermExplanation() || false
+                               }"
+                >
                     <span class="two-term-chip__days" data-bind="text: singleTermLabel"></span>
                     <!-- ko if: singleTermSurchargeLabel() === null -->
                     <span class="two-term-chip__loading" aria-hidden="true"
@@ -78,8 +118,9 @@
                         data-bind="text: singleTermSurchargeLabel"
                     ></span>
                     <!-- /ko -->
-                </span>
+                </button>
             </div>
+            <!-- /ko -->
         </div>
         <!-- /ko -->
         <!--
@@ -348,12 +389,23 @@
                 </div>
                 <!-- ko if: isPaymentTermsEnabled -->
                 <div class="payment-method-content terms-container">
+                    <!-- aria-labelledby rather than a wrapping label (ABN-554):
+                         the consent sentence carries the terms link, and a link
+                         inside a label makes activation ambiguous. -->
                     <input
                         type="checkbox"
                         name="terms-checkbox"
-                        data-bind="checked: isPaymentTermsAccepted, event: { change: logIsPaymentsAccepted }"
+                        data-bind="attr: {
+                                       id: paymentTermsCheckboxId(),
+                                       'aria-labelledby': paymentTermsTextId()
+                                   },
+                                   checked: isPaymentTermsAccepted,
+                                   event: { change: logIsPaymentsAccepted }"
                     />
-                    <span class="terms-text" data-bind="html: paymentTermsMessage"></span>
+                    <span
+                        class="terms-text"
+                        data-bind="attr: {id: paymentTermsTextId()}, html: paymentTermsMessage"
+                    ></span>
                 </div>
                 <!-- /ko -->
             </fieldset>

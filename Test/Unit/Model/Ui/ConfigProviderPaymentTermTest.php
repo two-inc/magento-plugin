@@ -9,6 +9,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository as ConfigRepositoryImpl;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Model\Ui\ConfigProvider;
@@ -35,8 +36,11 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class ConfigProviderPaymentTermTest extends TestCase
 {
-    private function build(ApiKeyStatus $apiKeyStatus, ?int $defaultTerm): ConfigProvider
-    {
+    private function build(
+        ApiKeyStatus $apiKeyStatus,
+        ?int $defaultTerm,
+        string $termsType = PaymentTermsType::STANDARD
+    ): ConfigProvider {
         $reflection = new \ReflectionClass(ConfigProvider::class);
         $provider = $reflection->newInstanceWithoutConstructor();
 
@@ -49,6 +53,7 @@ class ConfigProviderPaymentTermTest extends TestCase
         $configRepository->method('getBrandVersion')->willReturn('');
         $configRepository->method('getCheckoutPageUrl')->willReturn('https://checkout.example');
         $configRepository->method('getDefaultPaymentTerm')->willReturn($defaultTerm);
+        $configRepository->method('getPaymentTermsType')->willReturn($termsType);
 
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');
@@ -158,6 +163,33 @@ class ConfigProviderPaymentTermTest extends TestCase
             [30, 0, 30, 30, 'an offered default is published as its day count'],
             [30, 45, 30, 45, 'a session selection wins for the selected term'],
             [null, 0, 0, 0, 'no offered term publishes no day count'],
+        ];
+    }
+
+    /**
+     * The chip text depends on the term type, so the type has to reach the
+     * browser: an end-of-month term falls due that many days after the end of
+     * the month (ABN-554).
+     *
+     * @dataProvider publishedTermsTypes
+     */
+    public function testThePublishedTermsType(string $termsType, bool $expected, string $case): void
+    {
+        $provider = $this->build($this->statusService(ApiKeyStatus::OK, 200, []), 30, $termsType);
+
+        $this->assertSame($expected, $this->publish($provider, 0)['isEndOfMonthTerms'], $case);
+    }
+
+    /**
+     * @return array<int,array{0:string,1:bool,2:string}>
+     */
+    public static function publishedTermsTypes(): array
+    {
+        return [
+            [PaymentTermsType::END_OF_MONTH, true, 'a legacy end-of-month shop publishes the flag'],
+            [PaymentTermsType::STANDARD, false, 'a standard shop does not'],
+            ['', false, 'an unset row reads as standard'],
+            ['END_OF_MONTH', false, 'the comparison is exact, so an upper-case row is not end of month'],
         ];
     }
 
