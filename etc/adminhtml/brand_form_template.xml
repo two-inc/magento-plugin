@@ -435,7 +435,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Surcharge line description</label>
-                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
+                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale. With an end-of-month payment terms type, the default switches to its end-of-month wording.]]></comment>
                     <config_path>payment/{{code}}/surcharge_line_description</config_path>
                 </field>
                 <field id="surcharge_grid" translate="label" type="text" sortOrder="80"
