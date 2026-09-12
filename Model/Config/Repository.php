@@ -52,6 +52,11 @@ class Repository implements RepositoryInterface
     private $initialConfig;
 
     /**
+     * @var string|null
+     */
+    private $shippedSurchargeLineDescription;
+
+    /**
      * @var EncryptorInterface
      */
     private $encryptor;
@@ -742,11 +747,17 @@ class Repository implements RepositoryInterface
     /** Each brand overlay ships its own wording, so a stored value equal to it is not a merchant customisation. */
     private function shippedSurchargeLineDescription(): string
     {
-        $shipped = $this->initialConfig
-            ? ($this->initialConfig->getData('default')['payment'][$this->code()]['surcharge_line_description'] ?? null)
-            : null;
+        if ($this->shippedSurchargeLineDescription === null) {
+            $shipped = $this->initialConfig
+                ? ($this->initialConfig->getData('default')['payment'][$this->code()]['surcharge_line_description']
+                    ?? null)
+                : null;
+            $this->shippedSurchargeLineDescription = is_scalar($shipped)
+                ? (string)$shipped
+                : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+        }
 
-        return is_scalar($shipped) ? (string)$shipped : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+        return $this->shippedSurchargeLineDescription;
     }
 
     /**

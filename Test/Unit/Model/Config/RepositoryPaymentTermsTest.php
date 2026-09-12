@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model\Config;
 
 use Magento\Framework\App\Config\Initial;
+use Magento\Store\Model\ScopeInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
@@ -308,15 +309,21 @@ class RepositoryPaymentTermsTest extends TestCase
         string $expected,
         string $case
     ): void {
+        $reads = [];
         $repository = $this->repositoryForBrand($brandCode, $shippedDefault, [
             "payment/$brandCode/surcharge_line_description" => $stored,
             "payment/$brandCode/surcharge_line_description_eom" => $shippedEom,
             "payment/$brandCode/payment_terms_type" => $termsType,
-        ]);
+        ], $reads);
 
-        $rendered = (string)__($repository->getSurchargeLineDescription(), $days);
+        $rendered = (string)__($repository->getSurchargeLineDescription(7), $days);
 
         $this->assertSame($expected, $rendered, $case);
+        $this->assertContains(
+            ["payment/$brandCode/surcharge_line_description", ScopeInterface::SCOPE_STORE, 7],
+            $reads,
+            "$case: store scope forwarded"
+        );
     }
 
     public static function surchargeLineDescriptions(): array
@@ -357,19 +364,27 @@ class RepositoryPaymentTermsTest extends TestCase
                 'Brand fee - 30 days from end of month', 'brand default, EOM'],
             [$brand, $brandShipped, $brandShippedEom, $custom, 'end_of_month', 30,
                 'Extended terms fee - 30 days', 'merchant template wins over brand default, EOM'],
+            // A brand overlay that has not yet shipped its own EOM wording keeps
+            // today's label rather than switching to another brand's wording.
             [$brand, $brandShipped, null, $brandShipped, 'end_of_month', 30,
-                'Brand fee - 30 days', 'brand ships no EOM wording, EOM'],
+                'Brand fee - 30 days', 'overlay has shipped no EOM wording, EOM'],
         ];
     }
 
     /**
      * @param array<string, string|null> $configMap
+     * @param list<array{0: string, 1: string, 2: int|null}> $reads
      */
-    private function repositoryForBrand(string $brandCode, string $shippedDefault, array $configMap): Repository
-    {
+    private function repositoryForBrand(
+        string $brandCode,
+        string $shippedDefault,
+        array $configMap,
+        array &$reads = []
+    ): Repository {
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturnCallback(
-            function ($path) use ($configMap) {
+            function ($path, $scope = null, $scopeCode = null) use ($configMap, &$reads) {
+                $reads[] = [$path, $scope, $scopeCode];
                 return $configMap[$path] ?? null;
             }
         );
@@ -379,7 +394,7 @@ class RepositoryPaymentTermsTest extends TestCase
         $brandRegistry->method('getProductName')->willReturn('Two');
 
         $initialConfig = $this->createMock(Initial::class);
-        $initialConfig->method('getData')->willReturn([
+        $initialConfig->method('getData')->with('default')->willReturn([
             'payment' => [$brandCode => ['surcharge_line_description' => $shippedDefault]],
         ]);
 
@@ -396,6 +411,22 @@ class RepositoryPaymentTermsTest extends TestCase
             null,
             null,
             $initialConfig
+        );
+    }
+
+    public function testGetSurchargeLineDescriptionFallsBackWhenShippedDefaultIsUnreadable(): void
+    {
+        $this->stubConfig([
+            'payment/two_payment/surcharge_line_description' => 'Payment terms fee - %1 days',
+            'payment/two_payment/surcharge_line_description_eom' => 'Payment terms fee - %1 days from end of month',
+            'payment/two_payment/payment_terms_type' => 'end_of_month',
+        ]);
+
+        // $this->repository is built without an Initial, as the object manager
+        // leaves it when di.xml does not name the optional argument.
+        $this->assertSame(
+            'Payment terms fee - %1 days from end of month',
+            $this->repository->getSurchargeLineDescription()
         );
     }
 
