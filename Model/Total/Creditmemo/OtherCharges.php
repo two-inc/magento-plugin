@@ -18,13 +18,17 @@ use Two\Gateway\Service\Order\OtherChargesResolver;
  * Creditmemo total collector for a fee no sales document itemizes.
  *
  * A fee reaching the order's grand total through a totals collector rather
- * than a quote item belongs to no item and no shipping, so core's own
- * collectors never carry it onto a credit memo and the merchant cannot refund
- * it. This puts the order's residual back, prorated by refunded subtotal
- * share and capped by what earlier credit memos already took.
+ * than a quote item belongs to no item and no shipping, so nothing carries it
+ * onto a credit memo and the merchant cannot refund it. This puts the order's
+ * residual back, prorated by refunded subtotal share and capped by what
+ * earlier credit memos already took.
+ *
+ * A fee whose own extension runs a credit-memo total collector is NOT that
+ * case — it has an owner deciding what a memo carries, so it must be claimed
+ * by an Api\Fee\FeeLineProviderInterface and never reach the residual.
  *
  * Nothing here knows which extension the fee came from; the residual is
- * defined by what the grand total exceeds.
+ * defined by what the grand total exceeds once every provider has claimed.
  */
 class OtherCharges extends AbstractTotal
 {

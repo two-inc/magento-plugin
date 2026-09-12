@@ -37,6 +37,9 @@ if (!interface_exists(\Magento\Framework\App\Config\ScopeConfigInterface::class)
 if (!class_exists(\Magento\Framework\DataObject::class)) {
     require_once __DIR__ . '/Stubs/DataObject.php';
 }
+if (!class_exists(\Magento\Framework\App\ResourceConnection::class)) {
+    require_once __DIR__ . '/Stubs/ResourceConnection.php';
+}
 // Payment Information block surface (Area constants + a faithful
 // Payment\Block\Info) — needed so Block/Payment/Info's admin-only row
 // injection runs against real getSpecificInformation() accumulation

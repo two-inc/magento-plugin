@@ -1017,8 +1017,11 @@ taxes the undiscounted base.
 ## An unitemized fee is reconciled per entity, and refundable
 
 `findVerifiedResidualTaxRate()` reconciles a taxed residual against the rates
-Magento's own tax engine applied, so a fee extension that registers its tax
-normally needs no `FeeLineProviderInterface`. It resolves an invoice or credit
+Magento's own tax engine applied, which is enough to itemize the fee in the
+payload. It is not enough to leave the fee as a residual: whatever reaches the
+residual is offered to the merchant to refund, so a fee whose extension runs
+its own credit-memo total collector — Amasty's "Extra Fee" among them — must be
+claimed by a `FeeLineProviderInterface` instead. It resolves an invoice or credit
 memo to its own order and reads the rates there: the residual on either is a
 share of the same order-level fee at the same rate. It reads every rate the
 order records: the `applied_taxes` extension attribute, the item-level tax
@@ -1031,9 +1034,9 @@ collector has no taxable item row of its own, so without both persisted
 sources a taxed fee stays unrefundable on exactly the screen the merchant
 uses.
 
-Reconciling the refund payload is not enough on its own, because a fee that
-reaches the grand total through a totals collector rather than a quote item
-never reaches the credit memo at all — the refund totals omit it and the
+Reconciling the refund payload is not enough on its own, because an unowned
+fee that reaches the grand total through a totals collector rather than a quote
+item never reaches the credit memo at all — the refund totals omit it and the
 merchant cannot refund it. `Model\Total\Creditmemo\OtherCharges` prorates the
 order's residual onto the credit memo by refunded subtotal share, and
 `Block\Sales\Total\OtherCharges` renders it as "Other charges".

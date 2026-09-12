@@ -14,10 +14,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 /**
  * Aggregates all registered FeeLineProviderInterface implementations.
  *
- * Injected as a plain array via etc/di.xml so providers can be added later
+ * Injected as a plain array via etc/di.xml so providers can be added
  * without touching Order/ComposeOrder/ComposeCapture/ComposeRefund.
- * Defaults to an empty array — see etc/di.xml, no concrete providers are
- * wired in yet.
  *
  * Isolates each provider: a provider that throws or returns a malformed
  * line does not take down checkout/capture/refund for every other order.

@@ -15,21 +15,21 @@ namespace Two\Gateway\Api\Fee;
  * amounts and tax rate, by reading that fee directly from the vendor's
  * own data.
  *
- * Only needed for a fee extension that computes its OWN tax outside
- * Magento's tax engine. An extension that registers its tax with Magento
- * normally (e.g. via the quote address's `applied_taxes` total data —
- * Amasty's "Extra Fee" module included) is already reconciled generically
- * by Order::findVerifiedResidualTaxRate(), with no provider needed. See
- * that method's docblock.
+ * Required for any fee whose extension runs its own credit-memo total
+ * collector, and for one that computes its OWN tax outside Magento's tax
+ * engine. Order::findVerifiedResidualTaxRate() can reconcile a
+ * well-behaved extension's tax rate for the API payload, but reconciling
+ * a fee as a residual also offers it to the merchant to refund through
+ * Model\Total\Creditmemo\OtherCharges — which double-refunds a fee its
+ * own extension already accounts for on the credit memo.
  *
  * Registered providers run before Order::getOtherChargesLineItem()'s
  * fallback chain, so any residual it still has to reconcile is smaller
  * (or gone).
  *
- * No providers are registered by default (see etc/di.xml): building one
- * for a specific extension requires that extension's real field/table
- * names, verified against an actual install, not guessed at from
- * documentation.
+ * Building one for a specific extension requires that extension's real
+ * field/table names, verified against an actual install, not guessed at
+ * from documentation.
  */
 interface FeeLineProviderInterface
 {

@@ -13,16 +13,16 @@
         FeeLineProviderPool aggregates Api\Fee\FeeLineProviderInterface
         implementations, each of which itemizes ONE known third-party
         fee (a totals-collector amount bumping grand_total without a
-        quote/order item, e.g. Amasty's "Extra Fee" module) into real
-        line item(s) with that fee's actual tax rate, by reading that
-        fee directly from the vendor's own data.
+        quote/order item) into real line item(s) with that fee's actual
+        tax rate, by reading that fee directly from the vendor's own data.
 
-        This is now needed only for a fee extension that computes its
-        own tax WITHOUT registering it with Magento's tax engine —
-        Service\Order::findVerifiedResidualTaxRate() already reconciles
-        any extension that does integrate properly (Amasty's Extra Fee
-        included), with no per-vendor provider required. See that
-        method's docblock.
+        A provider is required whenever the fee's own extension runs a
+        credit-memo total collector, whether or not it integrates with
+        Magento's tax engine: an unclaimed fee falls through to
+        Service\Order::getOtherChargesLineItem()'s residual, and
+        Model\Total\Creditmemo\OtherCharges offers that residual to the
+        merchant to refund — over-refunding a fee its owner is already
+        accounting for.
 
         Add providers here, one <item> per provider, once that
         extension's real field/table names are verified against an
@@ -30,7 +30,9 @@
     -->
     <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
         <arguments>
-            <argument name="providers" xsi:type="array"/>
+            <argument name="providers" xsi:type="array">
+                <item name="amasty_extrafee" xsi:type="object">Two\Gateway\Service\Fee\Provider\AmastyExtraFee</item>
+            </argument>
             <!-- Optional-with-null-default, so named here or every rejected
                  provider line goes unreported. See the AGENTS.md note. -->
             <argument name="logRepository" xsi:type="object">Two\Gateway\Api\Log\RepositoryInterface</argument>
