@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config;
 
+use Magento\Framework\App\Config\Initial;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
@@ -19,6 +20,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 use Two\Gateway\Model\Provenance;
@@ -36,10 +38,24 @@ class Repository implements RepositoryInterface
      */
     private const PROVENANCE_MODULE = 'Two_Gateway';
 
+    // Only reached when the shipped config.xml default cannot be read.
+    private const SURCHARGE_LINE_DESCRIPTION_DEFAULT = 'Payment terms fee - %1 days';
+
     /**
      * @var ScopeConfigInterface
      */
     private $scopeConfig;
+
+    /**
+     * @var Initial|null
+     */
+    private $initialConfig;
+
+    /**
+     * @var string|null
+     */
+    private $shippedSurchargeLineDescription;
+
     /**
      * @var EncryptorInterface
      */
@@ -124,7 +140,8 @@ class Repository implements RepositoryInterface
         Provenance $provenance,
         LogRepository $logRepository,
         ?string $code = null,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?Initial $initialConfig = null
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -137,6 +154,7 @@ class Repository implements RepositoryInterface
         $this->logRepository = $logRepository;
         $this->code = $code;
         $this->logger = $logger;
+        $this->initialConfig = $initialConfig;
     }
 
     /**
@@ -711,8 +729,35 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
-        return (string)$this->getConfig($this->path('surcharge_line_description'), $storeId)
-            ?: 'Payment terms fee - %1 days';
+        $stored = (string)$this->getConfig($this->path('surcharge_line_description'), $storeId);
+        if ($stored !== '' && $stored !== $this->shippedSurchargeLineDescription()) {
+            return $stored;
+        }
+
+        if ($this->getPaymentTermsType($storeId) === PaymentTermsType::END_OF_MONTH) {
+            $eom = (string)$this->getConfig($this->path('surcharge_line_description_eom'), $storeId);
+            if ($eom !== '') {
+                return $eom;
+            }
+        }
+
+        return $this->shippedSurchargeLineDescription();
+    }
+
+    /** Each brand overlay ships its own wording, so a stored value equal to it is not a merchant customisation. */
+    private function shippedSurchargeLineDescription(): string
+    {
+        if ($this->shippedSurchargeLineDescription === null) {
+            $shipped = $this->initialConfig
+                ? ($this->initialConfig->getData('default')['payment'][$this->code()]['surcharge_line_description']
+                    ?? null)
+                : null;
+            $this->shippedSurchargeLineDescription = is_scalar($shipped)
+                ? (string)$shipped
+                : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+        }
+
+        return $this->shippedSurchargeLineDescription;
     }
 
     /**

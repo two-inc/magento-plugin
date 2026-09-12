@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Config;
 
+use Magento\Framework\App\Config\Initial;
+use Magento\Store\Model\ScopeInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
@@ -294,16 +296,141 @@ class RepositoryPaymentTermsTest extends TestCase
 
     // ── getSurchargeLineDescription ─────────────────────────────────
 
-    public function testGetSurchargeLineDescriptionDefault(): void
-    {
-        $this->stubConfig([]);
-        $this->assertEquals('Payment terms fee - %1 days', $this->repository->getSurchargeLineDescription());
+    /**
+     * @dataProvider surchargeLineDescriptions
+     */
+    public function testGetSurchargeLineDescription(
+        string $brandCode,
+        string $shippedDefault,
+        ?string $shippedEom,
+        ?string $stored,
+        string $termsType,
+        int $days,
+        string $expected,
+        string $case
+    ): void {
+        $reads = [];
+        $repository = $this->repositoryForBrand($brandCode, $shippedDefault, [
+            "payment/$brandCode/surcharge_line_description" => $stored,
+            "payment/$brandCode/surcharge_line_description_eom" => $shippedEom,
+            "payment/$brandCode/payment_terms_type" => $termsType,
+        ], $reads);
+
+        $rendered = (string)__($repository->getSurchargeLineDescription(7), $days);
+
+        $this->assertSame($expected, $rendered, $case);
+        $this->assertContains(
+            ["payment/$brandCode/surcharge_line_description", ScopeInterface::SCOPE_STORE, 7],
+            $reads,
+            "$case: store scope forwarded"
+        );
+        $misscoped = array_filter($reads, static fn (array $r): bool => $r[1] !== ScopeInterface::SCOPE_STORE
+            || $r[2] !== 7);
+        $this->assertSame([], $misscoped, "$case: every config read carries the caller's scope");
     }
 
-    public function testGetSurchargeLineDescriptionCustom(): void
+    public static function surchargeLineDescriptions(): array
     {
-        $this->stubConfig(['payment/two_payment/surcharge_line_description' => 'Extended terms fee']);
-        $this->assertEquals('Extended terms fee', $this->repository->getSurchargeLineDescription());
+        $shipped = 'Payment terms fee - %1 days';
+        $shippedEom = 'Payment terms fee - %1 days from end of month';
+        $custom = 'Extended terms fee - %1 days';
+
+        // A second brand overlay, which ships its own wording for both bases.
+        $brand = 'other_brand';
+        $brandShipped = 'Brand fee - %1 days';
+        $brandShippedEom = 'Brand fee - %1 days from end of month';
+
+        return [
+            ['two_payment', $shipped, $shippedEom, $shipped, 'standard', 14,
+                'Payment terms fee - 14 days', 'standard, 14 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'standard', 30,
+                'Payment terms fee - 30 days', 'standard, 30 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'standard', 90,
+                'Payment terms fee - 90 days', 'standard, 90 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'end_of_month', 30,
+                'Payment terms fee - 30 days from end of month', 'EOM, 30 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'end_of_month', 45,
+                'Payment terms fee - 45 days from end of month', 'EOM, 45 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'end_of_month', 60,
+                'Payment terms fee - 60 days from end of month', 'EOM, 60 days'],
+            ['two_payment', $shipped, $shippedEom, null, 'standard', 30,
+                'Payment terms fee - 30 days', 'empty stored value, standard'],
+            ['two_payment', $shipped, $shippedEom, null, 'end_of_month', 30,
+                'Payment terms fee - 30 days from end of month', 'empty stored value, EOM'],
+            ['two_payment', $shipped, $shippedEom, $custom, 'standard', 30,
+                'Extended terms fee - 30 days', 'merchant template wins, standard'],
+            ['two_payment', $shipped, $shippedEom, $custom, 'end_of_month', 30,
+                'Extended terms fee - 30 days', 'merchant template wins, EOM'],
+            [$brand, $brandShipped, $brandShippedEom, $brandShipped, 'standard', 30,
+                'Brand fee - 30 days', 'brand default, standard'],
+            [$brand, $brandShipped, $brandShippedEom, $brandShipped, 'end_of_month', 30,
+                'Brand fee - 30 days from end of month', 'brand default, EOM'],
+            [$brand, $brandShipped, $brandShippedEom, $custom, 'end_of_month', 30,
+                'Extended terms fee - 30 days', 'merchant template wins over brand default, EOM'],
+            // A brand overlay that has not yet shipped its own EOM wording keeps
+            // today's label rather than switching to another brand's wording.
+            [$brand, $brandShipped, null, $brandShipped, 'end_of_month', 30,
+                'Brand fee - 30 days', 'overlay has shipped no EOM wording, EOM'],
+        ];
+    }
+
+    /**
+     * @param array<string, string|null> $configMap
+     * @param list<array{0: string, 1: string, 2: int|null}> $reads
+     */
+    private function repositoryForBrand(
+        string $brandCode,
+        string $shippedDefault,
+        array $configMap,
+        array &$reads = []
+    ): Repository {
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->method('getValue')->willReturnCallback(
+            function ($path, $scope = null, $scopeCode = null) use ($configMap, &$reads) {
+                $reads[] = [$path, $scope, $scopeCode];
+                return $configMap[$path] ?? null;
+            }
+        );
+
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn($brandCode);
+        $brandRegistry->method('getProductName')->willReturn('Two');
+
+        $initialConfig = $this->createMock(Initial::class);
+        $initialConfig->method('getData')->with('default')->willReturn([
+            'payment' => [$brandCode => ['surcharge_line_description' => $shippedDefault]],
+        ]);
+
+        return new Repository(
+            $scopeConfig,
+            $this->createMock(EncryptorInterface::class),
+            $this->createMock(UrlInterface::class),
+            $this->createMock(ProductMetadataInterface::class),
+            $this->taxCalculation,
+            $brandRegistry,
+            $this->settingsProvider,
+            $this->createMock(Provenance::class),
+            $this->logRepository,
+            null,
+            null,
+            $initialConfig
+        );
+    }
+
+    public function testGetSurchargeLineDescriptionFallsBackWhenShippedDefaultIsUnreadable(): void
+    {
+        $this->stubConfig([
+            'payment/two_payment/surcharge_line_description' => 'Payment terms fee - %1 days',
+            'payment/two_payment/surcharge_line_description_eom' => 'Payment terms fee - %1 days from end of month',
+            'payment/two_payment/payment_terms_type' => 'end_of_month',
+        ]);
+
+        // $this->repository is built without an Initial, as the object manager
+        // leaves it when di.xml does not name the optional argument.
+        $this->assertSame(
+            'Payment terms fee - %1 days from end of month',
+            $this->repository->getSurchargeLineDescription()
+        );
     }
 
     // ── getCustomSurchargeTaxRate (deprecated flat rate) ─────────────

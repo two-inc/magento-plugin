@@ -57,6 +57,7 @@
                 <surcharge_type>none</surcharge_type>
                 <surcharge_differential>0</surcharge_differential>
                 <surcharge_line_description>Payment terms fee - %1 days</surcharge_line_description>
+                <surcharge_line_description_eom>Payment terms fee - %1 days from end of month</surcharge_line_description_eom>
                 <surcharge_tax_rate/>
                 <surcharge_rounding_basis>none</surcharge_rounding_basis>
                 <surcharge_rounding_step/>

@@ -33,6 +33,9 @@ if (!interface_exists(\Magento\Store\Model\ScopeInterface::class)) {
 if (!interface_exists(\Magento\Framework\App\Config\ScopeConfigInterface::class)) {
     require_once __DIR__ . '/Stubs/ScopeConfigInterface.php';
 }
+if (!class_exists(\Magento\Framework\App\Config\Initial::class)) {
+    require_once __DIR__ . '/Stubs/InitialConfig.php';
+}
 
 if (!class_exists(\Magento\Framework\DataObject::class)) {
     require_once __DIR__ . '/Stubs/DataObject.php';
