@@ -587,7 +587,10 @@ function makeSurchargeMock() {
         currencySymbol: '€',
         selectTerm: function () {},
         fetchSurcharges: function () {},
-        isTermReconciled: function () { return true; }
+        // Paired the way the real module pairs them, so a spec that gives the
+        // chips a reason cannot leave the gate reporting reconciled.
+        isTermReconciled: function () { return this.termStatusMessage() === ''; },
+        termStatusMessage: function () { return ''; }
     };
 }
 

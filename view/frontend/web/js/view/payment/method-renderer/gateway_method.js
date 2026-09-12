@@ -562,8 +562,8 @@ define([
         isTermReconciled: function () {
             return surchargeModel.isTermReconciled();
         },
-        isTermUpdating: function () {
-            return surchargeModel.isUpdating();
+        termStatusMessage: function () {
+            return surchargeModel.termStatusMessage();
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
@@ -1276,9 +1276,7 @@ define([
             // Belt to the button binding: the order is composed on the
             // selection (ABN-550).
             if (!this.isTermReconciled()) {
-                this.showErrorMessage(
-                    $t('The selected payment term is still being applied. Please try again shortly.')
-                );
+                this.showErrorMessage(this.termStatusMessage());
                 return;
             }
 

@@ -180,7 +180,7 @@
 "day","dag"
 "Selected payment terms","Valda betalningsvillkor"
 "Selected payment term is not available.","Valt betalningsvillkor är inte tillgängligt."
-"The selected payment term is still being applied. Please try again shortly.","Det valda betalningsvillkoret tillämpas fortfarande. Försök igen om en stund."
+"The selected payment term was not applied. Reload the page and select it again.","Det valda betalningsvillkoret tillämpades inte. Läs in sidan igen och välj det igen."
 "Applying the selected payment term…","Tillämpar det valda betalningsvillkoret…"
 "Could not update payment term.","Kunde inte uppdatera betalningsvillkor."
 "Please try again.","Försök igen."

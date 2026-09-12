@@ -25,6 +25,9 @@ function observable(initial) {
     return fn;
 }
 
+const APPLYING = 'Applying the selected payment term…';
+const NOT_APPLIED = 'The selected payment term was not applied. Reload the page and select it again.';
+
 const FEES = {
     term_surcharges: [
         { days: 30, net: 100, gross: 121 },
@@ -118,21 +121,33 @@ function shownSurcharge(ctx) {
 
 describe('surcharge model confirmed-term reconciliation (ABN-550)', function () {
     it.each([
-        ['none', null, true, 'an untouched checkout is reconciled: the server rendered the summary'],
-        ['pending', null, false, 'a chip click in flight is not reconciled — nothing has confirmed it'],
-        ['settled', 200, true, 'a confirmed chip click is reconciled'],
-        ['failed', null, true, 'a refused chip click reverts, so the chips and the quote agree again'],
-        ['empty', null, true, 'a 200 carrying no totals reverts — nothing confirmed the term'],
-        ['blank', null, true, 'a 200 carrying an empty segment set reverts too']
-    ])('%s with net %p is reconciled=%p (%s)', function (outcome, net, expected) {
+        ['none', null, true, '', 'an untouched checkout is reconciled: the server rendered the summary'],
+        ['pending', null, false, APPLYING, 'a chip click in flight says so — nothing has confirmed it'],
+        ['settled', 200, true, '', 'a confirmed chip click is reconciled'],
+        ['failed', null, true, '', 'a refused chip click reverts, so the chips and the quote agree again'],
+        ['empty', null, true, '', 'a 200 carrying no totals reverts — nothing confirmed the term'],
+        ['blank', null, true, '', 'a 200 carrying an empty segment set reverts too'],
+        ['aborted', null, false, NOT_APPLIED, 'a chip binding throwing leaves the selection unsent, and it says why']
+    ])('%s with net %p is reconciled=%p saying %p (%s)', function (outcome, net, expected, message) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
-        if (outcome !== 'none') {
+        if (outcome === 'aborted') {
+            // Given a chip binding that throws on the selection write
+            // When the buyer clicks a chip
+            // Then selectTerm aborts before it can request the term
+            ctx.model.selectedTerm.subscribe(function () { throw new Error('a chip binding'); });
+            expect(function () { ctx.model.selectTerm(90); }).toThrow('a chip binding');
+            expect(ctx.posts).toHaveLength(0);
+            expect(ctx.model.selectedTerm()).toBe(90);
+            expect(ctx.model.isUpdating()).toBe(false);
+            expect(ctx.captured.errors).toEqual([]);
+        } else if (outcome !== 'none') {
             ctx.model.selectTerm(90);
             if (outcome !== 'pending') settle(ctx, 0, outcome, net);
         }
 
         expect(ctx.model.isTermReconciled()).toBe(expected);
+        expect(ctx.model.termStatusMessage()).toBe(message);
     });
 
     it.each([
@@ -178,6 +193,7 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
 
         expect(ctx.posts).toHaveLength(2);
         expect(ctx.model.isTermReconciled()).toBe(false);
+        expect(ctx.model.termStatusMessage()).toBe(APPLYING);
 
         settle(ctx, 1, 'settled', 150);
 
@@ -196,6 +212,7 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         expect(ctx.posts).toHaveLength(1);
         expect(ctx.model.selectedTerm()).toBe(30);
         expect(ctx.model.isTermReconciled()).toBe(true);
+        expect(ctx.model.termStatusMessage()).toBe('');
     });
 
     it('a chip clicked back to the term in flight sends nothing more', function () {
@@ -281,15 +298,15 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
 });
 
 /**
- * The renderer over a surcharge model whose reconciliation verdict the spec
- * picks, so the submit gate and the button binding are exercised on their own.
+ * The renderer over a surcharge model whose term status the spec picks, so the
+ * submit gate and the button binding are exercised on their own.
  */
-function loadRenderer(reconciled) {
+function loadRenderer(statusMessage) {
     const surchargeMock = defaultMocks()['Two_Gateway/js/model/surcharge'];
     return loadAmdModule('view/frontend/web/js/view/payment/method-renderer/gateway_method.js', {
         'Two_Gateway/js/model/surcharge': Object.assign({}, surchargeMock, {
             termSurcharges: observable({ 30: '1.00', 90: '2.00' }),
-            isTermReconciled: function () { return reconciled; }
+            termStatusMessage: function () { return statusMessage; }
         })
     });
 }
@@ -320,6 +337,7 @@ function makeRendererContext(component) {
         showErrorMessage: component.showErrorMessage,
         isSelectedTermStillAvailable: component.isSelectedTermStillAvailable,
         isTermReconciled: component.isTermReconciled,
+        termStatusMessage: component.termStatusMessage,
         isOrderIntentDeclined: component.isOrderIntentDeclined,
         isPlaceOrderEnabled: component.isPlaceOrderEnabled,
         placeOrder: component.placeOrder,
@@ -335,45 +353,47 @@ function makeRendererContext(component) {
 
 describe('the chips say why the button is disabled (ABN-550)', function () {
     it.each([
-        [true, 'a call in flight says so, since the disabled button cannot answer a click'],
-        [false, 'a settled checkout says nothing']
-    ])('updating=%p (%s)', function (updating) {
-        const surchargeMock = defaultMocks()['Two_Gateway/js/model/surcharge'];
-        const component = loadAmdModule(
-            'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-            {
-                'Two_Gateway/js/model/surcharge': Object.assign({}, surchargeMock, {
-                    isUpdating: function () { return updating; }
-                })
-            }
-        );
+        ['', true, 'a settled checkout says nothing and the button is live'],
+        [APPLYING, false, 'a call in flight says so, since the disabled button cannot answer a click'],
+        [NOT_APPLIED, false, 'a selection nothing confirmed says why, instead of greying the button in silence']
+    ])('status %p leaves the button enabled=%p (%s)', function (message, enabled) {
+        const component = loadRenderer(message);
+        const ctx = makeRendererContext(component);
 
-        expect(component.isTermUpdating.call(component)).toBe(updating);
+        expect(component.termStatusMessage.call(component)).toBe(message);
+        expect(ctx.isPlaceOrderEnabled.call(ctx)).toBe(enabled);
     });
 
-    it('the template shows the status only while a call is in flight', function () {
+    it('the template renders that one status and no second condition of its own', function () {
         const template = require('fs').readFileSync(
             require('path').resolve(__dirname, '..', '..', 'view/frontend/web/template/payment/gateway_method.html'),
             'utf8'
         );
 
-        expect(template).toContain('isTermUpdating()');
-        expect(template).toContain('Applying the selected payment term…');
+        expect(template).toContain('text: termStatusMessage()');
+        expect(template).not.toContain('isTermUpdating');
     });
 });
 
 describe('gateway_method reconciliation submit gate (ABN-550)', function () {
     it.each([
-        [true, 1, [], true, 'a confirmed selection places the order and leaves the button enabled'],
+        ['', 1, [], true, 'a confirmed selection places the order and leaves the button enabled'],
         [
-            false,
+            APPLYING,
             0,
-            ['The selected payment term is still being applied. Please try again shortly.'],
+            [APPLYING],
             false,
-            'an unconfirmed selection is refused rather than charged a total the summary never showed'
+            'a selection still being applied is refused rather than charged a total the summary never showed'
+        ],
+        [
+            NOT_APPLIED,
+            0,
+            [NOT_APPLIED],
+            false,
+            'a selection nothing confirmed is refused with the same reason the chips carry'
         ]
-    ])('reconciled=%p -> %p placements, %p errors, enabled=%p (%s)', function (reconciled, expectedCalls, expectedErrors, expectedEnabled) {
-        const component = loadRenderer(reconciled);
+    ])('status %p -> %p placements, %p errors, enabled=%p (%s)', function (message, expectedCalls, expectedErrors, expectedEnabled) {
+        const component = loadRenderer(message);
         const ctx = makeRendererContext(component);
 
         expect(ctx.isPlaceOrderEnabled.call(ctx)).toBe(expectedEnabled);
