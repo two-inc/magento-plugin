@@ -740,6 +740,13 @@
     background-color: var(--color-blue2);
 }
 
+/* The term chips' ring, offset outside so it survives the selected chip's own
+   blue fill (ABN-554). */
+.two-company-mode-chip:focus-visible {
+    outline: 2px solid var(--color-blue2);
+    outline-offset: 2px;
+}
+
 .two-company-mode-chip.two-hidden {
     display: none;
 }
