@@ -672,6 +672,85 @@ state, so a buyer held for a stale total is never told they were declined, and
 a declined buyer is never told their term is still applying. A third condition
 added later needs its own region for the same reason.
 
+## The term chips are a radio group
+
+The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,
+and they implement that role's whole keyboard contract: the group is a single
+tab stop — one chip at a time carries `tabindex="0"` — and the arrow keys move
+the checked term and the focus together, Home and End jump to the ends, and both
+ends wrap (ABN-554). Both halves or neither: roles without the keyboard
+behaviour advertise something the group does not do, which is its own defect.
+
+`onTermKeydown` returns true on every key it does not act on, because knockout's
+`event` binding suppresses the default action unless a handler says otherwise —
+without it the group swallows Tab.
+
+`isTermChecked()` is the single definition of a selected chip, read by the
+`aria-checked` binding and by the visual `--selected` class, so the tick and the
+exposed state cannot drift apart. A selection matching no chip leaves nothing
+checked, and `focusableTerm()` puts the tab stop on the first chip so the group
+cannot drop out of the tab order.
+
+**`termOptions` is a plain array, not a computed.** Knockout's `foreach` over a
+recomputed array rebuilds every chip node, and a `/select-term` response
+rewrites the per-term fee maps on its way back — so a computed drops the focus
+the arrow keys just placed, one round trip later. Each chip reads its fee
+through a computed of its own instead, which is what lets the nodes outlive a
+refresh. The template CALLS those computeds: a binding negating one — the fee
+label's `!isLoading()` — negates the function itself and is permanently false
+without the call, where a binding handed the bare value unwraps it.
+
+The focus ring is `:focus-visible`, not `:focus`: the group's single tab stop
+makes the focused chip the only thing saying where the keyboard is, and a
+clicked chip still gets no ring.
+
+**Every ARIA association in the payment template is keyed on the payment code.**
+The chip group's label, the consent checkbox and the consent sentence each take
+their id from `getCode()`, as the declined-notice region does, or a second brand
+tile's controls point at the first tile's text.
+
+The method radio is named by a `label` carrying `for`, so the tile title is both
+its accessible name and a click target for it; the subtitle and the about link
+stay outside that label. The consent checkbox is named by `aria-labelledby` at
+the consent sentence instead, because that sentence carries the terms link and a
+link inside a label makes activation ambiguous.
+
+## A chip states its term type, not just a day count
+
+An end-of-month term falls due that many days after the end of the month, so a
+chip reading "30 days" on an end-of-month shop states the wrong due date. The
+visible text is `30 days` under standard terms and `EOM+30` under end of month,
+and only the end-of-month chip carries a `title` and an `aria-label` spelling
+that out: `EOM+30: pay 30 days after the end of the month`. The accessible name
+opens with the visible token because WCAG 2.5.3 requires it to contain the
+visible text, and a standard chip gets no name of its own because one that
+merely restated `30 days` would risk the same criterion.
+
+The name also states the surcharge, because an `aria-label` replaces the whole
+accessible name and the `+€n.nn` rendered inside the chip is then announced
+nowhere: `EOM+30: pay 30 days after the end of the month, plus a €7.25
+surcharge`. Each wording is one translated sentence rather than an assembled
+one, so a translator can order the clauses. A term carrying no surcharge, and a
+term whose quote has not landed yet, name no amount at all.
+
+`isEndOfMonthTerms` reaches the renderer from `ConfigProvider`; the chip text and
+the explanation are built by `termChipText()` and `termChipExplanation()`, which
+the sole-term branch reads too. The explanation is a computed over the same fee
+map the visible amount reads, so the name follows the quote in. An empty
+explanation reaches the `attr` binding as `false`, not as `''`, because knockout
+renders a blank attribute and removes a false one — which is why both bindings
+call the computed rather than passing it unwrapped.
+
+## The sole offered term is a disabled button
+
+One offered term is not a choice, but it still has to carry the name that spells
+the term out, and ARIA prohibits naming a role-less element — which a bare
+`span` is. So the sole chip is a `button` with the native `disabled` attribute:
+naming works, and a natively disabled button is not focusable, so the tab order
+skips a chip that has nothing to select. It keeps the `two-term-chip--single`
+class, which is its whole appearance; the base chip rules already set border,
+background, padding and font because the multi-term chips are buttons too.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection
@@ -754,7 +833,9 @@ green it is. Assert the observable proxy instead — that the handler leaves the
 event undefaulted, that the control's parts are one contiguous run in document
 order, that a closed panel carries `hidden` — and say in the suite that the
 keyboard behaviour itself is verified in a real browser. A passing jsdom Tab
-test is never evidence that a trap is absent.
+test is never evidence that a trap is absent. Focus a handler moves ITSELF, with
+`element.focus()`, is the exception: jsdom performs that, so arrow-key traversal
+inside a composite control is directly observable where Tab order is not.
 
 Three traps in the same suites:
 
