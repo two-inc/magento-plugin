@@ -447,7 +447,7 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(held.closed).toBe(false);
     });
 
-    test('Enter on the chip leaves the popover up and nothing focused (TWO-25658)', async () => {
+    test('Enter on the chip leaves the popover up and parks focus on the company field (ABN-554)', async () => {
         // Given: the keyboard route, where the chip really does hold focus, so
         // the rebuild that the launch runs through deletes a focused node.
         const { rec } = await startStack();
@@ -456,15 +456,22 @@ describe('a blocked popup falls back to the on-page link', () => {
 
         node.click();
 
+        // Then: the launch itself leaves focus nowhere, as TWO-25658 requires.
         const popover = document.querySelector('.two-company-dropdown');
         expect([rec.opened.length, popover.hasAttribute('hidden'), document.activeElement])
             .toEqual([1, false, document.body]);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // And: a tick later the popover is still up, around a field that can be typed in.
+        expect([popover.hasAttribute('hidden'), document.activeElement])
+            .toEqual([false, document.getElementById('company_name')]);
     });
 
     test.each([
         [false, 'the launching control does not keep focus'],
-        [true, 'so a window return re-focuses nothing and the signup survives the tab switch']
-    ])('afterWindowReturn=%p: nothing holds focus while the popup is open (TWO-25658)',
+        [true, 'and a window return re-firing focus there is not the buyer coming back']
+    ])('afterWindowReturn=%p: the launch parks focus on the company field (ABN-554)',
         async (afterWindowReturn, why) => {
             // Given: "Select a different sole trader", whose click is cancelled, so a
             // mouse click leaves it focused.
@@ -476,14 +483,13 @@ describe('a blocked popup falls back to the on-page link', () => {
             expect(document.activeElement).toBe(node);
 
             node.click();
-            // A browser regaining focus re-fires focus on the control that holds it, and
-            // on nothing at all when that is the body.
-            if (afterWindowReturn && document.activeElement !== document.body) {
-                dispatchNative(document.activeElement, 'focusin');
-            }
+            expect(document.activeElement).toBe(document.body);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            // A browser regaining focus re-fires focus on the control that holds it.
+            if (afterWindowReturn) dispatchNative(document.activeElement, 'focusin');
 
             expect(tagged(why, [document.activeElement, rec.opened.length, flow.isPopupOpen()]))
-                .toEqual(tagged(why, [document.body, 1, true]));
+                .toEqual(tagged(why, [document.getElementById('company_name'), 1, true]));
         });
 
     test('focus outside closes the real popover with the popup (TWO-25658)', async () => {

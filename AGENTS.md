@@ -664,8 +664,12 @@ once, and these are the three rules (TWO-25658):
 
 A `focusin` the browser re-fires on window return counts as the buyer focusing
 that control, so an alt-tab back onto a control is classified like any other
-arrival. Opening the popup blurs whatever held focus for exactly that reason —
-with nothing focused, a window return settles nothing.
+arrival. Opening the popup blurs whatever held focus for exactly that reason.
+A popover left on screen around a document focusing nothing reaches no keystroke
+at all, so the launch parks that focus on the company field one tick later
+(ABN-554). That one control is exempt from the rules above until focus leaves
+it: a window return re-fires `focusin` there with no `focusout` before it, and
+that is not the buyer arriving.
 
 **The close is only abandonment while the checkout is still in sole-trader
 mode** (ABN-565). The popup's close is noticed by a 300ms poll, so a chip the
@@ -675,10 +679,11 @@ regardless swallowed that action. Manual entry was the visible loss: the field
 came back a registered-search combobox with the registered chip pressed.
 
 **Closing the signup with nothing captured gives focus back, but only where
-focus is still unplaced** (ABN-561). The launch blurred it, so a close that left
-`document.activeElement` on the body or nothing at all has nowhere for the buyer
-to be, and the company field takes it. A close the buyer caused by focusing
-another control keeps focus where they put it.
+focus is still unplaced** (ABN-561). A close that left `document.activeElement`
+on the body or nothing at all has nowhere for the buyer to be, and the company
+field takes it. The flight's own park is dropped before that is read, so what
+it judges is the unplaced focus the launch left. A close the buyer caused by
+focusing another control keeps focus where they put it.
 
 **A signup open anywhere on the checkout owns focus, and that is what the close
 watcher asks.** Handing the popup over to another capture launches that
