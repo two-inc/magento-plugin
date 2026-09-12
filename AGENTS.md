@@ -560,14 +560,24 @@ buyer. The field help says so; nothing enforces it.
 
 ## The company-search panel is ONE module, vendored twice
 
-`view/frontend/web/js/model/company-search-panel.js` is the implementation and
-the WooCommerce plugin carries a copy of the same file, so **a change to shared
-panel behaviour is TWO edits**. Nothing links the two copies; whoever changes
-one and stops has fixed one platform, and the divergence is invisible to both
-reviewers. **Nothing compares the two copies** — the other repo's guard locks its
-copy against an in-place edit without ever seeing this one — so re-copying the
-whole file is the only thing that puts them back in step, and a panel change made
-here and nowhere else has landed on one platform (TWO-25503).
+`view/frontend/web/js/model/company-search-panel.js` and the WooCommerce
+plugin's copy are BYTE-IDENTICAL, and each repo's own JS suite locks its copy to
+a sha256 — `EDIT_LOCK_SHA256` in `Test/Js/company-search-panel-vendored.test.js`
+here, the same constant in the same shape there. **Two matching digests are the
+parity check**; two different ones are the drift, and comparing them is the one
+thing that can be done from either repo alone (TWO-25503).
+
+**A change to shared panel behaviour is TWO edits in ONE change set**: edit here,
+apply the identical edit there, re-run both JS suites, and move both digests. Do
+NOT re-copy the whole file to "re-sync" — a copy that lands while the copies
+differ imports the other platform's code wholesale and silently reverts whatever
+only that side had. The copies are equal today, so a diff between them is the
+change under review, not history.
+
+**Everything platform-specific is an OPTION the host passes**, never an edit to
+the file: the transport, the chips and their modes, the country source, the
+rate-limit scope. A difference that cannot be expressed as an option is a
+divergence, and it divides the two checkouts.
 
 It is framework-free with a UMD tail — no RequireJS, jQuery or Knockout DEPENDENCY —
 which is what lets the Hyvä checkout load this repo's own copy by
