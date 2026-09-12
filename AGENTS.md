@@ -1000,14 +1000,15 @@ shipping tax, then treats the order's allowance two different ways: a `min()`
 ceiling on a partial memo, but a straight assignment on the last one (and only
 when shipping is not partially refunded). So a fee belonging to no item and no
 shipping is in `tax_amount` already on that last memo and absent on every
-other. This is the one place it diverges from the sibling
-`Creditmemo\Surcharge` collector, which *assumes* core's native proration
-already granted its own VAT — an assumption that holds on the last memo and
-fails on a partial one. That assumption is bounded by the surcharge still
-refundable: core offers a memo the order's invoiced tax less the tax earlier
-memos refunded, so a baseline drawn from the whole order surcharge claims VAT
-an earlier surcharge-only memo has already taken and understates the memo's
-tax total and grand total by it while its merchandise rows stay right
+other. The sibling `Creditmemo\Surcharge` collector measures its own grant the
+same way rather than assuming core's proration granted it. A baseline drawn
+from the order surcharge instead claims VAT core withheld: on a partial memo it
+understated that memo's tax total and grand total by the whole VAT on the
+surcharge being refunded, left the memo short against its own lines so this
+collector refused the fee there, and on the last memo — where core assigns the
+allowance in full — it over-refunded VAT on a surcharge share the merchant had
+held back. Both baselines are capped by what the charge still has refundable,
+since the allowance core assigns covers every unitemized charge at once
 (ABN-560).
 
 How much core granted THIS fee is read the way `ComposeRefund` reads it — the
