@@ -340,16 +340,22 @@
 
 
 
-.two-term-chip--single {
+/* `:disabled` is carried on every selector to outscore Luma's own
+   `button:disabled` (0-1-1), which otherwise fades the sole offered term to
+   half opacity — it is the buyer's term, not an unavailable control. */
+.two-term-chip--single,
+.two-term-chip--single:disabled {
     border-color: var(--color-blue2);
     background: var(--color-blue2);
     color: var(--color-white);
     cursor: default;
     font-size: 14px;
     font-weight: 500;
+    opacity: 1;
 }
 
-.two-term-chip--single:hover {
+.two-term-chip--single:hover,
+.two-term-chip--single:disabled:hover {
     border-color: var(--color-blue2);
 }
 
