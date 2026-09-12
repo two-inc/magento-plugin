@@ -223,12 +223,15 @@ define([
     /**
      * Hand the chips back to the confirmed term: re-clicking the chip that
      * already looks selected does nothing.
+     *
+     * Message before the write: an observable assigns before it notifies, so a
+     * chip binding throwing would revert the chips and lose the explanation.
      */
     function revertSelection() {
-        selectedTerm(confirmedTerm());
         messageList.addErrorMessage({
             message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
         });
+        selectedTerm(confirmedTerm());
     }
 
     /**
@@ -243,6 +246,21 @@ define([
         } catch (error) {
             console.warn('Two_Gateway: surcharge update only partly applied', error);
         }
+    }
+
+    /**
+     * The reason placement is refused, or '' when the chips agree with the term
+     * the quote is priced on. The placement gate is derived from this, so a
+     * disabled Place Order button can never be silent (ABN-550).
+     */
+    function termStatusMessage() {
+        if (isUpdating()) {
+            return $t('Applying the selected payment term…');
+        }
+        if (confirmedTerm() !== selectedTerm()) {
+            return $t('The selected payment term was not applied. Reload the page and select it again.');
+        }
+        return '';
     }
 
     /**
@@ -318,8 +336,10 @@ define([
          * priced the quote on. Placement is refused while it is not (ABN-550).
          */
         isTermReconciled: function () {
-            return !isUpdating() && confirmedTerm() === selectedTerm();
+            return termStatusMessage() === '';
         },
+
+        termStatusMessage: termStatusMessage,
 
         /**
          * Call /select-term to update totals with the new surcharge.
