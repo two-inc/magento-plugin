@@ -569,9 +569,10 @@ check**; two different ones are the drift, and comparing them is the one thing
 either repo can do alone (TWO-25503).
 
 **A change to shared panel behaviour is TWO edits in ONE change set**: edit here,
-apply the identical edit there, re-run both JS suites, and move both digests. Re-copying
-the whole file is NOT a way to re-sync: once the copies differ it reverts whatever only
-the target side held, and while they agree there is nothing to copy.
+apply the identical edit there, re-run both JS suites, and move both digests.
+Re-copying the whole file is NOT a way to re-sync: once the copies differ it
+reverts whatever only the target side held, and while they agree there is
+nothing to copy.
 
 **Everything platform-specific is an OPTION the host passes**, never an edit to
 the file: the transport, the chips and their modes, the country source, the

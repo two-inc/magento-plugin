@@ -526,29 +526,6 @@ describe('an open panel takes the tab stop off the field', () => {
         }
     });
 
-    /**
-     * A field left carrying these advertises a listbox that is not there, and
-     * `aria-controls` names a popover already removed (TWO-25554).
-     */
-    const COMBOBOX_ATTRIBUTES = ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'];
-
-    function comboboxAttributes(node) {
-        return COMBOBOX_ATTRIBUTES.filter(function (attr) { return node.hasAttribute(attr); });
-    }
-
-    test.each([
-        { tearDown: (ctx) => ctx.panel.destroy(), description: 'destroy, which is final' },
-        { tearDown: (ctx) => ctx.panel.unmount(), description: 'unmount, which stays re-mountable' }
-    ])('teardown takes the combobox attributes back off the field ($description)', ({ tearDown }) => {
-        const ctx = setup();
-        const field = document.querySelector(FIELD);
-        expect(comboboxAttributes(field)).toEqual(COMBOBOX_ATTRIBUTES);
-
-        tearDown(ctx);
-
-        expect(comboboxAttributes(field)).toEqual([]);
-    });
-
     test.each([
         { tearDown: (ctx) => ctx.panel.destroy(), description: 'destroy, which is final' },
         { tearDown: (ctx) => ctx.panel.unmount(), description: 'unmount, which stays re-mountable' }
@@ -599,3 +576,26 @@ describe('an open panel takes the tab stop off the field', () => {
         expect(document.querySelector(FIELD).getAttribute('aria-expanded')).toBe('false');
     });
 });
+
+/** Left on a field the panel no longer drives, these name a listbox that is gone (TWO-25554). */
+const COMBOBOX_ATTRIBUTES = ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'];
+
+function comboboxAttributes(node) {
+    return COMBOBOX_ATTRIBUTES.filter(function (attr) { return node.hasAttribute(attr); });
+}
+
+describe('teardown gives the field back as core rendered it', () => {
+    test.each([
+        { tearDown: (ctx) => ctx.panel.destroy(), description: 'destroy, which is final' },
+        { tearDown: (ctx) => ctx.panel.unmount(), description: 'unmount, which stays re-mountable' }
+    ])('the combobox attributes come back off ($description)', ({ tearDown }) => {
+        const ctx = setup();
+        const field = document.querySelector(FIELD);
+        expect(comboboxAttributes(field)).toEqual(COMBOBOX_ATTRIBUTES);
+
+        tearDown(ctx);
+
+        expect(comboboxAttributes(field)).toEqual([]);
+    });
+});
+
