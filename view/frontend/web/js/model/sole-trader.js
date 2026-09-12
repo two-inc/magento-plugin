@@ -578,11 +578,14 @@
 
     /** Release the watcher with the popup it was armed for. */
     SoleTrader.prototype.stopReturnToCheckoutWatcher = function () {
+        // The flight's own park is not a place the buyer chose, so the abandon reclaim
+        // that follows reads the unplaced focus the launch actually left it (ABN-554).
+        if (this._parkedFocus && document.activeElement === this._parkedFocus) this._parkedFocus.blur();
+        this._parkedFocus = null;
         if (!this._returnHandler) return;
         document.removeEventListener('focusin', this._returnHandler, true);
         document.removeEventListener('focusout', this._returnHandler, true);
         this._returnHandler = null;
-        this._parkedFocus = null;
     };
 
     /** Close the popup this flow opened, if it is still up. */
