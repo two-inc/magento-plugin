@@ -3,8 +3,10 @@
  * See COPYING.txt for license details.
  *
  * A payment term the server would not apply snaps the chips back to the term
- * the quote is priced on. The buyer is told why, even when re-rendering a chip
- * throws while the revert is being notified (ABN-550).
+ * the quote is priced on, and is said in the tile's own live region rather
+ * than the page-level banner — even when re-rendering a chip throws while the
+ * revert is being notified. Placement waits for the buyer either way
+ * (ABN-550).
  */
 
 'use strict';
@@ -79,15 +81,15 @@ const UNSETTLED = { grand_total: 1100, total_segments: [] };
 
 describe('surcharge model term revert', function () {
     it.each([
-        { outcome: 'done', answer: SETTLED, throwingChip: false, messages: [], term: 60,
+        { outcome: 'done', answer: SETTLED, throwingChip: false, status: '', term: 60,
           description: 'an applied term keeps quiet and leaves the chips on it' },
-        { outcome: 'fail', answer: null, throwingChip: false, messages: [REVERT_MESSAGE], term: 30,
+        { outcome: 'fail', answer: null, throwingChip: false, status: REVERT_MESSAGE, term: 30,
           description: 'a refused call reverts the chips and says so' },
-        { outcome: 'done', answer: UNSETTLED, throwingChip: false, messages: [REVERT_MESSAGE], term: 30,
+        { outcome: 'done', answer: UNSETTLED, throwingChip: false, status: REVERT_MESSAGE, term: 30,
           description: 'an answer confirming no totals reverts the chips and says so' },
-        { outcome: 'fail', answer: null, throwingChip: true, messages: [REVERT_MESSAGE], term: 30,
+        { outcome: 'fail', answer: null, throwingChip: true, status: REVERT_MESSAGE, term: 30,
           description: 'a chip throwing during the revert still leaves the buyer told' },
-        { outcome: 'done', answer: UNSETTLED, throwingChip: true, messages: [REVERT_MESSAGE], term: 30,
+        { outcome: 'done', answer: UNSETTLED, throwingChip: true, status: REVERT_MESSAGE, term: 30,
           description: 'a chip throwing during an unconfirmed revert still leaves the buyer told' }
     ])('$description', function (testCase) {
         const { model, messages, captured } = loadModel();
@@ -110,9 +112,10 @@ describe('surcharge model term revert', function () {
         }
         captured.always();
 
-        expect(messages).toEqual(testCase.messages);
+        expect(model.termStatusMessage()).toBe(testCase.status);
+        // Nothing reaches the page-level banner above the payment tile.
+        expect(messages).toEqual([]);
         expect(model.selectedTerm()).toBe(testCase.term);
-        // Placement stays open on the term the quote is actually priced on.
-        expect(model.isTermReconciled()).toBe(true);
+        expect(model.isTermReconciled()).toBe(testCase.status === '');
     });
 });

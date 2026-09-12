@@ -18,11 +18,10 @@ define([
     'ko',
     'jquery',
     'Magento_Checkout/js/model/quote',
-    'Magento_Ui/js/model/messageList',
     'mage/translate',
     'mage/url',
     'Two_Gateway/js/model/brand-config'
-], function (ko, $, quote, messageList, $t, url, brandConfig) {
+], function (ko, $, quote, $t, url, brandConfig) {
     'use strict';
 
     var SELECT_TERM_TIMEOUT_MS = 30000;
@@ -48,6 +47,12 @@ define([
     // on the chips means the summary and the order can disagree (ABN-550).
     // Observable so the placement gate re-evaluates when it moves.
     var confirmedTerm = ko.observable(selectedTerm());
+
+    // A /select-term the server would not take. Held until the buyer's next
+    // chip click: the revert puts the chips back on the confirmed term, so
+    // neither the tile's live region nor the placement gate can see the
+    // refusal in the terms themselves (ABN-550).
+    var termRefused = ko.observable(false);
 
     // A chip clicked while a /select-term is in flight, sent once that settles:
     // the server serialises overlapping calls on the session lock and can take
@@ -221,16 +226,14 @@ define([
     }
 
     /**
-     * Hand the chips back to the confirmed term: re-clicking the chip that
-     * already looks selected does nothing.
+     * Hand the chips back to the confirmed term, recording the term that was
+     * refused.
      *
-     * Message before the write: an observable assigns before it notifies, so a
+     * Refusal before the write: an observable assigns before it notifies, so a
      * chip binding throwing would revert the chips and lose the explanation.
      */
     function revertSelection() {
-        messageList.addErrorMessage({
-            message: $t('Could not update payment term.') + ' ' + $t('Please try again.')
-        });
+        termRefused(true);
         selectedTerm(confirmedTerm());
     }
 
@@ -256,6 +259,9 @@ define([
     function termStatusMessage() {
         if (isUpdating()) {
             return $t('Applying the selected payment term…');
+        }
+        if (termRefused()) {
+            return $t('Could not update payment term.') + ' ' + $t('Please try again.');
         }
         if (confirmedTerm() !== selectedTerm()) {
             return $t('The selected payment term was not applied. Reload the page and select it again.');
@@ -325,6 +331,9 @@ define([
          */
         selectTerm: function (days) {
             if (days === selectedTerm()) {
+                // Re-clicking the chip the quote is priced on is the only way
+                // out of a refusal that does not need a page reload.
+                termRefused(false);
                 return;
             }
             selectedTerm(days);
@@ -351,6 +360,7 @@ define([
                 pendingTerm = days;
                 return;
             }
+            termRefused(false);
             isUpdating(true);
             // Do NOT clear termSurcharges here. A chip click only changes
             // which term is selected; the per-chip fees themselves are
