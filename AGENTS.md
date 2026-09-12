@@ -548,6 +548,19 @@ never reopens.
 fires once focus has settled on another control, so taking focus back would undo
 the buyer's own Tab (TWO-25326).
 
+**Escape is bound to the PANEL, not to the query field.** Outside
+registered-company mode the query row is withdrawn and a chip is what holds
+focus, and the popover is drawn over the control below the field — so an Escape
+the query field alone answers leaves that buyer with no route out at all
+(ABN-554).
+
+**A press on the panel's own dead space is a no-op.** Its default action would
+blur the caret out of the query field and leave the open popover holding
+nothing, so the press is cancelled — except on a control, which a press is
+entitled to focus, and except on a scrollbar, where cancelling would stop the
+drag scrolling the results. The outside-press close is a different gesture and
+unaffected: it is a press the panel does not contain (ABN-554).
+
 **A pointer press outside the popover takes focus back only where the press left
 it nowhere**, and one tick later rather than in the handler: the press's own
 default action runs after the handler and either focuses what it hit or clears
@@ -612,11 +625,21 @@ adopts an autofilled sole trader raises no popup, so the reclaim stands.
 Read at the close, never latched at the handover: a receiving signup the buyer
 has since closed owns nothing.
 
-**A chip-row rebuild hands focus to the company field.** The row is rebuilt from
-scratch, so activating a chip deletes the node the activation arrived on and
-focus falls to the body — including on the adopt path, where the receiving
-capture re-renders and opens nothing. Only a focused chip the rebuild actually
-disconnected is repaired, so focus the buyer put elsewhere is left alone.
+**A mode change places focus again, wherever it took it from.** The chip row is
+rebuilt from scratch, so activating a chip deletes the node the activation
+arrived on; and a mode that withdraws the query row hides the input the caret
+was in, which is what a pointer buyer's chip click leaves focus in, since the
+chip's own press cancels the native focus. Either way the buyer ends up on the
+body.
+
+**It asks whether the NODE survived, never where focus is now**, and that is the
+part a reclaim written against `document.activeElement` gets wrong: a browser
+does not blur the caret out of a hidden row until it restyles, which is after
+the handler that hid it, so focus still reads as the input inside the sync. A
+chip-only rule missed the case entirely, because a pointer buyer's focus was
+never on the chip. Focus is placed again only where the sync itself took the
+holder away, so focus the buyer put elsewhere is left alone: inside the panel
+where it is still open, on the company field where it is not (ABN-554).
 
 The reclaim decision is read BEFORE returning to registered mode, which can
 remount the panel and so unplace focus the buyer had put somewhere themselves.
