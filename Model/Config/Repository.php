@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config;
 
+use Magento\Framework\App\Config\Initial;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
@@ -37,14 +38,19 @@ class Repository implements RepositoryInterface
      */
     private const PROVENANCE_MODULE = 'Two_Gateway';
 
-    // etc/config.xml ships the standard default, so a stored value equal to it is not a merchant customisation.
+    // Only reached when the shipped config.xml default cannot be read.
     private const SURCHARGE_LINE_DESCRIPTION_DEFAULT = 'Payment terms fee - %1 days';
-    private const SURCHARGE_LINE_DESCRIPTION_EOM_DEFAULT = 'Payment terms fee - %1 days from end of month';
 
     /**
      * @var ScopeConfigInterface
      */
     private $scopeConfig;
+
+    /**
+     * @var Initial|null
+     */
+    private $initialConfig;
+
     /**
      * @var EncryptorInterface
      */
@@ -129,7 +135,8 @@ class Repository implements RepositoryInterface
         Provenance $provenance,
         LogRepository $logRepository,
         ?string $code = null,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?Initial $initialConfig = null
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -142,6 +149,7 @@ class Repository implements RepositoryInterface
         $this->logRepository = $logRepository;
         $this->code = $code;
         $this->logger = $logger;
+        $this->initialConfig = $initialConfig;
     }
 
     /**
@@ -717,13 +725,28 @@ class Repository implements RepositoryInterface
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
         $stored = (string)$this->getConfig($this->path('surcharge_line_description'), $storeId);
-        if ($stored !== '' && $stored !== self::SURCHARGE_LINE_DESCRIPTION_DEFAULT) {
+        if ($stored !== '' && $stored !== $this->shippedSurchargeLineDescription()) {
             return $stored;
         }
 
-        return $this->getPaymentTermsType($storeId) === PaymentTermsType::END_OF_MONTH
-            ? self::SURCHARGE_LINE_DESCRIPTION_EOM_DEFAULT
-            : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+        if ($this->getPaymentTermsType($storeId) === PaymentTermsType::END_OF_MONTH) {
+            $eom = (string)$this->getConfig($this->path('surcharge_line_description_eom'), $storeId);
+            if ($eom !== '') {
+                return $eom;
+            }
+        }
+
+        return $stored !== '' ? $stored : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
+    }
+
+    /** Each brand overlay ships its own wording, so a stored value equal to it is not a merchant customisation. */
+    private function shippedSurchargeLineDescription(): string
+    {
+        $shipped = $this->initialConfig
+            ? ($this->initialConfig->getData('default')['payment'][$this->code()]['surcharge_line_description'] ?? null)
+            : null;
+
+        return is_scalar($shipped) ? (string)$shipped : self::SURCHARGE_LINE_DESCRIPTION_DEFAULT;
     }
 
     /**

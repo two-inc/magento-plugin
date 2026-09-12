@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Config;
 
+use Magento\Framework\App\Config\Initial;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
@@ -298,18 +299,22 @@ class RepositoryPaymentTermsTest extends TestCase
      * @dataProvider surchargeLineDescriptions
      */
     public function testGetSurchargeLineDescription(
+        string $brandCode,
+        string $shippedDefault,
+        ?string $shippedEom,
         ?string $stored,
         string $termsType,
         int $days,
         string $expected,
         string $case
     ): void {
-        $this->stubConfig([
-            'payment/two_payment/surcharge_line_description' => $stored,
-            'payment/two_payment/payment_terms_type' => $termsType,
+        $repository = $this->repositoryForBrand($brandCode, $shippedDefault, [
+            "payment/$brandCode/surcharge_line_description" => $stored,
+            "payment/$brandCode/surcharge_line_description_eom" => $shippedEom,
+            "payment/$brandCode/payment_terms_type" => $termsType,
         ]);
 
-        $rendered = (string)__($this->repository->getSurchargeLineDescription(), $days);
+        $rendered = (string)__($repository->getSurchargeLineDescription(), $days);
 
         $this->assertSame($expected, $rendered, $case);
     }
@@ -317,26 +322,81 @@ class RepositoryPaymentTermsTest extends TestCase
     public static function surchargeLineDescriptions(): array
     {
         $shipped = 'Payment terms fee - %1 days';
+        $shippedEom = 'Payment terms fee - %1 days from end of month';
         $custom = 'Extended terms fee - %1 days';
 
+        // A second brand overlay, which ships its own wording for both bases.
+        $brand = 'other_brand';
+        $brandShipped = 'Brand fee - %1 days';
+        $brandShippedEom = 'Brand fee - %1 days from end of month';
+
         return [
-            [$shipped, 'standard', 14, 'Payment terms fee - 14 days', 'standard, 14 days'],
-            [$shipped, 'standard', 30, 'Payment terms fee - 30 days', 'standard, 30 days'],
-            [$shipped, 'standard', 90, 'Payment terms fee - 90 days', 'standard, 90 days'],
-            [$shipped, 'end_of_month', 30, 'Payment terms fee - 30 days from end of month', 'EOM, 30 days'],
-            [$shipped, 'end_of_month', 45, 'Payment terms fee - 45 days from end of month', 'EOM, 45 days'],
-            [$shipped, 'end_of_month', 60, 'Payment terms fee - 60 days from end of month', 'EOM, 60 days'],
-            [null, 'standard', 30, 'Payment terms fee - 30 days', 'empty stored value, standard'],
-            [
-                null,
-                'end_of_month',
-                30,
-                'Payment terms fee - 30 days from end of month',
-                'empty stored value, EOM',
-            ],
-            [$custom, 'standard', 30, 'Extended terms fee - 30 days', 'merchant template wins, standard'],
-            [$custom, 'end_of_month', 30, 'Extended terms fee - 30 days', 'merchant template wins, EOM'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'standard', 14,
+                'Payment terms fee - 14 days', 'standard, 14 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'standard', 30,
+                'Payment terms fee - 30 days', 'standard, 30 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'standard', 90,
+                'Payment terms fee - 90 days', 'standard, 90 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'end_of_month', 30,
+                'Payment terms fee - 30 days from end of month', 'EOM, 30 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'end_of_month', 45,
+                'Payment terms fee - 45 days from end of month', 'EOM, 45 days'],
+            ['two_payment', $shipped, $shippedEom, $shipped, 'end_of_month', 60,
+                'Payment terms fee - 60 days from end of month', 'EOM, 60 days'],
+            ['two_payment', $shipped, $shippedEom, null, 'standard', 30,
+                'Payment terms fee - 30 days', 'empty stored value, standard'],
+            ['two_payment', $shipped, $shippedEom, null, 'end_of_month', 30,
+                'Payment terms fee - 30 days from end of month', 'empty stored value, EOM'],
+            ['two_payment', $shipped, $shippedEom, $custom, 'standard', 30,
+                'Extended terms fee - 30 days', 'merchant template wins, standard'],
+            ['two_payment', $shipped, $shippedEom, $custom, 'end_of_month', 30,
+                'Extended terms fee - 30 days', 'merchant template wins, EOM'],
+            [$brand, $brandShipped, $brandShippedEom, $brandShipped, 'standard', 30,
+                'Brand fee - 30 days', 'brand default, standard'],
+            [$brand, $brandShipped, $brandShippedEom, $brandShipped, 'end_of_month', 30,
+                'Brand fee - 30 days from end of month', 'brand default, EOM'],
+            [$brand, $brandShipped, $brandShippedEom, $custom, 'end_of_month', 30,
+                'Extended terms fee - 30 days', 'merchant template wins over brand default, EOM'],
+            [$brand, $brandShipped, null, $brandShipped, 'end_of_month', 30,
+                'Brand fee - 30 days', 'brand ships no EOM wording, EOM'],
         ];
+    }
+
+    /**
+     * @param array<string, string|null> $configMap
+     */
+    private function repositoryForBrand(string $brandCode, string $shippedDefault, array $configMap): Repository
+    {
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->method('getValue')->willReturnCallback(
+            function ($path) use ($configMap) {
+                return $configMap[$path] ?? null;
+            }
+        );
+
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn($brandCode);
+        $brandRegistry->method('getProductName')->willReturn('Two');
+
+        $initialConfig = $this->createMock(Initial::class);
+        $initialConfig->method('getData')->willReturn([
+            'payment' => [$brandCode => ['surcharge_line_description' => $shippedDefault]],
+        ]);
+
+        return new Repository(
+            $scopeConfig,
+            $this->createMock(EncryptorInterface::class),
+            $this->createMock(UrlInterface::class),
+            $this->createMock(ProductMetadataInterface::class),
+            $this->taxCalculation,
+            $brandRegistry,
+            $this->settingsProvider,
+            $this->createMock(Provenance::class),
+            $this->logRepository,
+            null,
+            null,
+            $initialConfig
+        );
     }
 
     // ── getCustomSurchargeTaxRate (deprecated flat rate) ─────────────
