@@ -215,6 +215,21 @@ describe('Escape closes from anywhere inside the popover', () => {
 
         expect(panelIsOpen()).toBe(true);
     });
+
+    test('Escape on the company field the signup launch parks focus on', () => {
+        const ctx = setup();
+        ctx.panel.open();
+        clickChip('soletrader');
+        // The popover is held up for the signup's duration with focus on the
+        // field, which sits outside the panel node Escape is bound to.
+        ctx.panel.restoreFieldFocus();
+
+        const event = pressKey(fieldNode(), 'Escape');
+
+        expect(panelIsOpen()).toBe(false);
+        expect(document.activeElement).toBe(fieldNode());
+        expect(event.defaultPrevented).toBe(true);
+    });
 });
 
 describe('a press on the popover\'s dead space changes nothing', () => {

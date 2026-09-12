@@ -614,11 +614,14 @@ never reopens.
 fires once focus has settled on another control, so taking focus back would undo
 the buyer's own Tab (TWO-25326).
 
-**Escape is bound to the PANEL, not to the query field.** Outside
-registered-company mode the query row is withdrawn and a chip is what holds
-focus, and the popover is drawn over the control below the field — so an Escape
-the query field alone answers leaves that buyer with no route out at all
-(ABN-554).
+**Escape is bound to the PANEL and to the company field, not to the query
+field.** Outside registered-company mode the query row is withdrawn and a chip
+is what holds focus, and the popover is drawn over the control below the field
+— so an Escape the query field alone answers leaves that buyer with no route
+out at all. The field needs its own binding because it is the panel's SIBLING,
+not a descendant: a mode change, and the sole-trader signup launch that parks
+focus there while the popover is deliberately held open, both leave the
+dismissal key on a node the panel's handler never sees (ABN-554).
 
 **A press on the panel's own dead space is a no-op.** Its default action would
 blur the caret out of the query field and leave the open popover holding
