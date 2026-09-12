@@ -133,8 +133,8 @@ class ComposeRefund extends OrderService
             $taxRatePercent = (float)$creditmemo->getTwoSurchargeTaxRate();
             $description = (string)$creditmemo->getTwoSurchargeDescription() ?: (string)__('Payment terms fee');
 
-            // order_item_id 'surcharge' must match ComposeOrder so Two's API
-            // allocates the refund to the BUYER_FEE line on the original order.
+            // order_item_id is not interpreted by the API (ABN-554); matching
+            // ComposeOrder keeps the fee line traceable across payloads.
             $items['surcharge'] = [
                 'order_item_id'   => 'surcharge',
                 'name'            => $description,
