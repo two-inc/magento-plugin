@@ -5,7 +5,8 @@
  * ABN-550: the order is composed on the term the chips show as selected, so a
  * selection the server has not confirmed it priced the quote on can be charged
  * against a total the summary never showed. Placement is refused until the two
- * agree, and a /select-term the server did not take puts the chips back.
+ * agree, and a /select-term the server did not take puts the chips back and
+ * keeps placement refused until the buyer clicks a chip again.
  */
 
 'use strict';
@@ -27,6 +28,7 @@ function observable(initial) {
 
 const APPLYING = 'Applying the selected payment term…';
 const NOT_APPLIED = 'The selected payment term was not applied. Reload the page and select it again.';
+const REFUSED = 'Could not update payment term. Please try again.';
 
 const FEES = {
     term_surcharges: [
@@ -124,9 +126,9 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         ['none', null, true, '', 'an untouched checkout is reconciled: the server rendered the summary'],
         ['pending', null, false, APPLYING, 'a chip click in flight says so — nothing has confirmed it'],
         ['settled', 200, true, '', 'a confirmed chip click is reconciled'],
-        ['failed', null, true, '', 'a refused chip click reverts, so the chips and the quote agree again'],
-        ['empty', null, true, '', 'a 200 carrying no totals reverts — nothing confirmed the term'],
-        ['blank', null, true, '', 'a 200 carrying an empty segment set reverts too'],
+        ['failed', null, false, REFUSED, 'a refused chip click reverts, and placement waits on the buyer'],
+        ['empty', null, false, REFUSED, 'a 200 carrying no totals reverts — nothing confirmed the term'],
+        ['blank', null, false, REFUSED, 'a 200 carrying an empty segment set reverts too'],
         ['aborted', null, false, NOT_APPLIED, 'a chip binding throwing leaves the selection unsent, and it says why']
     ])('%s with net %p is reconciled=%p saying %p (%s)', function (outcome, net, expected, message) {
         const ctx = loadModel();
@@ -170,15 +172,32 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
         ['failed', 'a refused chip click'],
         ['empty', 'a 200 that carried no re-collected totals'],
         ['blank', 'a 200 whose segment set was empty, which would blank the summary']
-    ])('puts the chips back on the confirmed term and says so: %s (%s)', function (outcome, because) {
+    ])('puts the chips back, holds placement and says so in the tile: %s (%s)', function (outcome, because) {
         const ctx = loadModel();
         ctx.captured.get(FEES);
         ctx.model.selectTerm(90);
         settle(ctx, 0, outcome);
 
         expect(ctx.model.selectedTerm()).toBe(30);
-        expect(ctx.model.isTermReconciled()).toBe(true);
-        expect(ctx.captured.errors).toEqual(['Could not update payment term. Please try again.']);
+        expect(ctx.model.isTermReconciled()).toBe(false);
+        expect(ctx.model.termStatusMessage()).toBe(REFUSED);
+        // The tile's live region is the only place it is said.
+        expect(ctx.captured.errors).toEqual([]);
+    });
+
+    it.each([
+        [30, 'the term the quote is priced on, which the buyer settles for'],
+        [60, 'a different term, which is a fresh attempt']
+    ])('clicking chip %p after a refusal reopens placement (%s)', function (days) {
+        const ctx = loadModel();
+        ctx.captured.get(FEES);
+        ctx.model.selectTerm(90);
+        settle(ctx, 0, 'failed');
+
+        ctx.model.selectTerm(days);
+
+        expect(ctx.model.termStatusMessage()).toBe(days === 30 ? '' : APPLYING);
+        expect(ctx.model.isTermReconciled()).toBe(days === 30);
     });
 
     it('a chip clicked while a call is in flight is sent only once it settles', function () {
@@ -211,8 +230,8 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
 
         expect(ctx.posts).toHaveLength(1);
         expect(ctx.model.selectedTerm()).toBe(30);
-        expect(ctx.model.isTermReconciled()).toBe(true);
-        expect(ctx.model.termStatusMessage()).toBe('');
+        expect(ctx.model.isTermReconciled()).toBe(false);
+        expect(ctx.model.termStatusMessage()).toBe(REFUSED);
     });
 
     it('a chip clicked back to the term in flight sends nothing more', function () {
