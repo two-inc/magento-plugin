@@ -311,13 +311,11 @@ define([
             this.showTermSelector = terms.length > 1;
             this.showSingleTerm = terms.length === 1;
             this.singleTermLabel = terms.length === 1 ? this.singleTermText(terms[0]) : '';
-            this.singleTermExplanation =
-                terms.length === 1 ? this.termChipExplanation(terms[0]) : '';
 
             // Empty-object termSurcharges → loading state (template shows the
-            // three-dot loader). Once populated, label becomes '+€n.nn' or ''
-            // if every term resolves to ~0.
-            this.singleTermSurchargeLabel = ko.pureComputed(function () {
+            // three-dot loader), signalled as null. Once populated, '€n.nn' or
+            // '' if the term resolves to ~0.
+            this.singleTermSurchargeAmount = ko.pureComputed(function () {
                 if (terms.length !== 1) {
                     return '';
                 }
@@ -329,7 +327,16 @@ define([
                 if (amount < 0.005) {
                     return '';
                 }
-                return '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
+                return priceUtils.formatPrice(amount, quote.getPriceFormat());
+            });
+            this.singleTermSurchargeLabel = ko.pureComputed(function () {
+                var amount = self.singleTermSurchargeAmount();
+                return amount ? '+' + amount : amount;
+            });
+            this.singleTermExplanation = ko.pureComputed(function () {
+                return terms.length === 1
+                    ? self.termChipExplanation(terms[0], self.singleTermSurchargeAmount())
+                    : '';
             });
             this.termOptions = this.buildTermOptions(terms);
 
@@ -586,10 +593,10 @@ define([
 
                 return {
                     isLoading: isLoading,
-                    labels: amounts.map(function (amount) {
+                    amounts: amounts.map(function (amount) {
                         return isLoading || allZero
                             ? ''
-                            : '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
+                            : priceUtils.formatPrice(amount, quote.getPriceFormat());
                     })
                 };
             });
@@ -598,12 +605,16 @@ define([
                 return {
                     days: days,
                     daysLabel: self.termChipText(days),
-                    explanation: self.termChipExplanation(days),
+                    explanation: ko.pureComputed(function () {
+                        return self.termChipExplanation(days, fees().amounts[i]);
+                    }),
                     isLoading: ko.pureComputed(function () {
                         return fees().isLoading;
                     }),
                     surchargeLabel: ko.pureComputed(function () {
-                        return fees().labels[i];
+                        var amount = fees().amounts[i];
+
+                        return amount ? '+' + amount : '';
                     })
                 };
             });
@@ -638,15 +649,25 @@ define([
          * the visible text already says it. Opens with the visible token: WCAG
          * 2.5.3 requires the accessible name to contain the visible text.
          *
+         * An `aria-label` replaces the whole accessible name, so the chip's own
+         * `+€n.nn` stops being announced unless the name states it too. Each
+         * wording is one translated sentence, never assembled from fragments.
+         *
          * @param {number} days
+         * @param {string} [feeText] the formatted surcharge, unprefixed; absent
+         *     while the quote is in flight and when the term carries no fee
          * @returns {string}
          */
-        termChipExplanation: function (days) {
+        termChipExplanation: function (days, feeText) {
             if (!this.isEndOfMonthTerms) {
                 return '';
             }
 
-            return $t('EOM+%1: pay %1 days after the end of the month').split('%1').join(days);
+            var template = feeText
+                ? $t('EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge')
+                : $t('EOM+%1: pay %1 days after the end of the month');
+
+            return template.split('%1').join(days).split('%2').join(feeText);
         },
         // The one definition of a selected term, so the chip's tick and its
         // aria-checked state cannot drift apart (ABN-554).

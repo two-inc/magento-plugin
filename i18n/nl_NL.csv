@@ -52,6 +52,7 @@
 "Download","Download"
 "Download as .txt file","Downloaden als .txt-bestand"
 "EOM+%1: pay %1 days after the end of the month","EOM+%1: betaal %1 dagen na het einde van de maand"
+"EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge","EOM+%1: betaal %1 dagen na het einde van de maand, plus %2 toeslag"
 "Email Address","E-mailadres"
 "Autofill company address","Bedrijfsadres automatisch invullen"
 "Enable company search in address entry","Bedrijf zoeken bij adresinvoer inschakelen"

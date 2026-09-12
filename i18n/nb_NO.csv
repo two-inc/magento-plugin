@@ -52,6 +52,7 @@
 "Download","Last ned"
 "Download as .txt file","Last ned som .txt-fil"
 "EOM+%1: pay %1 days after the end of the month","EOM+%1: betal %1 dager etter månedens slutt"
+"EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge","EOM+%1: betal %1 dager etter månedens slutt, pluss %2 i tillegg"
 "Email Address","E-postadresse"
 "Autofill company address","Autofyll firmaadresse"
 "Enable company search in address entry","Aktiver firmasøk i adresseskjemaet"
