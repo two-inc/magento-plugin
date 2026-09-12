@@ -964,10 +964,10 @@ abstract class Order
      * The SECONDARY mechanism, for a residual WITH tax that no provider
      * claimed, is findVerifiedResidualTaxRate(): rather than guess a rate,
      * it checks whether Magento's own tax engine already vouches for one
-     * (see that method's docblock). This covers any well-behaved
-     * total-collector extension without needing a per-vendor provider —
-     * only an extension that computes its own tax outside Magento's tax
-     * engine still needs a FeeLineProviderInterface.
+     * (see that method's docblock). It reconciles the payload only — a fee
+     * whose extension runs its own credit-memo collector still needs a
+     * FeeLineProviderInterface, because Model\Total\Creditmemo\OtherCharges
+     * offers whatever reaches this residual to the merchant to refund.
      *
      * Only once BOTH of those come up empty do we fall back further: a
      * synthetic line is auto-emitted when the residual is genuinely

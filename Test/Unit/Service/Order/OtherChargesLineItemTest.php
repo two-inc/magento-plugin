@@ -4,7 +4,10 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Order;
 
 use PHPUnit\Framework\TestCase;
+use Magento\Framework\App\ResourceConnection;
+use Magento\Framework\DB\Adapter\AdapterInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Service\Fee\Provider\AmastyExtraFee;
 use Two\Gateway\Service\Order;
 
 /**
@@ -236,6 +239,72 @@ class OtherChargesLineItemTest extends TestCase
         $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), $grandTotal, $taxTotal);
 
         $this->assertNull($result);
+    }
+
+    /**
+     * ABN-554: an unclaimed fee becomes a residual, and
+     * Model\Total\Creditmemo\OtherCharges offers a residual to the merchant
+     * to refund — which Amasty's own credit-memo collector is already doing.
+     *
+     * @dataProvider ownedFeeProvider
+     */
+    public function testAFeeItsOwnExtensionAccountsForLeavesNoResidual(
+        bool $claimed,
+        int $expectedLogs,
+        string $description
+    ): void {
+        $this->logRepository->expects($this->exactly($expectedLogs))
+            ->method('addErrorLog')
+            ->with('UnreconciledOtherCharges', $this->isType('string'));
+
+        $lineItems = [
+            $this->productLine('34.00', '0.00'),
+            $this->productLine('88.80', '14.80'),
+            $this->productLine('8.70', '1.45'),
+        ];
+        if ($claimed) {
+            $lineItems = array_merge($lineItems, $this->amastyFeeLines());
+        }
+
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 138.688, 17.448);
+
+        $this->assertNull($result, $description);
+    }
+
+    public static function ownedFeeProvider(): array
+    {
+        return [
+            [false, 1, 'unclaimed, the fee is a residual this cannot reconcile'],
+            [true, 0, 'claimed by its provider, nothing is left to reconcile'],
+        ];
+    }
+
+    /**
+     * The provider's real output, so the lines that neutralise the residual
+     * are the ones production emits.
+     */
+    private function amastyFeeLines(): array
+    {
+        $connection = $this->createMock(AdapterInterface::class);
+        $connection->method('isTableExists')->willReturn(true);
+        $connection->method('quoteIdentifier')->willReturnCallback(static fn ($i) => '`' . $i . '`');
+        $connection->method('fetchAll')->willReturn([[
+            'total_amount' => '5.9900',
+            'tax_amount' => '1.1980',
+            'fee_label' => 'Recycling levy',
+            'fee_option_label' => 'Additional fee',
+            'fee_id' => '1',
+            'option_id' => '1',
+        ]]);
+
+        $resourceConnection = $this->createMock(ResourceConnection::class);
+        $resourceConnection->method('getConnection')->willReturn($connection);
+        $resourceConnection->method('getTableName')->willReturnCallback(static fn ($t) => $t);
+
+        $order = new \Magento\Sales\Model\Order();
+        $order->setData('id', 63);
+
+        return (new AmastyExtraFee($resourceConnection))->getFeeLines($order);
     }
 
     public function testResidualTaxRoundingToZeroStillAutoEmits(): void

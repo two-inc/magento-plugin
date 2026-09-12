@@ -14,10 +14,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 /**
  * Aggregates all registered FeeLineProviderInterface implementations.
  *
- * Injected as a plain array via etc/di.xml so providers can be added later
+ * Injected as a plain array via etc/di.xml so providers can be added
  * without touching Order/ComposeOrder/ComposeCapture/ComposeRefund.
- * Defaults to an empty array — see etc/di.xml, no concrete providers are
- * wired in yet.
  *
  * Isolates each provider: a provider that throws or returns a malformed
  * line does not take down checkout/capture/refund for every other order.
@@ -103,8 +101,9 @@ class FeeLineProviderPool
      * surface as an undefined-array-key notice later — in
      * Order::getTaxSubtotals() (keys directly on every line) and
      * everywhere this line eventually reaches Two's API payload.
-     * order_item_id/type are the two fields every other line builder in
-     * this codebase always sets and Two's API needs to classify the line.
+     * order_item_id/type are set by every other line builder here;
+     * order_item_id is traceability only, not interpreted by the API
+     * (ABN-554).
      *
      * @param mixed $line
      * @return bool

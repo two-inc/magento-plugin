@@ -10,9 +10,8 @@ use Two\Gateway\Service\Fee\FeeLineProviderPool;
 
 /**
  * FeeLineProviderPool aggregates zero or more FeeLineProviderInterface
- * implementations, none of which are registered by default (see
- * etc/di.xml) — building one requires a specific extension's real
- * field/table names, verified against an actual install.
+ * implementations (see etc/di.xml) — building one requires a specific
+ * extension's real field/table names, verified against an actual install.
  *
  * Also covers the pool's isolation of a misbehaving provider: a provider
  * that throws, or returns a line missing/non-numeric gross_amount,
