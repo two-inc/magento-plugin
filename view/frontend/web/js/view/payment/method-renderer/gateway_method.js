@@ -307,15 +307,16 @@ define([
 
             var terms = config.availableBuyerTerms || [];
             this.availableBuyerTerms = terms;
+            this.isEndOfMonthTerms = !!config.isEndOfMonthTerms;
             this.showTermSelector = terms.length > 1;
             this.showSingleTerm = terms.length === 1;
-            this.singleTermLabel =
-                terms.length === 1 ? $t('Payment Terms %1 days').replace('%1', terms[0]) : '';
+            this.showTermChips = terms.length > 0;
+            this.singleTermLabel = terms.length === 1 ? this.termChipText(terms[0]) : '';
 
             // Empty-object termSurcharges → loading state (template shows the
-            // three-dot loader). Once populated, label becomes '+€n.nn' or ''
-            // if every term resolves to ~0.
-            this.singleTermSurchargeLabel = ko.pureComputed(function () {
+            // three-dot loader), signalled as null. Once populated, '€n.nn' or
+            // '' if the term resolves to ~0.
+            this.singleTermSurchargeAmount = ko.pureComputed(function () {
                 if (terms.length !== 1) {
                     return '';
                 }
@@ -327,31 +328,18 @@ define([
                 if (amount < 0.005) {
                     return '';
                 }
-                return '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
+                return priceUtils.formatPrice(amount, quote.getPriceFormat());
             });
-            this.termOptions = ko.pureComputed(function () {
-                var surcharges = surchargeModel.displayedTermSurcharges();
-                var isLoading = !surcharges || !Object.keys(surcharges).length;
-                var amounts = terms.map(function (days) {
-                    return parseFloat(surcharges[days] || 0);
-                });
-                var allZero =
-                    !isLoading &&
-                    amounts.every(function (a) {
-                        return a < 0.005;
-                    });
-                return terms.map(function (days, i) {
-                    return {
-                        days: days,
-                        daysLabel: days + ' ' + $t('days'),
-                        isLoading: isLoading,
-                        surchargeLabel:
-                            isLoading || allZero
-                                ? ''
-                                : '+' + priceUtils.formatPrice(amounts[i], quote.getPriceFormat())
-                    };
-                });
+            this.singleTermSurchargeLabel = ko.pureComputed(function () {
+                var amount = self.singleTermSurchargeAmount();
+                return amount ? '+' + amount : amount;
             });
+            this.singleTermExplanation = ko.pureComputed(function () {
+                return terms.length === 1
+                    ? self.termChipExplanation(terms[0], self.singleTermSurchargeAmount())
+                    : '';
+            });
+            this.termOptions = this.buildTermOptions(terms);
 
             this.fillCustomerData();
             this.configureFormValidation();
@@ -476,6 +464,18 @@ define([
         orderIntentDeclinedRegionId: function () {
             return 'two-order-intent-declined-' + this.getCode();
         },
+        // Same reason as the region id above: every ARIA association in this
+        // template is keyed on the payment code, or a second brand tile's
+        // controls point at the first tile's text (ABN-554).
+        termGroupLabelId: function () {
+            return 'two-term-group-label-' + this.getCode();
+        },
+        paymentTermsCheckboxId: function () {
+            return 'two-terms-accepted-' + this.getCode();
+        },
+        paymentTermsTextId: function () {
+            return 'two-terms-text-' + this.getCode();
+        },
         /**
          * Same guard, for the order-intent ERROR notice (TWO-25326,
          * 2026-08-05 four-platform convergence). The error text renders in
@@ -567,6 +567,167 @@ define([
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
+        },
+        /**
+         * The chips' own view models: a PLAIN array, each chip reading its fee
+         * through a computed of its own. A `foreach` over a recomputed array
+         * rebuilds every chip node, and a rebuilt chip drops the focus the
+         * keyboard traversal put on it (ABN-554), while the fees still have to
+         * follow every totals change.
+         *
+         * @param {Array<number>} terms offered day counts
+         * @returns {Array<object>}
+         */
+        buildTermOptions: function (terms) {
+            var self = this;
+            var fees = ko.pureComputed(function () {
+                var surcharges = surchargeModel.displayedTermSurcharges();
+                var isLoading = !surcharges || !Object.keys(surcharges).length;
+                var amounts = terms.map(function (days) {
+                    return parseFloat(surcharges[days] || 0);
+                });
+                var allZero =
+                    !isLoading &&
+                    amounts.every(function (amount) {
+                        return amount < 0.005;
+                    });
+
+                return {
+                    isLoading: isLoading,
+                    amounts: amounts.map(function (amount) {
+                        return isLoading || allZero
+                            ? ''
+                            : priceUtils.formatPrice(amount, quote.getPriceFormat());
+                    })
+                };
+            });
+
+            return terms.map(function (days, i) {
+                return {
+                    days: days,
+                    daysLabel: self.termChipText(days),
+                    explanation: ko.pureComputed(function () {
+                        return self.termChipExplanation(days, fees().amounts[i]);
+                    }),
+                    isLoading: ko.pureComputed(function () {
+                        return fees().isLoading;
+                    }),
+                    surchargeLabel: ko.pureComputed(function () {
+                        var amount = fees().amounts[i];
+
+                        return amount ? '+' + amount : '';
+                    })
+                };
+            });
+        },
+        /**
+         * A chip's visible text. An end-of-month term falls due that many days
+         * after the end of the month, so a bare day count states the wrong due
+         * date for it (ABN-554).
+         *
+         * @param {number} days
+         * @returns {string}
+         */
+        termChipText: function (days) {
+            return this.isEndOfMonthTerms
+                ? $t('EOM+%1').replace('%1', days)
+                : days + ' ' + $t('days');
+        },
+        /**
+         * What `EOM+30` means, spelled out, and empty under standard terms where
+         * the visible text already says it. Opens with the visible token: WCAG
+         * 2.5.3 requires the accessible name to contain the visible text.
+         *
+         * An `aria-label` replaces the whole accessible name, so the chip's own
+         * `+€n.nn` stops being announced unless the name states it too. Each
+         * wording is one translated sentence, never assembled from fragments.
+         *
+         * @param {number} days
+         * @param {string} [feeText] the formatted surcharge, unprefixed; absent
+         *     while the quote is in flight and when the term carries no fee
+         * @returns {string}
+         */
+        termChipExplanation: function (days, feeText) {
+            if (!this.isEndOfMonthTerms) {
+                return '';
+            }
+
+            var template = feeText
+                ? $t('EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge')
+                : $t('EOM+%1: pay %1 days after the end of the month');
+
+            return template.split('%1').join(days).split('%2').join(feeText);
+        },
+        // The one definition of a selected term, so the chip's tick and its
+        // aria-checked state cannot drift apart (ABN-554).
+        isTermChecked: function (days) {
+            return days === this.selectedTerm();
+        },
+        /**
+         * The term the group's single tab stop sits on. A selection matching no
+         * chip falls back to the first, so the group cannot leave the tab order.
+         *
+         * @returns {number|undefined}
+         */
+        focusableTerm: function () {
+            var terms = this.availableBuyerTerms || [];
+            var selected = this.selectedTerm();
+
+            return terms.indexOf(selected) === -1 ? terms[0] : selected;
+        },
+        termTabIndex: function (days) {
+            return days === this.focusableTerm() ? 0 : -1;
+        },
+        /**
+         * The radio-group keyboard contract the chips' roles advertise
+         * (ABN-554). Returning true is what keeps every other key, Tab and the
+         * browser's own modifier shortcuts included, working: knockout
+         * suppresses an event's default action unless the handler says otherwise.
+         *
+         * @param {object} data - the bound view model, unused
+         * @param {KeyboardEvent} event
+         * @returns {boolean|undefined}
+         */
+        onTermKeydown: function (data, event) {
+            var terms = this.availableBuyerTerms || [];
+            var chips = Array.prototype.slice.call(
+                event.currentTarget.querySelectorAll('.two-term-chip')
+            );
+            var current = chips.indexOf(document.activeElement);
+            var next;
+
+            if (terms.length < 2 || event.altKey || event.ctrlKey || event.metaKey) {
+                return true;
+            }
+
+            if (current === -1) {
+                current = Math.max(terms.indexOf(this.focusableTerm()), 0);
+            }
+
+            switch (event.key) {
+                case 'ArrowRight':
+                case 'ArrowDown':
+                    next = (current + 1) % terms.length;
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                    next = (current - 1 + terms.length) % terms.length;
+                    break;
+                case 'Home':
+                    next = 0;
+                    break;
+                case 'End':
+                    next = terms.length - 1;
+                    break;
+                default:
+                    return true;
+            }
+
+            this.selectTerm(terms[next]);
+
+            if (chips[next]) {
+                chips[next].focus();
+            }
         },
         showErrorMessage: function (message, duration) {
             // Route through the payment block's own messageContainer (same
