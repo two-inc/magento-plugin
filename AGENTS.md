@@ -681,8 +681,9 @@ came back a registered-search combobox with the registered chip pressed.
 **Closing the signup with nothing captured gives focus back, but only where
 focus is still unplaced** (ABN-561). A close that left `document.activeElement`
 on the body or nothing at all has nowhere for the buyer to be, and the company
-field takes it. A close the buyer caused by focusing
-another control keeps focus where they put it.
+field takes it. The flight's own park is dropped before that is read, so what
+it judges is the unplaced focus the launch left. A close the buyer caused by
+focusing another control keeps focus where they put it.
 
 **A signup open anywhere on the checkout owns focus, and that is what the close
 watcher asks.** Handing the popup over to another capture launches that
