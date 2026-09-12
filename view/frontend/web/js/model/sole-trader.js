@@ -516,6 +516,8 @@
      */
     SoleTrader.prototype.parkFocusDroppedByPopup = function () {
         setTimeout(() => {
+            // A flight already over owns its own focus: the abandon reclaim reads where focus is.
+            if (!this.isPopupOpen()) return;
             const active = document.activeElement;
             if (active && active !== document.body && active !== document.documentElement) return;
             const panel = this._component.panel();
