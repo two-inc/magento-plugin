@@ -22,7 +22,7 @@ use Two\Gateway\Model\Total\Invoice\Surcharge;
  * tax_amount/grand_total when collect() executes; this collector must add
  * only the surcharge NET to the grand total and must NOT touch tax_amount.
  *
- * Numbers mirror the production order #2000000014 that exposed the bug:
+ * Numbers mirror a fully invoiced order:
  *   net 58.09, VAT 21.5% = 12.48935, gross 70.58.
  *   Native invoice pre-state: grand 1071.48935, tax 12.48935.
  *   Correct result: grand 1129.57935, tax 12.48935.
