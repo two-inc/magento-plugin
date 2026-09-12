@@ -536,6 +536,44 @@ offered chip where the query row is withdrawn, so no mode opens the panel with
 focus nowhere. Same state a click leaves it in, and the same on every platform
 that carries this control.
 
+**With the search withdrawn, a printable key keeps the caret on the company
+field.** The panel opens onto a chip there and a chip is a `<button>`, which
+swallows text, so every character the buyer typed was lost with nothing on screen
+to say so — the field's own `input` handler, which leaves those keystrokes where
+they were put, never ran at all (ABN-554). Space and Enter are excluded: both
+activate the focused chip.
+
+**Closing the panel puts focus back on the company field** — Escape, a pointer
+press outside, a company adopted from the results, manual entry taking the field
+over, or the capture controller closing it when the hosted signup answers
+(ABN-554). The field's own focus opener is held off for that one programmatic
+focus alone, so any keydown on the field, a click on it, or focus arriving from
+anywhere else brings the popover straight back; a flag left set is a popover that
+never reopens.
+
+**The close-on-focus-leave path is the exception, and deliberately so.** It only
+fires once focus has settled on another control, so taking focus back would undo
+the buyer's own Tab (TWO-25326).
+
+**Escape is bound to the PANEL, not to the query field.** Outside
+registered-company mode the query row is withdrawn and a chip is what holds
+focus, and the popover is drawn over the control below the field — so an Escape
+the query field alone answers leaves that buyer with no route out at all
+(ABN-554).
+
+**A press on the panel's own dead space is a no-op.** Its default action would
+blur the caret out of the query field and leave the open popover holding
+nothing, so the press is cancelled — except on a control, which a press is
+entitled to focus, and except on a scrollbar, where cancelling would stop the
+drag scrolling the results. The outside-press close is a different gesture and
+unaffected: it is a press the panel does not contain (ABN-554).
+
+**A pointer press outside the popover takes focus back only where the press left
+it nowhere**, and one tick later rather than in the handler: the press's own
+default action runs after the handler and either focuses what it hit or clears
+focus entirely, so focusing the field from the handler is simply undone. Neither
+default action exists in jsdom, which is why this needed a real browser.
+
 **The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
 on close the field's PRIOR value restored exactly, which is removal when there was
 none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without
@@ -594,11 +632,21 @@ adopts an autofilled sole trader raises no popup, so the reclaim stands.
 Read at the close, never latched at the handover: a receiving signup the buyer
 has since closed owns nothing.
 
-**A chip-row rebuild hands focus to the company field.** The row is rebuilt from
-scratch, so activating a chip deletes the node the activation arrived on and
-focus falls to the body — including on the adopt path, where the receiving
-capture re-renders and opens nothing. Only a focused chip the rebuild actually
-disconnected is repaired, so focus the buyer put elsewhere is left alone.
+**A mode change places focus again, wherever it took it from.** The chip row is
+rebuilt from scratch, so activating a chip deletes the node the activation
+arrived on; and a mode that withdraws the query row hides the input the caret
+was in, which is what a pointer buyer's chip click leaves focus in, since the
+chip's own press cancels the native focus. Either way the buyer ends up on the
+body.
+
+**It asks whether the NODE survived, never where focus is now**, and that is the
+part a reclaim written against `document.activeElement` gets wrong: a browser
+does not blur the caret out of a hidden row until it restyles, which is after
+the handler that hid it, so focus still reads as the input inside the sync. A
+chip-only rule missed the case entirely, because a pointer buyer's focus was
+never on the chip. Focus is placed again only where the sync itself took the
+holder away, so focus the buyer put elsewhere is left alone: inside the panel
+where it is still open, on the company field where it is not (ABN-554).
 
 The reclaim decision is read BEFORE returning to registered mode, which can
 remount the panel and so unplace focus the buyer had put somewhere themselves.
@@ -654,17 +702,100 @@ state, so a buyer held for a stale total is never told they were declined, and
 a declined buyer is never told their term is still applying. A third condition
 added later needs its own region for the same reason.
 
+## The term chips are a radio group
+
+The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,
+and they implement that role's whole keyboard contract: the group is a single
+tab stop — one chip at a time carries `tabindex="0"` — and the arrow keys move
+the checked term and the focus together, Home and End jump to the ends, and both
+ends wrap (ABN-554). Both halves or neither: roles without the keyboard
+behaviour advertise something the group does not do, which is its own defect.
+
+`onTermKeydown` returns true on every key it does not act on, because knockout's
+`event` binding suppresses the default action unless a handler says otherwise —
+without it the group swallows Tab.
+
+`isTermChecked()` is the single definition of a selected chip, read by the
+`aria-checked` binding and by the visual `--selected` class, so the tick and the
+exposed state cannot drift apart. A selection matching no chip leaves nothing
+checked, and `focusableTerm()` puts the tab stop on the first chip so the group
+cannot drop out of the tab order.
+
+**`termOptions` is a plain array, not a computed.** Knockout's `foreach` over a
+recomputed array rebuilds every chip node, and a `/select-term` response
+rewrites the per-term fee maps on its way back — so a computed drops the focus
+the arrow keys just placed, one round trip later. Each chip reads its fee
+through a computed of its own instead, which is what lets the nodes outlive a
+refresh. The template CALLS those computeds: a binding negating one — the fee
+label's `!isLoading()` — negates the function itself and is permanently false
+without the call, where a binding handed the bare value unwraps it.
+
+The focus ring is `:focus-visible`, not `:focus`: the group's single tab stop
+makes the focused chip the only thing saying where the keyboard is, and a
+clicked chip still gets no ring.
+
+**Every ARIA association in the payment template is keyed on the payment code.**
+The chip group's label, the consent checkbox and the consent sentence each take
+their id from `getCode()`, as the declined-notice region does, or a second brand
+tile's controls point at the first tile's text.
+
+The method radio is named by a `label` carrying `for`, so the tile title is both
+its accessible name and a click target for it; the subtitle and the about link
+stay outside that label. The consent checkbox is named by `aria-labelledby` at
+the consent sentence instead, because that sentence carries the terms link and a
+link inside a label makes activation ambiguous.
+
+## A chip states its term type, not just a day count
+
+An end-of-month term falls due that many days after the end of the month, so a
+chip reading "30 days" on an end-of-month shop states the wrong due date. The
+visible text is `30 days` under standard terms and `EOM+30` under end of month,
+and only the end-of-month chip carries a `title` and an `aria-label` spelling
+that out: `EOM+30: pay 30 days after the end of the month`. The accessible name
+opens with the visible token because WCAG 2.5.3 requires it to contain the
+visible text, and a standard chip gets no name of its own because one that
+merely restated `30 days` would risk the same criterion.
+
+The name also states the surcharge, because an `aria-label` replaces the whole
+accessible name and the `+€n.nn` rendered inside the chip is then announced
+nowhere: `EOM+30: pay 30 days after the end of the month, plus a €7.25
+surcharge`. Each wording is one translated sentence rather than an assembled
+one, so a translator can order the clauses. A term carrying no surcharge, and a
+term whose quote has not landed yet, name no amount at all.
+
+`isEndOfMonthTerms` reaches the renderer from `ConfigProvider`; the chip text and
+the explanation are built by `termChipText()` and `termChipExplanation()`, which
+the sole-term branch reads too. The explanation is a computed over the same fee
+map the visible amount reads, so the name follows the quote in. An empty
+explanation reaches the `attr` binding as `false`, not as `''`, because knockout
+renders a blank attribute and removes a false one — which is why both bindings
+call the computed rather than passing it unwrapped.
+
+## The sole offered term is a disabled button
+
+One offered term is not a choice, but it still has to carry the name that spells
+the term out, and ARIA prohibits naming a role-less element — which a bare
+`span` is. So the sole chip is a `button` with the native `disabled` attribute:
+naming works, and a natively disabled button is not focusable, so the tab order
+skips a chip that has nothing to select. It keeps the `two-term-chip--single`
+class, which is its whole appearance; the base chip rules already set border,
+background, padding and font because the multi-term chips are buttons too.
+
 ## The selected term must be CONFIRMED before submit
 
 The order is composed on the term the chips show as selected, so a selection
 the server has not confirmed it priced the quote on can be charged against a
-total the summary never showed (ABN-550). `surchargeModel.isTermReconciled()`
-is the whole invariant — `confirmedTerm === selectedTerm() && !isUpdating()` —
-and `confirmedTerm` moves only when a `/select-term` response actually carries
-the totals it re-collected.
+total the summary never showed (ABN-550). `surchargeModel.termStatusMessage()`
+is the whole invariant: it names the reason placement is refused — a call in
+flight, or a selection no `/select-term` confirmed — and is empty only when the
+chips agree with the priced quote. `isTermReconciled()` is that string being
+empty, so the gate and the buyer's explanation cannot drift apart, and
+`confirmedTerm` moves only when a `/select-term` response actually carries the
+totals it re-collected.
 
 It gates placement twice: `isPlaceOrderEnabled()`, so the button is disabled
-rather than only answering a click, and `placeOrder()` as the belt.
+rather than only answering a click, and `placeOrder()` as the belt, which
+surfaces that same string.
 
 **Do not gate on the chip fees instead.** Comparing the summary's
 `two_surcharge` value against the chip map looks stronger and is weaker: the
@@ -689,11 +820,14 @@ own. **The term is confirmed even when writing the summary partly failed** — t
 server answered, so it holds that term, and reverting the chips against it is
 what charges a term nobody selected.
 
-**The chips say while a call is in flight that the term is being applied.** The
-button is disabled by then, so the click-time message cannot be reached, and a
-primary button greying out on its own for up to the request timeout reads as a
-broken checkout. The status node is rendered unconditionally and its text
-toggled, because a live region created together with its text announces nothing.
+**The chips state every reason the button is dead, and they read that one
+string.** The button is disabled by then, so the click-time message cannot be
+reached, and a primary button greying out against an empty tile reads as a
+broken checkout. A selection outlives the call that would have confirmed or
+reverted it whenever a chip binding throws out of `selectTerm()`: that aborts
+before `/select-term` is sent, so nothing is in flight and nothing reverts. The
+status node is rendered unconditionally and its text toggled, because a live
+region created together with its text announces nothing.
 
 Server side, `Model/Webapi/TermSelection.php` stages the session term. The
 surcharge collector prices on that term, so the rollback restores the session
@@ -742,7 +876,9 @@ green it is. Assert the observable proxy instead — that the handler leaves the
 event undefaulted, that the control's parts are one contiguous run in document
 order, that a closed panel carries `hidden` — and say in the suite that the
 keyboard behaviour itself is verified in a real browser. A passing jsdom Tab
-test is never evidence that a trap is absent.
+test is never evidence that a trap is absent. Focus a handler moves ITSELF, with
+`element.focus()`, is the exception: jsdom performs that, so arrow-key traversal
+inside a composite control is directly observable where Tab order is not.
 
 Three traps in the same suites:
 
