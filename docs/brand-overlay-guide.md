@@ -435,7 +435,8 @@ is the pattern.
 `view/**/ui_component/*.xml`, `view/**/layout/*.xml`, `view/**/*.phtml` and
 `view/**/web/template/**/*.html`, every string literal in non-test PHP, and
 every string literal inside a `$t( … )`, `$.mage.__( … )` or injected
-`.translate( … )` call in `view/*/web/js/**`. FQCN segments are never matches.
+`.translate( … )` call in `view/*/web/js/**`. FQCN segments are never matches;
+an escape sequence after the brand is.
 The `Two.inc` copyright header is exempt on the markup surfaces only, where a
 header is the one comment shape the line-grep cannot blank away; in a string
 literal it is a leak like any other. Comments are skipped in every
@@ -454,7 +455,11 @@ brand name in a plain JS literal is not caught.
 `etc/adminhtml/system.xml` is ungated because it is the vanilla Two form, which
 an overlay replaces wholesale via `deepMergeOverlay` rather than translating;
 `etc/db_schema.xml` is ungated because its `Two` occurrences are DB column
-comments no user ever sees.
+comments no user ever sees. `etc/config.xml` is ungated because its `<title>`
+sits under the vanilla payment code: an overlay ships its own `etc/config.xml`
+under its own code, merged later, and its method reads the title from its own
+`getCode()` path — an overlay that ships no title of its own is the failure
+mode.
 
 ## Local development
 
