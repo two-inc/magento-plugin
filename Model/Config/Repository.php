@@ -929,6 +929,22 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function isProductMessageEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('product_message_enabled'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getProductMessage(?int $storeId = null): string
+    {
+        return (string)$this->getConfig($this->path('product_message'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDisplayTooltipsEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('display_tooltips'), $storeId);

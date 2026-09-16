@@ -1,0 +1,12 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+?>
+<?php /* @var \Two\Gateway\Block\Product\PromoMessage $block */ ?>
+<?php if ($block->isVisible()): ?>
+    <div class="two-product-promo">
+        <span class="two-product-promo__text"><?= $block->escapeHtml($block->getMessage()) ?></span>
+    </div>
+<?php endif; ?>

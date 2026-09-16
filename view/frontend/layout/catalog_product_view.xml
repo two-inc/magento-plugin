@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25799: opt-in promotional message on the product detail page.
+ *
+ * product.info.form.content is the standard Luma container holding the
+ * add-to-cart stack. Verified against www.downlights.co.uk (Magento 2, Luma),
+ * whose DOM under .box-tocart .actions runs: #product-addtocart-button,
+ * #payment-request-button (Stripe), #instant-purchase (core),
+ * #paypal-smart-button. Sorting after product.info.addtocart puts this block
+ * in the same stack as those.
+ *
+ * A theme that overrides the product template may not expose this container;
+ * the message then needs a theme-side placement rather than a plugin change.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceContainer name="product.info.form.content">
+            <block class="Two\Gateway\Block\Product\PromoMessage"
+                   name="two.product.promo"
+                   template="Two_Gateway::product/promo-message.phtml"
+                   after="product.info.addtocart"/>
+        </referenceContainer>
+    </body>
+</page>

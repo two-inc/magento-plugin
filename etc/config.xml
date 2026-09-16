@@ -38,6 +38,9 @@
                 <trusted_proxies/>
                 <disable_rate_limit>0</disable_rate_limit>
                 <subtitle/>
+                <!-- TWO-25799: opt-in, so this stays 0. -->
+                <product_message_enabled>0</product_message_enabled>
+                <product_message/>
                 <!-- TWO-25386: show_about_link defaults ON. display_tooltips
                      default ON preserves Magento's prior behaviour — the optional
                      checkout field inputs rendered their title-attribute
