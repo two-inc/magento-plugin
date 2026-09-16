@@ -178,6 +178,24 @@ class DebrandGrepTest extends TestCase
                 $php . ':2:',
                 'a msgid carries the brand in every locale, English included',
             ],
+            'plain PHP literal' => [
+                'php-brand-in-plain-literal.fixture',
+                $php,
+                $php . ':2:',
+                'a literal reaches a logger or an exception without passing through __()',
+            ],
+            'FQCN in a plain literal' => [
+                'php-fqcn-in-plain-literal.fixture',
+                $php,
+                null,
+                'a class-string names a real class, escaped or not',
+            ],
+            'copyright header in non-test PHP' => [
+                'php-copyright-header.fixture',
+                $php,
+                null,
+                'the legal entity in a header names the licensor, not the brand',
+            ],
         ];
     }
 

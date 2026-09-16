@@ -42,7 +42,6 @@ PHP_LITERAL = re.compile(
     re.S | re.M)
 JS_LITERAL = re.compile(r"""'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`""", re.S)
 
-PHP_CALL = r'\b__\s*\('
 # Luma's `$t`, jQuery's `$.mage.__`, and the translator the vendored
 # company-search modules take by injection.
 JS_CALL = r'(?:\$t|\$\.mage\.__|\.translate)\s*\('
@@ -108,6 +107,11 @@ def translated_literals(src, code, call, literal):
             yield m.start(), m.group(m.lastindex)
 
 
+def every_literal(src, literal):
+    for m in literal.finditer(src):
+        yield m.start(), m.group(m.lastindex)
+
+
 def read(path):
     with open(path, encoding='utf-8', errors='replace') as fh:
         return fh.read()
@@ -116,11 +120,11 @@ def read(path):
 found = []
 
 
-def scan(path, token, call, literal):
+def scan(path, token, literals):
     raw = read(path)
     src = blanked(raw, token, comments_only=True)
     code = blanked(raw, token, comments_only=False)
-    for offset, text in translated_literals(src, code, call, literal):
+    for offset, text in literals(src, code):
         if FORBIDDEN.search(text):
             found.append('%s:%d: %s' % (path, src[:offset].count('\n') + 1, text.strip()[:160]))
 
@@ -130,11 +134,14 @@ for path in markup_files():
         if MARKUP_FORBIDDEN.search(line):
             found.append('%s:%d: %s' % (path, n, line.strip()[:160]))
 
+# A plain PHP literal reaches a logger, an exception or a status-history
+# comment without ever passing through `__()`.
 for path in source_files('.php'):
-    scan(path, PHP_TOKEN, PHP_CALL, PHP_LITERAL)
+    scan(path, PHP_TOKEN, lambda src, code: every_literal(src, PHP_LITERAL))
 
 for path in source_files('.js', glob.glob('view/*/web/js')):
-    scan(path, JS_TOKEN, JS_CALL, JS_LITERAL)
+    scan(path, JS_TOKEN,
+         lambda src, code: translated_literals(src, code, JS_CALL, JS_LITERAL))
 
 print('\n'.join(sorted(found)))
 PYEOF

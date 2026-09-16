@@ -59,7 +59,7 @@ class ActiveBrandResolver
         if ($overlays === []) {
             if (!isset($brands[self::TWO_CODE])) {
                 throw new \DomainException(sprintf(
-                    'Two brand ("%s") not declared in any brand.xml; '
+                    'Brand ("%s") not declared in any brand.xml; '
                     . 'magento-plugin/etc/brand.xml is missing.',
                     self::TWO_CODE
                 ));

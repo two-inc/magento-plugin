@@ -1,0 +1,3 @@
+<?php
+$interface = 'Two\Gateway\Api\BrandRegistryInterface';
+$model = "Two\\Gateway\\Model\\Two";
