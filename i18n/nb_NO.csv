@@ -213,7 +213,6 @@
 "Max refundable: %1","Maks refunderbart: %1"
 "Select the payment term(s) you want to offer.","Velg betalingsvilkår du vil tilby."
 "Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is currently available from %3 to %4.","Advarsel: Den faste avgiftsgrensen %1 %2 kan ikke håndheves korrekt fordi ingen valutakurs er tilgjengelig fra %3 til %4."
-
 "Surcharge rounding","Avrunding av tillegg"
 "Rounding step","Avrundingssteg"
 "None","Ingen"
@@ -412,3 +411,7 @@
 "offered only to buyers in %1","tilbys bare kjøpere i %1"
 "offered to no buyer country, because the two country lists do not overlap","tilbys ingen kjøperland, fordi de to landlistene ikke overlapper"
 "Automatic","Automatisk"
+"%1 (Excl. Tax)","%1 (Eks. MVA)"
+"%1 (Incl. Tax)","%1 (Inkl. MVA)"
+"Cannot apply the surcharge limit in %1: no exchange rate is currently available.","Kan ikke bruke tilleggsavgiftsgrensen i %1: ingen valutakurs er tilgjengelig for øyeblikket."
+"EOM+%1","EOM+%1"

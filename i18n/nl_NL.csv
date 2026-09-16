@@ -213,7 +213,6 @@
 "Yes","Ja"
 "payment terms","betaalvoorwaarden"
 "Max refundable: %1","Maximaal terugbetaalbaar: %1"
-
 "Surcharge rounding","Afronden van Toeslag"
 "Rounding step","Afronding"
 "None","Geen"
@@ -412,3 +411,7 @@
 "offered only to buyers in %1","alleen aangeboden aan kopers in %1"
 "offered to no buyer country, because the two country lists do not overlap","aan geen enkel land van de koper aangeboden, omdat de twee landenlijsten niet overlappen"
 "Automatic","Automatisch"
+"%1 (Excl. Tax)","%1 (Excl. BTW)"
+"%1 (Incl. Tax)","%1 (Incl. BTW)"
+"Cannot apply the surcharge limit in %1: no exchange rate is currently available.","Kan de toeslaglimiet in %1 niet toepassen: er is momenteel geen wisselkoers beschikbaar."
+"EOM+%1","EOM+%1"
