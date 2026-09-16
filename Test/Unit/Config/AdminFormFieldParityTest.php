@@ -51,8 +51,19 @@ class AdminFormFieldParityTest extends TestCase
         $cases = [];
         $forms = [self::VANILLA_FORM => self::VANILLA_PREFIX, self::BRAND_FORM => self::BRAND_PREFIX];
         foreach ($forms as $file => $prefix) {
+            $form = self::form($file);
             $xpath = sprintf('//section[starts-with(@id, "%s_")]', $prefix);
-            foreach (self::form($file)->xpath($xpath) ?: [] as $section) {
+            $prefixed = $form->xpath($xpath) ?: [];
+            $all = $form->xpath('//section') ?: [];
+            if (count($prefixed) !== count($all)) {
+                throw new RuntimeException(sprintf(
+                    '%s declares section %s outside the "%s_" prefix, so no case here covers it.',
+                    $file,
+                    implode(', ', array_diff(self::ids($all), self::ids($prefixed))),
+                    $prefix
+                ));
+            }
+            foreach ($prefixed as $section) {
                 $suffix = substr((string)$section['id'], strlen($prefix) + 1);
                 foreach ($section->xpath('group') ?: [] as $group) {
                     $id = $suffix . '/' . (string)$group['id'];
@@ -84,6 +95,15 @@ class AdminFormFieldParityTest extends TestCase
         ));
 
         return array_map(static fn ($field): string => (string)$field['id'], $fields ?: []);
+    }
+
+    /**
+     * @param array<int, SimpleXMLElement> $sections
+     * @return array<int, string>
+     */
+    private static function ids(array $sections): array
+    {
+        return array_map(static fn (SimpleXMLElement $section): string => (string)$section['id'], $sections);
     }
 
     private static function form(string $file): SimpleXMLElement
