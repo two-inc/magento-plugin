@@ -9,11 +9,12 @@ namespace Two\Gateway\Api;
 
 /**
  * Per-brand identity values that vary between distributable packages
- * of the Two payment gateway. The default binding lives in this
- * package; downstream brand-overlay packages may rebind this
- * interface to their own implementation via DI preference.
+ * of the Two payment gateway. `Brand\DescriptorBackedBrandRegistry` is
+ * the only implementation: a brand overlay supplies its own values
+ * through an `etc/brand.xml` descriptor rather than by rebinding this
+ * interface, so a method added here reaches every brand.
  *
- * Callers must depend on this interface, not on the concrete impls.
+ * Callers must depend on this interface, not on the concrete impl.
  */
 interface BrandRegistryInterface
 {
