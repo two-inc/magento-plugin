@@ -413,7 +413,9 @@ Every admin pane is rendered from fields synthesised out of
 already declares — so a field added to `system.xml` alone is dropped silently and
 renders on no brand at all. `AdminFormFieldParityTest` compares the two field
 lists in every group of every shared section, reading that list of groups out of
-the forms themselves so a newly added one is covered without being listed.
+the forms themselves so a newly added one is covered without being listed. A
+section id outside the `two_` / `{{section_prefix}}_` prefix matches neither
+form's xpath, so the provider rejects one rather than walking past it.
 
 **The same applies to each field's `source_model`, `backend_model` and
 `frontend_model`, and it fails far more quietly.** An overlay install renders ONLY
