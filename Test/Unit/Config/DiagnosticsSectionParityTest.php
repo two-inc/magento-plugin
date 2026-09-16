@@ -17,8 +17,12 @@ class DiagnosticsSectionParityTest extends TestCase
      */
     public function testEveryDeclaredFieldIsAlsoSynthesised(string $group, string $description): void
     {
+        $declared = $this->fieldIds('etc/adminhtml/system.xml', 'two_version', $group);
+        // assertSame([], []) passes, so a section renamed in both files would leave this a permanent no-op.
+        $this->assertNotEmpty($declared, sprintf('No field under two_version/%s; this test\'s own ids are stale.', $group));
+
         $this->assertSame(
-            $this->fieldIds('etc/adminhtml/system.xml', 'two_version', $group),
+            $declared,
             $this->fieldIds('etc/adminhtml/brand_form_template.xml', '{{section_prefix}}_version', $group),
             $description
         );
