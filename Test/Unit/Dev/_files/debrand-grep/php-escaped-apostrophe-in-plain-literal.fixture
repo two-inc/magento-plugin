@@ -1,0 +1,2 @@
+<?php
+throw new RuntimeException('Two\'s API rejected order ' . $incrementId);

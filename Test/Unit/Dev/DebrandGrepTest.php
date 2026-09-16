@@ -194,7 +194,25 @@ class DebrandGrepTest extends TestCase
                 'php-copyright-header.fixture',
                 $php,
                 null,
-                'the legal entity in a header names the licensor, not the brand',
+                'a header is a comment, and comments are blanked before the literal walk',
+            ],
+            'escape sequence after the brand' => [
+                'php-escaped-brand-in-plain-literal.fixture',
+                $php,
+                $php . ':2:',
+                'a `\\n` after the brand escapes a newline, it does not open a namespace',
+            ],
+            'escaped apostrophe after the brand' => [
+                'php-escaped-apostrophe-in-plain-literal.fixture',
+                $php,
+                $php . ':2:',
+                'a `\\\'` after the brand escapes a quote, it does not open a namespace',
+            ],
+            'brand on a later line of a heredoc' => [
+                'php-heredoc-brand-line.fixture',
+                $php,
+                $php . ':5: Two rejected this order',
+                'a heredoc is one literal over many lines, so the report names the brand line, not the `<<<`',
             ],
         ];
     }

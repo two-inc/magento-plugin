@@ -1,0 +1,7 @@
+<?php
+$body = <<<MESSAGE
+line a
+line b
+Two rejected this order
+line d
+MESSAGE;
