@@ -137,7 +137,7 @@ class UploadService
                 'invoice-upload-queue',
                 [
                     'order_id' => $order->getEntityId(),
-                    'message' => 'Invoice id missing on fulfilment response; cannot queue upload',
+                    'message' => 'two_invoice_id missing on fulfilment response; cannot queue upload',
                 ]
             );
             $this->persistStatus($order, self::STATUS_NOT_APPLICABLE);
