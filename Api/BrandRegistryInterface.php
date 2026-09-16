@@ -9,11 +9,12 @@ namespace Two\Gateway\Api;
 
 /**
  * Per-brand identity values that vary between distributable packages
- * of the Two payment gateway. The default binding lives in this
- * package; downstream brand-overlay packages may rebind this
- * interface to their own implementation via DI preference.
+ * of the Two payment gateway. `Brand\DescriptorBackedBrandRegistry` is
+ * the only implementation: a brand overlay supplies its own values
+ * through an `etc/brand.xml` descriptor rather than by rebinding this
+ * interface, so a method added here reaches every brand.
  *
- * Callers must depend on this interface, not on the concrete impls.
+ * Callers must depend on this interface, not on the concrete impl.
  */
 interface BrandRegistryInterface
 {
@@ -148,6 +149,15 @@ interface BrandRegistryInterface
      * args.
      */
     public function getCode(): string;
+
+    /**
+     * Prefix of the synthesised admin Configuration section ids for the
+     * active brand (e.g. "two" for `two_version`, "acme" for
+     * `acme_version`). Sourced from brand.xml `section_prefix`; callers
+     * building a backend URL into the brand's own config section use this
+     * rather than hardcoding a section id.
+     */
+    public function getSectionPrefix(): string;
 
     /**
      * Whether the admin Payment Terms checkbox list should render the

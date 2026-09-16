@@ -20,7 +20,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class TrustedProxiesMessage implements MessageInterface
 {
-    private const SETTINGS_PATH = 'adminhtml/system_config/edit/section/two_version';
+    private const SETTINGS_ROUTE = 'adminhtml/system_config/edit/section/%s_version';
 
     public function __construct(
         private readonly ConfigRepository $configRepository,
@@ -54,7 +54,15 @@ class TrustedProxiesMessage implements MessageInterface
             . 'request ceiling, so buyers can be refused mid-checkout. <a href="%2">Set Trusted proxies</a>, '
             . 'or leave this if the store is reached directly.',
             $product,
-            $this->backendUrl->getUrl(self::SETTINGS_PATH)
+            $this->settingsUrl()
+        );
+    }
+
+    /** Only the active brand's own synthesised section exists, so a hardcoded id 404s on every debranded install. */
+    private function settingsUrl(): string
+    {
+        return $this->backendUrl->getUrl(
+            sprintf(self::SETTINGS_ROUTE, $this->brandRegistry->getSectionPrefix())
         );
     }
 

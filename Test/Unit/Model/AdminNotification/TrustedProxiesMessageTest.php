@@ -14,16 +14,20 @@ class TrustedProxiesMessageTest extends TestCase
     private function message(
         bool $rateLimitDisabled,
         array $trustedProxies,
-        ?string $productName = 'Two'
+        ?string $productName = 'Two',
+        string $sectionPrefix = 'two'
     ): TrustedProxiesMessage {
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isRateLimitDisabled')->willReturn($rateLimitDisabled);
         $configRepository->method('getTrustedProxies')->willReturn($trustedProxies);
 
         $backendUrl = $this->createMock(UrlInterface::class);
-        $backendUrl->method('getUrl')->willReturn('https://shop.example/admin/two');
+        $backendUrl->method('getUrl')->willReturnCallback(
+            static fn (string $path): string => 'https://shop.example/admin/' . $path
+        );
 
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getSectionPrefix')->willReturn($sectionPrefix);
         if ($productName === null) {
             $brandRegistry->method('getProductName')->willThrowException(new \DomainException('no brands registered'));
         } else {
@@ -65,12 +69,41 @@ class TrustedProxiesMessageTest extends TestCase
         ];
     }
 
-    public function testTheNoticeLinksTheSettingItAsksFor(): void
-    {
+    /**
+     * Given a brand's section prefix; When the notice renders;
+     * Then its link targets that brand's own synthesised Version section.
+     *
+     * @dataProvider sectionPrefixes
+     */
+    public function testTheNoticeLinksTheSettingItAsksForInTheActiveBrandsSection(
+        string $sectionPrefix,
+        string $expectedHref,
+        string $description
+    ): void {
         $this->assertStringContainsString(
-            'https://shop.example/admin/two',
-            $this->message(false, [])->getText()
+            'href="' . $expectedHref . '"',
+            $this->message(false, [], 'Two', $sectionPrefix)->getText(),
+            $description
         );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function sectionPrefixes(): array
+    {
+        return [
+            'vanilla' => [
+                'two',
+                'https://shop.example/admin/adminhtml/system_config/edit/section/two_version',
+                'the unbranded install keeps its own section id',
+            ],
+            'overlay' => [
+                'acme',
+                'https://shop.example/admin/adminhtml/system_config/edit/section/acme_version',
+                'a debranded install links the only section that exists there',
+            ],
+        ];
     }
 
     public function testAnUnresolvableBrandWithholdsTheNoticeRatherThanBreakingTheAdminStack(): void
