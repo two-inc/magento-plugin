@@ -45,7 +45,7 @@ class PromoMessage extends Template
     /**
      * Merchant override wins; otherwise the brand-aware default.
      *
-     * ponytail: deliberately no day count. Terms run from fulfilment, not from
+     * TWO-25799: deliberately no day count. Terms run from fulfilment, not from
      * the page view, and the configured `payment_terms` list is intersected
      * with the merchant record's available_terms at
      * Model/Config/Repository::getPaymentTerms, so "30 days" here could
