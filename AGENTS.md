@@ -411,8 +411,9 @@ throws with a buyer-facing string that no buyer ever sees.
 Every admin pane is rendered from fields synthesised out of
 `brand_form_template.xml`, and that deep merge only carries fields the template
 already declares — so a field added to `system.xml` alone is dropped silently and
-renders on no brand at all. `DiagnosticsSectionParityTest` compares the two field
-lists for the Diagnostics section.
+renders on no brand at all. `AdminFormFieldParityTest` compares the two field
+lists in every group of every shared section, reading that list of groups out of
+the forms themselves so a newly added one is covered without being listed.
 
 **The same applies to each field's `source_model`, `backend_model` and
 `frontend_model`, and it fails far more quietly.** An overlay install renders ONLY

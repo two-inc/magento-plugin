@@ -316,7 +316,7 @@ overrides fields the template already declares. So a field — or a field's
 alone is wired on no brand at all, and a missing `backend_model` means a
 save-time guard that silently does not exist for every partner while it
 still passes on Two. Declare both, in both files;
-`BrandFormModelWiringParityTest` and `DiagnosticsSectionParityTest` are the
+`BrandFormModelWiringParityTest` and `AdminFormFieldParityTest` are the
 guards.
 
 `path` is `section_suffix/group/field` against the synthesised section

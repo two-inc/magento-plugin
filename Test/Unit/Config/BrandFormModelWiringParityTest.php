@@ -49,7 +49,9 @@ class BrandFormModelWiringParityTest extends TestCase
      */
     private function wiring(string $file, string $sectionPrefix, string $slot): array
     {
-        $xml = simplexml_load_file(__DIR__ . '/../../../' . $file);
+        $xml = simplexml_load_file(dirname(__DIR__, 3) . '/' . $file);
+        $this->assertNotFalse($xml, sprintf('Cannot parse %s.', $file));
+
         $wiring = [];
         // Depth-agnostic so a deeper-nested field is compared, not skipped.
         foreach ($xml->xpath(sprintf('//field/%s', $slot)) ?: [] as $node) {
