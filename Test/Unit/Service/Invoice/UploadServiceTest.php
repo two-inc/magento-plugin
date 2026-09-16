@@ -16,6 +16,7 @@ use Magento\Sales\Model\Order\Pdf\Invoice as InvoicePdf;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Order\Status\History;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Invoice\UploadService;
@@ -47,6 +48,9 @@ class UploadServiceTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
 
+    /** @var string */
+    private $provider = 'Two';
+
     /** @var UploadService */
     private $service;
 
@@ -63,6 +67,12 @@ class UploadServiceTest extends TestCase
 
         $this->historyFactory->method('create')->willReturn(new History());
 
+        // Read at call time, so a test can pick the brand after the service is built.
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getProvider')->willReturnCallback(function () {
+            return $this->provider;
+        });
+
         $this->service = new UploadService(
             $this->settingsProvider,
             $this->apiAdapter,
@@ -71,7 +81,8 @@ class UploadServiceTest extends TestCase
             $this->historyFactory,
             $this->orderStatusHistoryRepository,
             $this->curlFactory,
-            $this->logRepository
+            $this->logRepository,
+            $brandRegistry
         );
     }
 
@@ -191,8 +202,15 @@ class UploadServiceTest extends TestCase
         $this->assertSame(UploadService::STATUS_NOT_APPLICABLE, $order->getData('two_invoice_upload_status'));
     }
 
-    public function testUploadSucceedsThroughAllThreeSteps(): void
-    {
+    /**
+     * @dataProvider brands
+     */
+    public function testUploadSucceedsThroughAllThreeSteps(
+        string $provider,
+        string $description
+    ): void {
+        $this->provider = $provider;
+
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
         $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
@@ -220,14 +238,25 @@ class UploadServiceTest extends TestCase
 
         $this->orderRepository->expects($this->once())->method('save')->with($order);
         $this->orderStatusHistoryRepository->expects($this->once())->method('save')
-            ->with($this->callback(function (History $history) {
-                return strpos((string)$history->getComment(), 'uploaded to Two successfully') !== false;
+            ->with($this->callback(function (History $history) use ($provider) {
+                return (string)$history->getComment() === "Invoice uploaded to {$provider} successfully.";
             }));
 
         $this->service->upload($order, 'inv-123');
 
-        $this->assertSame(UploadService::STATUS_UPLOADED, $order->getData('two_invoice_upload_status'));
-        $this->assertSame('ref-456', $order->getData('two_invoice_upload_reference'));
+        $this->assertSame(UploadService::STATUS_UPLOADED, $order->getData('two_invoice_upload_status'), $description);
+        $this->assertSame('ref-456', $order->getData('two_invoice_upload_reference'), $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function brands(): array
+    {
+        return [
+            'vanilla' => ['Two', 'the unbranded install still names Two'],
+            'overlay' => ['Acme Pay', 'a debranded install names its own provider'],
+        ];
     }
 
     public function testUploadMarksNotApplicableWhenNoMagentoInvoiceExists(): void
