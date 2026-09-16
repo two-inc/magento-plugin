@@ -415,3 +415,7 @@
 "%1 (Incl. Tax)","%1 (Incl. BTW)"
 "Cannot apply the surcharge limit in %1: no exchange rate is currently available.","Kan de toeslaglimiet in %1 niet toepassen: er is momenteel geen wisselkoers beschikbaar."
 "EOM+%1","EOM+%1"
+"Show message on product pages","Bericht tonen op productpagina’s"
+"Product page message","Bericht op de productpagina"
+"Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Toont een korte promotionele regel op productpagina’s, onder de knop om aan de winkelwagen toe te voegen. Standaard uitgeschakeld."
+"Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Optioneel. Leeg gebruikt de standaardtekst. Vermeld geen aantal dagen tenzij u zeker bent van de betalingstermijnen die u aanbiedt."

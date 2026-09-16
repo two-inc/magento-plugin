@@ -415,3 +415,7 @@
 "%1 (Incl. Tax)","%1 (Impuestos incl.)"
 "Cannot apply the surcharge limit in %1: no exchange rate is currently available.","No se puede aplicar el límite de recargo en %1: actualmente no hay ningún tipo de cambio disponible."
 "EOM+%1","EOM+%1"
+"Show message on product pages","Mostrar mensaje en las páginas de producto"
+"Product page message","Mensaje de la página de producto"
+"Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Muestra una breve línea promocional en las páginas de producto, debajo del botón de añadir a la cesta. Desactivado de forma predeterminada."
+"Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Opcional. Si se deja vacío se usa el texto predeterminado. Evite indicar un número de días salvo que tenga la certeza de los plazos que ofrece."

@@ -123,14 +123,14 @@
                 <field id="product_message_enabled" translate="label comment" type="select" sortOrder="21"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Show message on product pages</label>
-                    <comment>Shows a short promotional line on product detail pages, beneath the add to cart button. Off by default. Placement depends on your theme.</comment>
+                    <comment>Shows a short promotional line on product pages, beneath the add to cart button. Off by default.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/product_message_enabled</config_path>
                 </field>
                 <field id="product_message" translate="label comment" type="text" sortOrder="22" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Product page message</label>
-                    <comment>Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer: terms run from fulfilment, and the terms actually available come from your merchant record.</comment>
+                    <comment>Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.</comment>
                     <config_path>payment/two_payment/product_message</config_path>
                     <depends>
                         <field id="product_message_enabled">1</field>
