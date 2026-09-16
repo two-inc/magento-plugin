@@ -52,22 +52,24 @@ def source_files(suffix, roots=('.',)):
     return sorted(paths)
 
 
-def blank(match):
+def blanked(src, token, comments_only):
     """Same length, same newlines, so reported line numbers stay exact."""
-    return re.sub(r'[^\n]', ' ', match.group(0)) if match.group(1) else match.group(0)
+    def repl(match):
+        if comments_only and not match.group(1):
+            return match.group(0)
+        return re.sub(r'[^\n]', ' ', match.group(0))
+    return token.sub(repl, src)
 
 
-def translated_literals(src, call, literal):
+def translated_literals(src, code, call, literal):
     """Every string literal inside a `call( … )`, paren-balanced so a
-    concatenated or multi-line msgid is read whole. Yields absolute offsets."""
-    for opener in re.finditer(call, src):
+    concatenated or multi-line msgid is read whole. Call sites and parens are
+    located in `code`, where strings are blank, so neither a `__(` nor a
+    bracket inside a literal can be mistaken for the real thing."""
+    for opener in re.finditer(call, code):
         i, depth = opener.end(), 1
-        while i < len(src) and depth:
-            if src[i] in '\'"`':
-                m = literal.match(src, i)
-                i = m.end() if m else i + 1
-                continue
-            depth += (src[i] == '(') - (src[i] == ')')
+        while i < len(code) and depth:
+            depth += (code[i] == '(') - (code[i] == ')')
             i += 1
         for m in literal.finditer(src, opener.end(), i - 1):
             yield m.start(), next(g for g in m.groups() if g is not None)
@@ -82,8 +84,10 @@ found = []
 
 
 def scan(path, token, call, literal):
-    src = token.sub(blank, read(path))
-    for offset, text in translated_literals(src, call, literal):
+    raw = read(path)
+    src = blanked(raw, token, comments_only=True)
+    code = blanked(raw, token, comments_only=False)
+    for offset, text in translated_literals(src, code, call, literal):
         if FORBIDDEN.search(text):
             found.append('%s:%d: %s' % (path, src[:offset].count('\n') + 1, text.strip()[:160]))
 
