@@ -44,6 +44,7 @@ install: clean
 	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
 	docker exec $(CONTAINER) composer require two-inc/magento2:@dev --no-plugins
 	docker exec $(CONTAINER) composer require --no-plugins \
+		community-engineering/language-es_es \
 		community-engineering/language-nl_nl \
 		community-engineering/language-nb_no \
 		community-engineering/language-sv_se \
