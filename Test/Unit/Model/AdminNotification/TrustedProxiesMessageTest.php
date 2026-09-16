@@ -14,7 +14,7 @@ class TrustedProxiesMessageTest extends TestCase
     private function message(
         bool $rateLimitDisabled,
         array $trustedProxies,
-        string $productName = 'Two'
+        ?string $productName = 'Two'
     ): TrustedProxiesMessage {
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isRateLimitDisabled')->willReturn($rateLimitDisabled);
@@ -24,7 +24,11 @@ class TrustedProxiesMessageTest extends TestCase
         $backendUrl->method('getUrl')->willReturn('https://shop.example/admin/two');
 
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
-        $brandRegistry->method('getProductName')->willReturn($productName);
+        if ($productName === null) {
+            $brandRegistry->method('getProductName')->willThrowException(new \DomainException('no brands registered'));
+        } else {
+            $brandRegistry->method('getProductName')->willReturn($productName);
+        }
 
         return new TrustedProxiesMessage($configRepository, $backendUrl, $brandRegistry);
     }
@@ -67,6 +71,14 @@ class TrustedProxiesMessageTest extends TestCase
             'https://shop.example/admin/two',
             $this->message(false, [])->getText()
         );
+    }
+
+    public function testAnUnresolvableBrandWithholdsTheNoticeRatherThanBreakingTheAdminStack(): void
+    {
+        $message = $this->message(false, [], null);
+
+        $this->assertFalse($message->isDisplayed());
+        $this->assertSame('', $message->getText());
     }
 
     /**
