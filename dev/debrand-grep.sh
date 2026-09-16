@@ -14,8 +14,8 @@ import glob
 import os
 import re
 
-# `Two\…` and `…\Two` are FQCN segments naming real classes.
-FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\)')
+# `Two\Gateway` and `…\Two` are FQCN segments; no PHP escape starts uppercase.
+FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\+[A-Z])')
 # `Two.inc` is the legal entity in a copyright header, the one comment shape
 # the markup line-grep cannot blank away.
 MARKUP_FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\)')
