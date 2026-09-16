@@ -100,7 +100,8 @@ jobs:
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v7
-      - run: ./dev/debrand-grep.sh
+      - name: Run debrand grep
+        run: ./dev/debrand-grep.sh
 
   codesniffer:
     name: Codesniffer

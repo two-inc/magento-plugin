@@ -430,11 +430,17 @@ English msgid itself carries the brand, so no `i18n/*.csv` row can fix it.
 Write a `%N` filled from the brand registry instead; `Model/Ui/CheckoutTileCopy`
 is the pattern.
 
-`dev/debrand-grep.sh` enforces this in CI over `etc/cache.xml`,
-`etc/adminhtml/*.xml` (bar `system.xml`), `view/**/ui_component/*.xml`,
-`view/**/layout/*.xml`, `view/**/*.phtml`, and every string literal inside a
-`__( … )` call in non-test PHP. FQCN segments and the `Two.inc` copyright
-header are not matches.
+`dev/debrand-grep.sh` enforces this in CI. It reads every line of
+`etc/cache.xml`, `etc/adminhtml/*.xml` (bar `system.xml`),
+`view/**/ui_component/*.xml`, `view/**/layout/*.xml`, `view/**/*.phtml` and
+`view/**/web/template/**/*.html`, plus every string literal inside a `__( … )`
+call in non-test PHP and inside a `$t( … )` call in `view/*/web/js/**`. FQCN
+segments and the `Two.inc` copyright header are not matches, and comments are
+skipped in every language it reads — an apostrophe in one would otherwise open
+a string and desync the scan for the rest of the file.
+
+Only literals inside a translation call are gated, so a brand name in a plain
+PHP literal is not caught even where it reaches a user-facing sink.
 
 `etc/adminhtml/system.xml` is ungated because it is the vanilla Two form, which
 an overlay replaces wholesale via `deepMergeOverlay` rather than translating;
