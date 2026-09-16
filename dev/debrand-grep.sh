@@ -104,12 +104,12 @@ def translated_literals(src, code, call, literal):
             depth += (code[i] == '(') - (code[i] == ')')
             i += 1
         for m in literal.finditer(src, opener.end(), i - 1):
-            yield m.start(), m.group(m.lastindex)
+            yield m.start(m.lastindex), m.group(m.lastindex)
 
 
 def every_literal(src, literal):
     for m in literal.finditer(src):
-        yield m.start(), m.group(m.lastindex)
+        yield m.start(m.lastindex), m.group(m.lastindex)
 
 
 def read(path):
@@ -123,10 +123,16 @@ found = []
 def scan(path, token, literals):
     raw = read(path)
     src = blanked(raw, token, comments_only=True)
-    code = blanked(raw, token, comments_only=False)
-    for offset, text in literals(src, code):
-        if FORBIDDEN.search(text):
-            found.append('%s:%d: %s' % (path, src[:offset].count('\n') + 1, text.strip()[:160]))
+    for offset, text in literals(src, raw):
+        hit = FORBIDDEN.search(text)
+        if not hit:
+            continue
+        # A heredoc is one literal spanning many lines; report the brand's own.
+        start = text.rfind('\n', 0, hit.start()) + 1
+        end = text.find('\n', hit.start())
+        line = text[start:end if end != -1 else len(text)]
+        found.append('%s:%d: %s' % (
+            path, src[:offset + hit.start()].count('\n') + 1, line.strip()[:160]))
 
 
 for path in markup_files():
@@ -134,14 +140,14 @@ for path in markup_files():
         if MARKUP_FORBIDDEN.search(line):
             found.append('%s:%d: %s' % (path, n, line.strip()[:160]))
 
-# A plain PHP literal reaches a logger, an exception or a status-history
-# comment without ever passing through `__()`.
+# A plain PHP literal reaches a logger or an exception, never `__()`.
 for path in source_files('.php'):
-    scan(path, PHP_TOKEN, lambda src, code: every_literal(src, PHP_LITERAL))
+    scan(path, PHP_TOKEN, lambda src, raw: every_literal(src, PHP_LITERAL))
 
 for path in source_files('.js', glob.glob('view/*/web/js')):
     scan(path, JS_TOKEN,
-         lambda src, code: translated_literals(src, code, JS_CALL, JS_LITERAL))
+         lambda src, raw: translated_literals(
+             src, blanked(raw, JS_TOKEN, comments_only=False), JS_CALL, JS_LITERAL))
 
 print('\n'.join(sorted(found)))
 PYEOF
