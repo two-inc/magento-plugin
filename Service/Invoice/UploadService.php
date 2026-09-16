@@ -137,7 +137,7 @@ class UploadService
                 'invoice-upload-queue',
                 [
                     'order_id' => $order->getEntityId(),
-                    'message' => 'Two invoice id missing on fulfilment response; cannot queue upload',
+                    'message' => 'Invoice id missing on fulfilment response; cannot queue upload',
                 ]
             );
             $this->persistStatus($order, self::STATUS_NOT_APPLICABLE);
@@ -299,7 +299,13 @@ class UploadService
         }
 
         if (!isset($response['url'], $response['headers'], $response['reference'])) {
-            return ['success' => false, 'error' => 'Invalid response from Two API (missing url/headers/reference)'];
+            return [
+                'success' => false,
+                'error' => sprintf(
+                    'Invalid response from the %s API (missing url/headers/reference)',
+                    $this->brandRegistry->getProductName()
+                ),
+            ];
         }
 
         return [
@@ -434,7 +440,7 @@ class UploadService
         $this->orderRepository->save($order);
         $this->addHistoryComment(
             $order,
-            __('Invoice uploaded to %1 successfully.', $this->brandRegistry->getProvider())
+            __('Invoice uploaded to %1 successfully.', $this->brandRegistry->getProductName())
         );
         $this->logRepository->addDebugLog(
             'invoice-upload-complete',

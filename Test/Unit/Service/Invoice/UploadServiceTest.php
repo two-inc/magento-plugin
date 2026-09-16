@@ -49,7 +49,7 @@ class UploadServiceTest extends TestCase
     private $logRepository;
 
     /** @var string */
-    private $provider = 'Two';
+    private $productName = 'Two';
 
     /** @var UploadService */
     private $service;
@@ -69,8 +69,8 @@ class UploadServiceTest extends TestCase
 
         // Read at call time, so a test can pick the brand after the service is built.
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
-        $brandRegistry->method('getProvider')->willReturnCallback(function () {
-            return $this->provider;
+        $brandRegistry->method('getProductName')->willReturnCallback(function () {
+            return $this->productName;
         });
 
         $this->service = new UploadService(
@@ -206,10 +206,10 @@ class UploadServiceTest extends TestCase
      * @dataProvider brands
      */
     public function testUploadSucceedsThroughAllThreeSteps(
-        string $provider,
+        string $productName,
         string $description
     ): void {
-        $this->provider = $provider;
+        $this->productName = $productName;
 
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
@@ -238,8 +238,8 @@ class UploadServiceTest extends TestCase
 
         $this->orderRepository->expects($this->once())->method('save')->with($order);
         $this->orderStatusHistoryRepository->expects($this->once())->method('save')
-            ->with($this->callback(function (History $history) use ($provider) {
-                return (string)$history->getComment() === "Invoice uploaded to {$provider} successfully.";
+            ->with($this->callback(function (History $history) use ($productName) {
+                return (string)$history->getComment() === "Invoice uploaded to {$productName} successfully.";
             }));
 
         $this->service->upload($order, 'inv-123');
@@ -255,8 +255,43 @@ class UploadServiceTest extends TestCase
     {
         return [
             'vanilla' => ['Two', 'the unbranded install still names Two'],
-            'overlay' => ['Acme Pay', 'a debranded install names its own provider'],
+            'overlay' => ['Acme Pay', 'a debranded install names its own product'],
         ];
+    }
+
+    /**
+     * Given a malformed signed-url response; When the upload fails;
+     * Then the order timeline names the active brand, not the vanilla one.
+     *
+     * @dataProvider brands
+     */
+    public function testAMalformedSignedUrlResponseNamesTheActiveBrandInTheOrderTimeline(
+        string $productName,
+        string $description
+    ): void {
+        $this->productName = $productName;
+
+        $order = $this->makeOrder();
+        $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
+        $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
+        $this->apiAdapter->method('execute')->willReturn(['unexpected' => 'shape']);
+
+        $comments = [];
+        $this->orderStatusHistoryRepository->method('save')
+            ->willReturnCallback(function (History $history) use (&$comments) {
+                $comments[] = (string)$history->getComment();
+                return $history;
+            });
+
+        $this->service->upload($order, 'inv-123');
+
+        $this->assertSame(
+            ["Invoice upload failed: Invalid response from the {$productName} API "
+                . '(missing url/headers/reference)'],
+            $comments,
+            $description
+        );
     }
 
     public function testUploadMarksNotApplicableWhenNoMagentoInvoiceExists(): void
