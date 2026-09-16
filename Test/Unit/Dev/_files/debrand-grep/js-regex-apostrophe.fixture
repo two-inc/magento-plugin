@@ -1,0 +1,2 @@
+var re = /don't/;
+var label = $t('Pay later with Two');

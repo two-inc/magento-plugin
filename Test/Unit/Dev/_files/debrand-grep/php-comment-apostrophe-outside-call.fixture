@@ -1,0 +1,3 @@
+<?php
+// don't let an apostrophe open a string
+$label = __('Pay later with Two');
