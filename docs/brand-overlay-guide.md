@@ -421,6 +421,26 @@ can never disagree:
     no country at all, as does a restricted merchant whose buyer country
     cannot be resolved.
 
+## Never hardcode the brand name
+
+An overlay debrands by rebinding `BrandRegistryInterface` and by `{{provider}}`
+synthesis of the admin form. A literal `Two` in static XML or in a `__()` msgid
+is reached by neither, so it shows in every locale, English included — the
+English msgid itself carries the brand, so no `i18n/*.csv` row can fix it.
+Write a `%N` filled from the brand registry instead; `Model/Ui/CheckoutTileCopy`
+is the pattern.
+
+`dev/debrand-grep.sh` enforces this in CI over `etc/cache.xml`,
+`etc/adminhtml/*.xml` (bar `system.xml`), `view/**/ui_component/*.xml`,
+`view/**/layout/*.xml`, `view/**/*.phtml`, and every string literal inside a
+`__( … )` call in non-test PHP. FQCN segments and the `Two.inc` copyright
+header are not matches.
+
+`etc/adminhtml/system.xml` is ungated because it is the vanilla Two form, which
+an overlay replaces wholesale via `deepMergeOverlay` rather than translating;
+`etc/db_schema.xml` is ungated because its `Two` occurrences are DB column
+comments no user ever sees.
+
 ## Local development
 
 `make up` in this repo runs a vanilla Magento dev stack on port 1234;
