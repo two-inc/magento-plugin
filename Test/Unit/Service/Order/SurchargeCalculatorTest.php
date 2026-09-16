@@ -39,6 +39,9 @@ class SurchargeCalculatorTest extends TestCase
     /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
     private $settings;
 
+    /** @var BrandRegistryInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $brandRegistry;
+
     /** @var SurchargeCalculator */
     private $calculator;
 
@@ -67,6 +70,9 @@ class SurchargeCalculatorTest extends TestCase
             ->disableOriginalConstructor()
             ->getMock();
 
+        $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $this->brandRegistry->method('getProductName')->willReturn('Two');
+
         $this->calculator = new SurchargeCalculator(
             $this->config,
             $this->adapter,
@@ -74,7 +80,8 @@ class SurchargeCalculatorTest extends TestCase
             $this->ratesProvider,
             $this->cache,
             new Json(),
-            new SurchargeCapProvider($this->settings, $this->ratesProvider)
+            new SurchargeCapProvider($this->settings, $this->ratesProvider),
+            $this->brandRegistry
         );
     }
 
@@ -88,7 +95,25 @@ class SurchargeCalculatorTest extends TestCase
             $this->ratesProvider,
             $cache,
             new Json(),
-            new SurchargeCapProvider($this->settings, $this->ratesProvider)
+            new SurchargeCapProvider($this->settings, $this->ratesProvider),
+            $this->brandRegistry
+        );
+    }
+
+    private function calculatorForBrand(string $productName): SurchargeCalculator
+    {
+        $registry = $this->createMock(BrandRegistryInterface::class);
+        $registry->method('getProductName')->willReturn($productName);
+
+        return new SurchargeCalculator(
+            $this->config,
+            $this->adapter,
+            $this->log,
+            $this->ratesProvider,
+            $this->cache,
+            new Json(),
+            new SurchargeCapProvider($this->settings, $this->ratesProvider),
+            $registry
         );
     }
 
@@ -259,42 +284,57 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
-    public function testThrowsWithUpstreamErrorWhenApiReturnsNon2xx(): void
-    {
+    /**
+     * @dataProvider upstreamErrorProvider
+     */
+    public function testTheUpstreamErrorNamesTheBrandAndNotTheUpstreamReason(
+        array $response,
+        string $productName,
+        string $expected,
+        string $description
+    ): void {
         $this->stubCommonConfig(SurchargeType::PERCENTAGE);
         $this->stubSurchargeConfig(50);
-
-        // Adapter merges the upstream error body with http_status. The
-        // calculator must surface that — not mask it as a schema bug.
-        $this->adapter->method('execute')->willReturn([
-            'http_status' => 401,
-            'error_code' => 'AUTHENTICATION_INVALID',
-            'error_message' => 'X-API-Key is incorrect or has expired',
-            'error_trace_id' => 'abc123',
-        ]);
+        $this->adapter->method('execute')->willReturn($response);
 
         $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
-        // User-facing message intentionally omits HTTP status / upstream reason
-        // (those are logged for ops). Trace ID is included for support lookup.
-        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: abc123).');
+        $this->expectExceptionMessage($expected);
 
-        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $this->calculatorForBrand($productName)->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
-    public function testUpstreamErrorWithoutTraceIdOmitsTraceSegment(): void
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: string, 2: string, 3: string}>
+     */
+    public static function upstreamErrorProvider(): array
     {
-        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
-        $this->stubSurchargeConfig(50);
-
-        $this->adapter->method('execute')->willReturn([
-            'error_code' => 400,
-            'error_message' => 'Transport error: timeout',
-        ]);
-
-        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
-        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support.');
-
-        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        return [
+            [
+                ['http_status' => 401, 'error_code' => 'AUTHENTICATION_INVALID',
+                 'error_message' => 'X-API-Key is incorrect or has expired', 'error_trace_id' => 'abc123'],
+                'Two',
+                'Two payment is temporarily unavailable. Please try another payment method or contact support (ref: abc123).',
+                'a traced upstream failure names the brand and neither the status nor the upstream reason',
+            ],
+            [
+                ['error_code' => 400, 'error_message' => 'Transport error: timeout'],
+                'Two',
+                'Two payment is temporarily unavailable. Please try another payment method or contact support.',
+                'an untraced upstream failure drops the ref segment',
+            ],
+            [
+                ['http_status' => 500, 'error_trace_id' => 'zz9'],
+                'Acme Pay',
+                'Acme Pay payment is temporarily unavailable. Please try another payment method or contact support (ref: zz9).',
+                'a debranded install names its own product, not Two',
+            ],
+            [
+                ['http_status' => 500],
+                'Acme Pay',
+                'Acme Pay payment is temporarily unavailable. Please try another payment method or contact support.',
+                'a debranded untraced failure names its own product',
+            ],
+        ];
     }
 
     public function testHttpStatus2xxDoesNotTriggerErrorPathEvenIfFieldPresent(): void

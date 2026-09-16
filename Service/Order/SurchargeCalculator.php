@@ -10,6 +10,7 @@ namespace Two\Gateway\Service\Order;
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Serialize\Serializer\Json;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -103,6 +104,11 @@ class SurchargeCalculator
     private $capProvider;
 
     /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
+    /**
      * Request-scoped cache of resolved surcharges, keyed on the public
      * calculate() inputs. The pricing endpoint is side-effect-free and
      * callers (total collector, ConfigProvider, TermSelection) repeat
@@ -119,7 +125,8 @@ class SurchargeCalculator
         CurrencyRatesProviderInterface $ratesProvider,
         CacheInterface $cache,
         Json $json,
-        SurchargeCapProvider $capProvider
+        SurchargeCapProvider $capProvider,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
@@ -128,6 +135,7 @@ class SurchargeCalculator
         $this->cache = $cache;
         $this->json = $json;
         $this->capProvider = $capProvider;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -214,8 +222,15 @@ class SurchargeCalculator
             ]);
             throw new LocalizedException(
                 $traceId
-                    ? __('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: %1).', $traceId)
-                    : __('Two payment is temporarily unavailable. Please try another payment method or contact support.')
+                    ? __(
+                        '%1 payment is temporarily unavailable. Please try another payment method or contact support (ref: %2).',
+                        $this->brandRegistry->getProductName(),
+                        $traceId
+                    )
+                    : __(
+                        '%1 payment is temporarily unavailable. Please try another payment method or contact support.',
+                        $this->brandRegistry->getProductName()
+                    )
             );
         }
 

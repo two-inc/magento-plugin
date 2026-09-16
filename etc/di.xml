@@ -233,4 +233,13 @@
                 type="Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm"
                 sortOrder="10"/>
     </type>
+    <!--
+        Global, not adminhtml-scoped: `bin/magento cache:*` resolves cache
+        types through the CLI DI graph, which never loads etc/adminhtml/di.xml.
+    -->
+    <type name="Magento\Framework\Cache\ConfigInterface">
+        <plugin name="two-brand-cache-type-labels"
+                type="Two\Gateway\Plugin\Magento\Framework\Cache\Config\BrandCacheTypeLabels"
+                sortOrder="10"/>
+    </type>
 </config>

@@ -183,6 +183,12 @@ require_once __DIR__ . '/Stubs/MessageManager.php';
 // is mockable; per-symbol guard lives inside the stub file.
 require_once __DIR__ . '/Stubs/AssetRepository.php';
 
+// Sales grid price column with DataObject semantics, so the surcharge
+// column's label rewrite is exercisable. Loads after the DataObject stub.
+if (!class_exists(\Magento\Sales\Ui\Component\Listing\Column\Price::class, false)) {
+    require_once __DIR__ . '/Stubs/SalesUiColumn.php';
+}
+
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
 spl_autoload_register(function ($class) {
