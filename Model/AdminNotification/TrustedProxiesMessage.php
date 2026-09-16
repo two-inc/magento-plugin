@@ -9,6 +9,7 @@ namespace Two\Gateway\Model\AdminNotification;
 
 use Magento\Backend\Model\UrlInterface;
 use Magento\Framework\Notification\MessageInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -23,7 +24,8 @@ class TrustedProxiesMessage implements MessageInterface
 
     public function __construct(
         private readonly ConfigRepository $configRepository,
-        private readonly UrlInterface $backendUrl
+        private readonly UrlInterface $backendUrl,
+        private readonly BrandRegistryInterface $brandRegistry
     ) {
     }
 
@@ -35,18 +37,35 @@ class TrustedProxiesMessage implements MessageInterface
     public function isDisplayed(): bool
     {
         return !$this->configRepository->isRateLimitDisabled()
-            && $this->configRepository->getTrustedProxies() === [];
+            && $this->configRepository->getTrustedProxies() === []
+            && $this->productName() !== null;
     }
 
     public function getText(): string
     {
+        $product = $this->productName();
+        if ($product === null) {
+            return '';
+        }
+
         return (string)__(
-            'Two: checkout rate limiting is on and no trusted proxies are set. If this store sits behind a '
+            '%1: checkout rate limiting is on and no trusted proxies are set. If this store sits behind a '
             . 'CDN, load balancer or reverse proxy, every buyer reaches it as one address and shares a single '
-            . 'request ceiling, so buyers can be refused mid-checkout. <a href="%1">Set Trusted proxies</a>, '
+            . 'request ceiling, so buyers can be refused mid-checkout. <a href="%2">Set Trusted proxies</a>, '
             . 'or leave this if the store is reached directly.',
+            $product,
             $this->backendUrl->getUrl(self::SETTINGS_PATH)
         );
+    }
+
+    /** Null withholds the notice: the admin notification stack runs on every admin page and an unresolvable brand must not take it down. */
+    private function productName(): ?string
+    {
+        try {
+            return $this->brandRegistry->getProductName();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     public function getSeverity(): int
