@@ -14,18 +14,37 @@ import glob
 import os
 import re
 
-# `Two.inc` is the legal entity in copyright headers; `Two\…` and `…\Two` are
-# FQCN segments naming real classes.
-FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\)')
-MARKUP_COMMENT = re.compile(r'<!--.*?-->', re.S)
+# `Two\…` and `…\Two` are FQCN segments naming real classes.
+FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\)')
+# `Two.inc` is the legal entity in a copyright header, the one comment shape
+# the markup line-grep cannot blank away.
+MARKUP_FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\)')
 
-# One left-to-right pass over strings AND comments together: a `//` inside a
-# string is consumed by the string alternative, and an apostrophe inside a
-# comment by the comment alternative, so neither can open the other.
-PHP_TOKEN = re.compile(r"""'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|(/\*.*?\*/|//[^\n]*|\#(?!\[)[^\n]*)""", re.S)
-JS_TOKEN = re.compile(r"""'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|(/\*.*?\*/|//[^\n]*)""", re.S)
-PHP_LITERAL = re.compile(r"""'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)\"""", re.S)
+MARKUP_COMMENT = re.compile(r'<!--.*?-->', re.S)
+# Knockout virtual elements are comments that render.
+KO_VIRTUAL = re.compile(r'<!--\s*/?ko[\s:>-]')
+PHP_BLOCK = re.compile(r'<\?(?:php\b|=).*?(?:\?>|\Z)', re.S)
+
+# One left-to-right pass over every construct an apostrophe can hide in, so
+# none can open another. `skip` is blanked on the msgid pass too — a construct
+# that can never be a msgid.
+HEREDOC = r"""<<<(['"]?)(\w+)\1\r?\n.*?^[ \t]*\2\b"""
+JS_REGEX = r"""(?<=[=(,:\[!&|?{};+\-*%~^<>])\s*/(?![/*])(?:\\.|\[(?:\\.|[^\]\n\\])*\]|[^/\n\\])+/[a-z]*"""
+PHP_TOKEN = re.compile(
+    HEREDOC + r"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*\""""
+    r"""|(?P<skip>/\*.*?\*/|//[^\n]*|\#(?!\[)[^\n]*)""", re.S | re.M)
+JS_TOKEN = re.compile(
+    r"""'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`"""
+    r"""|(?P<skip>""" + JS_REGEX + r"""|/\*.*?\*/|//[^\n]*)""", re.S)
+PHP_LITERAL = re.compile(
+    HEREDOC.replace(r'.*?^', r'(.*?)^') + r"""|'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)\"""",
+    re.S | re.M)
 JS_LITERAL = re.compile(r"""'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`""", re.S)
+
+PHP_CALL = r'\b__\s*\('
+# Luma's `$t`, jQuery's `$.mage.__`, and the translator the vendored
+# company-search modules take by injection.
+JS_CALL = r'(?:\$t|\$\.mage\.__|\.translate)\s*\('
 
 
 def markup_files():
@@ -55,10 +74,23 @@ def source_files(suffix, roots=('.',)):
 def blanked(src, token, comments_only):
     """Same length, same newlines, so reported line numbers stay exact."""
     def repl(match):
-        if comments_only and not match.group(1):
+        if comments_only and not match.group('skip'):
             return match.group(0)
         return re.sub(r'[^\n]', ' ', match.group(0))
     return token.sub(repl, src)
+
+
+def markup_source(path):
+    raw = read(path)
+    if path.endswith('.phtml'):
+        raw = PHP_BLOCK.sub(
+            lambda m: blanked(m.group(0), PHP_TOKEN, comments_only=True), raw)
+
+    def strip(match):
+        if KO_VIRTUAL.match(match.group(0)):
+            return match.group(0)
+        return '\n' * match.group(0).count('\n')
+    return MARKUP_COMMENT.sub(strip, raw)
 
 
 def translated_literals(src, code, call, literal):
@@ -72,7 +104,7 @@ def translated_literals(src, code, call, literal):
             depth += (code[i] == '(') - (code[i] == ')')
             i += 1
         for m in literal.finditer(src, opener.end(), i - 1):
-            yield m.start(), next(g for g in m.groups() if g is not None)
+            yield m.start(), m.group(m.lastindex)
 
 
 def read(path):
@@ -93,16 +125,15 @@ def scan(path, token, call, literal):
 
 
 for path in markup_files():
-    src = MARKUP_COMMENT.sub(lambda m: '\n' * m.group(0).count('\n'), read(path))
-    for n, line in enumerate(src.splitlines(), start=1):
-        if FORBIDDEN.search(line):
+    for n, line in enumerate(markup_source(path).splitlines(), start=1):
+        if MARKUP_FORBIDDEN.search(line):
             found.append('%s:%d: %s' % (path, n, line.strip()[:160]))
 
 for path in source_files('.php'):
-    scan(path, PHP_TOKEN, r'\b__\s*\(', PHP_LITERAL)
+    scan(path, PHP_TOKEN, PHP_CALL, PHP_LITERAL)
 
 for path in source_files('.js', glob.glob('view/*/web/js')):
-    scan(path, JS_TOKEN, r'\$t\s*\(', JS_LITERAL)
+    scan(path, JS_TOKEN, JS_CALL, JS_LITERAL)
 
 print('\n'.join(sorted(found)))
 PYEOF

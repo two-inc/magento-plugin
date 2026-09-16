@@ -434,10 +434,19 @@ is the pattern.
 `etc/cache.xml`, `etc/adminhtml/*.xml` (bar `system.xml`),
 `view/**/ui_component/*.xml`, `view/**/layout/*.xml`, `view/**/*.phtml` and
 `view/**/web/template/**/*.html`, plus every string literal inside a `__( … )`
-call in non-test PHP and inside a `$t( … )` call in `view/*/web/js/**`. FQCN
-segments and the `Two.inc` copyright header are not matches, and comments are
-skipped in every language it reads — an apostrophe in one would otherwise open
-a string and desync the scan for the rest of the file.
+call in non-test PHP and inside a `$t( … )`, `$.mage.__( … )` or injected
+`.translate( … )` call in `view/*/web/js/**`. FQCN segments are never matches.
+The `Two.inc` copyright header is exempt on the markup surfaces only, where a
+header is the one comment shape the line-grep cannot blank away; inside a
+translation call it is a leak like any other. Comments are skipped in every
+language it reads, PHP comments inside a `.phtml` included — an apostrophe,
+in one or in a heredoc or a regex literal, would otherwise open a string and
+desync the scan for the rest of the file. A Knockout virtual element
+(`<!-- ko … -->`) renders, so it is read rather than skipped.
+
+`Test/Unit/Dev/DebrandGrepTest.php` plants one file per surface and reads the
+gate's own report, so a scanner that stops seeing a leak fails rather than
+reporting OK.
 
 Only literals inside a translation call are gated, so a brand name in a plain
 PHP literal is not caught even where it reaches a user-facing sink.
