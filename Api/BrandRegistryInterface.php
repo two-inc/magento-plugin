@@ -150,6 +150,15 @@ interface BrandRegistryInterface
     public function getCode(): string;
 
     /**
+     * Prefix of the synthesised admin Configuration section ids for the
+     * active brand (e.g. "two" for `two_version`, "acme" for
+     * `acme_version`). Sourced from brand.xml `section_prefix`; callers
+     * building a backend URL into the brand's own config section use this
+     * rather than hardcoding a section id.
+     */
+    public function getSectionPrefix(): string;
+
+    /**
      * Whether the admin Payment Terms checkbox list should render the
      * per-term merchant fee inline beside each checkbox (e.g.
      * "30 days (1.50% + 0.50)"). Default true. Brand overlays return

@@ -106,6 +106,11 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getCode();
     }
 
+    public function getSectionPrefix(): string
+    {
+        return $this->activeBrandResolver->resolve()->getSectionPrefix();
+    }
+
     public function getInlineTermFees(): bool
     {
         return $this->activeBrandResolver->resolve()->getInlineTermFees();
