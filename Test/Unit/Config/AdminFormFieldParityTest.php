@@ -85,10 +85,7 @@ class AdminFormFieldParityTest extends TestCase
      */
     private function fieldIds(string $file, string $section, string $group): array
     {
-        $xml = simplexml_load_file(dirname(__DIR__, 3) . '/' . $file);
-        $this->assertNotFalse($xml, sprintf('Cannot parse %s.', $file));
-
-        $fields = $xml->xpath(sprintf(
+        $fields = self::form($file)->xpath(sprintf(
             '//section[@id="%s"]/group[@id="%s"]/field',
             $section,
             $group
