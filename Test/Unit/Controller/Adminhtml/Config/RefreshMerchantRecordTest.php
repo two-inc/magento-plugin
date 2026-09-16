@@ -9,6 +9,7 @@ use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Controller\Adminhtml\Config\RefreshMerchantRecord;
 use Two\Gateway\Service\Merchant\RecordRefresher;
 
@@ -19,6 +20,9 @@ class RefreshMerchantRecordTest extends TestCase
 {
     /** @var RecordRefresher|\PHPUnit\Framework\MockObject\MockObject */
     private $recordRefresher;
+
+    /** @var string */
+    private $provider = 'Two';
 
     protected function setUp(): void
     {
@@ -40,7 +44,15 @@ class RefreshMerchantRecordTest extends TestCase
         $context = $this->createMock(Context::class);
         $context->method('getRequest')->willReturn($request);
 
-        $controller = new RefreshMerchantRecord($context, new JsonFactory(), $this->recordRefresher);
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getProvider')->willReturn($this->provider);
+
+        $controller = new RefreshMerchantRecord(
+            $context,
+            new JsonFactory(),
+            $this->recordRefresher,
+            $brandRegistry
+        );
 
         return (array)$controller->execute()->getData();
     }
@@ -92,6 +104,34 @@ class RefreshMerchantRecordTest extends TestCase
             'store view' => [['scope' => 'stores', 'scopeId' => 7], 'stores', 7, 'a store-scope press'],
             'website' => [['scope' => 'websites', 'scopeId' => 3], 'websites', 3, 'a website-scope press'],
             'default' => [[], 'default', 0, 'no scope posted is the default scope'],
+        ];
+    }
+
+    /**
+     * @dataProvider brands
+     */
+    public function testTheUnresolvableMessageNamesTheActiveBrand(
+        string $provider,
+        string $description
+    ): void {
+        $this->provider = $provider;
+        $this->governsAndRefreshes(1, [null]);
+
+        $this->assertStringContainsString(
+            "that the {$provider} API is reachable",
+            (string)$this->invoke()['message'],
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function brands(): array
+    {
+        return [
+            'vanilla' => ['Two', 'the unbranded install still names Two'],
+            'overlay' => ['Acme Pay', 'a debranded install names its own provider'],
         ];
     }
 

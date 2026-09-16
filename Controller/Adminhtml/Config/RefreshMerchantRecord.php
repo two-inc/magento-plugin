@@ -15,6 +15,7 @@ use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Service\Merchant\RecordRefresher;
 
 /**
@@ -42,14 +43,21 @@ class RefreshMerchantRecord extends Action implements HttpPostActionInterface
      */
     private $recordRefresher;
 
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
     public function __construct(
         Action\Context $context,
         JsonFactory $resultJsonFactory,
-        RecordRefresher $recordRefresher
+        RecordRefresher $recordRefresher,
+        BrandRegistryInterface $brandRegistry
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
         $this->recordRefresher = $recordRefresher;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -86,7 +94,8 @@ class RefreshMerchantRecord extends Action implements HttpPostActionInterface
         if ($refreshed === []) {
             return $this->failure(
                 (string)__(
-                    'Could not refresh the merchant profile — the previously loaded values are still in use. Check that the API key for this scope is valid and that the Two API is reachable.'
+                    'Could not refresh the merchant profile — the previously loaded values are still in use. Check that the API key for this scope is valid and that the %1 API is reachable.',
+                    $this->brandRegistry->getProvider()
                 )
             );
         }

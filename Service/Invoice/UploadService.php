@@ -15,6 +15,7 @@ use Magento\Sales\Model\Order\Pdf\Invoice as InvoicePdf;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Throwable;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -76,6 +77,9 @@ class UploadService
     /** @var LogRepository */
     private $logRepository;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     public function __construct(
         SettingsProvider $settingsProvider,
         Adapter $apiAdapter,
@@ -84,7 +88,8 @@ class UploadService
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
         CurlFactory $curlFactory,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->settingsProvider = $settingsProvider;
         $this->apiAdapter = $apiAdapter;
@@ -94,6 +99,7 @@ class UploadService
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->curlFactory = $curlFactory;
         $this->logRepository = $logRepository;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -131,7 +137,7 @@ class UploadService
                 'invoice-upload-queue',
                 [
                     'order_id' => $order->getEntityId(),
-                    'message' => 'Two invoice id missing on fulfilment response; cannot queue upload',
+                    'message' => 'two_invoice_id missing on fulfilment response; cannot queue upload',
                 ]
             );
             $this->persistStatus($order, self::STATUS_NOT_APPLICABLE);
@@ -293,7 +299,13 @@ class UploadService
         }
 
         if (!isset($response['url'], $response['headers'], $response['reference'])) {
-            return ['success' => false, 'error' => 'Invalid response from Two API (missing url/headers/reference)'];
+            return [
+                'success' => false,
+                'error' => sprintf(
+                    'Invalid response from the %s API (missing url/headers/reference)',
+                    $this->brandRegistry->getProductName()
+                ),
+            ];
         }
 
         return [
@@ -426,7 +438,10 @@ class UploadService
         $order->setData('two_invoice_uploaded_at', date('Y-m-d H:i:s'));
         $order->setData('two_invoice_upload_error', null);
         $this->orderRepository->save($order);
-        $this->addHistoryComment($order, __('Invoice uploaded to Two successfully.'));
+        $this->addHistoryComment(
+            $order,
+            __('Invoice uploaded to %1 successfully.', $this->brandRegistry->getProductName())
+        );
         $this->logRepository->addDebugLog(
             'invoice-upload-complete',
             ['order_id' => $order->getEntityId()]

@@ -16,6 +16,7 @@ use Magento\Sales\Model\Order\Pdf\Invoice as InvoicePdf;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Order\Status\History;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Invoice\UploadService;
@@ -47,6 +48,9 @@ class UploadServiceTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
 
+    /** @var string */
+    private $productName = 'Two';
+
     /** @var UploadService */
     private $service;
 
@@ -63,6 +67,12 @@ class UploadServiceTest extends TestCase
 
         $this->historyFactory->method('create')->willReturn(new History());
 
+        // Read at call time, so a test can pick the brand after the service is built.
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getProductName')->willReturnCallback(function () {
+            return $this->productName;
+        });
+
         $this->service = new UploadService(
             $this->settingsProvider,
             $this->apiAdapter,
@@ -71,7 +81,8 @@ class UploadServiceTest extends TestCase
             $this->historyFactory,
             $this->orderStatusHistoryRepository,
             $this->curlFactory,
-            $this->logRepository
+            $this->logRepository,
+            $brandRegistry
         );
     }
 
@@ -191,8 +202,15 @@ class UploadServiceTest extends TestCase
         $this->assertSame(UploadService::STATUS_NOT_APPLICABLE, $order->getData('two_invoice_upload_status'));
     }
 
-    public function testUploadSucceedsThroughAllThreeSteps(): void
-    {
+    /**
+     * @dataProvider brands
+     */
+    public function testUploadSucceedsThroughAllThreeSteps(
+        string $productName,
+        string $description
+    ): void {
+        $this->productName = $productName;
+
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
         $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
@@ -220,14 +238,60 @@ class UploadServiceTest extends TestCase
 
         $this->orderRepository->expects($this->once())->method('save')->with($order);
         $this->orderStatusHistoryRepository->expects($this->once())->method('save')
-            ->with($this->callback(function (History $history) {
-                return strpos((string)$history->getComment(), 'uploaded to Two successfully') !== false;
+            ->with($this->callback(function (History $history) use ($productName) {
+                return (string)$history->getComment() === "Invoice uploaded to {$productName} successfully.";
             }));
 
         $this->service->upload($order, 'inv-123');
 
-        $this->assertSame(UploadService::STATUS_UPLOADED, $order->getData('two_invoice_upload_status'));
-        $this->assertSame('ref-456', $order->getData('two_invoice_upload_reference'));
+        $this->assertSame(UploadService::STATUS_UPLOADED, $order->getData('two_invoice_upload_status'), $description);
+        $this->assertSame('ref-456', $order->getData('two_invoice_upload_reference'), $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function brands(): array
+    {
+        return [
+            'vanilla' => ['Two', 'the unbranded install still names Two'],
+            'overlay' => ['Acme Pay', 'a debranded install names its own product'],
+        ];
+    }
+
+    /**
+     * Given a malformed signed-url response; When the upload fails;
+     * Then the order timeline names the active brand, not the vanilla one.
+     *
+     * @dataProvider brands
+     */
+    public function testAMalformedSignedUrlResponseNamesTheActiveBrandInTheOrderTimeline(
+        string $productName,
+        string $description
+    ): void {
+        $this->productName = $productName;
+
+        $order = $this->makeOrder();
+        $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
+        $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
+        $this->apiAdapter->method('execute')->willReturn(['unexpected' => 'shape']);
+
+        $comments = [];
+        $this->orderStatusHistoryRepository->method('save')
+            ->willReturnCallback(function (History $history) use (&$comments) {
+                $comments[] = (string)$history->getComment();
+                return $history;
+            });
+
+        $this->service->upload($order, 'inv-123');
+
+        $this->assertSame(
+            ["Invoice upload failed: Invalid response from the {$productName} API "
+                . '(missing url/headers/reference)'],
+            $comments,
+            $description
+        );
     }
 
     public function testUploadMarksNotApplicableWhenNoMagentoInvoiceExists(): void
