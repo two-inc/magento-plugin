@@ -29,7 +29,8 @@ PHP_BLOCK = re.compile(r'<\?(?:php\b|=).*?(?:\?>|\Z)', re.S)
 # none can open another. `skip` is blanked on the msgid pass too — a construct
 # that can never be a msgid.
 HEREDOC = r"""<<<(['"]?)(\w+)\1\r?\n.*?^[ \t]*\2\b"""
-JS_REGEX = r"""(?<=[=(,:\[!&|?{};+\-*%~^<>])\s*/(?![/*])(?:\\.|\[(?:\\.|[^\]\n\\])*\]|[^/\n\\])+/[a-z]*"""
+# `i++ /` is a division; a bare `+` before one is `'a' + /re/.source`.
+JS_REGEX = r"""(?<!\+\+)(?<=[=(,:\[!&|?{};+~^<>])\s*/(?![/*])(?:\\.|\[(?:\\.|[^\]\n\\])*\]|[^/\n\\])+/[a-z]*"""
 PHP_TOKEN = re.compile(
     HEREDOC + r"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*\""""
     r"""|(?P<skip>/\*.*?\*/|//[^\n]*|\#(?!\[)[^\n]*)""", re.S | re.M)

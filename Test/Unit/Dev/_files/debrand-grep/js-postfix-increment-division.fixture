@@ -1,0 +1,3 @@
+define(['mage/translate'], function ($t) {
+    var page = i++ / perPage, label = $t('Pay later with Two'), half = total / 2;
+});

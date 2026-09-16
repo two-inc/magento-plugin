@@ -1,2 +1,2 @@
 <?php
-$label = __('ZZLEAK Payments powered by Two.inc');
+$label = __('Payments powered by Two.inc');

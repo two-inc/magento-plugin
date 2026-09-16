@@ -88,6 +88,12 @@ class DebrandGrepTest extends TestCase
                 'view/frontend/web/js/probe.js:2:',
                 'an apostrophe inside a regex literal must not open a string',
             ],
+            'postfix increment before a division' => [
+                'js-postfix-increment-division.fixture',
+                'view/frontend/web/js/probe.js',
+                'view/frontend/web/js/probe.js:2:',
+                'a `/` after `i++` divides, so it must not open a regex and blank the msgid behind it',
+            ],
             'comment holding an apostrophe, outside the call' => [
                 'php-comment-apostrophe-outside-call.fixture',
                 $php,
