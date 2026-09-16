@@ -130,6 +130,12 @@ class DebrandGrepTest extends TestCase
                 $phtml . ':1:',
                 'a template line no overlay can rewrite is the surface this gate exists for',
             ],
+            'escape sequence in a template PHP string' => [
+                'phtml-escaped-brand.fixture',
+                $phtml,
+                $phtml . ':1:',
+                'the markup carve-out exempts a FQCN and the `.inc` header, not an escape',
+            ],
             'line number on a concatenated msgid' => [
                 'php-multiline-concatenated-call.fixture',
                 $php,

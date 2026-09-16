@@ -18,7 +18,7 @@ import re
 FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\+[A-Z])')
 # `Two.inc` is the legal entity in a copyright header, the one comment shape
 # the markup line-grep cannot blank away.
-MARKUP_FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\)')
+MARKUP_FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\+[A-Z])')
 
 MARKUP_COMMENT = re.compile(r'<!--.*?-->', re.S)
 # Knockout virtual elements are comments that render.

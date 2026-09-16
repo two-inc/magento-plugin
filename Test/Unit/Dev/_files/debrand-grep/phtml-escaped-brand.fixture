@@ -1,0 +1,2 @@
+<?php echo "Two\n is here"; ?>
+<div class="clean"></div>
