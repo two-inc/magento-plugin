@@ -6,25 +6,29 @@
  *
  * TWO-25799: opt-in promotional message on the product detail page.
  *
- * product.info.form.content is the standard Luma container holding the
- * add-to-cart stack. Verified against www.downlights.co.uk (Magento 2, Luma),
- * whose DOM under .box-tocart .actions runs: #product-addtocart-button,
- * #payment-request-button (Stripe), #instant-purchase (core),
- * #paypal-smart-button. Sorting after product.info.addtocart puts this block
- * in the same stack as those.
+ * Placed in product.info.main after product.info, which is the add-to-cart
+ * form, so the message sits directly beneath the add-to-cart controls.
  *
- * A theme that overrides the product template may not expose this container;
- * the message then needs a theme-side placement rather than a plugin change.
+ * NOT product.info.form.content, the container that holds the add-to-cart
+ * button itself: Magento_Catalog's product/view/form.phtml renders that
+ * container only when the product has no options
+ * (`if (!$block->hasOptions())`), rendering the options container instead
+ * otherwise. A block placed there is therefore invisible on every
+ * configurable product — which includes the storefronts that prompted this,
+ * where products carry options such as colour temperature and beam angle.
+ *
+ * A theme that overrides the product template may order this differently;
+ * placement is then a theme-side change.
  */
 -->
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
-        <referenceContainer name="product.info.form.content">
+        <referenceContainer name="product.info.main">
             <block class="Two\Gateway\Block\Product\PromoMessage"
                    name="two.product.promo"
                    template="Two_Gateway::product/promo-message.phtml"
-                   after="product.info.addtocart"/>
+                   after="product.info"/>
         </referenceContainer>
     </body>
 </page>
