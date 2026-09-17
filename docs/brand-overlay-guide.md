@@ -436,7 +436,8 @@ is the pattern.
 `view/**/web/template/**/*.html`, every string literal in non-test PHP, and
 every string literal inside a `$t( … )`, `$.mage.__( … )` or injected
 `.translate( … )` call in `view/*/web/js/**`. FQCN segments are never matches;
-an escape sequence after the brand is.
+an escape sequence after the brand is, but a backslash before it is not —
+`…\Two` has nothing after it to test.
 `Two.inc` is the legal entity, not a carve-out: it is a leak wherever a plain
 brand name would be. Comments are skipped in every language it reads, PHP
 comments inside a `.phtml` included — an apostrophe, in one or in a heredoc or

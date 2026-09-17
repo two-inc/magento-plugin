@@ -14,7 +14,8 @@ import glob
 import os
 import re
 
-# `Two\Gateway` and `…\Two` are FQCN segments; no PHP escape starts uppercase.
+# `Two\Gateway` needs uppercase after the backslash run; `…\Two` has nothing
+# after it to test, so any backslash before the brand exempts it.
 FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\+[A-Z])')
 
 MARKUP_COMMENT = re.compile(r'<!--.*?-->', re.S)
