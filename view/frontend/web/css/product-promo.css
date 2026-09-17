@@ -14,12 +14,13 @@
 .two-product-promo {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 15px 0 20px;
-    padding: 10px 12px;
-    border: 1px solid #e3e3e3;
+    gap: 12px;
+    margin: 20px 0 25px;
+    padding: 14px 16px;
+    border: 1px solid #d4d4d4;
+    border-left: 4px solid #1a1a1a;
     border-radius: 4px;
-    background: #fafafa;
+    background: #fff;
     /* Sits in the product-info column, so it should not outgrow the
        add-to-cart controls above it. */
     max-width: 420px;
@@ -34,13 +35,14 @@
 }
 
 .two-product-promo[data-brand='two_payment'] .two-product-promo__mark {
-    width: 40px;
-    height: 20px;
+    width: 52px;
+    height: 26px;
     background-image: url('../images/logo.svg');
 }
 
 .two-product-promo__text {
-    font-size: 1.4rem;
+    font-size: 1.7rem;
+    font-weight: 600;
     line-height: 1.3;
-    color: #333;
+    color: #1a1a1a;
 }
