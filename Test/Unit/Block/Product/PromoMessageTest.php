@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Block\Product\PromoMessage;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
  * TWO-25799: the product-page message is opt-in and must stay invisible
@@ -15,16 +16,25 @@ use Two\Gateway\Block\Product\PromoMessage;
  */
 class PromoMessageTest extends TestCase
 {
-    private function block(bool $active, bool $enabled, string $override): PromoMessage
-    {
+    private function block(
+        bool $active,
+        bool $enabled,
+        string $override,
+        bool $keyDefinitivelyRejected = false,
+        string $productName = 'Two'
+    ): PromoMessage {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('isActive')->willReturn($active);
         $config->method('isProductMessageEnabled')->willReturn($enabled);
         $config->method('getProductMessage')->willReturn($override);
 
         $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn($productName);
 
-        return new PromoMessage($this->createMock(Context::class), $config, $brand);
+        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $apiKeyStatus->method('isDefinitiveFailure')->willReturn($keyDefinitivelyRejected);
+
+        return new PromoMessage($this->createMock(Context::class), $config, $brand, $apiKeyStatus);
     }
 
     public function testHiddenByDefaultEvenWhenMethodIsActive(): void
@@ -57,6 +67,27 @@ class PromoMessageTest extends TestCase
             'Buy now, receive your goods, pay your invoice later.',
             $this->block(true, true, '')->getMessage()
         );
+    }
+
+    /**
+     * A method the buyer cannot use must not advertise itself, so the same
+     * api-key verdict every other buyer-facing surface applies gates this one.
+     */
+    public function testHiddenWhenTheApiKeyIsDefinitivelyRejected(): void
+    {
+        $this->assertFalse($this->block(true, true, '', true)->isVisible());
+    }
+
+    /** Only a DEFINITIVE rejection withholds; a transient outage does not. */
+    public function testVisibleWhenTheApiKeyFailureIsNotDefinitive(): void
+    {
+        $this->assertTrue($this->block(true, true, '', false)->isVisible());
+    }
+
+    /** The mark is a CSS background, so the brand name is its accessible name. */
+    public function testBrandLabelNamesTheProduct(): void
+    {
+        $this->assertSame('Acme', $this->block(true, true, '', false, 'Acme')->getBrandLabel());
     }
 
     /** The default names no brand: the mark beside it does that. */

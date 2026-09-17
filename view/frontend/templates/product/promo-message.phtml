@@ -6,8 +6,17 @@
 ?>
 <?php /* @var \Two\Gateway\Block\Product\PromoMessage $block */ ?>
 <?php if ($block->isVisible()): ?>
+    <?php $brandLabel = $block->getBrandLabel(); ?>
     <div class="two-product-promo" data-brand="<?= $block->escapeHtmlAttr($block->getBrandCode()) ?>">
-        <span class="two-product-promo__mark" aria-hidden="true"></span>
+        <?php /* role="img" gives the CSS-background mark the accessible name the
+                message itself does not carry. With no brand name to give, it
+                stays hidden rather than announcing an empty image. */ ?>
+        <?php if ($brandLabel !== ''): ?>
+            <span class="two-product-promo__mark" role="img"
+                  aria-label="<?= $block->escapeHtmlAttr($brandLabel) ?>"></span>
+        <?php else: ?>
+            <span class="two-product-promo__mark" aria-hidden="true"></span>
+        <?php endif; ?>
         <span class="two-product-promo__text"><?= $block->escapeHtml($block->getMessage()) ?></span>
     </div>
 <?php endif; ?>

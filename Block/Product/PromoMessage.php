@@ -11,6 +11,7 @@ use Magento\Framework\View\Element\Template;
 use Magento\Framework\View\Element\Template\Context;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
  * Product detail page promotional message (TWO-25799).
@@ -26,19 +27,32 @@ class PromoMessage extends Template
         Context $context,
         private readonly ConfigRepository $configRepository,
         private readonly BrandRegistryInterface $brandRegistry,
+        private readonly ApiKeyStatus $apiKeyStatus,
         array $data = []
     ) {
         parent::__construct($context, $data);
     }
 
     /**
-     * Both gates matter: the merchant opts in, but a disabled payment method
-     * must never advertise itself.
+     * The merchant opts in, but a method the buyer cannot actually use must
+     * never advertise itself.
+     *
+     * The api-key verdict is the same gate every other buyer-facing surface
+     * applies (Model\Two::isAvailable, Model\Ui\ConfigProvider::getConfig,
+     * Model\Webapi\OrderIntent::place, Model\Webapi\CompanyLookup). Only a
+     * DEFINITIVE rejection withholds, so a transient outage leaves the message
+     * up, exactly as it leaves the method on offer.
+     *
+     * This is not the full availability chain: minimum order value, buyer
+     * country and currency all depend on a cart that does not exist on a
+     * product page, so the message advertises that the method exists, never
+     * that this buyer will be offered it.
      */
     public function isVisible(): bool
     {
         return $this->configRepository->isActive()
             && $this->configRepository->isProductMessageEnabled()
+            && !$this->apiKeyStatus->isDefinitiveFailure()
             && $this->getMessage() !== '';
     }
 
@@ -81,5 +95,17 @@ class PromoMessage extends Template
     public function getBrandCode(): string
     {
         return $this->brandRegistry->getCode();
+    }
+
+    /**
+     * The accessible name for the mark.
+     *
+     * The mark is a CSS background, which carries no alternative text, and the
+     * message names no brand — so without this a screen-reader user hears an
+     * unattributed financing offer.
+     */
+    public function getBrandLabel(): string
+    {
+        return trim($this->brandRegistry->getProductName());
     }
 }
