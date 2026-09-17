@@ -15,7 +15,7 @@ use Two\Gateway\Block\Product\PromoMessage;
  */
 class PromoMessageTest extends TestCase
 {
-    private function block(bool $active, bool $enabled, string $override, string $provider = 'Two'): PromoMessage
+    private function block(bool $active, bool $enabled, string $override, string $productName = 'Two'): PromoMessage
     {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('isActive')->willReturn($active);
@@ -23,7 +23,7 @@ class PromoMessageTest extends TestCase
         $config->method('getProductMessage')->willReturn($override);
 
         $brand = $this->createMock(BrandRegistryInterface::class);
-        $brand->method('getProviderFullName')->willReturn($provider);
+        $brand->method('getProductName')->willReturn($productName);
 
         return new PromoMessage($this->createMock(Context::class), $config, $brand);
     }

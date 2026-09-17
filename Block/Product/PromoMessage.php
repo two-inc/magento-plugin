@@ -59,9 +59,14 @@ class PromoMessage extends Template
             return $configured;
         }
 
-        $provider = trim($this->brandRegistry->getProviderFullName());
+        // getProductName(), not getProviderFullName(): the interface reserves
+        // the latter for the legal entity name in T&Cs and similar formal
+        // contexts, and names this one the buyer-visible label. An overlay
+        // whose legal entity differs from its marketed product would otherwise
+        // advertise its company name on the storefront.
+        $product = trim($this->brandRegistry->getProductName());
 
-        return $provider === '' ? '' : (string)__('Buy now, pay later with %1', $provider);
+        return $product === '' ? '' : (string)__('Buy now, pay later with %1', $product);
     }
 
     /**
