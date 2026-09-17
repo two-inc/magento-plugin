@@ -419,4 +419,3 @@
 "Product page message","Meddelande på produktsidan"
 "Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Visar en kort kampanjrad på produktsidor, under knappen för att lägga i varukorgen. Av som standard."
 "Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Valfritt. Tomt fält använder standardtexten. Undvik att ange ett antal dagar om du inte är säker på de betalningsvillkor du erbjuder."
-"Buy now, pay later with %1","Köp nu, betala senare med %1"

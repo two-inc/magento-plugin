@@ -15,7 +15,7 @@ use Two\Gateway\Block\Product\PromoMessage;
  */
 class PromoMessageTest extends TestCase
 {
-    private function block(bool $active, bool $enabled, string $override, string $productName = 'Two'): PromoMessage
+    private function block(bool $active, bool $enabled, string $override): PromoMessage
     {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('isActive')->willReturn($active);
@@ -23,7 +23,6 @@ class PromoMessageTest extends TestCase
         $config->method('getProductMessage')->willReturn($override);
 
         $brand = $this->createMock(BrandRegistryInterface::class);
-        $brand->method('getProductName')->willReturn($productName);
 
         return new PromoMessage($this->createMock(Context::class), $config, $brand);
     }
@@ -48,14 +47,21 @@ class PromoMessageTest extends TestCase
         $this->assertSame('Pay in 30 days', $this->block(true, true, '  Pay in 30 days  ')->getMessage());
     }
 
-    public function testFallsBackToBrandAwareDefault(): void
+    /**
+     * The default is the phrase the checkout tile already uses, so the two
+     * surfaces cannot drift and the wording needs no translation of its own.
+     */
+    public function testFallsBackToTheCheckoutTilePhrase(): void
     {
-        $this->assertStringContainsString('Acme', $this->block(true, true, '', 'Acme')->getMessage());
+        $this->assertSame(
+            'Buy now, receive your goods, pay your invoice later.',
+            $this->block(true, true, '')->getMessage()
+        );
     }
 
-    /** No brand name and no override means nothing to say, so say nothing. */
-    public function testHiddenWhenNoCopyResolves(): void
+    /** The default names no brand: the mark beside it does that. */
+    public function testDefaultNamesNoBrand(): void
     {
-        $this->assertFalse($this->block(true, true, '', '')->isVisible());
+        $this->assertStringNotContainsString('Two', $this->block(true, true, '')->getMessage());
     }
 }

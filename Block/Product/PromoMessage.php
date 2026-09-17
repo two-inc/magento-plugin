@@ -43,7 +43,15 @@ class PromoMessage extends Template
     }
 
     /**
-     * Merchant override wins; otherwise the brand-aware default.
+     * Merchant override wins; otherwise the same phrase the checkout tile
+     * already uses (Model/Ui/CheckoutTileCopy::getAboutTooltipHtml), so the
+     * product page and checkout say the same thing and the wording is one
+     * that shipped and was translated rather than written for this slot.
+     * Magento keys translations on the source string, so it resolves against
+     * the existing catalogue rows.
+     *
+     * It names no brand: the mark beside it does that, and repeating the name
+     * in the text reads as duplication.
      *
      * TWO-25799: deliberately no day count. Terms run from fulfilment, not from
      * the page view, and the configured `payment_terms` list is intersected
@@ -59,14 +67,7 @@ class PromoMessage extends Template
             return $configured;
         }
 
-        // getProductName(), not getProviderFullName(): the interface reserves
-        // the latter for the legal entity name in T&Cs and similar formal
-        // contexts, and names this one the buyer-visible label. An overlay
-        // whose legal entity differs from its marketed product would otherwise
-        // advertise its company name on the storefront.
-        $product = trim($this->brandRegistry->getProductName());
-
-        return $product === '' ? '' : (string)__('Buy now, pay later with %1', $product);
+        return (string)__('Buy now, receive your goods, pay your invoice later.');
     }
 
     /**
