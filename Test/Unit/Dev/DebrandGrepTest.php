@@ -88,6 +88,12 @@ class DebrandGrepTest extends TestCase
                 'view/frontend/web/js/probe.js:2:',
                 'an apostrophe inside a regex literal must not open a string',
             ],
+            'bracket inside a translated literal' => [
+                'js-bracket-in-a-string.fixture',
+                'view/frontend/web/js/probe.js',
+                null,
+                'parens are balanced in a copy with the strings blanked, so a quoted one closes nothing',
+            ],
             'postfix increment before a division' => [
                 'js-postfix-increment-division.fixture',
                 'view/frontend/web/js/probe.js',
@@ -110,13 +116,19 @@ class DebrandGrepTest extends TestCase
                 'php-two-inc-in-call.fixture',
                 $php,
                 $php . ':2:',
-                'the copyright exemption belongs to markup headers, not to a msgid',
+                'the legal entity carries the brand, so a msgid naming it is a leak',
             ],
             'copyright header in a template' => [
                 'phtml-copyright-header.fixture',
                 $phtml,
                 null,
-                'the legal entity in a header names the licensor, not the brand',
+                'a header is a comment, and comments are blanked before the literal walk',
+            ],
+            'legal entity in live markup' => [
+                'phtml-legal-entity-live.fixture',
+                $phtml,
+                $phtml . ':1:',
+                'the legal entity carries the brand into markup no overlay can rewrite',
             ],
             'PHP comment in a template' => [
                 'phtml-php-comment.fixture',
@@ -130,11 +142,17 @@ class DebrandGrepTest extends TestCase
                 $phtml . ':1:',
                 'a template line no overlay can rewrite is the surface this gate exists for',
             ],
-            'line number on a concatenated msgid' => [
-                'php-multiline-concatenated-call.fixture',
-                $php,
-                $php . ':4: with Two',
-                'the report names the line the brand is on, not the line the call opens',
+            'escape sequence in a template PHP string' => [
+                'phtml-escaped-brand.fixture',
+                $phtml,
+                $phtml . ':1:',
+                'the FQCN carve-out exempts a namespace separator, not an escape',
+            ],
+            'concatenated msgid over several lines' => [
+                'js-multiline-concatenated-call.fixture',
+                'view/frontend/web/js/probe.js',
+                'view/frontend/web/js/probe.js:4: with Two',
+                'a concatenated msgid is read whole, so a brand on its second piece is reported',
             ],
             'brand name in a markup comment' => [
                 'xml-brand-in-comment.fixture',
@@ -177,6 +195,48 @@ class DebrandGrepTest extends TestCase
                 $php,
                 $php . ':2:',
                 'a msgid carries the brand in every locale, English included',
+            ],
+            'plain PHP literal' => [
+                'php-brand-in-plain-literal.fixture',
+                $php,
+                $php . ':2:',
+                'a literal reaches a logger or an exception without passing through __()',
+            ],
+            'FQCN in a plain literal' => [
+                'php-fqcn-in-plain-literal.fixture',
+                $php,
+                null,
+                'a class-string names a real class, escaped or not',
+            ],
+            'copyright header in non-test PHP' => [
+                'php-copyright-header.fixture',
+                $php,
+                null,
+                'a header is a comment, and comments are blanked before the literal walk',
+            ],
+            'escape sequence after the brand' => [
+                'php-escaped-brand-in-plain-literal.fixture',
+                $php,
+                $php . ':2:',
+                'a `\\n` after the brand escapes a newline, it does not open a namespace',
+            ],
+            'escaped apostrophe after the brand' => [
+                'php-escaped-apostrophe-in-plain-literal.fixture',
+                $php,
+                $php . ':2:',
+                'a `\\\'` after the brand escapes a quote, it does not open a namespace',
+            ],
+            'brand on a later line of a heredoc' => [
+                'php-heredoc-brand-line.fixture',
+                $php,
+                $php . ':5: Two rejected this order',
+                'a heredoc is one literal over many lines, so the report names the brand line, not the `<<<`',
+            ],
+            'two brand lines in one heredoc' => [
+                'php-heredoc-two-brand-lines.fixture',
+                $php,
+                $php . ":3: Two rejected this order\n  " . $php . ':5: Two will retry tomorrow',
+                'one CI round per leak, not one per mention',
             ],
         ];
     }

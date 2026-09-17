@@ -14,11 +14,9 @@ import glob
 import os
 import re
 
-# `Two\…` and `…\Two` are FQCN segments naming real classes.
-FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\)')
-# `Two.inc` is the legal entity in a copyright header, the one comment shape
-# the markup line-grep cannot blank away.
-MARKUP_FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\)')
+# `Two\Gateway` needs uppercase after the backslash run; `…\Two` has nothing
+# after it to test, so any backslash before the brand exempts it.
+FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\+[A-Z])')
 
 MARKUP_COMMENT = re.compile(r'<!--.*?-->', re.S)
 # Knockout virtual elements are comments that render.
@@ -42,7 +40,6 @@ PHP_LITERAL = re.compile(
     re.S | re.M)
 JS_LITERAL = re.compile(r"""'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`""", re.S)
 
-PHP_CALL = r'\b__\s*\('
 # Luma's `$t`, jQuery's `$.mage.__`, and the translator the vendored
 # company-search modules take by injection.
 JS_CALL = r'(?:\$t|\$\.mage\.__|\.translate)\s*\('
@@ -105,7 +102,12 @@ def translated_literals(src, code, call, literal):
             depth += (code[i] == '(') - (code[i] == ')')
             i += 1
         for m in literal.finditer(src, opener.end(), i - 1):
-            yield m.start(), m.group(m.lastindex)
+            yield m.start(m.lastindex), m.group(m.lastindex)
+
+
+def every_literal(src, literal):
+    for m in literal.finditer(src):
+        yield m.start(m.lastindex), m.group(m.lastindex)
 
 
 def read(path):
@@ -116,27 +118,34 @@ def read(path):
 found = []
 
 
-def scan(path, token, call, literal):
+def scan(path, token, literals):
     raw = read(path)
     src = blanked(raw, token, comments_only=True)
-    code = blanked(raw, token, comments_only=False)
-    for offset, text in translated_literals(src, code, call, literal):
-        if FORBIDDEN.search(text):
-            found.append('%s:%d: %s' % (path, src[:offset].count('\n') + 1, text.strip()[:160]))
+    for offset, text in literals(src, raw):
+        # A heredoc is one literal over many lines; report every brand line, once.
+        for hit in FORBIDDEN.finditer(text):
+            start = text.rfind('\n', 0, hit.start()) + 1
+            end = text.find('\n', hit.start())
+            line = text[start:end if end != -1 else len(text)]
+            found.append('%s:%d: %s' % (
+                path, src[:offset + hit.start()].count('\n') + 1, line.strip()[:160]))
 
 
 for path in markup_files():
     for n, line in enumerate(markup_source(path).splitlines(), start=1):
-        if MARKUP_FORBIDDEN.search(line):
+        if FORBIDDEN.search(line):
             found.append('%s:%d: %s' % (path, n, line.strip()[:160]))
 
+# A plain PHP literal reaches a logger or an exception, never `__()`.
 for path in source_files('.php'):
-    scan(path, PHP_TOKEN, PHP_CALL, PHP_LITERAL)
+    scan(path, PHP_TOKEN, lambda src, raw: every_literal(src, PHP_LITERAL))
 
 for path in source_files('.js', glob.glob('view/*/web/js')):
-    scan(path, JS_TOKEN, JS_CALL, JS_LITERAL)
+    scan(path, JS_TOKEN,
+         lambda src, raw: translated_literals(
+             src, blanked(raw, JS_TOKEN, comments_only=False), JS_CALL, JS_LITERAL))
 
-print('\n'.join(sorted(found)))
+print('\n'.join(sorted(set(found), key=lambda h: (h.split(':')[0], int(h.split(':')[1])))))
 PYEOF
 )
 
