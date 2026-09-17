@@ -122,15 +122,13 @@ def scan(path, token, literals):
     raw = read(path)
     src = blanked(raw, token, comments_only=True)
     for offset, text in literals(src, raw):
-        hit = FORBIDDEN.search(text)
-        if not hit:
-            continue
-        # A heredoc is one literal spanning many lines; report the brand's own.
-        start = text.rfind('\n', 0, hit.start()) + 1
-        end = text.find('\n', hit.start())
-        line = text[start:end if end != -1 else len(text)]
-        found.append('%s:%d: %s' % (
-            path, src[:offset + hit.start()].count('\n') + 1, line.strip()[:160]))
+        # A heredoc is one literal over many lines; report every brand line, once.
+        for hit in FORBIDDEN.finditer(text):
+            start = text.rfind('\n', 0, hit.start()) + 1
+            end = text.find('\n', hit.start())
+            line = text[start:end if end != -1 else len(text)]
+            found.append('%s:%d: %s' % (
+                path, src[:offset + hit.start()].count('\n') + 1, line.strip()[:160]))
 
 
 for path in markup_files():
@@ -147,7 +145,7 @@ for path in source_files('.js', glob.glob('view/*/web/js')):
          lambda src, raw: translated_literals(
              src, blanked(raw, JS_TOKEN, comments_only=False), JS_CALL, JS_LITERAL))
 
-print('\n'.join(sorted(found)))
+print('\n'.join(sorted(set(found))))
 PYEOF
 )
 
