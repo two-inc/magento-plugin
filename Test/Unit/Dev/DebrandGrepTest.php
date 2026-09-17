@@ -88,6 +88,12 @@ class DebrandGrepTest extends TestCase
                 'view/frontend/web/js/probe.js:2:',
                 'an apostrophe inside a regex literal must not open a string',
             ],
+            'bracket inside a translated literal' => [
+                'js-bracket-in-a-string.fixture',
+                'view/frontend/web/js/probe.js',
+                null,
+                'parens are balanced in a copy with the strings blanked, so a quoted one closes nothing',
+            ],
             'postfix increment before a division' => [
                 'js-postfix-increment-division.fixture',
                 'view/frontend/web/js/probe.js',
@@ -118,6 +124,12 @@ class DebrandGrepTest extends TestCase
                 null,
                 'the legal entity in a header names the licensor, not the brand',
             ],
+            'legal entity in live markup' => [
+                'phtml-legal-entity-live.fixture',
+                $phtml,
+                $phtml . ':1:',
+                'the legal entity carries the brand into markup no overlay can rewrite',
+            ],
             'PHP comment in a template' => [
                 'phtml-php-comment.fixture',
                 $phtml,
@@ -136,11 +148,11 @@ class DebrandGrepTest extends TestCase
                 $phtml . ':1:',
                 'the FQCN carve-out exempts a namespace separator, not an escape',
             ],
-            'line number on a concatenated msgid' => [
-                'php-multiline-concatenated-call.fixture',
-                $php,
-                $php . ':4: with Two',
-                'the report names the line the brand is on, not the line the call opens',
+            'concatenated msgid over several lines' => [
+                'js-multiline-concatenated-call.fixture',
+                'view/frontend/web/js/probe.js',
+                'view/frontend/web/js/probe.js:4: with Two',
+                'a concatenated msgid is read whole, so a brand on its second piece is reported',
             ],
             'brand name in a markup comment' => [
                 'xml-brand-in-comment.fixture',
@@ -219,6 +231,12 @@ class DebrandGrepTest extends TestCase
                 $php,
                 $php . ':5: Two rejected this order',
                 'a heredoc is one literal over many lines, so the report names the brand line, not the `<<<`',
+            ],
+            'two brand lines in one heredoc' => [
+                'php-heredoc-two-brand-lines.fixture',
+                $php,
+                $php . ":3: Two rejected this order\n  " . $php . ':5: Two will retry tomorrow',
+                'one CI round per leak, not one per mention',
             ],
         ];
     }
