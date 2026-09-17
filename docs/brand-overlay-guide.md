@@ -437,13 +437,12 @@ is the pattern.
 every string literal inside a `$t( … )`, `$.mage.__( … )` or injected
 `.translate( … )` call in `view/*/web/js/**`. FQCN segments are never matches;
 an escape sequence after the brand is.
-The `Two.inc` copyright header is exempt on the markup surfaces only, where a
-header is the one comment shape the line-grep cannot blank away; in a string
-literal it is a leak like any other. Comments are skipped in every
-language it reads, PHP comments inside a `.phtml` included — an apostrophe,
-in one or in a heredoc or a regex literal, would otherwise open a string and
-desync the scan for the rest of the file. A Knockout virtual element
-(`<!-- ko … -->`) renders, so it is read rather than skipped.
+`Two.inc` is the legal entity, not a carve-out: it is a leak wherever a plain
+brand name would be. Comments are skipped in every language it reads, PHP
+comments inside a `.phtml` included — an apostrophe, in one or in a heredoc or
+a regex literal, would otherwise open a string and desync the scan for the rest
+of the file. A Knockout virtual element (`<!-- ko … -->`) renders, so it is read
+rather than skipped.
 
 `Test/Unit/Dev/DebrandGrepTest.php` plants one file per surface and reads the
 gate's own report, so a scanner that stops seeing a leak fails rather than

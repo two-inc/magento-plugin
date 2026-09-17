@@ -16,9 +16,6 @@ import re
 
 # `Two\Gateway` and `…\Two` are FQCN segments; no PHP escape starts uppercase.
 FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\\+[A-Z])')
-# `Two.inc` is the legal entity in a copyright header, the one comment shape
-# the markup line-grep cannot blank away.
-MARKUP_FORBIDDEN = re.compile(r'(?<!\\)\bTwo\b(?!\.inc\b|\\+[A-Z])')
 
 MARKUP_COMMENT = re.compile(r'<!--.*?-->', re.S)
 # Knockout virtual elements are comments that render.
@@ -137,7 +134,7 @@ def scan(path, token, literals):
 
 for path in markup_files():
     for n, line in enumerate(markup_source(path).splitlines(), start=1):
-        if MARKUP_FORBIDDEN.search(line):
+        if FORBIDDEN.search(line):
             found.append('%s:%d: %s' % (path, n, line.strip()[:160]))
 
 # A plain PHP literal reaches a logger or an exception, never `__()`.

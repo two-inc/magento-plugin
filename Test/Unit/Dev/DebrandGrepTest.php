@@ -110,7 +110,7 @@ class DebrandGrepTest extends TestCase
                 'php-two-inc-in-call.fixture',
                 $php,
                 $php . ':2:',
-                'the copyright exemption belongs to markup headers, not to a msgid',
+                'the legal entity carries the brand, so a msgid naming it is a leak',
             ],
             'copyright header in a template' => [
                 'phtml-copyright-header.fixture',
@@ -134,7 +134,7 @@ class DebrandGrepTest extends TestCase
                 'phtml-escaped-brand.fixture',
                 $phtml,
                 $phtml . ':1:',
-                'the markup carve-out exempts a FQCN and the `.inc` header, not an escape',
+                'the FQCN carve-out exempts a namespace separator, not an escape',
             ],
             'line number on a concatenated msgid' => [
                 'php-multiline-concatenated-call.fixture',
