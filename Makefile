@@ -16,7 +16,7 @@ TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
 TWO_STORE_COUNTRY    ?= NO
 export PORT
 
-.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test-image test test-e2e
 
 .DEFAULT_GOAL := help
 
@@ -250,20 +250,25 @@ minor: bumpver-minor
 major: bumpver-major
 PHPUNIT_VERSION := 10.5.64
 PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8ee23
+TEST_IMAGE      := magento-plugin-test
+
+# Unconditional: docker's layer cache owns the rebuild, where an image-exists guard would keep a stale image past a Dockerfile edit.
+test-image:
+	docker build -t $(TEST_IMAGE) - < dev/Dockerfile.test
 
 ## Run PHPUnit tests
-test:
-	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.2-cli bash -c \
+test: test-image
+	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app $(TEST_IMAGE) bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
 
 ## Run end-to-end API tests (requires TWO_API_KEY)
-test-e2e:
+test-e2e: test-image
 	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
-		php:8.2-cli bash -c \
+		$(TEST_IMAGE) bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar --testsuite E2E"
