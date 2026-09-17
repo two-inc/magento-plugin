@@ -122,7 +122,7 @@ class DebrandGrepTest extends TestCase
                 'phtml-copyright-header.fixture',
                 $phtml,
                 null,
-                'the legal entity in a header names the licensor, not the brand',
+                'a header is a comment, and comments are blanked before the literal walk',
             ],
             'legal entity in live markup' => [
                 'phtml-legal-entity-live.fixture',

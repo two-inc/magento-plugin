@@ -145,7 +145,7 @@ for path in source_files('.js', glob.glob('view/*/web/js')):
          lambda src, raw: translated_literals(
              src, blanked(raw, JS_TOKEN, comments_only=False), JS_CALL, JS_LITERAL))
 
-print('\n'.join(sorted(set(found))))
+print('\n'.join(sorted(set(found), key=lambda h: (h.split(':')[0], int(h.split(':')[1])))))
 PYEOF
 )
 
