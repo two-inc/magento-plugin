@@ -453,13 +453,16 @@ In `view/*/web/js/**` only literals inside a translation call are gated, so a
 brand name in a plain JS literal is not caught.
 
 `etc/adminhtml/system.xml` is ungated because it is the vanilla Two form, which
-an overlay replaces wholesale via `deepMergeOverlay` rather than translating;
+an overlay replaces wholesale via `deepMergeOverlay` rather than translating,
+and `i18n/*.csv` inherit that carve-out, being translations of its strings.
 `etc/db_schema.xml` is ungated because its `Two` occurrences are DB column
-comments no user ever sees. `etc/config.xml` is ungated because its `<title>`
+comments no user ever sees, `etc/brand.xml` because it is the registry that
+declares the vanilla name. `etc/config.xml` is ungated because its `<title>`
 sits under the vanilla payment code: an overlay ships its own `etc/config.xml`
 under its own code, merged later, and its method reads the title from its own
-`getCode()` path — an overlay that ships no title of its own is the failure
-mode.
+`getCode()` path. An overlay shipping no `<title>` is the safe case —
+`Model/Two::getTitle()` falls back to the brand registry's product name; one
+shipping a branded-wrong `<title>` is the failure mode.
 
 ## Local development
 
