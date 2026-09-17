@@ -8,14 +8,13 @@
 <?php if ($block->isVisible()): ?>
     <?php $brandLabel = $block->getBrandLabel(); ?>
     <div class="two-product-promo" data-brand="<?= $block->escapeHtmlAttr($block->getBrandCode()) ?>">
-        <?php /* role="img" gives the CSS-background mark the accessible name the
-                message itself does not carry. With no brand name to give, it
-                stays hidden rather than announcing an empty image. */ ?>
+        <?php /* The mark is decorative: the brand name sits beside it as text,
+                which a brand that paints a mark hides from sight but keeps in
+                the accessibility tree. A brand with no mark shows the name,
+                so no storefront carries an unattributed offer. */ ?>
+        <span class="two-product-promo__mark" aria-hidden="true"></span>
         <?php if ($brandLabel !== ''): ?>
-            <span class="two-product-promo__mark" role="img"
-                  aria-label="<?= $block->escapeHtmlAttr($brandLabel) ?>"></span>
-        <?php else: ?>
-            <span class="two-product-promo__mark" aria-hidden="true"></span>
+            <span class="two-product-promo__brand"><?= $block->escapeHtml($brandLabel) ?></span>
         <?php endif; ?>
         <span class="two-product-promo__text"><?= $block->escapeHtml($block->getMessage()) ?></span>
     </div>

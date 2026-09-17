@@ -86,7 +86,9 @@ class PromoMessage extends Template
      */
     public function getMessage(): string
     {
-        $configured = trim($this->configRepository->getProductMessage());
+        // trim() leaves U+00A0 and friends, so an override of two nonbreaking
+        // spaces would render a bordered badge with no readable message.
+        $configured = (string)preg_replace('/^[\s\x{00A0}\x{1680}\x{2000}-\x{200A}\x{202F}\x{205F}\x{3000}\x{FEFF}]+|[\s\x{00A0}\x{1680}\x{2000}-\x{200A}\x{202F}\x{205F}\x{3000}\x{FEFF}]+$/u', '', $this->configRepository->getProductMessage());
         if ($configured !== '') {
             return $configured;
         }

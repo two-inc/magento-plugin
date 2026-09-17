@@ -23,6 +23,15 @@
     background: #fff;
 }
 
+/* The brand's name in text, so a brand whose CSS paints no mark is still
+   attributed. A brand that DOES paint one hides this visually below, keeping
+   it for assistive technology rather than removing it. */
+.two-product-promo__brand {
+    flex: 0 0 auto;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 /* Sized only by a brand's own rule, so a brand with no mark leaves no gap. */
 .two-product-promo__mark {
     flex: 0 0 auto;
@@ -37,7 +46,25 @@
     background-image: url('../images/logo.svg');
 }
 
+/* Two paints a mark, so its name is carried visually by that and the text is
+   hidden from sight only — still in the accessibility tree. */
+.two-product-promo[data-brand='two_payment'] .two-product-promo__brand {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* A flex child will not wrap without this, so a long unbroken override —
+   a pasted URL, say — would overflow the column the box sits in. */
 .two-product-promo__text {
+    min-width: 0;
+    overflow-wrap: anywhere;
     /* Sized so the default sentence sits on one line in the product-info
        column at desktop width; it still wraps on a narrow viewport, which is
        the correct behaviour there rather than an overflow. */

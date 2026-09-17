@@ -84,6 +84,38 @@ class PromoMessageTest extends TestCase
         $this->assertTrue($this->block(true, true, '', false)->isVisible());
     }
 
+    /**
+     * TWO-25799: trim() leaves U+00A0, so a nonbreaking-space override used to
+     * satisfy the emptiness check and render a badge with no readable message.
+     *
+     * @dataProvider blankOverrideProvider
+     */
+    public function testAWhitespaceOnlyOverrideFallsBackToTheDefault(string $override): void
+    {
+        $this->assertSame(
+            'Buy now, receive your goods, pay your invoice later.',
+            $this->block(true, true, $override)->getMessage()
+        );
+    }
+
+    public static function blankOverrideProvider(): array
+    {
+        return [
+            'ordinary spaces' => ['   '],
+            'tab and newline' => ["\t\n"],
+            'nonbreaking spaces' => ["\u{00A0}\u{00A0}"],
+            'ideographic space' => ["\u{3000}"],
+            'zero-width no-break space' => ["\u{FEFF}"],
+            'mixed' => [" \u{00A0}\t\u{202F} "],
+        ];
+    }
+
+    /** A real override keeps its own inner spacing. */
+    public function testAnOverrideIsTrimmedButNotOtherwiseAltered(): void
+    {
+        $this->assertSame('Pay  us   later', $this->block(true, true, "\u{00A0} Pay  us   later \t")->getMessage());
+    }
+
     /** The mark is a CSS background, so the brand name is its accessible name. */
     public function testBrandLabelNamesTheProduct(): void
     {
