@@ -47,6 +47,16 @@ class PromoMessage extends Template
      * country and currency all depend on a cart that does not exist on a
      * product page, so the message advertises that the method exists, never
      * that this buyer will be offered it.
+     *
+     * The verdict is read at page-generation time and the product page is
+     * full-page cached, so a key revoked upstream leaves the message on a
+     * cached page until that entry is replaced. Accepted rather than moved to
+     * private content: ApiKeyStatus caches its own verdict (5 min on success,
+     * 1 min on failure), so revalidating per request would not be live either,
+     * and it would spend a request on the highest-traffic page to decide one
+     * static sentence that promises nothing about this buyer. Merchant-driven
+     * changes — the toggle, the key — are config saves, which invalidate the
+     * page cache.
      */
     public function isVisible(): bool
     {
