@@ -23,6 +23,9 @@
 -->
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <head>
+        <css src="Two_Gateway::css/product-promo.css"/>
+    </head>
     <body>
         <referenceContainer name="product.info.main">
             <block class="Two\Gateway\Block\Product\PromoMessage"

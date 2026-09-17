@@ -6,7 +6,8 @@
 ?>
 <?php /* @var \Two\Gateway\Block\Product\PromoMessage $block */ ?>
 <?php if ($block->isVisible()): ?>
-    <div class="two-product-promo">
+    <div class="two-product-promo" data-brand="<?= $block->escapeHtmlAttr($block->getBrandCode()) ?>">
+        <span class="two-product-promo__mark" aria-hidden="true"></span>
         <span class="two-product-promo__text"><?= $block->escapeHtml($block->getMessage()) ?></span>
     </div>
 <?php endif; ?>

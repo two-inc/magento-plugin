@@ -63,4 +63,17 @@ class PromoMessage extends Template
 
         return $provider === '' ? '' : (string)__('Buy now, pay later with %1', $provider);
     }
+
+    /**
+     * The active brand's payment code, so CSS can pick the right mark.
+     *
+     * The mark is a CSS background keyed on this value rather than an image
+     * this template hardcodes, matching how .two-payment-shield lets an
+     * overlay supply its own. Shipping one unconditionally would show Two's
+     * mark on a partner's storefront.
+     */
+    public function getBrandCode(): string
+    {
+        return $this->brandRegistry->getCode();
+    }
 }

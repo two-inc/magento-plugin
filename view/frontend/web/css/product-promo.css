@@ -1,0 +1,46 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25799: product detail page promotional message.
+ *
+ * The brand mark is a background-image keyed on the brand code, following
+ * .two-payment-shield in style.css: Two_Gateway ships its own mark for its
+ * own code only, and an overlay package adds a rule for its code in its own
+ * CSS. A mark shipped unconditionally would put Two's logo on a partner's
+ * storefront.
+ */
+
+.two-product-promo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 15px 0 20px;
+    padding: 10px 12px;
+    border: 1px solid #e3e3e3;
+    border-radius: 4px;
+    background: #fafafa;
+    /* Sits in the product-info column, so it should not outgrow the
+       add-to-cart controls above it. */
+    max-width: 420px;
+}
+
+/* Sized only by a brand's own rule, so a brand with no mark leaves no gap. */
+.two-product-promo__mark {
+    flex: 0 0 auto;
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: contain;
+}
+
+.two-product-promo[data-brand='two_payment'] .two-product-promo__mark {
+    width: 40px;
+    height: 20px;
+    background-image: url('../images/logo.svg');
+}
+
+.two-product-promo__text {
+    font-size: 1.4rem;
+    line-height: 1.3;
+    color: #333;
+}
