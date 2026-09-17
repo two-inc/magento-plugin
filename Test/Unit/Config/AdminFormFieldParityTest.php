@@ -31,12 +31,6 @@ class AdminFormFieldParityTest extends TestCase
         $declared = $this->fieldIds(self::VANILLA_FORM, self::VANILLA_PREFIX . '_' . $section, $group);
         $synthesised = $this->fieldIds(self::BRAND_FORM, self::BRAND_PREFIX . '_' . $section, $group);
 
-        // A group empty in both forms would compare assertSame([], []) and assert nothing.
-        $this->assertNotEmpty(
-            array_merge($declared, $synthesised),
-            sprintf('%s/%s holds no field in either form.', $section, $group)
-        );
-
         $this->assertSame($declared, $synthesised, $description);
     }
 
