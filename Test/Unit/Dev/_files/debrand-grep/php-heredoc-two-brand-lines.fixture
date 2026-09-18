@@ -1,0 +1,6 @@
+<?php
+$body = <<<MESSAGE
+Two rejected this order
+line b
+Two will retry tomorrow
+MESSAGE;

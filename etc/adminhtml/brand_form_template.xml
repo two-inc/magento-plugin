@@ -180,6 +180,26 @@
                     <backend_model>Two\Gateway\Model\Config\Backend\Subtitle</backend_model>
                     <config_path>payment/{{code}}/subtitle</config_path>
                 </field>
+                <!-- TWO-25799: opt-in. Default OFF, so no storefront starts
+                     advertising on the product page after an upgrade. -->
+                <field id="product_message_enabled" translate="label comment" type="select" sortOrder="21"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show message on product pages</label>
+                    <comment>Shows a short promotional line on product pages, beneath the add to cart button. Off by default.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/product_message_enabled</config_path>
+                </field>
+                <field id="product_message" translate="label comment" type="text" sortOrder="22"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Product page message</label>
+                    <comment>Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.</comment>
+                    <config_path>payment/{{code}}/product_message</config_path>
+                    <depends>
+                        <field id="product_message_enabled">1</field>
+                    </depends>
+                </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
@@ -665,7 +685,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
                     <label>Merchant profile</label>
-                    <comment>Your offerable payment terms, buyer-surcharge cap, minimum order value and default term are read from Two and cached. They are refreshed once a day by the scheduled job and whenever the API key or environment is saved; use this to pull a change through now.</comment>
+                    <comment>Your offerable payment terms, buyer-surcharge cap, minimum order value and default term are read from {{provider}} and cached. They are refreshed once a day by the scheduled job and whenever the API key or environment is saved; use this to pull a change through now.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\RefreshMerchantRecord</frontend_model>
                 </field>
             </group>

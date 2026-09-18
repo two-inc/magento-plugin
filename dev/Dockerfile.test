@@ -1,0 +1,5 @@
+# python3 for dev/debrand-grep.sh, which Test/Unit/Dev/DebrandGrepTest.php shells out to; php:8.2-cli ships none.
+FROM php:8.2-cli
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*

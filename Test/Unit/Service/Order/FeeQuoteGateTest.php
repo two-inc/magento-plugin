@@ -13,6 +13,7 @@ use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Store\Model\Store;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -270,7 +271,8 @@ class FeeQuoteGateTest extends TestCase
             new SurchargeCapProvider(
                 $this->getMockBuilder(SettingsProvider::class)->disableOriginalConstructor()->getMock(),
                 $this->createMock(CurrencyRatesProviderInterface::class)
-            )
+            ),
+            $this->createMock(BrandRegistryInterface::class)
         );
 
         $appState = new AppState();

@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  */
 class AdminFormCatalogueTest extends TestCase
 {
-    private const LOCALES = ['nb_NO', 'nl_NL', 'sv_SE'];
+    private const LOCALES = ['es_ES', 'nb_NO', 'nl_NL', 'sv_SE'];
 
     private const ADMIN_FORMS = [
         'etc/adminhtml/brand_form_template.xml',

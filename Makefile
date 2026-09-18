@@ -5,8 +5,11 @@
 -include .env
 
 CONTAINER  := magento
-IMAGE      := michielgerritsen/magento-project-community-edition
-TAG        := php82-fpm-magento2.4.6-sample-data
+# Images come from brtkwr/magento-helm and are published for amd64 and arm64,
+# so this runs natively on Apple Silicon instead of under QEMU.
+MAGENTO_TAG ?= 2.4.8
+# Where the plugin working tree is mounted inside the container.
+WORKDIR    := /var/www/html/app/code/Two/Gateway
 PORT       := 1234
 URL        := http://localhost:$(PORT)/
 
@@ -16,7 +19,7 @@ TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
 TWO_STORE_COUNTRY    ?= NO
 export PORT
 
-.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test-image test test-e2e
 
 .DEFAULT_GOAL := help
 
@@ -26,44 +29,23 @@ help:
 
 ## Create Magento container, install plugin and Xdebug
 install: clean
-	docker run -d \
-		--name=$(CONTAINER) \
-		-p $(PORT):80 \
-		--add-host=host.docker.internal:host-gateway \
-		-e URL=$(URL) \
-		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
-		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
-		-v $(CURDIR):/data/extensions/workdir \
-		--tmpfs /data/extensions/workdir/.worktrees \
-		$(IMAGE):$(TAG)
-	# The workdir mount above pulls in .worktrees/ too. A stale worktree left
-	# there duplicates every class under Test/ against the main checkout's
-	# copy, so composer/Magento's install-time class discovery fatals on
-	# "already declared". Shadow it with an empty tmpfs inside the container.
-	@echo "Waiting for Magento to start..."
-	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
-	docker exec $(CONTAINER) composer require two-inc/magento2:@dev --no-plugins
-	docker exec $(CONTAINER) composer require --no-plugins \
-		community-engineering/language-nl_nl \
-		community-engineering/language-nb_no \
-		community-engineering/language-sv_se \
-		community-engineering/language-fi_fi \
-		community-engineering/language-da_dk
-	# The base image's own entrypoint independently bootstraps Magento (4x
-	# `magerun2 config:store:set` for the base URL, then a cache:flush) as
-	# soon as its MySQL/Elasticsearch wait loop clears - a window that can
-	# still be open here since it isn't gated by the `bin/magento --version`
-	# check above. Each of those bootstraps can autoload-generate classes
-	# under generated/code, racing the rm -rf below and intermittently
-	# leaving it unable to rmdir a directory a magerun2 process just wrote
-	# a new file into ("Directory not empty"). Wait for 3 consecutive
-	# clean samples (the observed gaps between magerun2 calls are ~1-2s)
-	# before it's safe to touch generated/code.
-	@clean=0; while [ $$clean -lt 3 ]; do \
-		docker exec $(CONTAINER) pgrep -f magerun2 >/dev/null 2>&1 && clean=0 || clean=$$((clean+1)); \
-		sleep 1; \
-	done
-	docker exec $(CONTAINER) rm -rf /data/generated/code
+	MAGENTO_TAG=$(MAGENTO_TAG) PORT=$(PORT) \
+		TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
+		TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
+		docker compose up -d
+	# The image installs the shop on first boot and touches this file when it
+	# is genuinely usable. `bin/magento --version` answers long before that, so
+	# waiting on it races the install.
+	@echo "Waiting for Magento to install (first run takes a few minutes)..."
+	@until docker exec $(CONTAINER) test -f var/.dev-install-complete 2>/dev/null; do sleep 3; done
+	# The plugin is bind-mounted at app/code and found via its registration.php.
+	# Language packs ship preinstalled in the image. Neither needs composer, so
+	# no Magento marketplace keys are required to stand a shop up locally.
+	# No race guard needed here any more: the old image's entrypoint kept
+	# re-bootstrapping Magento in the background and could write into
+	# generated/code mid-delete. This image installs once, behind the sentinel
+	# waited on above, and then leaves the shop alone.
+	docker exec $(CONTAINER) rm -rf generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable \
 		Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth \
 		Magento_Analytics Magento_AdminAnalytics \
@@ -97,7 +79,7 @@ install: clean
 	# Magento's 90-day default password lifetime the moment a fresh
 	# container starts, bouncing every non-My-Account admin page.
 	docker exec $(CONTAINER) php bin/magento config:set admin/security/password_lifetime 0
-	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/create-admin-user
+	docker exec $(CONTAINER) bash $(WORKDIR)/dev/create-admin-user
 	# Pre-bake all theme JS/CSS so RequireJS XHRs hit plain file IO instead
 	# of falling through Magento's pub/static.php router (a full bootstrap
 	# per asset). Without this, RequireJS's ~hundreds of runtime-loaded
@@ -105,12 +87,12 @@ install: clean
 	# button-enable latency from sub-second to ~10s on the sample catalog.
 	docker exec $(CONTAINER) php bin/magento setup:static-content:deploy --area frontend --theme Magento/luma --no-html-minify -f --jobs 4 en_US
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
-	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
-	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/hide-admin-loader
+	docker exec $(CONTAINER) bash $(WORKDIR)/dev/install-xdebug
+	docker exec $(CONTAINER) bash $(WORKDIR)/dev/hide-admin-loader
 	@./start-proxy.sh --background || true
 	@PROXY_URL=$$(./start-proxy.sh url 2>/dev/null); \
 	if [ -n "$$PROXY_URL" ]; then \
-		docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
+		docker exec $(CONTAINER) bash $(WORKDIR)/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
 	fi; \
 	echo ""; \
 	echo "========================================="; \
@@ -131,7 +113,7 @@ configure:
 	docker exec \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_STORE_COUNTRY=$(TWO_STORE_COUNTRY) \
-		$(CONTAINER) php /data/extensions/workdir/dev/configure
+		$(CONTAINER) php $(WORKDIR)/dev/configure
 	docker exec $(CONTAINER) php bin/magento cache:flush
 	docker restart $(CONTAINER)
 
@@ -142,11 +124,11 @@ compile:
 
 ## Start Magento container and FRP proxy
 run:
-	docker start $(CONTAINER)
+	MAGENTO_TAG=$(MAGENTO_TAG) PORT=$(PORT) docker compose start
 	@./start-proxy.sh --background || true
 	@PROXY_URL=$$(./start-proxy.sh url 2>/dev/null); \
 	if [ -n "$$PROXY_URL" ]; then \
-		docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
+		docker exec $(CONTAINER) bash $(WORKDIR)/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
 	fi; \
 	echo ""; \
 	echo "========================================="; \
@@ -163,7 +145,7 @@ run:
 
 ## Start Magento with Xdebug and caches disabled for hot reload
 debug:
-	docker start $(CONTAINER)
+	MAGENTO_TAG=$(MAGENTO_TAG) PORT=$(PORT) docker compose start
 	@docker exec $(CONTAINER) bash -c '\
 		INIS=$$(find /etc/php /usr/local/etc/php -name "*xdebug*" 2>/dev/null); \
 		if [ -n "$$INIS" ]; then \
@@ -178,7 +160,7 @@ debug:
 	@./start-proxy.sh --background || true
 	@PROXY_URL=$$(./start-proxy.sh url 2>/dev/null); \
 	if [ -n "$$PROXY_URL" ]; then \
-		docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
+		docker exec $(CONTAINER) bash $(WORKDIR)/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
 	fi; \
 	echo ""; \
 	echo "========================================="; \
@@ -197,8 +179,8 @@ debug:
 ## Stop Magento container and FRP proxy
 stop:
 	-./start-proxy.sh stop 2>/dev/null
-	-docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy --reset 2>/dev/null
-	docker stop $(CONTAINER)
+	-docker exec $(CONTAINER) bash $(WORKDIR)/dev/patch-proxy --reset 2>/dev/null
+	docker compose stop
 
 ## Clear static content and flush caches (frontend + adminhtml JS/CSS/templates)
 flush:
@@ -210,8 +192,11 @@ flush:
 ## Remove the Magento container and stop proxy
 clean:
 	-./start-proxy.sh stop 2>/dev/null
-	-docker stop $(CONTAINER) 2>/dev/null
-	-docker rm $(CONTAINER) 2>/dev/null
+	-docker compose down -v 2>/dev/null
+	# A checkout predating the compose stack still has a standalone `magento`
+	# container from `docker run`. `compose down` only removes what Compose
+	# created, so without this the name collides on the next `compose up`.
+	-docker rm -f $(CONTAINER) 2>/dev/null
 
 ## Run FRP proxy in foreground (Ctrl-C to stop)
 proxy:
@@ -249,20 +234,25 @@ minor: bumpver-minor
 major: bumpver-major
 PHPUNIT_VERSION := 10.5.64
 PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8ee23
+TEST_IMAGE      := magento-plugin-test
+
+# Unconditional: docker's layer cache owns the rebuild, where an image-exists guard would keep a stale image past a Dockerfile edit.
+test-image:
+	docker build -t $(TEST_IMAGE) - < dev/Dockerfile.test
 
 ## Run PHPUnit tests
-test:
-	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.2-cli bash -c \
+test: test-image
+	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app $(TEST_IMAGE) bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
 
 ## Run end-to-end API tests (requires TWO_API_KEY)
-test-e2e:
+test-e2e: test-image
 	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
-		php:8.2-cli bash -c \
+		$(TEST_IMAGE) bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar --testsuite E2E"

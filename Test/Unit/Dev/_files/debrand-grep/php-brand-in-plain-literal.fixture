@@ -1,0 +1,2 @@
+<?php
+$this->logger->error('Two cancel-sync failed for order ' . $incrementId);

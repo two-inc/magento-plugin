@@ -1,0 +1,3 @@
+define(['mage/translate'], function ($t) {
+    var label = $t('Pay later with Two');
+});

@@ -1,0 +1,4 @@
+define(['mage/translate'], function ($t) {
+    var label = $t('Opening ( bracket');
+    var brand = 'Pay later with Two';
+});

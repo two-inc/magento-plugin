@@ -929,6 +929,29 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function isProductMessageEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('product_message_enabled'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getProductMessage(?int $storeId = null): string
+    {
+        $stored = $this->getConfig($this->path('product_message'), $storeId);
+
+        // A config.php import or a hand-edited row can leave an array here,
+        // and casting one to string is a warning Magento's error handler
+        // raises as an exception — which the template engine rethrows, taking
+        // the whole product page down over a promotional line. Non-scalar is
+        // treated as absent, same shape as configuredLimit() above.
+        return is_scalar($stored) ? (string)$stored : '';
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDisplayTooltipsEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('display_tooltips'), $storeId);

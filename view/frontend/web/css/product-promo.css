@@ -1,0 +1,75 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25799: product detail page promotional message.
+ *
+ * The brand mark is a background-image keyed on the brand code, following
+ * .two-payment-shield in style.css: Two_Gateway ships its own mark for its
+ * own code only, and an overlay package adds a rule for its code in its own
+ * CSS. A mark shipped unconditionally would put Two's logo on a partner's
+ * storefront.
+ */
+
+.two-product-promo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0 25px;
+    padding: 14px 16px;
+    border: 1px solid #d4d4d4;
+    border-left: 4px solid #1a1a1a;
+    border-radius: 4px;
+    background: #fff;
+}
+
+/* The brand's name in text, so a brand whose CSS paints no mark is still
+   attributed. A brand that DOES paint one hides this visually below, keeping
+   it for assistive technology rather than removing it. */
+.two-product-promo__brand {
+    flex: 0 0 auto;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Sized only by a brand's own rule, so a brand with no mark leaves no gap. */
+.two-product-promo__mark {
+    flex: 0 0 auto;
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: contain;
+}
+
+.two-product-promo[data-brand='two_payment'] .two-product-promo__mark {
+    width: 44px;
+    height: 22px;
+    background-image: url('../images/logo.svg');
+}
+
+/* Two paints a mark, so its name is carried visually by that and the text is
+   hidden from sight only — still in the accessibility tree. */
+.two-product-promo[data-brand='two_payment'] .two-product-promo__brand {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* A flex child will not wrap without this, so a long unbroken override —
+   a pasted URL, say — would overflow the column the box sits in. */
+.two-product-promo__text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    /* Sized so the default sentence sits on one line in the product-info
+       column at desktop width; it still wraps on a narrow viewport, which is
+       the correct behaviour there rather than an overflow. */
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: #1a1a1a;
+}

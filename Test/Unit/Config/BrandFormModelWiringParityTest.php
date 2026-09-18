@@ -20,8 +20,12 @@ class BrandFormModelWiringParityTest extends TestCase
      */
     public function testEveryFieldWiresTheSameModelInBothForms(string $slot, string $description): void
     {
+        $declared = $this->wiring('etc/adminhtml/system.xml', 'two', $slot);
+        // assertSame([], []) passes, so an element name that resolves nowhere would leave this a permanent no-op.
+        $this->assertNotEmpty($declared, sprintf('No <%s> in system.xml; this test\'s own element name is stale.', $slot));
+
         $this->assertSame(
-            $this->wiring('etc/adminhtml/system.xml', 'two', $slot),
+            $declared,
             $this->wiring('etc/adminhtml/brand_form_template.xml', '{{section_prefix}}', $slot),
             $description
         );
@@ -45,7 +49,9 @@ class BrandFormModelWiringParityTest extends TestCase
      */
     private function wiring(string $file, string $sectionPrefix, string $slot): array
     {
-        $xml = simplexml_load_file(__DIR__ . '/../../../' . $file);
+        $xml = simplexml_load_file(dirname(__DIR__, 3) . '/' . $file);
+        $this->assertNotFalse($xml, sprintf('Cannot parse %s.', $file));
+
         $wiring = [];
         // Depth-agnostic so a deeper-nested field is compared, not skipped.
         foreach ($xml->xpath(sprintf('//field/%s', $slot)) ?: [] as $node) {

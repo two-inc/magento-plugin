@@ -177,6 +177,7 @@ describe('the company field carries no watermark', () => {
 
     test.each([
         [PANEL_PATH, 'the panel source'],
+        ['i18n/es_ES.csv', 'the es_ES catalogue'],
         ['i18n/nb_NO.csv', 'the nb_NO catalogue'],
         ['i18n/nl_NL.csv', 'the nl_NL catalogue'],
         ['i18n/sv_SE.csv', 'the sv_SE catalogue']
@@ -219,7 +220,7 @@ describe('the hint is one translatable string', () => {
         // that no longer matches any msgid the code emits.
         expect(model).not.toContain("$t('Enter 3 or more characters')");
 
-        ['nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
+        ['es_ES', 'nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
             const csv = readSource('i18n/' + locale + '.csv');
             expect(csv).toContain('"' + msgid + '","');
             expect(csv).not.toContain('"Enter 3 or more characters"');

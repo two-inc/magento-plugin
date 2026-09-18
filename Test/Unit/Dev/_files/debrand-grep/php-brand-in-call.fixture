@@ -1,0 +1,2 @@
+<?php
+$label = __('Pay later with Two');

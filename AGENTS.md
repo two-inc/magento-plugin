@@ -69,6 +69,28 @@ A merge to `staging` triggers an in-place static redeploy on the dev shop and
 the storefront 500s for roughly three minutes, so a suite that starts mid-sync
 fails for environmental reasons. Warn testers before merging.
 
+## The local shop is a compose stack, not one container
+
+`make install` brings up Magento, MariaDB and OpenSearch via `docker-compose.yml`,
+using `ghcr.io/brtkwr/magento-dev` from
+[brtkwr/magento-helm](https://github.com/brtkwr/magento-helm). Consequences worth
+knowing before debugging a local setup:
+
+-   **It is multi-arch**, so it runs natively on Apple Silicon. A previous
+    third-party image was amd64-only and ran under emulation.
+-   **No Magento marketplace keys are needed.** The plugin is mounted at
+    `app/code/Two/Gateway` and found via its `registration.php`; language packs
+    are baked into the image. Nothing reaches `repo.magento.com` locally, so a
+    `composer` auth failure during local setup means something has regressed to
+    the old approach.
+-   **The shop installs on first boot and then stays put.** `make install` waits
+    for `var/.dev-install-complete` rather than `bin/magento --version`, which
+    answers long before the shop works. The old image re-bootstrapped base URLs
+    on every restart, which is why the proxy patching used to need a custom
+    entrypoint - that is gone.
+-   **`make clean` drops the database volume**, so the next `make install` is a
+    genuine fresh shop.
+
 ## Local-dev modules disabled by `make install`
 
 `make install` disables PageBuilder and the Analytics module family
@@ -411,8 +433,14 @@ throws with a buyer-facing string that no buyer ever sees.
 Every admin pane is rendered from fields synthesised out of
 `brand_form_template.xml`, and that deep merge only carries fields the template
 already declares — so a field added to `system.xml` alone is dropped silently and
-renders on no brand at all. `DiagnosticsSectionParityTest` compares the two field
-lists for the Diagnostics section.
+renders on no brand at all. `AdminFormFieldParityTest` compares the two field
+lists in every group of every shared section at any nesting depth, reading that
+list of groups out of the forms themselves so a newly added one is covered
+without being listed. A section id outside the `two_` / `{{section_prefix}}_`
+prefix matches neither form's xpath, so the provider rejects one rather than
+walking past it, and per form every `<field>` that is not a `<depends>`
+reference must sit at a path those cases reach, so a field in a shape the
+enumeration does not walk fails rather than going uncompared.
 
 **The same applies to each field's `source_model`, `backend_model` and
 `frontend_model`, and it fails far more quietly.** An overlay install renders ONLY
@@ -1090,7 +1118,7 @@ order and this module has no business moving anyone else's refund total, nor
 offering an editable charge row on someone else's credit memo. The collector
 re-checks it before it resolves anything.
 
-`getKnownLineAmountsOrder()` counts what composition *should* itemize, which
+`getKnownLineAmountsOrder()` counts what composition _should_ itemize, which
 is deliberately not identical to what it actually emits. Two known
 divergences: it counts an item whose product no longer loads, where
 `getLineItemsOrder()` drops it and the dropped item's own value would read as

@@ -1,0 +1,2 @@
+<?php
+$label = __('Payments powered by Two.inc');
