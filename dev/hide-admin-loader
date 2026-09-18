@@ -10,7 +10,7 @@
 # Called by: make install
 set -e
 
-MOD_DIR=/data/app/code/Local/AdminLoaderHide
+MOD_DIR=/var/www/html/app/code/Local/AdminLoaderHide
 mkdir -p "${MOD_DIR}/etc" "${MOD_DIR}/view/adminhtml/layout" "${MOD_DIR}/view/adminhtml/web/css"
 
 cat > "${MOD_DIR}/registration.php" <<'EOF'

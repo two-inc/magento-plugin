@@ -25,7 +25,7 @@ set -euo pipefail
 
 CONTAINER="$1"
 
-DUMP=$(docker exec "$CONTAINER" php /data/extensions/workdir/dev/probe-hosts.php 2>/dev/null) || exit 0
+DUMP=$(docker exec "$CONTAINER" php /var/www/html/app/code/Two/Gateway/dev/probe-hosts.php 2>/dev/null) || exit 0
 
 API=$(sed -n 's/^getCheckoutApiUrl(): //p' <<< "$DUMP")
 CHECKOUT=$(sed -n 's/^getCheckoutPageUrl(): //p' <<< "$DUMP")

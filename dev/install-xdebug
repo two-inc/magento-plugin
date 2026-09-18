@@ -1,38 +1,36 @@
 #!/bin/bash
 # Install and configure Xdebug inside the Magento container.
 # Called by: make install
+#
+# The image is the official php:8.2-apache, so Xdebug comes from pecl and the
+# ini lives under /usr/local/etc/php. (A Debian-packaged PHP would instead want
+# `apt-get install phpX.Y-xdebug` and /etc/php/X.Y/*/conf.d - that is not this
+# image.) pecl builds from source, so this works on arm64 and amd64 alike.
 set -e
 
-PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;')
+if php -r 'exit(extension_loaded("xdebug") ? 0 : 1);'; then
+    echo "Xdebug already installed ($(php -r 'echo phpversion("xdebug");'))"
+else
+    echo "Installing Xdebug..."
+    pecl install xdebug 2>&1 | tail -3
+fi
 
-echo "Installing Xdebug for PHP ${PHP_VERSION}..."
-apt-get update -qq
-apt-get install -y -qq "php${PHP_VERSION}-xdebug" 2>&1 | tail -3
-
-# apt installs its own ini files — find and override with our config
-XDEBUG_SO=$(find /usr/lib/php -name 'xdebug.so' 2>/dev/null | head -1)
+XDEBUG_SO=$(find /usr/local/lib/php/extensions -name 'xdebug.so' 2>/dev/null | head -1)
 if [ -z "$XDEBUG_SO" ]; then
     echo "Error: xdebug.so not found after install"
     exit 1
 fi
 
-# Disable the apt-installed ini files (they default to mode=develop)
-find /etc/php/${PHP_VERSION} -name '*xdebug*' -exec rm -f {} + 2>/dev/null
-
-# Write our config to both CLI and FPM conf.d (mode=off, activated by make debug)
-XDEBUG_INI="[xdebug]
+# mode=off by default; `make debug` flips it to debug.
+cat > /usr/local/etc/php/conf.d/99-xdebug.ini <<INI
+[xdebug]
 zend_extension=${XDEBUG_SO}
 xdebug.mode=off
 xdebug.start_with_request=yes
 xdebug.client_host=host.docker.internal
 xdebug.client_port=9003
-xdebug.idekey=VSCODE"
-
-for CONF_DIR in /etc/php/${PHP_VERSION}/cli/conf.d /etc/php/${PHP_VERSION}/fpm/conf.d; do
-    if [ -d "$CONF_DIR" ]; then
-        echo "$XDEBUG_INI" > "${CONF_DIR}/99-xdebug.ini"
-        echo "  wrote ${CONF_DIR}/99-xdebug.ini"
-    fi
-done
+xdebug.idekey=VSCODE
+INI
+echo "  wrote /usr/local/etc/php/conf.d/99-xdebug.ini"
 
 php -r 'echo "Xdebug " . phpversion("xdebug") . " installed (mode=off)\n";'
