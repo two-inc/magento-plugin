@@ -98,6 +98,23 @@ namespace Magento\Quote\Model {
                 return null;
             }
 
+            /**
+             * TWO-25800: the express confirmation asks the quote what the
+             * attempt actually did. Declared on the SHARED stub rather than a
+             * stub of its own, because a mock can only configure a method its
+             * class declares — a narrower competing Quote silently takes every
+             * other test's expectations away with it.
+             */
+            public function getAllItems()
+            {
+                return [];
+            }
+
+            public function getItemsQty()
+            {
+                return 0;
+            }
+
             public function getQuoteCurrencyCode()
             {
                 return null;

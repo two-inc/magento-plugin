@@ -419,3 +419,7 @@
 "Product page message","Mensaje de la página de producto"
 "Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Muestra una breve línea promocional en las páginas de producto, debajo del botón de añadir a la cesta. Desactivado de forma predeterminada."
 "Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Opcional. Si se deja vacío se usa el texto predeterminado. Evite indicar un número de días salvo que tenga la certeza de los plazos que ofrece."
+"Show buy button on product pages","Mostrar botón de compra en las páginas de producto"
+"Adds a button under add to cart that puts the item in the basket and opens checkout with this method selected. Off by default.","Añade un botón debajo de añadir a la cesta que pone el artículo en la cesta y abre la caja con este método seleccionado. Desactivado de forma predeterminada."
+"Show buy button on product pages accepts only Yes or No; ""%1"" is not a value it understands.","El botón de compra en las páginas de producto solo acepta Sí o No; ""%1"" no es un valor que entienda."
+"Buy with","Comprar con"
