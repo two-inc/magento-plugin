@@ -1,0 +1,21 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+?>
+<?php /* @var \Two\Gateway\Block\Product\PromoMessage $block */ ?>
+<?php if ($block->isVisible()): ?>
+    <?php $brandLabel = $block->getBrandLabel(); ?>
+    <div class="two-product-promo" data-brand="<?= $block->escapeHtmlAttr($block->getBrandCode()) ?>">
+        <?php /* The mark is decorative: the brand name sits beside it as text,
+                which a brand that paints a mark hides from sight but keeps in
+                the accessibility tree. A brand with no mark shows the name,
+                so no storefront carries an unattributed offer. */ ?>
+        <span class="two-product-promo__mark" aria-hidden="true"></span>
+        <?php if ($brandLabel !== ''): ?>
+            <span class="two-product-promo__brand"><?= $block->escapeHtml($brandLabel) ?></span>
+        <?php endif; ?>
+        <span class="two-product-promo__text"><?= $block->escapeHtml($block->getMessage()) ?></span>
+    </div>
+<?php endif; ?>

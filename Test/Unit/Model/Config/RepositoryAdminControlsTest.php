@@ -29,6 +29,7 @@ class RepositoryAdminControlsTest extends TestCase
     private const DISABLE_SSL_VERIFY_PATH = 'payment/two_payment/disable_ssl_verify';
     private const TRUSTED_PROXIES_PATH = 'payment/two_payment/trusted_proxies';
     private const CUSTOM_HEADERS_PATH = 'payment/two_payment/custom_headers';
+    private const PRODUCT_MESSAGE_PATH = 'payment/two_payment/product_message';
 
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
@@ -54,6 +55,41 @@ class RepositoryAdminControlsTest extends TestCase
             $this->createMock(Provenance::class),
             $this->createMock(LogRepository::class)
         );
+    }
+
+    public function testGetProductMessageReadsItsOwnPath(): void
+    {
+        $this->scopeConfig->expects($this->once())
+            ->method('getValue')
+            ->with(self::PRODUCT_MESSAGE_PATH, ScopeInterface::SCOPE_STORE, null)
+            ->willReturn('Pay us later');
+
+        $this->assertSame('Pay us later', $this->repository->getProductMessage());
+    }
+
+    /**
+     * TWO-25799: an import or a hand-edited row can store an array here.
+     * Casting one to string is a warning Magento raises as an exception, which
+     * the template engine rethrows — taking the product page down over a
+     * promotional line. Non-scalar reads as absent instead.
+     *
+     * @dataProvider nonScalarProductMessageProvider
+     */
+    public function testGetProductMessageTreatsANonScalarAsAbsent($stored): void
+    {
+        $this->scopeConfig->method('getValue')->willReturn($stored);
+
+        $this->assertSame('', $this->repository->getProductMessage());
+    }
+
+    public static function nonScalarProductMessageProvider(): array
+    {
+        return [
+            'array' => [['Pay us later']],
+            'nested array' => [['a' => ['b' => 'c']]],
+            'object' => [new \stdClass()],
+            'null' => [null],
+        ];
     }
 
     public function testGetVendorSiteNameReadsItsOwnPath(): void

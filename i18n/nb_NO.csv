@@ -415,3 +415,7 @@
 "%1 (Incl. Tax)","%1 (Inkl. MVA)"
 "Cannot apply the surcharge limit in %1: no exchange rate is currently available.","Kan ikke bruke tilleggsavgiftsgrensen i %1: ingen valutakurs er tilgjengelig for øyeblikket."
 "EOM+%1","EOM+%1"
+"Show message on product pages","Vis melding på produktsider"
+"Product page message","Melding på produktsiden"
+"Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Viser en kort kampanjelinje på produktsider, under knappen for å legge i handlekurven. Av som standard."
+"Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Valgfritt. Tomt felt bruker standardteksten. Unngå å oppgi et antall dager med mindre du er sikker på betalingsbetingelsene du tilbyr."
