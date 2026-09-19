@@ -65,6 +65,21 @@ namespace Magento\Checkout\Model {
          */
         class Session extends \Two\Gateway\Test\Stubs\UnderscoreDataObject
         {
+            /**
+             * TWO-25800: the express confirmation asks the session's quote what
+             * the attempt did. Declared explicitly because the magic
+             * passthrough above answers get/set, not this, and because a mock
+             * can only configure a method its class declares — so it belongs on
+             * the SHARED stub rather than a narrower competing one.
+             */
+            public function getQuote()
+            {
+                // Defers to whatever a test `set` first: the magic passthrough
+                // this class extends answers get/set, and declaring a real
+                // method shadows it, so a test that did setQuote() would
+                // otherwise be handed a different object than the one it built.
+                return $this->getData('quote') ?: new \Magento\Quote\Model\Quote();
+            }
         }
     }
 }

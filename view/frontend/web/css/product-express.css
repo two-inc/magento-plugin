@@ -1,0 +1,128 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25800: product detail page "Buy with <brand>" button.
+ *
+ * The visible label is "Buy with" followed by the brand's MARK, matching the
+ * PayPal button this was asked to sit beside. The mark is a background-image
+ * keyed on the brand code, exactly as .two-product-promo__mark and
+ * .two-payment-shield are: Two_Gateway ships its own mark for its own code
+ * only, and an overlay adds a rule for its code in its own CSS. A mark shipped
+ * unconditionally would put Two's logo on a partner's storefront.
+ *
+ * The brand NAME is always in the markup and is what keeps the control's
+ * accessible name reading "Buy with <brand>". A brand that paints a mark hides
+ * that name from sight below; a brand that ships no mark paints nothing, the
+ * mark span collapses to zero width, and the name stays visible — so the
+ * button still names its brand on every overlay.
+ */
+
+/* Closes the theme's generic block gap between add to cart and this button, so
+   the two read as one group of purchase controls rather than as a block that
+   happens to follow one - which is how the express buttons this was asked to
+   sit beside are placed. The 30px is .box-tocart's own bottom margin and not
+   ours to set unconditionally, so the rule applies ONLY where this button is
+   the very next thing on the page: a shop without it, and every other product
+   form, keeps the theme's spacing untouched. A browser without :has() simply
+   keeps that spacing too. A LATER sibling rather than the adjacent one: the
+   product view template emits a script node between the form and this button,
+   so `+` matches nothing on a real page. */
+.product-add-form:has(~ .two-product-express) .box-tocart {
+    margin-bottom: 10px;
+}
+
+.two-product-express {
+    /* Its own breathing room below: this button is the last purchase control
+       on the page, and the theme's next block (wish list, compare) butts
+       straight up against it otherwise. The gap above comes from .box-tocart's
+       own bottom margin, so adding one here only doubles it. */
+    margin: 0 0 25px;
+}
+
+.two-product-express__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 45px;
+    padding: 10px 16px;
+    /* Outlined, not filled. The mark on this control is a brand's own artwork
+       and this stylesheet cannot know its colours - Two's is navy on yellow,
+       and a dark fill swallows the navy in it. A light control is the one
+       treatment that keeps EVERY brand's mark legible, including an overlay
+       whose mark this package has never seen, and it needs no second reversed
+       asset for each brand to ship. */
+    border: 1px solid #1a1a1a;
+    border-radius: 4px;
+    background: #fff;
+    color: #1a1a1a;
+    font-weight: 700;
+    /* Set against the MARK's height, not the theme's body copy: "Buy with" and
+       the brand's logo are one phrase, and a label the theme sizes smaller than
+       the artwork beside it reads as a caption on the logo. */
+    font-size: 1.7rem;
+    line-height: 1.2;
+    cursor: pointer;
+    /* Long brand names and long translations wrap rather than spilling out of
+       the button; "Buy with" plus a brand name is short in English and is not
+       in every locale this ships in. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* Paired with Add to Cart rather than spanning the column: Luma sizes its own
+   add-to-cart button at 49% of the purchase controls from its 768px breakpoint
+   up, and a control sitting directly beneath it at full width reads as a
+   different kind of thing. A theme that sizes add to cart differently keeps the
+   full-width button above, which is the safe shape anywhere. */
+@media (min-width: 768px) {
+    .two-product-express__button {
+        width: 49%;
+    }
+}
+
+.two-product-express__button:hover,
+.two-product-express__button:focus {
+    background: #f5f5f5;
+    border-color: #000;
+    color: #000;
+}
+
+/* The keyboard's own indicator, kept distinct from the hover state above:
+   without it the only thing marking the focused control is a colour shift a
+   mouse user also gets. */
+.two-product-express__button:focus-visible {
+    outline: 2px solid #1a1a1a;
+    outline-offset: 2px;
+}
+
+/* Sized only by a brand's own rule, so a brand with no mark leaves no gap. */
+.two-product-express__mark {
+    flex: 0 0 auto;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+}
+
+.two-product-express[data-brand='two_payment'] .two-product-express__mark {
+    width: 44px;
+    height: 22px;
+    background-image: url('../images/logo.svg');
+}
+
+/* Two paints a mark, so its name is carried visually by that and the text is
+   hidden from sight only — still in the accessibility tree, which is what
+   keeps the button's accessible name naming the brand. */
+.two-product-express[data-brand='two_payment'] .two-product-express__brand {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
