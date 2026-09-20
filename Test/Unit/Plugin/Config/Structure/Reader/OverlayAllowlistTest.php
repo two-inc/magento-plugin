@@ -155,4 +155,76 @@ class OverlayAllowlistTest extends TestCase
         $this->assertNotFalse($template);
         $this->assertStringNotContainsString('two_only', (string)$template);
     }
+
+    /**
+     * Magento nests groups arbitrarily and its Converter preserves the
+     * nesting, so a walker that assumed `section > group > field` left every
+     * deeper field untouched — which under an allowlist means VISIBLE, the
+     * exact opposite of the rule, and invisible in review because a nested
+     * field renders like any other.
+     */
+    public function testAFieldInsideANestedGroupIsWithheldToo(): void
+    {
+        $section = [
+            'id' => 'acme_checkout_fields',
+            'children' => [
+                'display' => [
+                    'id' => 'display',
+                    'children' => [
+                        'company_lookup' => [
+                            'id' => 'company_lookup',
+                            'children' => [
+                                'nested_secret' => [
+                                    'id' => 'nested_secret',
+                                    'showInDefault' => '1',
+                                    'showInWebsite' => '1',
+                                    'showInStore' => '1',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $out = $this->apply($section, 'acme_payment', []);
+        $nested = $out['children']['display']['children']['company_lookup']['children']['nested_secret'];
+
+        $this->assertSame('0', $nested['showInDefault']);
+        $this->assertSame('0', $nested['showInWebsite']);
+        $this->assertSame('0', $nested['showInStore']);
+    }
+
+    /** A nested field its brand DID name is kept, named by its immediate parent group. */
+    public function testANestedFieldTheBrandDeclaredIsKept(): void
+    {
+        $section = [
+            'id' => 'acme_checkout_fields',
+            'children' => [
+                'display' => [
+                    'id' => 'display',
+                    'children' => [
+                        'company_lookup' => [
+                            'id' => 'company_lookup',
+                            'children' => [
+                                'wanted' => [
+                                    'id' => 'wanted',
+                                    'showInDefault' => '1',
+                                    'showInWebsite' => '1',
+                                    'showInStore' => '1',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $out = $this->apply($section, 'acme_payment', ['checkout_fields/company_lookup/wanted']);
+
+        $this->assertSame(
+            '1',
+            $out['children']['display']['children']['company_lookup']['children']['wanted']['showInDefault']
+        );
+    }
 }

@@ -395,13 +395,31 @@ Whatever derives the list, keep a CI guard that every listed path still
 resolves against the live template, or a rename upstream silently drops a
 control from your form.
 
-### Declaring one field in your own system.xml still works
+### The list is the only thing that decides visibility
 
-`deepMergeOverlay` runs after the allowlist and lets a static scalar win per
-field, so an overlay can re-declare a single field with its `showIn*`
-attributes rather than adding a path. Prefer the allowlist: it names a path
-instead of restating a whole field definition, and it does not insert a
-static section into the merged Structure.
+The allowlist is applied **after** the deep merge with your own `system.xml`,
+so membership is final: a static declaration carrying `showInDefault="1"`
+cannot reveal a field you did not list, and one carrying `showInDefault="0"`
+cannot hide a field you did.
+
+A static declaration still refines a field you DID list — its label, its
+`source_model`, its sort order — because the merge runs first. Only
+visibility is the list's to decide.
+
+That ordering is deliberate. Applied before the merge, the list would be a
+default that any section stub could overturn, and "not listed" would mean
+"withheld unless somebody writes a stub" — which is not a rule you could
+build against, and not something this guide could honestly call the
+declaration mechanism.
+
+### Withholding hides the control; it does not clear the value
+
+A field withheld from your form keeps whatever is stored at
+`payment/<your code>/<field>`, and that value stays in effect. This is
+ordinary Magento behaviour — visibility lives in the Structure, values live
+in `core_config_data` — but it means removing a path from your list hides a
+control without turning the feature off on shops that had already enabled
+it. Clear the stored value as well if that is what you intend.
 
 ## Worked example: adding a brand-driven field
 

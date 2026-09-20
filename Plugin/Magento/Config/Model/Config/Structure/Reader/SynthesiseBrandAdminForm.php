@@ -161,13 +161,6 @@ class SynthesiseBrandAdminForm
 
             $sections = $converted['config']['system']['sections'] ?? [];
             foreach ($sections as $sectionId => $section) {
-                $section = $this->applyOverlayAllowlist(
-                    $section,
-                    (string)$sectionId,
-                    $brand->getSectionPrefix(),
-                    (string)$brand->getCode(),
-                    $allowedFields
-                );
                 if ($this->sectionExistsInResult($result, (string)$sectionId)) {
                     // A static `<section id="...">` declaration from
                     // some module already landed in the merged
@@ -175,18 +168,28 @@ class SynthesiseBrandAdminForm
                     // before our Reader::read afterRead plugin fires).
                     // Deep-merge keeps synthesised content as the base
                     // and lets static scalar attributes override per-
-                    // field. The preferred mechanism for hiding fields
-                    // is brand.xml `<allowed_fields>` (handled above);
-                    // deep-merge remains as a forward-compat safety net
-                    // and as the way an overlay re-declares one field.
+                    // field — labels, source models, sort order.
                     $existing = $result['config']['system']['sections'][$sectionId];
-                    $result['config']['system']['sections'][$sectionId] =
-                        $this->deepMergeOverlay($section, $existing);
+                    $section = $this->deepMergeOverlay($section, $existing);
                     $synthesisedSections[] = $sectionId . '*';
-                    continue;
+                } else {
+                    $synthesisedSections[] = (string)$sectionId;
                 }
-                $result['config']['system']['sections'][$sectionId] = $section;
-                $synthesisedSections[] = (string)$sectionId;
+
+                // LAST, so the allowlist is the only thing that decides
+                // whether an overlay sees a field. Run before the merge it
+                // would be a default a static `showInDefault="1"` could
+                // overturn, which is a second way to answer the same
+                // question — and then "not listed" would mean "withheld
+                // unless someone writes a section stub", which is not a
+                // rule anybody can rely on.
+                $result['config']['system']['sections'][$sectionId] = $this->applyOverlayAllowlist(
+                    $section,
+                    (string)$sectionId,
+                    $brand->getSectionPrefix(),
+                    (string)$brand->getCode(),
+                    $allowedFields
+                );
             }
         }
 
@@ -278,10 +281,13 @@ class SynthesiseBrandAdminForm
      * quietening it; and a field that is not rendered posts no value, which is
      * what stops an unrelated save writing a setting nobody chose.
      *
-     * An overlay that wants a field it has not listed can also declare it in
-     * its own `system.xml`: `deepMergeOverlay` runs after this and lets a
-     * static scalar win per field. The allowlist is the route to prefer,
-     * because it names a path rather than restating a whole field.
+     * This runs AFTER `deepMergeOverlay`, so the list is the last word on
+     * membership: declaring a field in the overlay's own `system.xml` cannot
+     * put back something the list leaves out. Listed fields are returned
+     * exactly as the merge produced them, so a brand that both lists a field
+     * and ships `showInDefault="0"` for it in its own `system.xml` still gets
+     * it hidden. That is the brand contradicting itself in two files it owns,
+     * not the list being overridden from outside.
      *
      * @param array<string,mixed> $section
      * @param string $sectionId Full section id, e.g. `acme_payment`.
@@ -309,25 +315,13 @@ class SynthesiseBrandAdminForm
 
         $allowed = array_flip($allowedPaths);
         $withheld = [];
-
-        foreach (($section['children'] ?? []) as $groupId => $group) {
-            if (!is_array($group)) {
-                continue;
-            }
-            foreach (($group['children'] ?? []) as $fieldId => $field) {
-                if (!is_array($field)) {
-                    continue;
-                }
-                if (isset($allowed[$sectionSuffix . '/' . $groupId . '/' . $fieldId])) {
-                    continue;
-                }
-
-                $section['children'][$groupId]['children'][$fieldId]['showInDefault'] = '0';
-                $section['children'][$groupId]['children'][$fieldId]['showInWebsite'] = '0';
-                $section['children'][$groupId]['children'][$fieldId]['showInStore'] = '0';
-                $withheld[] = $groupId . '/' . $fieldId;
-            }
-        }
+        $section['children'] = $this->withholdUnlisted(
+            $section['children'] ?? [],
+            $sectionSuffix,
+            null,
+            $allowed,
+            $withheld
+        );
 
         if ($allowedPaths === []) {
             // The whole section is blank, which looks like a broken install
@@ -348,6 +342,72 @@ class SynthesiseBrandAdminForm
         }
 
         return $section;
+    }
+
+    /**
+     * Walk a converted section's children and withhold every field the
+     * allowlist does not name.
+     *
+     * RECURSIVE because Magento nests groups arbitrarily — `section > group >
+     * group > … > field` is valid and its Converter preserves the nesting.
+     * A walker that assumed one level left every deeper field untouched, which
+     * on an allowlist means visible: the exact opposite of the rule, and
+     * silent, because a nested field looks no different in the rendered form.
+     *
+     * A field's path names its IMMEDIATE parent group, not the chain, which is
+     * the grammar `<allowed_fields>` has always used and what
+     * dev/derive-allowed-fields.sh emits.
+     *
+     * @param array<string,mixed> $children
+     * @param string $sectionSuffix
+     * @param string|null $groupId Immediate parent group, null at section level.
+     * @param array<string,int> $allowed Path set, flipped for lookup.
+     * @param string[] $withheld Collects what was withheld, for the log line.
+     * @return array<string,mixed>
+     */
+    private function withholdUnlisted(
+        array $children,
+        string $sectionSuffix,
+        ?string $groupId,
+        array $allowed,
+        array &$withheld
+    ): array {
+        foreach ($children as $id => $node) {
+            if (!is_array($node)) {
+                continue;
+            }
+
+            if (isset($node['children']) && is_array($node['children'])) {
+                // A group: descend, and become the parent its fields name.
+                $children[$id]['children'] = $this->withholdUnlisted(
+                    $node['children'],
+                    $sectionSuffix,
+                    (string)$id,
+                    $allowed,
+                    $withheld
+                );
+
+                continue;
+            }
+
+            if ($groupId === null) {
+                // A leaf directly under the section, which the path grammar
+                // has no way to name. Left alone rather than withheld on a
+                // path nobody could have written.
+                continue;
+            }
+
+            if (isset($allowed[$sectionSuffix . '/' . $groupId . '/' . $id])) {
+                continue;
+            }
+
+            $children[$id]['showInDefault'] = '0';
+            $children[$id]['showInWebsite'] = '0';
+            $children[$id]['showInStore'] = '0';
+            $withheld[] = $groupId . '/' . $id;
+        }
+
+        return $children;
     }
 
     /**
