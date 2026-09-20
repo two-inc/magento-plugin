@@ -419,3 +419,7 @@
 "Product page message","Bericht op de productpagina"
 "Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Toont een korte promotionele regel op productpagina’s, onder de knop om aan de winkelwagen toe te voegen. Standaard uitgeschakeld."
 "Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Optioneel. Leeg gebruikt de standaardtekst. Vermeld geen aantal dagen tenzij u zeker bent van de betalingstermijnen die u aanbiedt."
+"Show buy button on product pages","Koopknop tonen op productpagina’s"
+"Adds a button under add to cart that puts the item in the basket and opens checkout with this method selected. Off by default.","Voegt onder aan de winkelwagen toevoegen een knop toe die het artikel in de winkelwagen plaatst en de kassa opent met deze methode geselecteerd. Standaard uitgeschakeld."
+"Show buy button on product pages accepts only Yes or No; ""%1"" is not a value it understands.","Koopknop tonen op productpagina’s accepteert alleen Ja of Nee; ""%1"" is geen waarde die wordt begrepen."
+"Buy with","Kopen met"

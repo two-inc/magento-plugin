@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <!--
+        TWO-25800: core dispatches this only after the cart has saved, so it is
+        the one unambiguous statement that an add actually happened. The express
+        confirmation reads the stamp it leaves rather than inferring from cart
+        totals, which a second tab or a concurrent request can move.
+    -->
+    <event name="checkout_cart_add_product_complete">
+        <observer name="two_gateway_express_add_succeeded"
+                  instance="Two\Gateway\Observer\ExpressAddSucceeded"/>
+    </event>
+</config>

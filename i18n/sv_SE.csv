@@ -419,3 +419,7 @@
 "Product page message","Meddelande på produktsidan"
 "Shows a short promotional line on product pages, beneath the add to cart button. Off by default.","Visar en kort kampanjrad på produktsidor, under knappen för att lägga i varukorgen. Av som standard."
 "Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.","Valfritt. Tomt fält använder standardtexten. Undvik att ange ett antal dagar om du inte är säker på de betalningsvillkor du erbjuder."
+"Show buy button on product pages","Visa köpknapp på produktsidor"
+"Adds a button under add to cart that puts the item in the basket and opens checkout with this method selected. Off by default.","Lägger till en knapp under lägg i varukorgen som lägger varan i varukorgen och öppnar kassan med denna metod vald. Av som standard."
+"Show buy button on product pages accepts only Yes or No; ""%1"" is not a value it understands.","Visa köpknapp på produktsidor accepterar endast Ja eller Nej; ""%1"" är inget värde den förstår."
+"Buy with","Köp med"
