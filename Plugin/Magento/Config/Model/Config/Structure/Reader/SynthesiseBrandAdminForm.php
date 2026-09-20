@@ -11,6 +11,7 @@ use Magento\Config\Model\Config\Structure\Converter;
 use Magento\Config\Model\Config\Structure\Reader;
 use Magento\Framework\Module\Dir;
 use Psr\Log\LoggerInterface;
+use Two\Gateway\Model\Brand\ActiveBrandResolver;
 use Two\Gateway\Model\Brand\Descriptor;
 use Two\Gateway\Model\Brand\Loader;
 
@@ -156,15 +157,16 @@ class SynthesiseBrandAdminForm
                 $synthesisedTabs[] = (string)$tabId;
             }
 
-            $suppressedFields = $brand->getSuppressedFields();
+            $allowedFields = $brand->getAllowedFields();
 
             $sections = $converted['config']['system']['sections'] ?? [];
             foreach ($sections as $sectionId => $section) {
-                $section = $this->applySuppressions(
+                $section = $this->applyOverlayAllowlist(
                     $section,
                     (string)$sectionId,
                     $brand->getSectionPrefix(),
-                    $suppressedFields
+                    (string)$brand->getCode(),
+                    $allowedFields
                 );
                 if ($this->sectionExistsInResult($result, (string)$sectionId)) {
                     // A static `<section id="...">` declaration from
@@ -174,9 +176,9 @@ class SynthesiseBrandAdminForm
                     // Deep-merge keeps synthesised content as the base
                     // and lets static scalar attributes override per-
                     // field. The preferred mechanism for hiding fields
-                    // is brand.xml `<suppressed_fields>` (handled
-                    // above); deep-merge remains as a forward-compat
-                    // safety net.
+                    // is brand.xml `<allowed_fields>` (handled above);
+                    // deep-merge remains as a forward-compat safety net
+                    // and as the way an overlay re-declares one field.
                     $existing = $result['config']['system']['sections'][$sectionId];
                     $result['config']['system']['sections'][$sectionId] =
                         $this->deepMergeOverlay($section, $existing);
@@ -191,7 +193,7 @@ class SynthesiseBrandAdminForm
         // Re-sort sections by sortOrder so brand-overlay static stubs
         // landing in the merged Structure ahead of synthesised siblings
         // don't bleed PHP-array insertion order into the admin left-nav.
-        // (Cheap belt-and-braces; the brand.xml `<suppressed_fields>`
+        // (Cheap belt-and-braces; the brand.xml `<allowed_fields>`
         // mechanism above is the primary defence — it removes the need
         // for static section stubs in the first place.)
         if (isset($result['config']['system']['sections'])) {
@@ -254,54 +256,97 @@ class SynthesiseBrandAdminForm
     }
 
     /**
-     * Apply brand-declared `<suppressed_fields>` to a synthesised
-     * section by setting showInDefault/Website/Store="0" on the
-     * targeted leaf fields. Suppression paths are of the form
-     * `section_suffix/group/field`; only paths whose
-     * `section_suffix` matches this section (i.e. the section id
-     * equals `{prefix}_{section_suffix}`) are applied.
+     * Show an OVERLAY the fields it asked for, and withhold the rest.
      *
-     * The targeted field remains structurally present in the
-     * Structure (Magento still validates that the field exists, the
-     * canonical template is the source of truth for what controls
-     * are declared) but renders as hidden in the admin form.
+     * The base package declares every brand's admin surface in one template,
+     * so a field added to it reaches every brand. Inverted here: a brand that
+     * is not the base sees only the `section_suffix/group/field` paths its own
+     * `brand.xml` names, which makes a field added later DORMANT on that brand
+     * until the brand asks for it. Forgetting costs a partner the feature
+     * rather than handing them a surface they never designed.
+     *
+     * This replaces a denylist. An allowlist subsumes one — "not listed"
+     * already means hidden — and keeping both would be two ways to say the
+     * same thing, with the obvious question of which wins when they disagree.
+     *
+     * The BASE brand is not an overlay and is never filtered: it is where the
+     * template's fields come from, and filtering it would mean declaring the
+     * same list twice.
+     *
+     * Hidden, never deleted. Magento validates that a configured path has a
+     * field behind it, so removing the node breaks the section rather than
+     * quietening it; and a field that is not rendered posts no value, which is
+     * what stops an unrelated save writing a setting nobody chose.
+     *
+     * An overlay that wants a field it has not listed can also declare it in
+     * its own `system.xml`: `deepMergeOverlay` runs after this and lets a
+     * static scalar win per field. The allowlist is the route to prefer,
+     * because it names a path rather than restating a whole field.
      *
      * @param array<string,mixed> $section
      * @param string $sectionId Full section id, e.g. `acme_payment`.
      * @param string $sectionPrefix Brand's section prefix, e.g. `acme`.
-     * @param string[] $suppressedPaths `section_suffix/group/field` paths.
+     * @param string $brandCode The brand this section was synthesised for.
+     * @param string[] $allowedPaths `section_suffix/group/field` paths.
      * @return array<string,mixed>
      */
-    private function applySuppressions(
+    private function applyOverlayAllowlist(
         array $section,
         string $sectionId,
         string $sectionPrefix,
-        array $suppressedPaths
+        string $brandCode,
+        array $allowedPaths
     ): array {
+        if ($brandCode === ActiveBrandResolver::TWO_CODE) {
+            return $section;
+        }
+
         $expectedPrefix = $sectionPrefix . '_';
-        // section_suffix is everything after the brand prefix in the
-        // section id, e.g. `payment` for `acme_payment`.
         if (strncmp($sectionId, $expectedPrefix, strlen($expectedPrefix)) !== 0) {
             return $section;
         }
         $sectionSuffix = substr($sectionId, strlen($expectedPrefix));
-        foreach ($suppressedPaths as $path) {
-            [$pathSection, $groupId, $fieldId] = array_pad(explode('/', $path), 3, '');
-            if ($pathSection !== $sectionSuffix || $groupId === '' || $fieldId === '') {
+
+        $allowed = array_flip($allowedPaths);
+        $withheld = [];
+
+        foreach (($section['children'] ?? []) as $groupId => $group) {
+            if (!is_array($group)) {
                 continue;
             }
-            if (!isset($section['children'][$groupId]['children'][$fieldId])) {
-                $this->logger->warning(sprintf(
-                    '[two_brand_admin_form] suppressed_fields path "%s" did not match any field in section "%s" — ignoring',
-                    $path,
-                    $sectionId
-                ));
-                continue;
+            foreach (($group['children'] ?? []) as $fieldId => $field) {
+                if (!is_array($field)) {
+                    continue;
+                }
+                if (isset($allowed[$sectionSuffix . '/' . $groupId . '/' . $fieldId])) {
+                    continue;
+                }
+
+                $section['children'][$groupId]['children'][$fieldId]['showInDefault'] = '0';
+                $section['children'][$groupId]['children'][$fieldId]['showInWebsite'] = '0';
+                $section['children'][$groupId]['children'][$fieldId]['showInStore'] = '0';
+                $withheld[] = $groupId . '/' . $fieldId;
             }
-            $section['children'][$groupId]['children'][$fieldId]['showInDefault'] = '0';
-            $section['children'][$groupId]['children'][$fieldId]['showInWebsite'] = '0';
-            $section['children'][$groupId]['children'][$fieldId]['showInStore'] = '0';
         }
+
+        if ($allowedPaths === []) {
+            // The whole section is blank, which looks like a broken install
+            // rather than a brand that has not declared itself yet. Say which.
+            $this->logger->warning(sprintf(
+                '[two_brand_admin_form] brand "%s" declares no <allowed_fields>, so every field in '
+                . 'section "%s" is withheld; declare the paths this brand wants in its brand.xml',
+                $brandCode,
+                $sectionId
+            ));
+        } elseif ($withheld !== []) {
+            $this->logger->info(sprintf(
+                '[two_brand_admin_form] withheld [%s] from brand "%s" in section "%s" (not in <allowed_fields>)',
+                implode(',', $withheld),
+                $brandCode,
+                $sectionId
+            ));
+        }
+
         return $section;
     }
 

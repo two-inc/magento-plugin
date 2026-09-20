@@ -127,7 +127,7 @@
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
             <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
-            <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
+            <xs:element name="allowed_fields" type="allowedFieldsType" minOccurs="0"/>
             <!--
                 Show the per-term merchant fee inline beside each
                 Payment Terms checkbox in admin (e.g. "30 days (1.50%
@@ -240,12 +240,26 @@
         showInDefault/Website/Store="0" on the matching field during
         section injection — the field stays declared in the canonical
         template but doesn't render. This is the preferred mechanism
-        for per-brand control suppression; avoids overlay modules
-        needing a static `<section>` stub in their own system.xml
-        (which would otherwise short-circuit the synthesised section
-        ordering by inserting itself into the merged Structure first).
+        The fields an OVERLAY wants in its synthesised admin form,
+        as `section_suffix/group/field` paths. An overlay is shown
+        these and nothing else, so a field the base package adds
+        later stays dormant on that brand until the brand names it.
+        The base brand is not filtered.
+
+        Replaces the earlier `suppressed_fields` denylist, which is
+        no longer read: with an allowlist "not listed" already means
+        hidden, and honouring both would leave two ways to say the
+        same thing. An overlay still carrying the old element is not
+        an error — nothing validates this schema at runtime — but it
+        has no effect, and such a brand is shown nothing until it
+        declares an allowlist.
+
+        Avoids overlay modules needing a static `<section>` stub in
+        their own system.xml (which would otherwise short-circuit the
+        synthesised section ordering by inserting itself into the
+        merged Structure first).
     -->
-    <xs:complexType name="suppressedFieldsType">
+    <xs:complexType name="allowedFieldsType">
         <xs:sequence>
             <xs:element name="field" minOccurs="0" maxOccurs="unbounded">
                 <xs:complexType>

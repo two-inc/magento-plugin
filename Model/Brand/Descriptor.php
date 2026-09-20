@@ -39,7 +39,7 @@ final class Descriptor
      * @param string $adminResource ACL resource for the brand's admin form.
      * @param array<array{label:string,module:string}> $moduleLabelChain Version-panel rows.
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
-     * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
+     * @param string[] $allowedFields `section_suffix/group/field` paths this brand wants in the synthesised admin form. An OVERLAY is shown these and nothing else; the base brand is shown everything and ignores this.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
      * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding step dropdown, ascending.
      * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
@@ -67,7 +67,7 @@ final class Descriptor
         private readonly string $adminResource,
         private readonly array $moduleLabelChain,
         private readonly array $extraHttpHeaders,
-        private readonly array $suppressedFields = [],
+        private readonly array $allowedFields = [],
         private readonly bool $inlineTermFees = true,
         private readonly string $checkoutSubtitle = '',
         private readonly array $surchargeRoundingSteps = [],
@@ -155,14 +155,20 @@ final class Descriptor
     }
 
     /**
-     * `section_suffix/group/field` paths to hide in the synthesised
-     * admin Configuration form. Consumed by SynthesiseBrandAdminForm.
+     * `section_suffix/group/field` paths this brand wants in the
+     * synthesised admin Configuration form.
+     *
+     * An OVERLAY is shown these and nothing else, so a field the base
+     * package adds later is dormant here until this brand names it:
+     * forgetting costs the brand the feature rather than handing it a
+     * surface it never designed. The base brand keeps every field and
+     * never consults this. Consumed by SynthesiseBrandAdminForm.
      *
      * @return string[]
      */
-    public function getSuppressedFields(): array
+    public function getAllowedFields(): array
     {
-        return $this->suppressedFields;
+        return $this->allowedFields;
     }
 
     public function getCode(): string

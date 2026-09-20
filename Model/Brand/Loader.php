@@ -155,10 +155,16 @@ class Loader
             }
         }
 
-        $suppressedFields = [];
-        if (isset($brand->suppressed_fields->field)) {
-            foreach ($brand->suppressed_fields->field as $field) {
-                $suppressedFields[] = (string)$field['path'];
+        // What this brand wants in its admin form. An overlay that names
+        // nothing is shown nothing — that is the dormant-by-default rule, not
+        // an oversight to paper over here. `suppressed_fields`, the denylist
+        // this replaces, is no longer read: with an allowlist, "not listed"
+        // already means hidden, and honouring both would be two ways to say
+        // the same thing.
+        $allowedFields = [];
+        if (isset($brand->allowed_fields->field)) {
+            foreach ($brand->allowed_fields->field as $field) {
+                $allowedFields[] = (string)$field['path'];
             }
         }
 
@@ -205,7 +211,7 @@ class Loader
             (string)$brand->admin_resource,
             $moduleLabelChain,
             $extraHttpHeaders,
-            $suppressedFields,
+            $allowedFields,
             $inlineTermFees,
             (string)($brand->checkout_subtitle ?? ''),
             $roundingSteps,
