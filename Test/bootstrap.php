@@ -71,6 +71,10 @@ if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
 if (!class_exists(\Magento\Framework\Exception\LocalizedException::class)) {
     require_once __DIR__ . '/Stubs/LocalizedException.php';
 }
+// Catalog product + registry, for Block/Product/ExpressButton's saleability gate.
+if (!class_exists(\Magento\Catalog\Model\Product::class, false)) {
+    require_once __DIR__ . '/Stubs/CatalogProduct.php';
+}
 if (!class_exists(\Magento\Bundle\Model\Product\Price::class)) {
     require_once __DIR__ . '/Stubs/BundlePrice.php';
 }

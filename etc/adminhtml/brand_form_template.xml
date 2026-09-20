@@ -181,24 +181,54 @@
                     <config_path>payment/{{code}}/subtitle</config_path>
                 </field>
                 <!-- TWO-25799: opt-in. Default OFF, so no storefront starts
-                     advertising on the product page after an upgrade. -->
+                     advertising on the product page after an upgrade.
+                     two_only: offered to Two alone. See the note on
+                     product_button_enabled below. -->
                 <field id="product_message_enabled" translate="label comment" type="select" sortOrder="21"
                        showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
+                       canRestore="1" two_only="1" brand_code="{{code}}">
                     <label>Show message on product pages</label>
                     <comment>Shows a short promotional line on product pages, beneath the add to cart button. Off by default.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <source_model>Two\Gateway\Model\Config\Source\OffByDefaultYesno</source_model>
                     <config_path>payment/{{code}}/product_message_enabled</config_path>
                 </field>
                 <field id="product_message" translate="label comment" type="text" sortOrder="22"
                        showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
+                       canRestore="1" two_only="1" brand_code="{{code}}">
                     <label>Product page message</label>
                     <comment>Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.</comment>
                     <config_path>payment/{{code}}/product_message</config_path>
                     <depends>
                         <field id="product_message_enabled">1</field>
                     </depends>
+                </field>
+                <!-- TWO-25800: opt-in, independent of the message above. A
+                     shop may run either, both or neither.
+
+                     two_only: this control is OFFERED to Two and withheld
+                     from every other brand. These product-page surfaces are
+                     built against assets this package ships for its own code
+                     — the mark painted by `[data-brand='two_payment']` rules
+                     — so a brand that has not asked for them gets a control
+                     it never designed. Withholding is the DEFAULT rather
+                     than an opt-out list in each overlay's brand.xml,
+                     because an opt-out that nobody remembers to write is the
+                     failure this prevents: a Two-only surface added later
+                     appears on every partner storefront's admin until
+                     someone notices.
+
+                     An overlay that does want one declares that field in its
+                     OWN system.xml, which the synthesis deep-merge lets
+                     override per-field — so asking for it stays possible and
+                     stays explicit. -->
+                <field id="product_button_enabled" translate="label comment" type="select" sortOrder="23"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" two_only="1" brand_code="{{code}}">
+                    <label>Show buy button on product pages</label>
+                    <comment>Adds a button under add to cart that puts the item in the basket and opens checkout with this method selected. Off by default.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\OffByDefaultYesno</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\ProductButtonEnabled</backend_model>
+                    <config_path>payment/{{code}}/product_button_enabled</config_path>
                 </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"

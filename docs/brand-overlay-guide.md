@@ -101,40 +101,40 @@ across modules). Elements may appear in any order (`xs:all`).
 
 **`<brand>` attributes**
 
-| Attribute        | Required | Controls                                                                                                                                                                |
-| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `code`           | yes      | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs.                       |
-| `tab_sort_order` | yes      | Admin Configuration tab ordering.                                                                                                                                       |
+| Attribute        | Required | Controls                                                                                                                                                                                                                                                                                                                      |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code`           | yes      | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs.                                                                                                                                                                             |
+| `tab_sort_order` | yes      | Admin Configuration tab ordering.                                                                                                                                                                                                                                                                                             |
 | `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_checkout_fields`, `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version`, per TWO-25386; company lookup is a group inside `{prefix}_checkout_fields`) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
 
 **Elements**
 
-| Element                          | Required | Type                      | Controls                                                                                                                                                        |
-| -------------------------------- | -------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`                       | yes      | string                    | Short provider name (admin/UI copy).                                                                                                                            |
-| `provider_full_name`             | no       | string                    | Legal entity name.                                                                                                                                              |
-| `product_name`                   | yes      | string                    | Customer-facing product name (checkout, emails, admin).                                                                                                         |
-| `tab_label`                      | yes      | string                    | Admin Configuration tab label.                                                                                                                                  |
-| `tab_css_class`                  | no       | string                    | CSS class on the admin tab.                                                                                                                                     |
+| Element                          | Required | Type                      | Controls                                                                                                                                                                                                                 |
+| -------------------------------- | -------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`                       | yes      | string                    | Short provider name (admin/UI copy).                                                                                                                                                                                     |
+| `provider_full_name`             | no       | string                    | Legal entity name.                                                                                                                                                                                                       |
+| `product_name`                   | yes      | string                    | Customer-facing product name (checkout, emails, admin).                                                                                                                                                                  |
+| `tab_label`                      | yes      | string                    | Admin Configuration tab label.                                                                                                                                                                                           |
+| `tab_css_class`                  | no       | string                    | CSS class on the admin tab.                                                                                                                                                                                              |
 | `checkout_subtitle`              | no       | string                    | i18n source key for the tagline under the method title at checkout. Absent or empty renders no tagline. The rendered sentence is reduced to text plus a single `<a href>`, so no other markup in a translation survives. |
-| `checkout_url_template`          | yes      | string                    | Hosted-checkout URL template (`https://%s.…`).                                                                                                                  |
-| `brand_tag`                      | no       | string                    | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**                                                                                 |
-| `sign_up_url`                    | no       | string                    | Merchant signup link in admin.                                                                                                                                  |
-| `documentation_url`              | no       | string                    | Docs link in admin.                                                                                                                                             |
-| `about_url`                      | no       | string                    | Target of the checkout explainer icon beside the tile title. Absent or empty renders no icon.                                                                   |
-| `checkout_subtitle_faq_url`      | no       | string                    | Supplies the `%1`/`%2` link arguments of `checkout_subtitle`. Absent or empty renders no tagline, so a tagline key that wants a link needs both.                |
-| `api_base_url`                   | yes      | string                    | Two API base for this brand.                                                                                                                                    |
-| `surcharge_rounding_steps`       | no       | `<step>` list             | Narrows the admin "Rounding step" dropdown (major units, each `> 0`). Absent or empty inherits the parent default set. Values are deduped and sorted ascending. |
-| `csp_origins`                    | no       | `<origin>` list           | Extra CSP origins.                                                                                                                                              |
-| `admin_resource`                 | yes      | string                    | ACL resource gating the admin section.                                                                                                                          |
-| `module_label_chain`             | no       | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip.                                                                                               |
-| `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                     |
-| `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                    |
-| `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
-| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent approved" notice. Default `true`. **See below.**                                                                            |
-| `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                     |
-| `intent_declined_notice_enabled` | no       | `true` \| `false`         | Whether the brand's own wording is used for the "order intent declined" notice; it cannot silence it. Undeclared, it inherits the approved switch. **See below.** |
-| `intent_declined_notice`         | no       | string                    | Copy override for the declined notice. Never an off switch, but non-blank copy turns an undeclared declined switch ON. **See below.**                            |
+| `checkout_url_template`          | yes      | string                    | Hosted-checkout URL template (`https://%s.…`).                                                                                                                                                                           |
+| `brand_tag`                      | no       | string                    | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**                                                                                                                                          |
+| `sign_up_url`                    | no       | string                    | Merchant signup link in admin.                                                                                                                                                                                           |
+| `documentation_url`              | no       | string                    | Docs link in admin.                                                                                                                                                                                                      |
+| `about_url`                      | no       | string                    | Target of the checkout explainer icon beside the tile title. Absent or empty renders no icon.                                                                                                                            |
+| `checkout_subtitle_faq_url`      | no       | string                    | Supplies the `%1`/`%2` link arguments of `checkout_subtitle`. Absent or empty renders no tagline, so a tagline key that wants a link needs both.                                                                         |
+| `api_base_url`                   | yes      | string                    | Two API base for this brand.                                                                                                                                                                                             |
+| `surcharge_rounding_steps`       | no       | `<step>` list             | Narrows the admin "Rounding step" dropdown (major units, each `> 0`). Absent or empty inherits the parent default set. Values are deduped and sorted ascending.                                                          |
+| `csp_origins`                    | no       | `<origin>` list           | Extra CSP origins.                                                                                                                                                                                                       |
+| `admin_resource`                 | yes      | string                    | ACL resource gating the admin section.                                                                                                                                                                                   |
+| `module_label_chain`             | no       | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip.                                                                                                                                                        |
+| `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                                                                              |
+| `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                                                                             |
+| `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                                                                                      |
+| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent approved" notice. Default `true`. **See below.**                                                                                                                                     |
+| `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                                                                              |
+| `intent_declined_notice_enabled` | no       | `true` \| `false`         | Whether the brand's own wording is used for the "order intent declined" notice; it cannot silence it. Undeclared, it inherits the approved switch. **See below.**                                                        |
+| `intent_declined_notice`         | no       | string                    | Copy override for the declined notice. Never an off switch, but non-blank copy turns an undeclared declined switch ON. **See below.**                                                                                    |
 
 ### The intent notices — a switch and a wording override per outcome
 
@@ -171,12 +171,12 @@ sentence is the buyer's only account of why the Place Order button is
 disabled, and a switchable explanation for a blocked control is the defect
 ABN-563 reports.
 
-| brand.xml                                          | Behaviour                                                                                                                    |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `<…_notice_enabled>true</…_notice_enabled>`        | That notice **ON**.                                                                                                          |
+| brand.xml                                          | Behaviour                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<…_notice_enabled>true</…_notice_enabled>`        | That notice **ON**.                                                                                                                                                                                                                                                              |
 | `<…_notice_enabled>false</…_notice_enabled>`       | Approved: **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. Declined: the brand's own copy is not used and **platform wording renders instead**. The other outcome is unaffected once its own switch is declared or its own copy is non-blank. |
-| element absent                                     | Approved: documented explicit default **`true`**. Declined: see the precedence below.                                        |
-| anything else (`1`, `0`, `yes`, empty, whitespace) | **Error.** Never a silent third behaviour.                                                                                   |
+| element absent                                     | Approved: documented explicit default **`true`**. Declined: see the precedence below.                                                                                                                                                                                            |
+| anything else (`1`, `0`, `yes`, empty, whitespace) | **Error.** Never a silent third behaviour.                                                                                                                                                                                                                                       |
 
 An overlay that wants no approved notice and no branded decline wording
 declares both switches `false`. A declined buyer is still told why.
@@ -212,11 +212,11 @@ and `0`, and this switch is meant to read as a decision.
 
 #### `intent_approved_notice` / `intent_declined_notice` — the copy overrides
 
-| brand.xml                          | Behaviour                                                                                                                                    |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| element absent                     | Platform default translated copy.                                                                                                            |
-| visually blank (empty, whitespace, non-breaking or zero-width space) | **Inert** — same as absent. It does **not** mean "off".                                                                    |
-| `<…_notice>…</…_notice>`           | Used verbatim as that outcome's company-known variant. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number. |
+| brand.xml                                                            | Behaviour                                                                                                                                      |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| element absent                                                       | Platform default translated copy.                                                                                                              |
+| visually blank (empty, whitespace, non-breaking or zero-width space) | **Inert** — same as absent. It does **not** mean "off".                                                                                        |
+| `<…_notice>…</…_notice>`                                             | Used verbatim as that outcome's company-known variant. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number. |
 
 `Descriptor::getIntentApprovedNotice()` and `getIntentDeclinedNotice()`
 return `null` for the first two rows and the template for the third; they
@@ -298,6 +298,65 @@ passive). Two consequences:
    that throw `DomainException` at load.
    Follow that pattern when you add fields whose zero-value would
    silently disable a constraint.
+
+## two_only: controls Two offers only on its own brand
+
+Some fields in `brand_form_template.xml` carry `two_only="1"`:
+
+```xml
+<field id="product_button_enabled" … two_only="1" brand_code="{{code}}">
+```
+
+`SynthesiseBrandAdminForm` hides those on every brand except
+`two_payment`, the same way `suppressed_fields` hides — visibility off,
+field still declared — and drops the marker so it never reaches
+Magento's Structure.
+
+**This is the inverse default to `suppressed_fields`, on purpose.** That
+list is an opt-OUT each overlay has to remember to write, so a Two-only
+surface added to the shared template later is offered on every partner's
+admin until somebody notices and patches that overlay. Marking the field
+makes declaring it and withholding it one act: the brand that forgets
+gets nothing, rather than getting somebody else's feature.
+
+Mark a field `two_only` when it drives a storefront surface this package
+builds for its own code — the product-page message and buy button paint a
+mark from `[data-brand='two_payment']` rules, so a brand that has not
+designed one gets a control it cannot render properly.
+
+**An overlay that does want one declares that field in its own
+`system.xml`.** The synthesis deep-merge lets a static declaration
+override per-field, so asking is possible and stays explicit. Declare the
+models alongside it, exactly as the parity rule below requires.
+
+### With `suppressed_fields` on the same field
+
+They compose, and both only take visibility away — the field stays
+declared either way, so applying both is idempotent and order does not
+matter. `deepMergeOverlay` runs after both, so a static declaration in the
+overlay's own `system.xml` still wins.
+
+**Declaring the field is what opts you in, and it beats both.** The merge
+writes the overlay's scalar over the synthesised one, so a static
+declaration carrying `showInDefault`/`showInWebsite`/`showInStore` wins over
+`two_only` AND over your own `suppressed_fields` entry. Withdrawing the
+suppression as well is tidying, not a second required step.
+
+The attributes have to be on the declaration: the merge only overrides keys
+the overlay actually supplies, so declaring the field without them leaves
+the withheld `0` in place.
+
+**Withdrawing the suppression ALONE does nothing** for a `two_only` field —
+the marker still withholds it — which is the case to watch for, because it
+looks like the change did not take.
+
+`magento-abn-plugin` is in exactly this position for
+`product_message_enabled` and `product_message`: it suppressed both before
+`two_only` existed. Those entries are now belt-and-braces rather than the
+only thing hiding those fields — kept because they record ABN's own
+decision about its storefront, which should not depend on a marker in this
+package. Do not read them as the live mechanism, and do not delete them
+believing that changes what ABN renders.
 
 ## suppressed_fields: hiding admin controls per brand
 

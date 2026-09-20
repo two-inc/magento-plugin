@@ -1,0 +1,41 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+?>
+<?php /* @var \Two\Gateway\Block\Product\ExpressButton $block */ ?>
+<?php if ($block->isVisible()): ?>
+    <?php
+    $config = [
+        'Two_Gateway/js/view/product/express-button' => [
+            'returnUrl' => $block->getReturnUrl(),
+        ],
+    ];
+    ?>
+    <div class="two-product-express" data-brand="<?= $block->escapeHtmlAttr($block->getBrandCode()) ?>">
+        <?php /* type=button, not submit: the handler drives the shop's own
+                add-to-cart form so core validates the chosen options and adds
+                the item. A submit button here would post this markup's own
+                (absent) form on a stack where the script never ran. */ ?>
+        <button type="button"
+                class="action two-product-express__button"
+                data-mage-init='<?= /* @noEscape */ json_encode($config) ?>'>
+            <span class="two-product-express__text"><?= $block->escapeHtml($block->getLabel()) ?></span>
+            <?php /* TWO-25800: the mark carries the brand where a brand paints
+                    one, matching the PayPal button this was asked to sit beside.
+                    It is a CSS background keyed on the brand code, so it has no
+                    alternative text of its own — the name beside it supplies
+                    that, and is what keeps "Buy with <brand>" as the control's
+                    accessible name.
+
+                    A brand that paints a mark hides that name from SIGHT in its
+                    own CSS and keeps it in the accessibility tree. A brand that
+                    ships no mark leaves it visible, so no storefront ends up
+                    with a purchase control naming no brand. That rule is older
+                    than this button and is not the part to change. */ ?>
+            <span class="two-product-express__mark" aria-hidden="true"></span>
+            <span class="two-product-express__brand"><?= $block->escapeHtml($block->getBrandLabel()) ?></span>
+        </button>
+    </div>
+<?php endif; ?>

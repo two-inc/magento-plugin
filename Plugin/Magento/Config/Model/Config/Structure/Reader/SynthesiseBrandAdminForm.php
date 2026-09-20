@@ -11,6 +11,7 @@ use Magento\Config\Model\Config\Structure\Converter;
 use Magento\Config\Model\Config\Structure\Reader;
 use Magento\Framework\Module\Dir;
 use Psr\Log\LoggerInterface;
+use Two\Gateway\Model\Brand\ActiveBrandResolver;
 use Two\Gateway\Model\Brand\Descriptor;
 use Two\Gateway\Model\Brand\Loader;
 
@@ -70,6 +71,9 @@ use Two\Gateway\Model\Brand\Loader;
 class SynthesiseBrandAdminForm
 {
     private const TEMPLATE_RELATIVE_PATH = '/adminhtml/brand_form_template.xml';
+
+    /** Template attribute marking a field Two offers only on its own brand. */
+    private const TWO_ONLY_ATTRIBUTE = 'two_only';
     private const MODULE_NAME = 'Two_Gateway';
 
     /**
@@ -165,6 +169,11 @@ class SynthesiseBrandAdminForm
                     (string)$sectionId,
                     $brand->getSectionPrefix(),
                     $suppressedFields
+                );
+                $section = $this->withholdTwoOnlyFields(
+                    $section,
+                    (string)$sectionId,
+                    (string)$brand->getCode()
                 );
                 if ($this->sectionExistsInResult($result, (string)$sectionId)) {
                     // A static `<section id="...">` declaration from
@@ -302,6 +311,73 @@ class SynthesiseBrandAdminForm
             $section['children'][$groupId]['children'][$fieldId]['showInWebsite'] = '0';
             $section['children'][$groupId]['children'][$fieldId]['showInStore'] = '0';
         }
+        return $section;
+    }
+
+    /**
+     * Withhold fields the template marks `two_only` from every brand but Two.
+     *
+     * The inverse default to `<suppressed_fields>`, and deliberately so. That
+     * list is an opt-OUT each overlay has to remember to write, so a Two-only
+     * surface added to the template later is offered on every partner's admin
+     * until somebody notices and patches that overlay. Marking the field
+     * instead makes declaring it and withholding it the same act, and the
+     * brand that forgets is the one that gets nothing rather than the one that
+     * gets somebody else's feature.
+     *
+     * Hidden the way suppression hides: the field stays structurally present,
+     * because Magento validates that a configured path has a field behind it,
+     * and only its visibility is taken away. A hidden field is not rendered,
+     * so it posts no value either — which is what stops an unrelated save of
+     * the section writing a default nobody chose.
+     *
+     * An overlay that wants one declares that field in its own system.xml;
+     * the deep-merge below lets a static declaration override per-field.
+     *
+     * The marker is dropped on every brand including Two, so this module's
+     * own vocabulary never reaches Magento's Structure.
+     *
+     * @param array<string,mixed> $section
+     * @param string $sectionId Full section id, e.g. `acme_payment`.
+     * @param string $brandCode The brand this section was synthesised for.
+     * @return array<string,mixed>
+     */
+    private function withholdTwoOnlyFields(array $section, string $sectionId, string $brandCode): array
+    {
+        $withheld = [];
+        $isTwo = $brandCode === ActiveBrandResolver::TWO_CODE;
+
+        foreach (($section['children'] ?? []) as $groupId => $group) {
+            if (!is_array($group)) {
+                continue;
+            }
+            foreach (($group['children'] ?? []) as $fieldId => $field) {
+                if (!is_array($field) || !array_key_exists(self::TWO_ONLY_ATTRIBUTE, $field)) {
+                    continue;
+                }
+
+                unset($section['children'][$groupId]['children'][$fieldId][self::TWO_ONLY_ATTRIBUTE]);
+
+                if ($isTwo) {
+                    continue;
+                }
+
+                $section['children'][$groupId]['children'][$fieldId]['showInDefault'] = '0';
+                $section['children'][$groupId]['children'][$fieldId]['showInWebsite'] = '0';
+                $section['children'][$groupId]['children'][$fieldId]['showInStore'] = '0';
+                $withheld[] = $groupId . '/' . $fieldId;
+            }
+        }
+
+        if ($withheld !== []) {
+            $this->logger->info(sprintf(
+                '[two_brand_admin_form] withheld two_only fields [%s] from brand "%s" in section "%s"',
+                implode(',', $withheld),
+                $brandCode,
+                $sectionId
+            ));
+        }
+
         return $section;
     }
 
