@@ -316,7 +316,7 @@ overrides fields the template already declares. So a field — or a field's
 alone is wired on no brand at all, and a missing `backend_model` means a
 save-time guard that silently does not exist for every partner while it
 still passes on Two. Declare both, in both files;
-`BrandFormModelWiringParityTest` and `DiagnosticsSectionParityTest` are the
+`BrandFormModelWiringParityTest` and `AdminFormFieldParityTest` are the
 guards.
 
 `path` is `section_suffix/group/field` against the synthesised section
@@ -420,6 +420,49 @@ can never disagree:
     nothing; a field that is present but empty, null or malformed allows
     no country at all, as does a restricted merchant whose buyer country
     cannot be resolved.
+
+## Never hardcode the brand name
+
+An overlay debrands by rebinding `BrandRegistryInterface` and by `{{provider}}`
+synthesis of the admin form. A literal `Two` in static XML or in a `__()` msgid
+is reached by neither, so it shows in every locale, English included — the
+English msgid itself carries the brand, so no `i18n/*.csv` row can fix it.
+Write a `%N` filled from the brand registry instead; `Model/Ui/CheckoutTileCopy`
+is the pattern.
+
+`dev/debrand-grep.sh` enforces this in CI. It reads every line of
+`etc/cache.xml`, `etc/adminhtml/*.xml` (bar `system.xml`),
+`view/**/ui_component/*.xml`, `view/**/layout/*.xml`, `view/**/*.phtml` and
+`view/**/web/template/**/*.html`, every string literal in non-test PHP, and
+every string literal inside a `$t( … )`, `$.mage.__( … )` or injected
+`.translate( … )` call in `view/*/web/js/**`. FQCN segments are never matches;
+an escape sequence after the brand is, but a backslash before it is not —
+`…\Two` has nothing after it to test.
+`Two.inc` is the legal entity, not a carve-out: it is a leak wherever a plain
+brand name would be. Comments are skipped in every language it reads, PHP
+comments inside a `.phtml` included — an apostrophe, in one or in a heredoc or
+a regex literal, would otherwise open a string and desync the scan for the rest
+of the file. A Knockout virtual element (`<!-- ko … -->`) renders, so it is read
+rather than skipped.
+
+`Test/Unit/Dev/DebrandGrepTest.php` plants one file per surface and reads the
+gate's own report, so a scanner that stops seeing a leak fails rather than
+reporting OK.
+
+In `view/*/web/js/**` only literals inside a translation call are gated, so a
+brand name in a plain JS literal is not caught.
+
+`etc/adminhtml/system.xml` is ungated because it is the vanilla Two form, which
+an overlay replaces wholesale via `deepMergeOverlay` rather than translating,
+and `i18n/*.csv` inherit that carve-out, being translations of its strings.
+`etc/db_schema.xml` is ungated because its `Two` occurrences are DB column
+comments no user ever sees, `etc/brand.xml` because it is the registry that
+declares the vanilla name. `etc/config.xml` is ungated because its `<title>`
+sits under the vanilla payment code: an overlay ships its own `etc/config.xml`
+under its own code, merged later, and its method reads the title from its own
+`getCode()` path. An overlay shipping no `<title>` is the safe case —
+`Model/Two::getTitle()` falls back to the brand registry's product name; one
+shipping a branded-wrong `<title>` is the failure mode.
 
 ## Local development
 

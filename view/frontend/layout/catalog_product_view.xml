@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25799: opt-in promotional message on the product detail page.
+ * TWO-25800: opt-in "Buy with <brand>" button, a separate switch.
+ *
+ * Both hang off the same container for the same reason, set out below.
+ *
+ * Placed in product.info.main after product.info, which is the add-to-cart
+ * form, so the message sits directly beneath the add-to-cart controls.
+ *
+ * NOT product.info.form.content, the container that holds the add-to-cart
+ * button itself: Magento_Catalog's product/view/form.phtml renders that
+ * container only when the product has no options
+ * (`if (!$block->hasOptions())`), rendering the options container instead
+ * otherwise. A block placed there is therefore invisible on every
+ * configurable product — which includes the storefronts that prompted this,
+ * where products carry options such as colour temperature and beam angle.
+ *
+ * A theme that overrides the product template may order this differently;
+ * placement is then a theme-side change.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <head>
+        <css src="Two_Gateway::css/product-promo.css"/>
+        <css src="Two_Gateway::css/product-express.css"/>
+    </head>
+    <body>
+        <referenceContainer name="product.info.main">
+            <block class="Two\Gateway\Block\Product\PromoMessage"
+                   name="two.product.promo"
+                   template="Two_Gateway::product/promo-message.phtml"
+                   after="product.info"/>
+            <block class="Two\Gateway\Block\Product\ExpressButton"
+                   name="two.product.express"
+                   template="Two_Gateway::product/express-button.phtml"
+                   after="product.info"
+                   before="two.product.promo"/>
+        </referenceContainer>
+    </body>
+</page>

@@ -110,6 +110,13 @@ class Repository implements RepositoryInterface
     private $reportedSurchargeTypes = [];
 
     /**
+     * Same shape as above, for the product-page button's opt-in switch.
+     *
+     * @var array<string,bool>
+     */
+    private $reportedProductButtonValues = [];
+
+    /**
      * @var string|null Optional explicit override. Null = resolve
      *                  lazily from BrandRegistryInterface::getCode().
      *                  Kept as a ctor arg for unit-test injection and
@@ -924,6 +931,77 @@ class Repository implements RepositoryInterface
     public function isAboutLinkEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('show_about_link'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isProductMessageEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('product_message_enabled'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isProductButtonEnabled(?int $storeId = null): bool
+    {
+        $path = $this->path('product_button_enabled');
+        $raw = $this->getConfig($path, $storeId);
+
+        // Only an ABSENT row takes the field's default, which etc/config.xml
+        // declares as off. An explicitly stored empty string is a value nothing
+        // understands, not an absence, so it falls through to the refusal below
+        // rather than quietly disabling the feature the merchant switched on.
+        if ($raw === null) {
+            return false;
+        }
+
+        $stored = is_scalar($raw) ? (string)$raw : gettype($raw);
+
+        // The choke point for the runtime read, so `config:set`, a hand-edited
+        // row and an import are guarded as well as the admin form. isSetFlag()
+        // would read "garbage" as TRUE and put a buyer-facing control on the
+        // storefront under a configuration nobody chose, which is the failure
+        // this standard exists to stop.
+        if ($stored !== '0' && $stored !== '1') {
+            $reportKey = $path . '|' . (string)$storeId . '|' . $stored;
+            if (!isset($this->reportedProductButtonValues[$reportKey])) {
+                $this->reportedProductButtonValues[$reportKey] = true;
+                $this->logRepository->addErrorLog('Unrecognised stored product page button setting', [
+                    'path' => $path,
+                    'store_id' => $storeId,
+                    'value' => $stored,
+                ]);
+            }
+
+            // Generic, because this wording can reach a BUYER. The caller is a
+            // product-page block, which catches it and withholds the button
+            // rather than letting it take the page down.
+            throw new LocalizedException(
+                __(
+                    'Invoice purchase with %1 is not available for this order.',
+                    $this->brandRegistry->getProductName()
+                )
+            );
+        }
+
+        return $stored === '1';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getProductMessage(?int $storeId = null): string
+    {
+        $stored = $this->getConfig($this->path('product_message'), $storeId);
+
+        // A config.php import or a hand-edited row can leave an array here,
+        // and casting one to string is a warning Magento's error handler
+        // raises as an exception — which the template engine rethrows, taking
+        // the whole product page down over a promotional line. Non-scalar is
+        // treated as absent, same shape as configuredLimit() above.
+        return is_scalar($stored) ? (string)$stored : '';
     }
 
     /**

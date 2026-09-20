@@ -511,6 +511,38 @@ interface RepositoryInterface
     public function isAboutLinkEnabled(?int $storeId = null): bool;
 
     /**
+     * Whether the promotional message renders on the product detail page
+     * (TWO-25799). Opt-in: defaults to false, so no storefront gains the
+     * message on upgrade.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isProductMessageEnabled(?int $storeId = null): bool;
+
+    /**
+     * Merchant override for the product detail page promotional copy
+     * (TWO-25799). Empty falls back to the brand default.
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getProductMessage(?int $storeId = null): string;
+
+    /**
+     * Whether the "Buy with <brand>" button renders on the product detail
+     * page (TWO-25800). Opt-in and independent of the promotional message:
+     * a shop may run either, both or neither.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isProductButtonEnabled(?int $storeId = null): bool;
+
+    /**
      * Whether the optional checkout field inputs (PO number, project,
      * department, order note, invoice email) render a hover tooltip with
      * the field's label (TWO-25386). Defaults to enabled — Magento already

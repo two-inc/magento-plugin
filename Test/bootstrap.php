@@ -50,6 +50,11 @@ if (!class_exists(\Magento\Framework\App\ResourceConnection::class)) {
 if (!class_exists(\Magento\Payment\Block\Info::class, false)) {
     require_once __DIR__ . '/Stubs/PaymentInfo.php';
 }
+// Storefront block surface, so Block/Product/PromoMessage can be built in a
+// unit test without the real view layer.
+if (!class_exists(\Magento\Framework\View\Element\Template::class, false)) {
+    require_once __DIR__ . '/Stubs/ViewElementTemplate.php';
+}
 if (!class_exists(\Magento\Tax\Model\Calculation::class)) {
     require_once __DIR__ . '/Stubs/TaxCalculationInterface.php';
 }
@@ -65,6 +70,10 @@ if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
 }
 if (!class_exists(\Magento\Framework\Exception\LocalizedException::class)) {
     require_once __DIR__ . '/Stubs/LocalizedException.php';
+}
+// Catalog product + registry, for Block/Product/ExpressButton's saleability gate.
+if (!class_exists(\Magento\Catalog\Model\Product::class, false)) {
+    require_once __DIR__ . '/Stubs/CatalogProduct.php';
 }
 if (!class_exists(\Magento\Bundle\Model\Product\Price::class)) {
     require_once __DIR__ . '/Stubs/BundlePrice.php';
@@ -182,6 +191,12 @@ require_once __DIR__ . '/Stubs/MessageManager.php';
 // View asset repository with a real getUrl(), so the checkout tile's icon URL
 // is mockable; per-symbol guard lives inside the stub file.
 require_once __DIR__ . '/Stubs/AssetRepository.php';
+
+// Sales grid price column with DataObject semantics, so the surcharge
+// column's label rewrite is exercisable. Loads after the DataObject stub.
+if (!class_exists(\Magento\Sales\Ui\Component\Listing\Column\Price::class, false)) {
+    require_once __DIR__ . '/Stubs/SalesUiColumn.php';
+}
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.

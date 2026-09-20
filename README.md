@@ -78,6 +78,14 @@ cause is almost certainly one of:
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
 
+`docker-compose.yml` brings up three containers: Magento, MariaDB and OpenSearch.
+The Magento image (`ghcr.io/brtkwr/magento-dev`, built from
+[brtkwr/magento-helm](https://github.com/brtkwr/magento-helm)) is published for
+both amd64 and arm64, so on Apple Silicon it runs natively instead of under
+QEMU emulation. It also means **no Magento marketplace keys are needed** — the
+plugin is mounted as an `app/code` module and the language packs ship inside the
+image, so nothing runs `composer` against `repo.magento.com` on your machine.
+
 ### Prerequisites
 
 - Docker
@@ -97,6 +105,10 @@ make configure TWO_API_KEY=<your-key>
 make run
 make stop
 ```
+
+The first `make install` takes a few minutes: the container installs the shop
+on first boot, and `make install` waits for it to finish before configuring
+anything.
 
 After install, Magento is available at http://localhost:1234/ (admin: http://localhost:1234/admin, credentials: `exampleuser@two.inc` / `examplepassword123`).
 

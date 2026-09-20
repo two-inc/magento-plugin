@@ -118,6 +118,34 @@
                     <backend_model>Two\Gateway\Model\Config\Backend\Subtitle</backend_model>
                     <config_path>payment/two_payment/subtitle</config_path>
                 </field>
+                <!-- TWO-25799: opt-in. Default OFF, so no storefront starts
+                     advertising on the product page after an upgrade. -->
+                <field id="product_message_enabled" translate="label comment" type="select" sortOrder="21"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Show message on product pages</label>
+                    <comment>Shows a short promotional line on product pages, beneath the add to cart button. Off by default.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/product_message_enabled</config_path>
+                </field>
+                <field id="product_message" translate="label comment" type="text" sortOrder="22" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Product page message</label>
+                    <comment>Optional. Empty uses the default wording. Avoid naming a number of days unless you are certain of the terms you offer.</comment>
+                    <config_path>payment/two_payment/product_message</config_path>
+                    <depends>
+                        <field id="product_message_enabled">1</field>
+                    </depends>
+                </field>
+                <!-- TWO-25800: opt-in, independent of the message above. A
+                     shop may run either, both or neither. -->
+                <field id="product_button_enabled" translate="label comment" type="select" sortOrder="23"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Show buy button on product pages</label>
+                    <comment>Adds a button under add to cart that puts the item in the basket and opens checkout with this method selected. Off by default.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\OffByDefaultYesno</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\ProductButtonEnabled</backend_model>
+                    <config_path>payment/two_payment/product_button_enabled</config_path>
+                </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">
                     <label>Sort order</label>

@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  */
 class SharedCapturePhraseHarvestTest extends TestCase
 {
-    private const LOCALES = ['nb_NO', 'nl_NL', 'sv_SE'];
+    private const LOCALES = ['es_ES', 'nb_NO', 'nl_NL', 'sv_SE'];
 
     /** Modules that ask for a phrase by name rather than translating it. */
     private const SEAM_MODULES = [

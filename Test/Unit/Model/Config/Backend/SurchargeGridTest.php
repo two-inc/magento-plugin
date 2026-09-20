@@ -950,12 +950,16 @@ class SurchargeGridTest extends TestCase
      */
     public function testTheGridAndTheCalculatorAgreeOnMoneyPrecision(): void
     {
-        $grid = new \ReflectionClass(SurchargeGrid::class);
-        $calculator = new \ReflectionClass(SurchargeCalculator::class);
+        $grid = (new \ReflectionClass(SurchargeGrid::class))->getConstant('MONEY_DECIMALS');
+        $calculator = (new \ReflectionClass(SurchargeCalculator::class))->getConstant('MONEY_DECIMALS');
+
+        // getConstant() returns false for a gone name, so a rename in both would compare false to false.
+        $this->assertIsInt($calculator, 'SurchargeCalculator no longer declares MONEY_DECIMALS.');
+        $this->assertIsInt($grid, 'SurchargeGrid no longer declares MONEY_DECIMALS.');
 
         $this->assertSame(
-            $calculator->getConstant('MONEY_DECIMALS'),
-            $grid->getConstant('MONEY_DECIMALS'),
+            $calculator,
+            $grid,
             'the grid must refuse limits at the same precision the request is rounded to'
         );
     }

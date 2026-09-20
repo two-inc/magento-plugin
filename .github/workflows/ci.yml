@@ -95,6 +95,14 @@ jobs:
             -not -path './Test/*' \
             -print0 | xargs -0 -n1 -P4 php -l > /dev/null
 
+  debrand-grep:
+    name: Debrand grep
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run debrand grep
+        run: ./dev/debrand-grep.sh
+
   codesniffer:
     name: Codesniffer
     runs-on: ${{ vars.RUNNER_STANDARD }}

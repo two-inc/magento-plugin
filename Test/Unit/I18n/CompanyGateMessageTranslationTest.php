@@ -28,7 +28,7 @@ class CompanyGateMessageTranslationTest extends TestCase
     {
         $cases = [];
 
-        foreach (['nb_NO', 'nl_NL', 'sv_SE'] as $locale) {
+        foreach (['es_ES', 'nb_NO', 'nl_NL', 'sv_SE'] as $locale) {
             $cases[$locale . ' submit block'] = [
                 $locale,
                 self::CLIENT_MSGID,

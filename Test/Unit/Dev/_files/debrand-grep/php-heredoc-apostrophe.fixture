@@ -1,0 +1,5 @@
+<?php
+$sql = <<<SQL
+    -- don't let this desync the scan
+SQL;
+$label = __('Pay later with Two');

@@ -1,0 +1,53 @@
+# Local dev shop. The magento image is built from brtkwr/magento-helm and is
+# published for amd64 and arm64, so this runs natively on Apple Silicon rather
+# than under QEMU.
+services:
+    magento:
+        image: ghcr.io/brtkwr/magento-dev:${MAGENTO_TAG:-2.4.8}
+        # Kept so `docker exec magento ...` works unchanged.
+        container_name: magento
+        ports:
+            - '${PORT:-1234}:80'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        environment:
+            URL: http://localhost:${PORT:-1234}/
+            TWO_API_BASE_URL: ${TWO_API_BASE_URL:-}
+            TWO_CHECKOUT_BASE_URL: ${TWO_CHECKOUT_BASE_URL:-}
+            # The image's own admin must not claim exampleuser@two.inc: dev/create-admin-user
+            # adds the shared local-dev account under that address (TWO-25757), and
+            # Magento refuses a second user with the same email but a different username.
+            ADMIN_EMAIL: admin@example.com
+            MYSQL_HOST: db
+            MYSQL_PASSWORD: magento
+            OPENSEARCH_HOST: search
+        volumes:
+            # The plugin working tree, discovered through its registration.php. This
+            # is a plain app/code module mount - no composer, so no Magento keys.
+            - ./:/var/www/html/app/code/Two/Gateway
+            # A stale worktree here would duplicate every class under Test/ and fatal
+            # class discovery on "already declared". Shadow it with an empty tmpfs.
+            - /var/www/html/app/code/Two/Gateway/.worktrees
+        depends_on:
+            - db
+            - search
+
+    db:
+        image: mariadb:10.6
+        environment:
+            MARIADB_ROOT_PASSWORD: root
+            MARIADB_DATABASE: magento
+            MARIADB_USER: magento
+            MARIADB_PASSWORD: magento
+        volumes:
+            - db-data:/var/lib/mysql
+
+    search:
+        image: opensearchproject/opensearch:2.19.0
+        environment:
+            discovery.type: single-node
+            DISABLE_SECURITY_PLUGIN: 'true'
+            OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+
+volumes:
+    db-data:
