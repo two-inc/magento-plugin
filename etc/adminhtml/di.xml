@@ -28,7 +28,7 @@
                 type="Two\Gateway\Plugin\Config\Structure\HidePaymentSection"
                 sortOrder="10"/>
     </type>
-    <!-- Hides the fields below (keyed section_suffix/group/field, as brand.xml suppressed_fields) unless already configured at the scope being edited. -->
+    <!-- Hides the fields below (keyed section_suffix/group/field, as brand.xml allowed_fields) unless already configured at the scope being edited. -->
     <type name="Magento\Config\Model\Config\Structure\Element\Field">
         <plugin name="two-hide-fields-unless-configured"
                 type="Two\Gateway\Plugin\Config\Structure\HideFieldsUnlessConfigured"
