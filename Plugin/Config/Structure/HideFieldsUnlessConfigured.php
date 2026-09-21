@@ -23,7 +23,7 @@ use Two\Gateway\Model\Config\FieldGate\ConfiguredPredicateInterface;
 class HideFieldsUnlessConfigured
 {
     /**
-     * @param ConfiguredPredicateInterface[] $predicates Keyed `section_suffix/group/field`, as brand.xml suppressed_fields.
+     * @param ConfiguredPredicateInterface[] $predicates Keyed `section_suffix/group/field`, as brand.xml allowed_fields.
      */
     public function __construct(
         private readonly ScopeConfigInterface $scopeConfig,

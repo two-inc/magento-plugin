@@ -22,7 +22,7 @@
             and the section/group labels. `two_general` and `two_payment`
             keep their historical section ids (relabeled) to avoid
             breaking Plugin\Config\Structure\HidePaymentSection and any
-            brand-overlay `suppressed_fields` path that targets them by
+            brand-overlay `allowed_fields` path that names them by
             section suffix; `two_checkout_fields` and
             `two_order_management` are new section ids introduced to
             hold content split out of the old `two_payment` section.
@@ -124,7 +124,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Show message on product pages</label>
                     <comment>Shows a short promotional line on product pages, beneath the add to cart button. Off by default.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <source_model>Two\Gateway\Model\Config\Source\OffByDefaultYesno</source_model>
                     <config_path>payment/two_payment/product_message_enabled</config_path>
                 </field>
                 <field id="product_message" translate="label comment" type="text" sortOrder="22" showInDefault="1"

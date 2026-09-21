@@ -70,18 +70,18 @@
  * fields, Payment terms, Order management, Diagnostics, in that order,
  * matching prestashop-plugin and woocommerce-plugin. `_general` and
  * `_payment` keep their historical suffixes (relabeled); this is what
- * keeps a brand.xml `<suppressed_fields>` entry of the form `general/…`
+ * keeps a brand.xml `<allowed_fields>` entry of the form `general/…`
  * or `payment/payment_terms/…` matching unchanged. `_checkout_fields`
  * and `_order_management` are new suffixes for content split out of
  * the old `_payment` section — an overlay that suppressed a field
  * which moved into one of those two (title, subtitle, sort_order,
  * country availability, minimum order, order intent, fulfilment
- * trigger/status, tax subtotals) needs its `suppressed_fields` path
+ * trigger/status, tax subtotals) needs its `allowed_fields` path
  * updated to match.
  *
  * Follow-up: the standalone "Company Lookup" section (`_search`) was
  * folded into `_checkout_fields` as its own `search` group, appended
- * last. An overlay's `suppressed_fields` entry for
+ * last. An overlay's `allowed_fields` entry for
  * `search/search/enable_company_search` or
  * `search/search/enable_address_search` needs its `section_suffix`
  * segment updated from `search` to `checkout_fields` — the group id
@@ -187,7 +187,7 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Show message on product pages</label>
                     <comment>Shows a short promotional line on product pages, beneath the add to cart button. Off by default.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <source_model>Two\Gateway\Model\Config\Source\OffByDefaultYesno</source_model>
                     <config_path>payment/{{code}}/product_message_enabled</config_path>
                 </field>
                 <field id="product_message" translate="label comment" type="text" sortOrder="22"
