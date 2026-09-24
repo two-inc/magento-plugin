@@ -15,6 +15,8 @@ B2B Buy Now, Pay Later for Magento 2.3.3+. This plugin integrates [Two](https://
 - Automatic invoicing via the [PEPPOL](https://peppol.eu/) e-invoicing network
 - Partial capture and refunds
 - Instant payment on fulfilment — Two assumes the credit risk
+- Optional product-page promotion: a message and a buy button, both off by
+  default ([how to turn them on](#product-page-promotion))
 
 **For buyers:**
 
@@ -73,6 +75,41 @@ cause is almost certainly one of:
   (`systemctl reload php-fpm` or `kill -USR2 <fpm-master-pid>`).
 - A cache type (config / layout / full_page) in stale state.
   `bin/magento cache:flush` is the canonical fix.
+
+## Product-page promotion
+
+Two optional surfaces on the product page, added in **2.4.0**. Both are
+**off by default** and independent: a shop may run either, both or neither.
+
+Find them in the admin under **Stores → Configuration → Two → Checkout
+fields → Title & display**.
+
+| Setting | What it does |
+| --- | --- |
+| **Show message on product pages** | Adds a short line telling the buyer they can pay on invoice with Two. |
+| **Show buy button on product pages** | Adds a button under Add to Cart that puts the item in the basket and opens checkout with Two preselected where it is available. |
+
+The button never places the order. It carries the buyer to checkout, and
+they confirm there as usual, so a misclick costs nothing. It sits beside
+the theme's Add to Cart rather than replacing it, and respects the
+quantity and any variant the buyer has chosen.
+
+**Preselection is conditional, by design.** A product page has no cart, so
+the button cannot know whether minimum order value, buyer country or
+currency will allow the method. When the finished basket does not qualify,
+checkout opens with nothing selected and the buyer chooses as they would
+have anyway. See `Block/Product/ExpressButton.php` for the gates the button
+does apply.
+
+**Brand overlays only see what they list.** From 3.0.0 an overlay renders
+only the paths in its `<allowed_fields>`, so these controls appear under an
+overlay's own tab only if it names
+`checkout_fields/display/product_message_enabled` and
+`checkout_fields/display/product_button_enabled`. See
+[docs/brand-overlay-guide.md](docs/brand-overlay-guide.md).
+
+Both settings are per store view, so you can trial them on one storefront
+before rolling them out.
 
 ## Development
 
