@@ -30,6 +30,7 @@ $line = static fn (string $type, string $net, string $tax, string $rate): array 
     'tax_amount' => $tax,
     'gross_amount' => number_format((float)$net + (float)$tax, 2, '.', ''),
     'tax_rate' => $rate,
+    'unit_price' => $net,
     'quantity' => 1,
 ];
 $lines = [$line('PHYSICAL', '100.00', '21.00', '0.210000'), $line('SHIPPING_FEE', '29.00', '0.00', '0.000000')];
