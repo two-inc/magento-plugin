@@ -122,15 +122,17 @@ Where Magento records no tax rate for a taxed shipping line, the fallback now
 uses Magento's own **Stores > Configuration > Sales > Tax > Tax Classes > Tax
 Class for Shipping**, and only on stores where the fallback has been enabled
 (see below). A store that relied on the removed fields refuses such orders
-until both are in place.
+until both are in place. This includes orders placed on 3.x: their capture,
+refund and shipment are refused after upgrading unless the fallback is enabled
+and core's Tax Class for Shipping is set.
 
 ## Shipping tax fallback
 
 When a taxed shipping line reaches the plugin with no tax rate recorded by
-Magento, the order, capture or refund is refused. A fallback that resolves the
-rate from Magento's own **Tax > Tax Classes > Tax Class for Shipping** exists,
-but it is off by default and has no admin field. Talk to us before enabling it
-for a store:
+Magento, the order, capture, refund or shipment is refused. A fallback that
+resolves the rate from Magento's own **Tax > Tax Classes > Tax Class for
+Shipping** exists, but it is off by default and has no admin field. Contact Two
+before enabling it for a store:
 
 ```bash
 bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
