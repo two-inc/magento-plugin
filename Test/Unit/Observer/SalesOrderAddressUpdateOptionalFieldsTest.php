@@ -359,7 +359,7 @@ class AddressUpdateMethodInstanceStub
      */
     public function getErrorFromResponse($response)
     {
-        return null;
+        return $response['error_message'] ?? null;
     }
 }
 

@@ -148,6 +148,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         $order->getStatus(),
                         $error
                     );
+                    $this->messageManager->addWarningMessage((string)$error);
                 } else {
                     $comment = __('Order edit request was accepted by %1', $this->brandRegistry->getProductName());
                     $order->addStatusToHistory($order->getStatus(), $comment->render());

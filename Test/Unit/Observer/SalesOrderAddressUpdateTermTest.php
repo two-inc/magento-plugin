@@ -33,15 +33,16 @@ class SalesOrderAddressUpdateTermTest extends TestCase
 
     public static function termCases(): array
     {
-        // stored terms (null: key absent), offered now, default now, type now, expected PUT terms, description
+        // stored terms (null: key absent), offered now, default now, type now, expected PUT terms, API error (null: accepted), description
         return [
-            [self::NET_60, [30, 60], 30, 'invoice_date', self::NET_60, 'chosen term differs from the default'],
-            [self::NET_30, [60, 90], 60, 'invoice_date', self::NET_30, 'default changed and old term withdrawn after the order'],
-            [self::NET_60, [30, 60], 30, 'end_of_month', self::NET_60, 'term type changed to end of month after the order'],
-            [self::NET_60_EOM, [30, 60], 30, 'invoice_date', self::NET_60_EOM, 'stored duration_days_calculated_from is kept'],
-            [null, [30, 60], 30, 'invoice_date', self::OMITTED, 'legacy order with no stored term is sent without terms'],
-            ['NET_30', [30, 60], 30, 'invoice_date', self::OMITTED, 'stored terms that are not an array are treated as legacy'],
-            [['type' => 'NET_TERMS', 'duration_days' => 0], [30, 60], 30, 'invoice_date', self::REFUSED, 'stored term of 0 days is refused'],
+            [self::NET_60, [30, 60], 30, 'invoice_date', self::NET_60, null, 'chosen term differs from the default'],
+            [self::NET_30, [60, 90], 60, 'invoice_date', self::NET_30, null, 'default changed and old term withdrawn after the order'],
+            [self::NET_60, [30, 60], 30, 'end_of_month', self::NET_60, null, 'term type changed to end of month after the order'],
+            [self::NET_60_EOM, [30, 60], 30, 'invoice_date', self::NET_60_EOM, null, 'stored duration_days_calculated_from is kept'],
+            [null, [30, 60], 30, 'invoice_date', self::OMITTED, null, 'legacy order with no stored term is sent without terms'],
+            ['NET_30', [30, 60], 30, 'invoice_date', self::OMITTED, null, 'stored terms that are not an array are treated as legacy'],
+            [['type' => 'NET_TERMS', 'duration_days' => 0], [30, 60], 30, 'invoice_date', self::REFUSED, null, 'stored term of 0 days is refused'],
+            [self::NET_60, [30, 60], 30, 'invoice_date', self::NET_60, 'Edit rejected by Two', 'API error response warns the admin'],
         ];
     }
 
@@ -52,6 +53,7 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         int $defaultTerm,
         string $termsType,
         $expectedTerms,
+        ?string $apiError,
         string $description
     ): void {
         $stored = [
@@ -76,9 +78,9 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         $sent = null;
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('execute')->willReturnCallback(
-            function (string $endpoint, array $payload = []) use (&$sent): array {
+            function (string $endpoint, array $payload = []) use (&$sent, $apiError): array {
                 $sent = $payload;
-                return ['id' => 'remote-order-id'];
+                return $apiError === null ? ['id' => 'remote-order-id'] : ['error_code' => 400, 'error_message' => $apiError];
             }
         );
 
@@ -118,7 +120,10 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         }
         $this->assertNotNull($sent, $description . ': edit request sent; history: ' . implode(' | ', $order->historyComments));
         $this->assertArrayNotHasKey('available_terms', $sent, $description . ': not in the edit schema');
-        $this->assertSame([], $warnings, $description . ': no admin warning');
+        $this->assertSame($apiError === null ? [] : [$apiError], $warnings, $description . ': admin warning');
+        if ($apiError !== null) {
+            $this->assertSame([$apiError], $order->historyComments, $description . ': history note');
+        }
         if ($expectedTerms === self::OMITTED) {
             $this->assertArrayNotHasKey('terms', $sent, $description);
             return;
