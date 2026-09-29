@@ -266,6 +266,9 @@ class OrderPostprocessor extends OrderService
 
         $declared = [];
         foreach ($block['tax_subtotals'] as $subtotal) {
+            if (!is_array($subtotal)) {
+                throw $this->refusal(self::SUBTOTALS_INCONSISTENT, $changed, $context, ['subtotal' => $subtotal], $diff);
+            }
             $rate = PostprocessingTotals::amount($subtotal['tax_rate'] ?? 0, 6);
             $declared[$rate]['taxable_amount'] = ($declared[$rate]['taxable_amount'] ?? 0.0)
                 + (float)($subtotal['taxable_amount'] ?? 0);
