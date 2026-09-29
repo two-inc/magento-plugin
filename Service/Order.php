@@ -655,7 +655,7 @@ abstract class Order
     {
         if (!$fallbackEnabled) {
             return __(
-                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store.'
+                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store. Contact Two to enable it.'
             );
         }
         return __(

@@ -467,7 +467,8 @@ class ShippingTaxRateTest extends TestCase
     // ── TWO-26082: the fallback is off unless enabled per store by CLI ──
 
     private const MERCHANT_DISABLED = 'Shipping tax could not be determined for this order: Magento recorded no'
-        . ' shipping tax rate and the shipping tax fallback is not enabled for this store.';
+        . ' shipping tax rate and the shipping tax fallback is not enabled for this store.'
+        . ' Contact Two to enable it.';
 
     private const BUYER_REFUSAL = 'This order could not be placed. Please contact the merchant.';
 
