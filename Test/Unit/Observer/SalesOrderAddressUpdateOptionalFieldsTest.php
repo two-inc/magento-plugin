@@ -113,7 +113,8 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             $orderRepository,
             $composeOrder,
             $this->apiAdapter,
-            $overlayRegistry
+            $overlayRegistry,
+            $this->createMock(\Magento\Framework\Message\ManagerInterface::class)
         );
     }
 
@@ -147,6 +148,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                     'phone_number' => '+4712345678',
                 ],
             ],
+            'terms' => ['type' => 'NET_TERMS', 'duration_days' => 30],
         ];
     }
 
@@ -357,7 +359,7 @@ class AddressUpdateMethodInstanceStub
      */
     public function getErrorFromResponse($response)
     {
-        return null;
+        return $response['error_message'] ?? null;
     }
 }
 

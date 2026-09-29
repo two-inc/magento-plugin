@@ -10,6 +10,8 @@ namespace Two\Gateway\Observer;
 use Exception;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
@@ -56,13 +58,17 @@ class SalesOrderAddressUpdate implements ObserverInterface
     /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var ManagerInterface */
+    private $messageManager;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         OrderRepositoryInterface $orderRepository,
         ComposeOrder $compositeOrder,
         Adapter $apiAdapter,
-        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry
+        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
+        ManagerInterface $messageManager
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -70,6 +76,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
         $this->compositeOrder = $compositeOrder;
         $this->apiAdapter = $apiAdapter;
         $this->overlayRegistry = $overlayRegistry;
+        $this->messageManager = $messageManager;
     }
 
     /**
@@ -87,6 +94,13 @@ class SalesOrderAddressUpdate implements ObserverInterface
         ) {
             try {
                 $additionalInformation = $order->getPayment()->getAdditionalInformation();
+                // Orders placed before terms were stored have none; the edit then omits terms so Two keeps the agreed ones.
+                $placedTerms = is_array($additionalInformation['terms'] ?? null) ? $additionalInformation['terms'] : null;
+                if ($placedTerms !== null && (int)($placedTerms['duration_days'] ?? 0) <= 0) {
+                    throw new LocalizedException(
+                        __('Order edit was not sent: the order\'s stored payment term is not usable.')
+                    );
+                }
                 // Department and Project are optional at checkout, and the
                 // stored payload now leaves the keys out entirely when the
                 // buyer skipped them (TWO-25386) — so they must be coalesced
@@ -101,6 +115,8 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         'companyId' => $additionalInformation['buyer']['company']['organization_number'],
                         'department' => $additionalInformation['buyer_department'] ?? '',
                         'project' => $additionalInformation['buyer_project'] ?? '',
+                        'isEdit' => true,
+                        'placedTerms' => $placedTerms,
                     ]
                 );
                 // TWO-25386: merchant_reference, merchant_additional_info and
@@ -132,6 +148,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         $order->getStatus(),
                         $error
                     );
+                    $this->messageManager->addWarningMessage((string)$error);
                 } else {
                     $comment = __('Order edit request was accepted by %1', $this->brandRegistry->getProductName());
                     $order->addStatusToHistory($order->getStatus(), $comment->render());
@@ -141,6 +158,8 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     $order->getStatus(),
                     $e->getMessage()
                 );
+                // The admin's address save still succeeds, so say the edit did not reach Two.
+                $this->messageManager->addWarningMessage($e->getMessage());
             }
 
             $order->save();

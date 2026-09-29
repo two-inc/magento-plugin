@@ -76,7 +76,10 @@ class ComposeOrder extends OrderService
     public function execute(Order $order, string $orderReference, array $additionalData): array
     {
         $storeId = (int)$order->getStoreId();
-        $selectedTermDays = $this->getSelectedTermDays($additionalData, $storeId);
+        // An edit of a placed order re-sends the agreed terms, or none; live config may have moved since.
+        $isEdit = !empty($additionalData['isEdit']);
+        $placedTerms = is_array($additionalData['placedTerms'] ?? null) ? $additionalData['placedTerms'] : null;
+        $selectedTermDays = $isEdit ? 0 : $this->getSelectedTermDays($additionalData, $storeId);
 
         // Fetch line items from the order
         $lineItems = $this->getLineItemsOrder($order);
@@ -153,8 +156,7 @@ class ComposeOrder extends OrderService
             'net_amount' => $this->roundAmt($netTotal),
             'tax_amount' => $this->roundAmt($taxTotal),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
-            'terms' => $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
-            'available_terms' => $this->getAvailableBuyerTerms($storeId),
+            'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
@@ -218,6 +220,14 @@ class ComposeOrder extends OrderService
             if ((string)$value !== '') {
                 $payload[$key] = (string)$value;
             }
+        }
+
+        if (!$isEdit) {
+            // The edit-order schema has no available_terms.
+            $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
+        } elseif ($placedTerms === null) {
+            // An absent terms key keeps the agreed ones (TWO-25386).
+            unset($payload['terms']);
         }
 
         // Add invoice_details only if invoiceEmails are present. The payment
