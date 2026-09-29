@@ -53,7 +53,7 @@ class ComposeCapture extends OrderService
             'line_items' => $lineItems,
             'net_amount' => $this->roundAmt($invoice->getGrandTotal() - $invoice->getTaxAmount()),
             'tax_amount' => $this->roundAmt($invoice->getTaxAmount()),
-            'tax_subtotal' => $this->getTaxSubtotals($lineItems),
+            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
         return $reqBody;
     }
