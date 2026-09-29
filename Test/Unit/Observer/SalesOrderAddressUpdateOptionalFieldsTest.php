@@ -147,6 +147,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                     'phone_number' => '+4712345678',
                 ],
             ],
+            'terms' => ['type' => 'NET_TERMS', 'duration_days' => 30],
         ];
     }
 

@@ -10,6 +10,7 @@ namespace Two\Gateway\Observer;
 use Exception;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
@@ -87,6 +88,13 @@ class SalesOrderAddressUpdate implements ObserverInterface
         ) {
             try {
                 $additionalInformation = $order->getPayment()->getAdditionalInformation();
+                $placedTerms = $additionalInformation['terms'] ?? null;
+                if (!is_array($placedTerms) || (int)($placedTerms['duration_days'] ?? 0) <= 0) {
+                    // Refused, not defaulted: with no record of the agreed term, sending one could rewrite the buyer's contract.
+                    throw new LocalizedException(
+                        __('Order edit was not sent: the order has no stored payment term.')
+                    );
+                }
                 // Department and Project are optional at checkout, and the
                 // stored payload now leaves the keys out entirely when the
                 // buyer skipped them (TWO-25386) — so they must be coalesced
@@ -101,6 +109,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         'companyId' => $additionalInformation['buyer']['company']['organization_number'],
                         'department' => $additionalInformation['buyer_department'] ?? '',
                         'project' => $additionalInformation['buyer_project'] ?? '',
+                        'placedTerms' => $placedTerms,
                     ]
                 );
                 // TWO-25386: merchant_reference, merchant_additional_info and
