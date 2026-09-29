@@ -130,6 +130,15 @@ namespace Magento\Tax\Api\Data {
     }
 }
 
+namespace Magento\Customer\Api {
+    if (!interface_exists(GroupRepositoryInterface::class, false)) {
+        interface GroupRepositoryInterface
+        {
+            public function getById($id);
+        }
+    }
+}
+
 namespace Magento\Customer\Api\Data {
     if (!interface_exists(AddressInterface::class, false)) {
         interface AddressInterface

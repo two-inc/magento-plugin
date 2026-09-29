@@ -673,6 +673,26 @@ class RepositoryPaymentTermsTest extends TestCase
         ];
     }
 
+    /**
+     * @dataProvider shippingTaxClassValues
+     */
+    public function testGetShippingTaxClassIdReadsCoresShippingTaxClass($stored, ?int $expected, string $case): void
+    {
+        $this->stubConfig(['tax/classes/shipping_tax_class' => $stored]);
+
+        $this->assertSame($expected, $this->repository->getShippingTaxClassId(1), $case);
+    }
+
+    public static function shippingTaxClassValues(): array
+    {
+        return [
+            ['5', 5, 'a configured class'],
+            ['0', null, 'None'],
+            [null, null, 'never saved'],
+            ['', null, 'blank'],
+            ['junk', null, 'unparseable'],
+        ];
+    }
 
     // ── getPaymentTermsType (retained) ──────────────────────────────
 
