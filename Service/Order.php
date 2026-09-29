@@ -668,9 +668,12 @@ abstract class Order
      * core's shipping tax class, with the getRateRequest() arguments core's
      * quote-time calculator uses (Tax\Model\Calculation\AbstractCalculator::
      * getAddressRateRequest()): shipping and billing separately so
-     * tax/calculation/based_on picks, the store, the customer tax class of
-     * the group the order was placed under, and the customer id, which core
-     * reads only for its default-address fallback.
+     * tax/calculation/based_on picks, the store, the current tax class of
+     * the order-time customer group, and the customer id, which core reads
+     * only for its default-address fallback.
+     *
+     * sales_order stores no customer tax class, so a class edit on that
+     * group since placement still changes the rate.
      *
      * A destination with no matching Tax Rule resolves to 0.0, same as an
      * ordinary product line in an untaxed region.
@@ -680,22 +683,27 @@ abstract class Order
     private function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
     {
         $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+        $customerTaxClassId = $this->resolveCustomerTaxClassId($order);
+        // A null class with a customer id makes core load that customer, which throws once they are deleted.
+        $customerId = $customerTaxClassId !== null && method_exists($order, 'getCustomerId')
+            ? $order->getCustomerId()
+            : null;
         $request = $this->taxCalculation->getRateRequest(
-            $this->resolveShippingAddressForTax($entity),
+            $this->resolveShippingAddressForTax($order),
             method_exists($order, 'getBillingAddress') ? $order->getBillingAddress() : null,
-            $this->resolveCustomerTaxClassId($order),
+            $customerTaxClassId,
             $storeId,
-            method_exists($order, 'getCustomerId') ? $order->getCustomerId() : null
+            $customerId
         );
         $request->setProductClassId($taxClassId);
         return (float)$this->taxCalculation->getRate($request) / 100;
     }
 
     /**
-     * Tax class of the customer group the order was placed under, resolved
-     * as core's Quote::getCustomerTaxClassId() does. NULL when that group no
-     * longer exists: getRateRequest() then falls back to the customer's
-     * current group (NOT LOGGED IN for a guest), the same fallback as core's.
+     * Current tax class of the customer group the order was placed under,
+     * resolved as core's Quote::getCustomerTaxClassId() does. NULL when the
+     * order has no group or it no longer exists: the caller then drops the
+     * customer id too, so getRateRequest() uses the NOT LOGGED IN class.
      *
      * @param OrderModel $order
      */
@@ -717,15 +725,11 @@ abstract class Order
      * shipping address, falling back to billing for a virtual order (no
      * shipping address exists) — same fallback getAddress() applies.
      *
-     * @param OrderModel|CreditmemoModel $entity
+     * @param OrderModel $order
      * @return \Magento\Sales\Model\Order\Address|null
      */
-    private function resolveShippingAddressForTax($entity)
+    private function resolveShippingAddressForTax($order)
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder()
-            ? $entity->getOrder()
-            : $entity;
-
         if (!method_exists($order, 'getShippingAddress')) {
             return null;
         }

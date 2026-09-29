@@ -411,18 +411,20 @@ class ShippingTaxRateTest extends TestCase
 
     /**
      * getRateRequest() gets core's quote-time arguments: shipping and
-     * billing separately, the store, the tax class of the group the order
-     * was placed under, and the customer id.
+     * billing separately, the store, the current tax class of the order-time
+     * group, and the customer id. sales_order stores no customer tax class,
+     * so a class edit on that group since placement still changes the rate.
      *
      * @dataProvider customerTaxClassCases
      */
-    public function testCoreClassResolutionUsesTheOrderTimeCustomerTaxClass(
+    public function testCoreClassResolutionUsesTheOrderTimeGroupsCurrentClass(
         bool $isCreditmemo,
         bool $isVirtual,
         int $groupId,
         ?int $customerId,
         float $shippingTax,
         ?int $expectedCustomerClass,
+        ?int $expectedCustomerId,
         float $expected,
         string $case
     ): void {
@@ -442,7 +444,7 @@ class ShippingTaxRateTest extends TestCase
 
         $this->assertSame($expected, $rate, $case);
         $this->assertSame(
-            [[$shippingAddress ?? $billingAddress, $billingAddress, $expectedCustomerClass, 1, $customerId]],
+            [[$shippingAddress ?? $billingAddress, $billingAddress, $expectedCustomerClass, 1, $expectedCustomerId]],
             $this->rateRequests,
             $case
         );
@@ -451,13 +453,14 @@ class ShippingTaxRateTest extends TestCase
     public static function customerTaxClassCases(): array
     {
         return [
-            [false, false, 0, null, 25.00, 3, 0.25, 'guest: NOT LOGGED IN class'],
-            [false, false, 2, 42, 12.00, 10, 0.12, 'capture after a customer group change: order-time class'],
-            [false, false, 2, 43, 12.00, 10, 0.12, 'deleted customer: order-time class, no customer lookup'],
-            [false, false, 99, 42, 25.00, null, 0.25, 'order group deleted: core falls back to the current group'],
-            [true, false, 2, 42, 12.00, 10, 0.12, 'refund after a customer group change: order-time class'],
-            [true, false, 2, 42, 6.00, 10, 0.12, 'partial credit memo: order-time rate on the refunded shipping'],
-            [false, true, 2, 42, 12.00, 10, 0.12, 'virtual order: billing stands in for shipping'],
+            [false, false, 0, null, 25.00, 3, null, 0.25, 'guest: NOT LOGGED IN class'],
+            [false, false, 2, 42, 12.00, 10, 42, 0.12, 'capture after a customer group change: order-time group'],
+            [false, false, 2, 43, 12.00, 10, 43, 0.12, 'deleted customer: order-time group, no customer lookup'],
+            [false, false, 99, 42, 25.00, null, null, 0.25, 'order group deleted: NOT LOGGED IN class'],
+            [false, false, 99, 43, 25.00, null, null, 0.25, 'order group and customer deleted: NOT LOGGED IN class'],
+            [true, false, 2, 42, 12.00, 10, 42, 0.12, 'refund after a customer group change: order-time group'],
+            [true, false, 2, 42, 6.00, 10, 42, 0.12, 'partial credit memo: order-time rate on the refunded shipping'],
+            [false, true, 2, 42, 12.00, 10, 42, 0.12, 'virtual order: billing stands in for shipping'],
         ];
     }
 
