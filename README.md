@@ -111,6 +111,37 @@ overlay's own tab only if it names
 Both settings are per store view, so you can trial them on one storefront
 before rolling them out.
 
+## Upgrading to 4.0
+
+4.0 removes the plugin's own shipping tax settings: the **Default shipping tax
+class** field and the deprecated flat-percentage **Default shipping tax rate**
+field. `setup:upgrade` deletes their stored values and does not carry them
+over anywhere.
+
+Where Magento records no tax rate for a taxed shipping line, the fallback now
+uses Magento's own **Stores > Configuration > Sales > Tax > Tax Classes > Tax
+Class for Shipping**, and only on stores where the fallback has been enabled
+(see below). A store that relied on the removed fields refuses such orders
+until both are in place. This includes orders placed on 3.x: their capture,
+refund and shipment are refused after upgrading unless the fallback is enabled
+and core's Tax Class for Shipping is set.
+
+## Shipping tax fallback
+
+When a taxed shipping line reaches the plugin with no tax rate recorded by
+Magento, the order, capture, refund or shipment is refused. A fallback that
+resolves the rate from Magento's own **Tax > Tax Classes > Tax Class for
+Shipping** exists, but it is off by default and has no admin field. Contact Two
+before enabling it for a store:
+
+```bash
+bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
+bin/magento cache:flush config
+```
+
+On a brand overlay the path is `payment/<brand code>/enable_shipping_tax_fallback`.
+Untaxed shipping is sent at 0% whether or not the fallback is enabled.
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.

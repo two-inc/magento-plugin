@@ -3,16 +3,22 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\GroupRepositoryInterface;
+use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Tax\Api\Data\OrderTaxDetailsAppliedTaxInterface;
 use Magento\Tax\Api\Data\OrderTaxDetailsInterface;
 use Magento\Tax\Api\Data\OrderTaxDetailsItemInterface;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order;
+use Two\Gateway\Service\Order\ComposeOrder;
 
 /**
  * TWO-25503: the shipping line's tax_rate is whatever Magento's tax engine
@@ -22,43 +28,68 @@ use Two\Gateway\Service\Order;
  * line's own amounts.
  *
  * Where nothing is declared: an untaxed line is 0% (a statement, not a
- * guess); a taxed line falls back to the merchant's declared default rate,
- * and refuses the order when that is unset.
+ * guess); a taxed line falls back to Magento's own shipping tax class
+ * (tax/classes/shipping_tax_class), and refuses the order when that is unset.
  */
 class ShippingTaxRateTest extends TestCase
 {
-    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
-    private $logRepository;
+    /** Tax class of each customer group; group 0 is NOT LOGGED IN. */
+    private const CLASS_BY_GROUP = [0 => 3, 1 => 3, 2 => 10];
+
+    /** Customer id => tax class of their CURRENT group; customer 43 was deleted. */
+    private const CURRENT_CLASS_BY_CUSTOMER = [42 => 11];
+
+    /** Percent keyed "<store>/<product class>/<customer class>". */
+    private const RATES = ['1/5/3' => 25.0, '1/5/10' => 12.0, '1/5/11' => 20.0, '2/7/3' => 15.0, '1/6/3' => 0.0];
+
+    /** @var array<int, array> getRateRequest() arguments, one entry per call */
+    private $rateRequests = [];
 
     /**
      * @param float|null $declaredPercent percent Magento declares for shipping, null for none
-     * @param float|null $fallbackPercent merchant-configured deprecated flat-rate default, null for unset
-     * @param int|null $taxClassId configured default_shipping_tax_class, null for unset
-     * @param TaxCalculation|null $taxCalculation stub/mock resolving the tax-class rate; a fresh
-     *        real stub (always resolves to 0.0) when omitted
+     * @param array<int, int> $classByStore core tax/classes/shipping_tax_class per store id, absent for unset
+     * @param array<int, bool> $fallbackByStore enable_shipping_tax_fallback per store id, absent for off
+     * @param string $service the Order subclass under test, which decides the refusal wording
      * @return Order|\PHPUnit\Framework\MockObject\MockObject
      */
     private function orderService(
         ?float $declaredPercent,
-        ?float $fallbackPercent = null,
-        ?int $taxClassId = null,
-        ?TaxCalculation $taxCalculation = null
+        array $classByStore = [],
+        array $fallbackByStore = [1 => true, 2 => true],
+        string $service = Order::class
     ) {
-        $orderService = $this->getMockForAbstractClass(Order::class, [], '', false);
+        $orderService = $this->getMockForAbstractClass($service, [], '', false);
 
-        $this->logRepository = $this->createMock(LogRepository::class);
         $configRepository = $this->createMock(ConfigRepository::class);
-        $configRepository->method('getDefaultShippingTaxRate')->willReturn($fallbackPercent);
-        $configRepository->method('getDefaultShippingTaxClassId')->willReturn($taxClassId);
+        $configRepository->method('isShippingTaxFallbackEnabled')->willReturnCallback(
+            static fn (?int $storeId) => $fallbackByStore[$storeId] ?? false
+        );
+        $configRepository->method('getShippingTaxClassId')->willReturnCallback(
+            static fn (?int $storeId) => $classByStore[$storeId] ?? null
+        );
         $orderService->configRepository = $configRepository;
 
-        $this->setProperty($orderService, 'logRepository', $this->logRepository);
-        $this->setProperty(
-            $orderService,
-            'orderTaxManagement',
-            $this->taxManagement($declaredPercent)
+        $groupRepository = $this->createMock(GroupRepositoryInterface::class);
+        $groupRepository->method('getById')->willReturnCallback(
+            static fn ($id) => new DataObject([
+                'taxClassId' => self::CLASS_BY_GROUP[$id] ?? throw NoSuchEntityException::singleField('id', $id),
+            ])
         );
-        $this->setProperty($orderService, 'taxCalculation', $taxCalculation ?? new TaxCalculation());
+
+        $this->setProperty($orderService, 'logRepository', $this->createMock(LogRepository::class));
+        $this->setProperty($orderService, 'orderTaxManagement', $this->taxManagement($declaredPercent));
+        $this->setProperty($orderService, 'taxCalculation', $this->taxCalculation());
+        $this->setProperty($orderService, 'groupRepository', $groupRepository);
+        $customerRepository = $this->createMock(CustomerRepositoryInterface::class);
+        $customerRepository->method('getById')->willReturnCallback(
+            static fn ($id) => isset(self::CURRENT_CLASS_BY_CUSTOMER[$id])
+                ? new DataObject(['id' => $id])
+                : throw NoSuchEntityException::singleField('customerId', $id)
+        );
+        $this->setProperty($orderService, 'customerRepository', $customerRepository);
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getProvider')->willReturn('Acme');
+        $this->setProperty($orderService, 'brandRegistry', $brandRegistry);
 
         return $orderService;
     }
@@ -68,6 +99,33 @@ class ShippingTaxRateTest extends TestCase
         $property = new \ReflectionProperty(Order::class, $name);
         $property->setAccessible(true);
         $property->setValue($target, $value);
+    }
+
+    /**
+     * Core's getRateRequest()/getRate(): a null customer tax class makes core
+     * read the customer's CURRENT group, and a deleted customer throws there
+     * (Tax\Model\Calculation::getRateRequest() @2.4.7).
+     */
+    private function taxCalculation(): TaxCalculation
+    {
+        $taxCalculation = $this->createMock(TaxCalculation::class);
+        $taxCalculation->method('getRateRequest')->willReturnCallback(
+            function ($shipping, $billing, $customerClass, $store, $customerId = null) {
+                $this->rateRequests[] = [$shipping, $billing, $customerClass, $store, $customerId];
+                $customerClass ??= $customerId
+                    ? (self::CURRENT_CLASS_BY_CUSTOMER[$customerId]
+                        ?? throw NoSuchEntityException::singleField('customerId', $customerId))
+                    : self::CLASS_BY_GROUP[0];
+                return new DataObject(['store' => $store, 'customerClassId' => $customerClass]);
+            }
+        );
+        $taxCalculation->method('getRate')->willReturnCallback(
+            static fn ($request) => self::RATES[
+                $request->getStore() . '/' . $request->getProductClassId() . '/' . $request->getCustomerClassId()
+            ] ?? 0.0
+        );
+
+        return $taxCalculation;
     }
 
     /**
@@ -113,43 +171,97 @@ class ShippingTaxRateTest extends TestCase
         return $item;
     }
 
-    private function entity(float $shippingTax, float $shippingAmount, float $shippingInclTax): object
+    /**
+     * An order, or with 'order' set a credit memo of that order, answering
+     * the getters the shipping tax path reads. Methods are declared rather
+     * than magic because the service probes them with method_exists().
+     *
+     * @param array<string, mixed> $data
+     */
+    private function entity(array $data): object
     {
-        return new class ($shippingTax, $shippingAmount, $shippingInclTax) {
-            private $shippingTax;
-            private $shippingAmount;
-            private $shippingInclTax;
+        return new class ($data + [
+            'id' => 7,
+            'order' => null,
+            'item_applied_taxes' => null,
+            'shipping_tax_amount' => 0.0,
+            'shipping_address' => null,
+            'billing_address' => null,
+            'is_virtual' => false,
+            'customer_id' => null,
+            'customer_group_id' => 0,
+            'store_id' => 1,
+        ]) {
+            /** @var array<string, mixed> */
+            private $data;
 
-            public function __construct(float $shippingTax, float $shippingAmount, float $shippingInclTax)
+            public function __construct(array $data)
             {
-                $this->shippingTax = $shippingTax;
-                $this->shippingAmount = $shippingAmount;
-                $this->shippingInclTax = $shippingInclTax;
+                $this->data = $data;
+            }
+
+            public function getId()
+            {
+                return $this->data['id'];
+            }
+
+            public function getOrder()
+            {
+                return $this->data['order'];
+            }
+
+            public function getExtensionAttributes()
+            {
+                return $this->data['item_applied_taxes'] === null ? null
+                    : new class ($this->data['item_applied_taxes']) {
+                        /** @var array */
+                        private $taxes;
+
+                        public function __construct(array $taxes)
+                        {
+                            $this->taxes = $taxes;
+                        }
+
+                        public function getItemAppliedTaxes(): array
+                        {
+                            return $this->taxes;
+                        }
+                    };
             }
 
             public function getShippingTaxAmount(): float
             {
-                return $this->shippingTax;
+                return $this->data['shipping_tax_amount'];
             }
 
-            public function getShippingAmount(): float
+            public function getShippingAddress()
             {
-                return $this->shippingAmount;
+                return $this->data['shipping_address'];
             }
 
-            public function getShippingInclTax(): float
+            public function getBillingAddress()
             {
-                return $this->shippingInclTax;
+                return $this->data['billing_address'];
             }
 
-            public function getId(): int
+            public function getIsVirtual(): bool
             {
-                return 7;
+                return $this->data['is_virtual'];
+            }
+
+            public function getCustomerId()
+            {
+                return $this->data['customer_id'];
+            }
+
+            public function getCustomerGroupId()
+            {
+                return $this->data['customer_group_id'];
             }
 
             public function getStoreId(): int
             {
-                return 1;
+                return $this->data['store_id'];
             }
 
             public function getIncrementId(): string
@@ -159,101 +271,11 @@ class ShippingTaxRateTest extends TestCase
         };
     }
 
-    /**
-     * An entity carrying its own shipping (and optionally billing) address —
-     * for the tax-class resolution path, which needs a destination.
-     */
-    private function entityWithAddress(
-        float $shippingTax,
-        float $shippingAmount,
-        float $shippingInclTax,
-        ?object $shippingAddress,
-        bool $isVirtual = false,
-        ?object $billingAddress = null
-    ): object {
-        return new class (
-            $shippingTax,
-            $shippingAmount,
-            $shippingInclTax,
-            $shippingAddress,
-            $isVirtual,
-            $billingAddress
-        ) {
-            private $shippingTax;
-            private $shippingAmount;
-            private $shippingInclTax;
-            private $shippingAddress;
-            private $isVirtual;
-            private $billingAddress;
-
-            public function __construct(
-                float $shippingTax,
-                float $shippingAmount,
-                float $shippingInclTax,
-                ?object $shippingAddress,
-                bool $isVirtual,
-                ?object $billingAddress
-            ) {
-                $this->shippingTax = $shippingTax;
-                $this->shippingAmount = $shippingAmount;
-                $this->shippingInclTax = $shippingInclTax;
-                $this->shippingAddress = $shippingAddress;
-                $this->isVirtual = $isVirtual;
-                $this->billingAddress = $billingAddress;
-            }
-
-            public function getShippingTaxAmount(): float
-            {
-                return $this->shippingTax;
-            }
-
-            public function getShippingAmount(): float
-            {
-                return $this->shippingAmount;
-            }
-
-            public function getShippingInclTax(): float
-            {
-                return $this->shippingInclTax;
-            }
-
-            public function getShippingAddress(): ?object
-            {
-                return $this->shippingAddress;
-            }
-
-            public function getIsVirtual(): bool
-            {
-                return $this->isVirtual;
-            }
-
-            public function getBillingAddress(): ?object
-            {
-                return $this->billingAddress;
-            }
-
-            public function getId(): int
-            {
-                return 9;
-            }
-
-            public function getStoreId(): int
-            {
-                return 1;
-            }
-
-            public function getIncrementId(): string
-            {
-                return '100000009';
-            }
-        };
-    }
-
     public function testDeclaredRateIsRelayedRatherThanDerived(): void
     {
         // Given Magento declares 25% on a shipping line whose amounts divide
         // to 24%; When composing; Then the declared rate wins.
-        $rate = $this->orderService(25.0)->getTaxRateShipping($this->entity(24.00, 100.00, 124.00));
+        $rate = $this->orderService(25.0)->getTaxRateShipping($this->entity(['shipping_tax_amount' => 24.00]));
 
         $this->assertSame(0.25, $rate);
     }
@@ -261,53 +283,21 @@ class ShippingTaxRateTest extends TestCase
     public function testCombinedDeclaredRatesSumToTheRateTheBuyerPaid(): void
     {
         // Given state + city tax on shipping; When composing; Then one rate.
-        $orderService = $this->getMockForAbstractClass(Order::class, [], '', false);
-        $orderService->configRepository = $this->createMock(ConfigRepository::class);
-        $this->setProperty($orderService, 'logRepository', $this->createMock(LogRepository::class));
+        $orderService = $this->orderService(null);
         $this->setProperty(
             $orderService,
             'orderTaxManagement',
             $this->taxManagementFor([$this->taxItem('shipping', [6.0, 2.5])])
         );
 
-        $this->assertSame(0.085, $orderService->getTaxRateShipping($this->entity(8.50, 100.00, 108.50)));
+        $this->assertSame(0.085, $orderService->getTaxRateShipping($this->entity(['shipping_tax_amount' => 8.50])));
     }
 
     public function testUntaxedShippingNeedsNoDeclarationAndNoFallback(): void
     {
         // Given no declared rate and no shipping tax; When composing; Then
         // 0% — no fallback consulted, no refusal.
-        $rate = $this->orderService(null)->getTaxRateShipping($this->entity(0.00, 100.00, 100.00));
-
-        $this->assertSame(0.0, $rate);
-    }
-
-    public function testTaxedShippingWithNoDeclarationUsesTheConfiguredFallback(): void
-    {
-        $orderService = $this->orderService(null, 25.0);
-        $this->logRepository->expects($this->once())->method('addDebugLog');
-
-        $this->assertSame(0.25, $orderService->getTaxRateShipping($this->entity(25.00, 100.00, 125.00)));
-    }
-
-    public function testTaxedShippingWithNoDeclarationAndNoFallbackRefusesTheOrder(): void
-    {
-        $orderService = $this->orderService(null, null);
-        $this->logRepository->expects($this->once())->method('addErrorLog');
-
-        $this->expectException(LocalizedException::class);
-        $orderService->getTaxRateShipping($this->entity(25.00, 100.00, 125.00));
-    }
-
-    /**
-     * A merchant who declares 0% has made a statement; the getter must relay
-     * it rather than treating it as "nothing configured" and refusing.
-     */
-    public function testAConfiguredZeroFallbackIsADeclarationNotAnAbsence(): void
-    {
-        $rate = $this->orderService(null, 0.0)->getTaxRateShipping($this->entity(25.00, 100.00, 125.00));
-
-        $this->assertSame(0.0, $rate);
+        $this->assertSame(0.0, $this->orderService(null)->getTaxRateShipping($this->entity([])));
     }
 
     /**
@@ -324,19 +314,14 @@ class ShippingTaxRateTest extends TestCase
         ?float $expected,
         string $case
     ): void {
-        $orderService = $this->getMockForAbstractClass(Order::class, [], '', false);
-        $configRepository = $this->createMock(ConfigRepository::class);
-        // Refuse rather than fall back, so a rate that fails to come off the
-        // extension attribute cannot be masked by the configured default.
-        $configRepository->method('getDefaultShippingTaxRate')->willReturn(null);
-        $orderService->configRepository = $configRepository;
-        $this->setProperty($orderService, 'logRepository', $this->createMock(LogRepository::class));
-
+        // No core shipping tax class, so a rate that fails to come off the
+        // extension attribute is refused rather than masked by a fallback.
+        $orderService = $this->orderService(null);
         $taxManagement = $this->createMock(OrderTaxManagementInterface::class);
         $taxManagement->expects($this->never())->method('getOrderTaxDetails');
         $this->setProperty($orderService, 'orderTaxManagement', $taxManagement);
 
-        $entity = $this->unsavedEntity(25.00, $itemAppliedTaxes);
+        $entity = $this->entity(['id' => null, 'shipping_tax_amount' => 25.00, 'item_applied_taxes' => $itemAppliedTaxes]);
 
         if ($expected === null) {
             $this->expectException(LocalizedException::class);
@@ -376,165 +361,166 @@ class ShippingTaxRateTest extends TestCase
         ];
     }
 
+    // ── TWO-26073: no declared rate falls back to core's
+    // tax/classes/shipping_tax_class, resolved per store ────────────────
+
     /**
-     * An order whose id is null and whose extension attribute carries the
-     * shipping-typed entry from quote->order conversion.
+     * Resolves the rate, then runs the shipping line through the same
+     * reconciliation gate ComposeOrder applies; null means refused.
+     *
+     * @param array<int, int> $classByStore
+     * @dataProvider coreShippingTaxClassCases
      */
-    private function unsavedEntity(float $shippingTax, array $itemAppliedTaxes): object
-    {
-        return new class ($shippingTax, $itemAppliedTaxes) {
-            private $shippingTax;
-            private $extensionAttributes;
+    public function testShippingTaxRateFallsBackToTheCoreShippingTaxClass(
+        ?float $declaredPercent,
+        int $storeId,
+        array $classByStore,
+        float $net,
+        float $shippingTax,
+        float $discount,
+        ?float $expected,
+        string $case
+    ): void {
+        $orderService = $this->orderService($declaredPercent, $classByStore);
+        $entity = $this->entity([
+            'shipping_tax_amount' => $shippingTax,
+            'shipping_address' => new DataObject(['country_id' => 'NO']),
+            'store_id' => $storeId,
+        ]);
 
-            public function __construct(float $shippingTax, array $itemAppliedTaxes)
-            {
-                $this->shippingTax = $shippingTax;
-                $this->extensionAttributes = new class ($itemAppliedTaxes) {
-                    private $itemAppliedTaxes;
+        try {
+            $rate = $orderService->getTaxRateShipping($entity);
+            $orderService->validateTaxReconciliation([[
+                'order_item_id' => 'shipping',
+                'net_amount' => $net,
+                'tax_amount' => $shippingTax,
+                'discount_amount' => $discount,
+                'tax_rate' => $rate,
+                'quantity' => 1,
+            ]]);
+        } catch (LocalizedException $e) {
+            $rate = null;
+        }
 
-                    public function __construct(array $itemAppliedTaxes)
-                    {
-                        $this->itemAppliedTaxes = $itemAppliedTaxes;
-                    }
-
-                    public function getItemAppliedTaxes(): array
-                    {
-                        return $this->itemAppliedTaxes;
-                    }
-                };
-            }
-
-            public function getShippingTaxAmount(): float
-            {
-                return $this->shippingTax;
-            }
-
-            public function getExtensionAttributes(): object
-            {
-                return $this->extensionAttributes;
-            }
-
-            public function getId(): ?int
-            {
-                return null;
-            }
-
-            public function getStoreId(): int
-            {
-                return 1;
-            }
-
-            public function getIncrementId(): string
-            {
-                return '100000008';
-            }
-        };
+        $this->assertSame($expected, $rate, $case);
     }
 
-    // ── TWO-25386: default_shipping_tax_class, the tax-rules-engine
-    // fallback that supersedes the deprecated flat-rate field ────────────
-
-    public function testTaxClassResolutionTakesPrecedenceOverTheLegacyFlatRate(): void
+    public static function coreShippingTaxClassCases(): array
     {
-        // Given both the new tax-class fallback AND the deprecated flat
-        // rate are configured; When resolving; Then the tax class wins and
-        // the flat rate is never consulted.
-        $address = new \Magento\Framework\DataObject(['country_id' => 'DE']);
-        $taxCalculation = $this->createMock(TaxCalculation::class);
-        $taxCalculation->method('getRateRequest')->willReturn(new \Magento\Framework\DataObject());
-        $taxCalculation->method('getRate')->willReturn(19.0);
-
-        $orderService = $this->orderService(null, 25.0, 5, $taxCalculation);
-        $this->logRepository->expects($this->once())->method('addDebugLog');
-
-        $rate = $orderService->getTaxRateShipping(
-            $this->entityWithAddress(19.00, 100.00, 119.00, $address)
-        );
-
-        $this->assertSame(0.19, $rate);
+        return [
+            [19.0, 1, [1 => 5], 100.00, 19.00, 0.00, 0.19, 'declared rate present: relayed, core class not consulted'],
+            [null, 1, [1 => 5], 100.00, 25.00, 0.00, 0.25, 'no declared rate: resolved via the core shipping tax class'],
+            [null, 1, [], 100.00, 25.00, 0.00, null, 'core shipping tax class None (0) or unset, shipping taxed: refused'],
+            [null, 1, [], 100.00, 0.00, 0.00, 0.0, 'core shipping tax class None (0) or unset, shipping untaxed: 0%'],
+            [0.0, 1, [], 100.00, 0.00, 0.00, 0.0, 'core shipping tax class None (0) or unset, declared 0%: accepted'],
+            [null, 1, [1 => 5], 100.00, 19.00, 0.00, null, 'core class rate does not reconcile with the shipping tax: refused'],
+            [null, 2, [1 => 5, 2 => 7], 100.00, 15.00, 0.00, 0.15, 'multi-store: store 2 reads its own class and rate'],
+            [null, 1, [1 => 6], 100.00, 0.01, 0.00, 0.0, 'zero-rate class within tolerance: a real resolution, not unset'],
+            [null, 1, [1 => 6], 100.00, 5.00, 0.00, null, 'zero-rate class with tax above tolerance: refused'],
+            [null, 1, [1 => 5], 80.00, 20.00, 20.00, 0.25, 'shipping discount: class rate on the discounted base'],
+        ];
     }
 
     /**
-     * A destination with no matching Tax Rule is a real resolution
-     * (untaxed there), not "unset" — must not fall through to the
-     * deprecated flat rate or refuse the order.
+     * getRateRequest() gets core's quote-time arguments: shipping and
+     * billing separately, the store, the current tax class of the order-time
+     * group, and the customer id. sales_order stores no customer tax class,
+     * so a class edit on that group since placement still changes the rate.
+     *
+     * @dataProvider customerTaxClassCases
      */
-    public function testTaxClassResolvingToZeroIsAcceptedNotTreatedAsUnset(): void
-    {
-        $taxCalculation = $this->createMock(TaxCalculation::class);
-        $taxCalculation->method('getRateRequest')->willReturn(new \Magento\Framework\DataObject());
-        $taxCalculation->method('getRate')->willReturn(0.0);
+    public function testCoreClassResolutionUsesTheOrderTimeGroupsCurrentClass(
+        bool $isCreditmemo,
+        bool $isVirtual,
+        int $groupId,
+        ?int $customerId,
+        float $shippingTax,
+        ?int $expectedCustomerClass,
+        ?int $expectedCustomerId,
+        float $expected,
+        string $case
+    ): void {
+        $shippingAddress = $isVirtual ? null : new DataObject(['country_id' => 'NO']);
+        $billingAddress = new DataObject(['country_id' => 'SE']);
+        $order = $this->entity([
+            'shipping_tax_amount' => 12.00,
+            'shipping_address' => $shippingAddress,
+            'billing_address' => $billingAddress,
+            'is_virtual' => $isVirtual,
+            'customer_id' => $customerId,
+            'customer_group_id' => $groupId,
+        ]);
+        $entity = $isCreditmemo ? $this->entity(['order' => $order, 'shipping_tax_amount' => $shippingTax]) : $order;
 
-        $orderService = $this->orderService(null, 25.0, 5, $taxCalculation);
+        $rate = $this->orderService(null, [1 => 5])->getTaxRateShipping($entity);
 
-        $rate = $orderService->getTaxRateShipping(
-            $this->entityWithAddress(0.01, 100.00, 100.01, new \Magento\Framework\DataObject())
+        $this->assertSame($expected, $rate, $case);
+        $this->assertSame(
+            [[$shippingAddress ?? $billingAddress, $billingAddress, $expectedCustomerClass, 1, $expectedCustomerId]],
+            $this->rateRequests,
+            $case
         );
-
-        $this->assertSame(0.0, $rate);
     }
 
-    public function testTaxClassResolutionUsesTheShippingAddress(): void
+    public static function customerTaxClassCases(): array
     {
-        $shippingAddress = new \Magento\Framework\DataObject(['country_id' => 'NO']);
-        $seenAddresses = [];
-        $taxCalculation = $this->createMock(TaxCalculation::class);
-        $taxCalculation->method('getRateRequest')->willReturnCallback(
-            function ($shipping, $billing, $customerTaxClass, $storeId) use (&$seenAddresses) {
-                $seenAddresses[] = $shipping;
-                return new \Magento\Framework\DataObject();
-            }
-        );
-        $taxCalculation->method('getRate')->willReturn(25.0);
-
-        $orderService = $this->orderService(null, null, 3, $taxCalculation);
-        $orderService->getTaxRateShipping(
-            $this->entityWithAddress(25.00, 100.00, 125.00, $shippingAddress)
-        );
-
-        $this->assertSame([$shippingAddress], $seenAddresses);
+        return [
+            [false, false, 0, null, 25.00, 3, null, 0.25, 'guest: NOT LOGGED IN class'],
+            [false, false, 2, 42, 12.00, 10, 42, 0.12, 'capture after a customer group change: order-time group'],
+            [false, false, 2, 43, 12.00, 10, 43, 0.12, 'deleted customer: order-time group, no customer lookup'],
+            [false, false, 99, 42, 20.00, null, 42, 0.20, 'order group deleted, customer alive: current group class'],
+            [false, false, 99, 43, 25.00, null, null, 0.25, 'order group and customer deleted: NOT LOGGED IN class'],
+            [true, false, 2, 42, 12.00, 10, 42, 0.12, 'refund after a customer group change: order-time group'],
+            [true, false, 2, 42, 6.00, 10, 42, 0.12, 'partial credit memo: order-time rate on the refunded shipping'],
+            [false, true, 2, 42, 12.00, 10, 42, 0.12, 'virtual order: billing stands in for shipping'],
+        ];
     }
 
-    public function testTaxClassResolutionFallsBackToBillingAddressForAVirtualOrder(): void
-    {
-        // Given a virtual order (no shipping address exists at all); When
-        // resolving the destination; Then billing stands in, same fallback
-        // getAddress() applies elsewhere in this class.
-        $billingAddress = new \Magento\Framework\DataObject(['country_id' => 'SE']);
-        $seenAddresses = [];
-        $taxCalculation = $this->createMock(TaxCalculation::class);
-        $taxCalculation->method('getRateRequest')->willReturnCallback(
-            function ($shipping, $billing, $customerTaxClass, $storeId) use (&$seenAddresses) {
-                $seenAddresses[] = $shipping;
-                return new \Magento\Framework\DataObject();
-            }
-        );
-        $taxCalculation->method('getRate')->willReturn(25.0);
+    // ── TWO-26082: the fallback is off unless enabled per store by CLI ──
 
-        $orderService = $this->orderService(null, null, 3, $taxCalculation);
-        $orderService->getTaxRateShipping(
-            $this->entityWithAddress(25.00, 100.00, 125.00, null, true, $billingAddress)
-        );
+    private const MERCHANT_DISABLED = 'Shipping tax could not be determined for this order: Magento recorded no'
+        . ' shipping tax rate and the shipping tax fallback is not enabled for this store.'
+        . ' Contact Acme to enable it.';
 
-        $this->assertSame([$billingAddress], $seenAddresses);
+    private const BUYER_REFUSAL = 'This order could not be placed. Please contact the merchant.';
+
+    /**
+     * @param array<int, bool> $fallbackByStore
+     * @dataProvider fallbackFlagCases
+     */
+    public function testShippingTaxFallbackIsOffUnlessEnabledForTheStore(
+        string $service,
+        int $storeId,
+        array $fallbackByStore,
+        float $shippingTax,
+        $expected,
+        string $case
+    ): void {
+        $orderService = $this->orderService(null, [1 => 5, 2 => 7], $fallbackByStore, $service);
+        $entity = $this->entity([
+            'shipping_tax_amount' => $shippingTax,
+            'shipping_address' => new DataObject(['country_id' => 'NO']),
+            'store_id' => $storeId,
+        ]);
+
+        try {
+            $actual = $orderService->getTaxRateShipping($entity);
+        } catch (LocalizedException $e) {
+            $actual = $e->getMessage();
+        }
+
+        $this->assertSame($expected, $actual, $case);
     }
 
-    public function testLegacyFlatRateStillResolvesWhenNoTaxClassIsConfigured(): void
+    public static function fallbackFlagCases(): array
     {
-        // A pre-existing merchant who never touches default_shipping_tax_class
-        // keeps their configured flat rate working exactly as before.
-        $rate = $this->orderService(null, 25.0, null)
-            ->getTaxRateShipping($this->entity(25.00, 100.00, 125.00));
-
-        $this->assertSame(0.25, $rate);
-    }
-
-    public function testBothUnsetStillRefusesTheOrder(): void
-    {
-        $orderService = $this->orderService(null, null, null);
-        $this->logRepository->expects($this->once())->method('addErrorLog');
-
-        $this->expectException(LocalizedException::class);
-        $orderService->getTaxRateShipping($this->entity(25.00, 100.00, 125.00));
+        return [
+            [Order::class, 1, [], 25.00, self::MERCHANT_DISABLED, 'disabled, needs fallback: refused at capture/refund'],
+            [ComposeOrder::class, 1, [], 25.00, self::BUYER_REFUSAL, 'disabled, needs fallback: refused at placement'],
+            [Order::class, 1, [1 => true], 25.00, 0.25, 'enabled, needs fallback: resolved via core class'],
+            [Order::class, 1, [], 0.00, 0.0, 'disabled, untaxed shipping: 0% accepted'],
+            [Order::class, 2, [2 => true], 15.00, 0.15, 'scope: enabled on store 2 only, store 2 resolves'],
+            [Order::class, 1, [2 => true], 25.00, self::MERCHANT_DISABLED, 'scope: enabled on store 2 only, store 1 refused'],
+        ];
     }
 }

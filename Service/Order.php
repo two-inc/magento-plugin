@@ -13,8 +13,12 @@ use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\ResourceModel\Category\Collection;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\App\Area;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Phrase;
 use Magento\Framework\Url;
 use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
@@ -28,6 +32,7 @@ use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
 use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
@@ -116,6 +121,21 @@ abstract class Order
     private $orderTaxCollectionFactory;
 
     /**
+     * @var GroupRepositoryInterface
+     */
+    private $groupRepository;
+
+    /**
+     * @var CustomerRepositoryInterface
+     */
+    private $customerRepository;
+
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -129,6 +149,9 @@ abstract class Order
      * @param OrderTaxManagementInterface $orderTaxManagement
      * @param TaxCalculation $taxCalculation
      * @param OrderTaxCollectionFactory $orderTaxCollectionFactory
+     * @param GroupRepositoryInterface $groupRepository
+     * @param BrandRegistryInterface $brandRegistry
+     * @param CustomerRepositoryInterface $customerRepository
      */
     public function __construct(
         Image $imageHelper,
@@ -141,7 +164,10 @@ abstract class Order
         FeeLineProviderPool $feeLineProviderPool,
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
-        OrderTaxCollectionFactory $orderTaxCollectionFactory
+        OrderTaxCollectionFactory $orderTaxCollectionFactory,
+        GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -154,6 +180,9 @@ abstract class Order
         $this->orderTaxManagement = $orderTaxManagement;
         $this->taxCalculation = $taxCalculation;
         $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
+        $this->groupRepository = $groupRepository;
+        $this->brandRegistry = $brandRegistry;
+        $this->customerRepository = $customerRepository;
     }
 
     /**
@@ -570,7 +599,8 @@ abstract class Order
      * @param OrderModel|CreditmemoModel $entity
      * @return float
      * @throws LocalizedException when shipping is taxed, no rate is declared
-     *                            and the merchant configured no fallback
+     *                            and the fallback is off or core's shipping
+     *                            tax class is unset
      */
     public function getTaxRateShipping($entity): float
     {
@@ -588,80 +618,140 @@ abstract class Order
         }
 
         $storeId = (int)$entity->getStoreId();
-
-        // Primary fallback: resolve the rate through Magento's tax rules
-        // engine for the configured Product Tax Class against the order's
-        // shipping destination — the same mechanism a product line's own
-        // tax is resolved through, rather than a merchant-typed flat
-        // percentage. TWO-25386.
-        $taxClassId = $this->configRepository->getDefaultShippingTaxClassId($storeId);
-        if ($taxClassId !== null) {
-            $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
-            $this->logRepository->addDebugLog(
-                'ShippingTaxRateFallback',
+        if (!$this->configRepository->isShippingTaxFallbackEnabled($storeId)) {
+            $this->logRepository->addErrorLog(
+                'ShippingTaxFallbackDisabled',
                 sprintf(
-                    'Using the tax-rules-engine rate %.6F%% for entity %s (Product Tax Class %d): '
-                    . 'Magento declared no rate for a taxed shipping line.',
-                    $rate * 100,
+                    'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
+                    . 'and the shipping tax fallback (enable_shipping_tax_fallback) is off for store %d. '
+                    . 'Refusing rather than deriving a rate.',
+                    $this->getTaxAmountShipping($entity),
                     $entity->getIncrementId(),
-                    $taxClassId
+                    $storeId
                 )
             );
-            return $rate;
+            throw new LocalizedException($this->shippingTaxRefusal(false));
         }
 
-        // Deprecated fallback: only consulted once the primary mechanism
-        // above is unconfigured, for merchants who set the flat rate
-        // before default_shipping_tax_class existed.
-        $fallbackPercent = $this->configRepository->getDefaultShippingTaxRate($storeId);
-        if ($fallbackPercent === null) {
+        $taxClassId = $this->configRepository->getShippingTaxClassId($storeId);
+        if ($taxClassId === null) {
             $this->logRepository->addErrorLog(
                 'ShippingTaxRateUnresolvable',
                 sprintf(
                     'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
-                    . 'and no default shipping tax rate is configured. Refusing rather than deriving a rate.',
+                    . 'and no shipping tax class (tax/classes/shipping_tax_class) is configured. '
+                    . 'Refusing rather than deriving a rate.',
                     $this->getTaxAmountShipping($entity),
                     $entity->getIncrementId()
                 )
             );
-            throw new LocalizedException(
-                __('This order could not be placed. Please contact the merchant.')
-            );
+            throw new LocalizedException($this->shippingTaxRefusal(true));
         }
 
+        $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
         $this->logRepository->addDebugLog(
             'ShippingTaxRateFallback',
             sprintf(
-                'Using the configured default shipping tax rate %.6F%% for entity %s: '
+                'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
                 . 'Magento declared no rate for a taxed shipping line.',
-                $fallbackPercent,
-                $entity->getIncrementId()
+                $rate * 100,
+                $entity->getIncrementId(),
+                $taxClassId
             )
         );
+        return $rate;
+    }
 
-        return $fallbackPercent / 100;
+    /**
+     * Refusal for a taxed shipping line with no resolvable rate. Capture,
+     * refund and shipment run after placement, so this default speaks to
+     * the merchant; ComposeOrder overrides it with the buyer's wording.
+     *
+     * @param bool $fallbackEnabled false when the fallback is off for the store (TWO-26082)
+     */
+    protected function shippingTaxRefusal(bool $fallbackEnabled): Phrase
+    {
+        if (!$fallbackEnabled) {
+            return __(
+                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store. Contact %1 to enable it.',
+                $this->brandRegistry->getProvider()
+            );
+        }
+        return __(
+            'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and no Tax Class for Shipping is set (Stores > Configuration > Sales > Tax > Tax Classes).'
+        );
     }
 
     /**
      * Resolves a shipping tax rate through Magento's tax rules engine for
-     * the given Product Tax Class against the entity's shipping
-     * destination — mirrors Repository::getDefaultTaxRate()'s
-     * getRateRequest()/getRate() call, but destination-aware (that one
-     * resolves the store's overall default with no address at all).
+     * core's shipping tax class, with the getRateRequest() arguments core's
+     * quote-time calculator uses (Tax\Model\Calculation\AbstractCalculator::
+     * getAddressRateRequest()): shipping and billing separately so
+     * tax/calculation/based_on picks, the store, the current tax class of
+     * the order-time customer group, and the customer id, which core reads
+     * for its default-address fallback.
+     *
+     * Once that group is deleted the class is null, as in core's
+     * Quote::getCustomerTaxClassId(): core then uses the customer's current
+     * group, or NOT LOGGED IN for a guest or a customer who is also deleted.
+     *
+     * sales_order stores no customer tax class, so a class edit on that
+     * group since placement still changes the rate.
      *
      * A destination with no matching Tax Rule resolves to 0.0, same as an
-     * ordinary product line in an untaxed region — not a refusal, since a
-     * merchant selecting a real Product Tax Class has made a rate
-     * decision, however it resolves per destination.
+     * ordinary product line in an untaxed region.
      *
      * @param OrderModel|CreditmemoModel $entity
      */
     private function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
     {
-        $address = $this->resolveShippingAddressForTax($entity);
-        $request = $this->taxCalculation->getRateRequest($address, $address, null, $storeId);
+        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+        $customerTaxClassId = $this->resolveCustomerTaxClassId($order);
+        $customerId = method_exists($order, 'getCustomerId') ? $order->getCustomerId() : null;
+        // A null class with a customer id makes core load that customer, which throws once they are deleted.
+        if ($customerTaxClassId === null && $customerId && !$this->customerExists((int)$customerId)) {
+            $customerId = null;
+        }
+        $request = $this->taxCalculation->getRateRequest(
+            $this->resolveShippingAddressForTax($order),
+            method_exists($order, 'getBillingAddress') ? $order->getBillingAddress() : null,
+            $customerTaxClassId,
+            $storeId,
+            $customerId
+        );
         $request->setProductClassId($taxClassId);
         return (float)$this->taxCalculation->getRate($request) / 100;
+    }
+
+    /**
+     * Current tax class of the customer group the order was placed under,
+     * resolved as core's Quote::getCustomerTaxClassId() does. NULL when the
+     * order has no group or it no longer exists, leaving getRateRequest() to
+     * resolve the class from the customer id.
+     *
+     * @param OrderModel $order
+     */
+    private function resolveCustomerTaxClassId($order): ?int
+    {
+        $groupId = method_exists($order, 'getCustomerGroupId') ? $order->getCustomerGroupId() : null;
+        if ($groupId === null) {
+            return null;
+        }
+        try {
+            return (int)$this->groupRepository->getById((int)$groupId)->getTaxClassId();
+        } catch (NoSuchEntityException $e) {
+            return null;
+        }
+    }
+
+    private function customerExists(int $customerId): bool
+    {
+        try {
+            $this->customerRepository->getById($customerId);
+            return true;
+        } catch (NoSuchEntityException $e) {
+            return false;
+        }
     }
 
     /**
@@ -669,15 +759,11 @@ abstract class Order
      * shipping address, falling back to billing for a virtual order (no
      * shipping address exists) — same fallback getAddress() applies.
      *
-     * @param OrderModel|CreditmemoModel $entity
+     * @param OrderModel $order
      * @return \Magento\Sales\Model\Order\Address|null
      */
-    private function resolveShippingAddressForTax($entity)
+    private function resolveShippingAddressForTax($order)
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder()
-            ? $entity->getOrder()
-            : $entity;
-
         if (!method_exists($order, 'getShippingAddress')) {
             return null;
         }

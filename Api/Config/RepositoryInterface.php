@@ -58,6 +58,8 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_TAX_CLASS_ID = 'payment/two_payment/surcharge_tax_class';
     public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
+    public const XML_PATH_SHIPPING_TAX_CLASS = 'tax/classes/shipping_tax_class';
+    public const XML_PATH_ENABLE_SHIPPING_TAX_FALLBACK = 'payment/two_payment/enable_shipping_tax_fallback';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 
@@ -161,38 +163,26 @@ interface RepositoryInterface
     public function isTaxSubtotalsEnabled(?int $storeId = null): bool;
 
     /**
-     * DEPRECATED FIELD: merchant-declared fallback shipping tax rate, as a
-     * flat percentage. Superseded by getDefaultShippingTaxClassId()'s
-     * tax-rules-engine resolution; retained only for pre-existing
-     * merchants (TWO-25386) and consulted only when that is unset.
-     *
-     * Only consulted when Magento's tax engine declares no rate at all for a
-     * taxed shipping line (TWO-25503). NULL when unset — the plugin refuses
-     * the order rather than assuming a rate.
-     *
-     * @param int|null $storeId
-     *
-     * @return float|null
-     */
-    public function getDefaultShippingTaxRate(?int $storeId = null): ?float;
-
-    /**
-     * Product Tax Class id used to resolve a fallback shipping tax rate
-     * through Magento's tax rules engine (destination-aware, rule-driven —
-     * the same mechanism a product line's own tax is resolved through) when
-     * Magento declares no rate at all for a taxed shipping line (TWO-25503).
-     * Primary mechanism (TWO-25386); getDefaultShippingTaxRate() is the
-     * deprecated flat-rate fallback consulted only when this is unset.
-     *
-     * Returns null when unconfigured. A value of 0 is a valid selection
-     * ("None"): no tax rule can match class id 0, so the fallback resolves
-     * to untaxed.
+     * Magento core's shipping Product Tax Class (tax/classes/shipping_tax_class)
+     * at store scope, as core's own tax collector reads it. NULL when unset
+     * (core stores 0, "None", which no tax rule can match).
      *
      * @param int|null $storeId
      *
      * @return int|null
      */
-    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int;
+    public function getShippingTaxClassId(?int $storeId = null): ?int;
+
+    /**
+     * Whether a taxed shipping line with no declared rate may resolve its
+     * rate through getShippingTaxClassId() (TWO-26082). Off unless set by
+     * `bin/magento config:set`; it has no admin field.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isShippingTaxFallbackEnabled(?int $storeId = null): bool;
 
     /**
      * Check if department is enabled

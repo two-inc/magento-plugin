@@ -10,8 +10,11 @@ namespace Two\Gateway\Service\Order;
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Phrase;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -19,6 +22,7 @@ use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
@@ -46,7 +50,10 @@ class ComposeOrder extends OrderService
         FeeLineProviderPool $feeLineProviderPool,
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
-        OrderTaxCollectionFactory $orderTaxCollectionFactory
+        OrderTaxCollectionFactory $orderTaxCollectionFactory,
+        GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository
     ) {
         parent::__construct(
             $imageHelper,
@@ -59,9 +66,20 @@ class ComposeOrder extends OrderService
             $feeLineProviderPool,
             $orderTaxManagement,
             $taxCalculation,
-            $orderTaxCollectionFactory
+            $orderTaxCollectionFactory,
+            $groupRepository,
+            $brandRegistry,
+            $customerRepository
         );
         $this->checkoutSession = $checkoutSession;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function shippingTaxRefusal(bool $fallbackEnabled): Phrase
+    {
+        return __('This order could not be placed. Please contact the merchant.');
     }
 
     /**

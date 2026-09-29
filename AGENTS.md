@@ -1066,9 +1066,21 @@ consumers (capture, refund).
 
 Nothing declared and no shipping tax charged is 0% — a store whose shipping
 is untaxed records no tax row at all, and 0% is a statement rather than a
-guess. Nothing declared but tax charged consults the "Default Shipping Tax
-Rate" admin field, and with that unset the order is refused rather than
-given an assumed rate.
+guess. Nothing declared but tax charged is refused unless the shipping tax
+fallback is enabled for the store (TWO-26082); it has no admin field, so a
+merchant only gets it after talking to us:
+
+```
+bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
+```
+
+(`payment/<brand code>/...` on an overlay; drop the scope flags for the whole
+install.) With the fallback enabled, the rate resolves through Magento
+core's own shipping tax class (`tax/classes/shipping_tax_class`, store scope)
+and the tax rules engine, with the arguments core's quote-time tax calculator
+uses, including the tax class of the customer group the order was placed under
+(TWO-26073). With that class unset the order is refused rather than given an
+assumed rate. The plugin has no shipping tax setting of its own.
 
 `validateTaxReconciliation()` closes the same loop at composition time: a
 line whose declared tax does not follow from its own declared rate and net

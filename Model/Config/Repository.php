@@ -296,24 +296,19 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getDefaultShippingTaxRate(?int $storeId = null): ?float
+    public function getShippingTaxClassId(?int $storeId = null): ?int
     {
-        return StoredRate::normalise($this->getConfig($this->path('default_shipping_tax_rate'), $storeId));
+        // Same int cast as core's Tax\Model\Config::getShippingTaxClass().
+        $classId = (int)$this->getConfig(self::XML_PATH_SHIPPING_TAX_CLASS, $storeId);
+        return $classId > 0 ? $classId : null;
     }
 
     /**
      * @inheritDoc
      */
-    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int
+    public function isShippingTaxFallbackEnabled(?int $storeId = null): bool
     {
-        $configured = $this->getConfig($this->path('default_shipping_tax_class'), $storeId);
-        // Unselected ('' / unset) or non-numeric never int-casts to 0 —
-        // class id 0 is a real selection ("None"), same convention as
-        // getSurchargeTaxClassId().
-        if ($configured === null || $configured === '' || !is_numeric($configured)) {
-            return null;
-        }
-        return (int)$configured;
+        return $this->isSetFlag($this->path('enable_shipping_tax_fallback'), $storeId);
     }
 
     /**
