@@ -165,6 +165,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
             $composeOrder,
             $this->adapter(),
             $this->overlay(),
+            $this->createMock(\Magento\Framework\Message\ManagerInterface::class),
             $this->recorder()
         ))->execute(new SendSiteObserver(new DataObject(['order_id' => 1])));
     }
