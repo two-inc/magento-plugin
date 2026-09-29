@@ -673,30 +673,6 @@ class RepositoryPaymentTermsTest extends TestCase
         ];
     }
 
-    // ── getDefaultShippingTaxRate ────────────────────────────────────
-
-    /**
-     * @dataProvider shippingTaxRateFallbacks
-     */
-    public function testGetDefaultShippingTaxRate($stored, ?float $expected, string $case): void
-    {
-        $this->stubConfig(['payment/two_payment/default_shipping_tax_rate' => $stored]);
-
-        $this->assertSame($expected, $this->repository->getDefaultShippingTaxRate(), $case);
-    }
-
-    public function shippingTaxRateFallbacks(): array
-    {
-        return [
-            ['25', 25.0, 'a configured rate'],
-            ['0', 0.0, 'a declared zero rate is a declaration, not an absence'],
-            [null, null, 'never configured'],
-            ['', null, 'the empty initial config node'],
-            ['abc', null, 'junk from a hand-edited row or config:set'],
-            ['-10', null, 'a negative rate is not a rate'],
-            [['25'], null, 'a non-scalar value'],
-        ];
-    }
 
     // ── getPaymentTermsType (retained) ──────────────────────────────
 
