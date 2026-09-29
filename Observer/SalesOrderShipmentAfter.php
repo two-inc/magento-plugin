@@ -29,6 +29,8 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Invoice\UploadService;
 use Two\Gateway\Service\Order\ComposeShipment;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
+use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 
 /**
  * After Order Shipment Save Observer
@@ -97,6 +99,9 @@ class SalesOrderShipmentAfter implements ObserverInterface
     /** @var LifecycleEventDispatcher */
     private $lifecycleEvents;
 
+    /** @var OrderPostprocessor */
+    private $orderPostprocessor;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -109,7 +114,8 @@ class SalesOrderShipmentAfter implements ObserverInterface
         \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
         UploadService $invoiceUploadService,
         LogRepository $logRepository,
-        LifecycleEventDispatcher $lifecycleEvents
+        LifecycleEventDispatcher $lifecycleEvents,
+        OrderPostprocessor $orderPostprocessor
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -123,6 +129,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
         $this->invoiceUploadService = $invoiceUploadService;
         $this->logRepository = $logRepository;
         $this->lifecycleEvents = $lifecycleEvents;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -158,7 +165,16 @@ class SalesOrderShipmentAfter implements ObserverInterface
             }
             $response = $this->apiAdapter->execute(
                 "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-                $payload,
+                $this->orderPostprocessor->process(
+                    Postprocessing::REQUEST_CAPTURE,
+                    $payload,
+                    [
+                        'trigger' => 'shipment',
+                        'endpoint' => '/v1/order/{id}/fulfillments',
+                        'order' => $order,
+                        'shipment' => $shipment,
+                    ]
+                ),
                 'POST',
                 (int)$order->getStoreId()
             );

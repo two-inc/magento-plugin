@@ -16,6 +16,8 @@ use Magento\Sales\Api\OrderRepositoryInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeOrder;
+use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
@@ -61,6 +63,9 @@ class SalesOrderAddressUpdate implements ObserverInterface
     /** @var ManagerInterface */
     private $messageManager;
 
+    /** @var OrderPostprocessor */
+    private $orderPostprocessor;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -68,7 +73,8 @@ class SalesOrderAddressUpdate implements ObserverInterface
         ComposeOrder $compositeOrder,
         Adapter $apiAdapter,
         \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
-        ManagerInterface $messageManager
+        ManagerInterface $messageManager,
+        OrderPostprocessor $orderPostprocessor
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -77,6 +83,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
         $this->apiAdapter = $apiAdapter;
         $this->overlayRegistry = $overlayRegistry;
         $this->messageManager = $messageManager;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -138,7 +145,11 @@ class SalesOrderAddressUpdate implements ObserverInterface
                 // different field and is composed as usual, above.
                 $response = $this->apiAdapter->execute(
                     '/v1/order/' . $order->getTwoOrderId(),
-                    $payload,
+                    $this->orderPostprocessor->process(
+                        Postprocessing::REQUEST_ORDER_UPDATE,
+                        $payload,
+                        ['trigger' => 'admin_edit', 'endpoint' => '/v1/order/{id}', 'order' => $order]
+                    ),
                     'PUT',
                     (int)$order->getStoreId()
                 );

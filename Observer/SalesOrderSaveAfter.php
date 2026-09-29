@@ -23,6 +23,8 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 
 /**
  * After Order Save Observer
@@ -76,6 +78,9 @@ class SalesOrderSaveAfter implements ObserverInterface
     /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var OrderPostprocessor */
+    private $orderPostprocessor;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -84,7 +89,8 @@ class SalesOrderSaveAfter implements ObserverInterface
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
         InvoiceService $invoiceService,
         TransactionFactory $transactionFactory,
-        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry
+        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
+        OrderPostprocessor $orderPostprocessor
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -94,6 +100,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         $this->invoiceService = $invoiceService;
         $this->transactionFactory = $transactionFactory;
         $this->overlayRegistry = $overlayRegistry;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -132,7 +139,11 @@ class SalesOrderSaveAfter implements ObserverInterface
 
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-            [],
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_CAPTURE,
+                [],
+                ['trigger' => 'status_change', 'endpoint' => '/v1/order/{id}/fulfillments', 'order' => $order]
+            ),
             'POST',
             (int)$order->getStoreId()
         );

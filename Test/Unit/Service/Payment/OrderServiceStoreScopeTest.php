@@ -97,8 +97,17 @@ class OrderServiceStoreScopeTest extends TestCase
             $this->createMock(OrderPaymentRepositoryInterface::class),
             $this->createMock(OrderRepositoryInterface::class),
             $this->createMock(LogRepository::class),
-            $this->createMock(BrandOverlayRegistryInterface::class)
+            $this->createMock(BrandOverlayRegistryInterface::class),
+            $this->passThroughPostprocessor()
         );
+    }
+
+    private function passThroughPostprocessor(): \Two\Gateway\Service\Order\OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
     }
 }
 

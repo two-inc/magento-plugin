@@ -114,7 +114,8 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             $composeOrder,
             $this->apiAdapter,
             $overlayRegistry,
-            $this->createMock(\Magento\Framework\Message\ManagerInterface::class)
+            $this->createMock(\Magento\Framework\Message\ManagerInterface::class),
+            $this->passThroughPostprocessor()
         );
     }
 
@@ -291,6 +292,14 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             $payload['shipping_address'],
             'shipping_address is required and is not the field being omitted'
         );
+    }
+
+    private function passThroughPostprocessor(): \Two\Gateway\Service\Order\OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
     }
 }
 

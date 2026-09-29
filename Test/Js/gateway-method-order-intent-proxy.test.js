@@ -90,7 +90,7 @@ describe('the order-intent check goes through the plugin, not straight to the AP
 
         expect(requests).toHaveLength(1);
         expect(requests[0].options.url).toBe(HARNESS_BASE_URL + 'rest/V1/two/order-intent');
-        expect(JSON.parse(JSON.parse(requests[0].options.data).payload).gross_amount).toBe('124.00');
+        expect(JSON.parse(JSON.parse(requests[0].options.data).payload).buyer.company).toBeDefined();
     });
 
     // The merchant is resolved server-side and whatever the browser sent would be

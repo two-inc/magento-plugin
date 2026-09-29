@@ -78,6 +78,11 @@
                 type="Two\Gateway\Model\Webapi\OrderIntent"/>
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
+    <!-- Stable extension contract (TWO-26092): subscribe with an `after` plugin on process(). -->
+    <preference for="Two\Gateway\Api\OrderPostprocessingInterface"
+                type="Two\Gateway\Model\OrderPostprocessing"/>
+    <preference for="Two\Gateway\Api\OrderPostprocessingTotalsInterface"
+                type="Two\Gateway\Service\Order\PostprocessingTotals"/>
     <!--
         Brand binding. Routes BrandRegistryInterface through
         DescriptorBackedBrandRegistry → ActiveBrandResolver →

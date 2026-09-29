@@ -61,7 +61,7 @@ class Cancel extends Action
         $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
-            $this->orderService->cancelTwoOrder($order);
+            $this->orderService->cancelTwoOrder($order, 'buyer_cancel');
             $message = __(
                 'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
                 $this->brandRegistry->getProductName()
