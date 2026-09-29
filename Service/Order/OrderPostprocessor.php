@@ -9,6 +9,7 @@ namespace Two\Gateway\Service\Order;
 
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
+use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url;
@@ -21,6 +22,7 @@ use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
 use Throwable;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
@@ -83,6 +85,8 @@ class OrderPostprocessor extends OrderService
         TaxCalculation $taxCalculation,
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
         GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository,
         Hook $hook,
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $historyRepository
@@ -99,7 +103,9 @@ class OrderPostprocessor extends OrderService
             $orderTaxManagement,
             $taxCalculation,
             $orderTaxCollectionFactory,
-            $groupRepository
+            $groupRepository,
+            $brandRegistry,
+            $customerRepository
         );
         $this->hook = $hook;
         $this->historyFactory = $historyFactory;
