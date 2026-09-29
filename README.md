@@ -111,6 +111,19 @@ overlay's own tab only if it names
 Both settings are per store view, so you can trial them on one storefront
 before rolling them out.
 
+## Upgrading to 4.0
+
+4.0 removes the plugin's own shipping tax settings: the **Default shipping tax
+class** field and the deprecated flat-percentage **Default shipping tax rate**
+field. `setup:upgrade` deletes their stored values and does not carry them
+over anywhere.
+
+Where Magento records no tax rate for a taxed shipping line, the fallback now
+uses Magento's own **Stores > Configuration > Sales > Tax > Tax Classes > Tax
+Class for Shipping**, and only on stores where the fallback has been enabled
+(see below). A store that relied on the removed fields refuses such orders
+until both are in place.
+
 ## Shipping tax fallback
 
 When a taxed shipping line reaches the plugin with no tax rate recorded by
