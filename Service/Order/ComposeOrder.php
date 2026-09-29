@@ -157,7 +157,6 @@ class ComposeOrder extends OrderService
             'tax_amount' => $this->roundAmt($taxTotal),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
             'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
-            'available_terms' => $this->getAvailableBuyerTerms($storeId),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
@@ -223,12 +222,12 @@ class ComposeOrder extends OrderService
             }
         }
 
-        if ($isEdit) {
-            // The edit-order schema has no available_terms, and an absent terms key keeps the agreed ones (TWO-25386).
-            unset($payload['available_terms']);
-            if ($placedTerms === null) {
-                unset($payload['terms']);
-            }
+        if (!$isEdit) {
+            // The edit-order schema has no available_terms.
+            $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
+        } elseif ($placedTerms === null) {
+            // An absent terms key keeps the agreed ones (TWO-25386).
+            unset($payload['terms']);
         }
 
         // Add invoice_details only if invoiceEmails are present. The payment

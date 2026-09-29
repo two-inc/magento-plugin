@@ -158,7 +158,7 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         $config->method('getVendorSiteName')->willReturn('');
         $config->method('getPaymentTermsType')->willReturn($termsType);
         $config->method('getDefaultPaymentTerm')->willReturn($defaultTerm);
-        $config->method('getAllBuyerTerms')->willReturn($offeredTerms);
+        $config->expects($this->never())->method('getAllBuyerTerms');
         $config->method('isBuyerTermAvailable')->willReturnCallback(
             static fn (int $days): bool => in_array($days, $offeredTerms, true)
         );
