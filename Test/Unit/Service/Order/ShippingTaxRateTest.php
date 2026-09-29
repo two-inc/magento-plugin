@@ -388,7 +388,9 @@ class ShippingTaxRateTest extends TestCase
         return [
             [19.0, 1, [1 => 5], 100.00, 19.00, 0.00, 0.19, 'declared rate present: relayed, core class not consulted'],
             [null, 1, [1 => 5], 100.00, 25.00, 0.00, 0.25, 'no declared rate: resolved via the core shipping tax class'],
-            [null, 1, [], 100.00, 25.00, 0.00, null, 'core shipping tax class unset: refused'],
+            [null, 1, [], 100.00, 25.00, 0.00, null, 'core shipping tax class None (0) or unset, shipping taxed: refused'],
+            [null, 1, [], 100.00, 0.00, 0.00, 0.0, 'core shipping tax class None (0) or unset, shipping untaxed: 0%'],
+            [0.0, 1, [], 100.00, 0.00, 0.00, 0.0, 'core shipping tax class None (0) or unset, declared 0%: accepted'],
             [null, 1, [1 => 5], 100.00, 19.00, 0.00, null, 'core class rate does not reconcile with the shipping tax: refused'],
             [null, 2, [1 => 5, 2 => 7], 100.00, 15.00, 0.00, 0.15, 'multi-store: store 2 reads its own class and rate'],
             [null, 1, [1 => 6], 100.00, 0.01, 0.00, 0.0, 'zero-rate class within tolerance: a real resolution, not unset'],
