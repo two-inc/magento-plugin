@@ -306,6 +306,14 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function isShippingTaxFallbackEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('enable_shipping_tax_fallback'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDepartmentEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('enable_department'), $storeId);

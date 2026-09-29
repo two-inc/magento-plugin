@@ -16,6 +16,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order;
+use Two\Gateway\Service\Order\ComposeOrder;
 
 /**
  * TWO-25503: the shipping line's tax_rate is whatever Magento's tax engine
@@ -45,13 +46,22 @@ class ShippingTaxRateTest extends TestCase
     /**
      * @param float|null $declaredPercent percent Magento declares for shipping, null for none
      * @param array<int, int> $classByStore core tax/classes/shipping_tax_class per store id, absent for unset
+     * @param array<int, bool> $fallbackByStore enable_shipping_tax_fallback per store id, absent for off
+     * @param string $service the Order subclass under test, which decides the refusal wording
      * @return Order|\PHPUnit\Framework\MockObject\MockObject
      */
-    private function orderService(?float $declaredPercent, array $classByStore = [])
-    {
-        $orderService = $this->getMockForAbstractClass(Order::class, [], '', false);
+    private function orderService(
+        ?float $declaredPercent,
+        array $classByStore = [],
+        array $fallbackByStore = [1 => true, 2 => true],
+        string $service = Order::class
+    ) {
+        $orderService = $this->getMockForAbstractClass($service, [], '', false);
 
         $configRepository = $this->createMock(ConfigRepository::class);
+        $configRepository->method('isShippingTaxFallbackEnabled')->willReturnCallback(
+            static fn (?int $storeId) => $fallbackByStore[$storeId] ?? false
+        );
         $configRepository->method('getShippingTaxClassId')->willReturnCallback(
             static fn (?int $storeId) => $classByStore[$storeId] ?? null
         );
@@ -448,6 +458,53 @@ class ShippingTaxRateTest extends TestCase
             [true, false, 2, 42, 12.00, 10, 0.12, 'refund after a customer group change: order-time class'],
             [true, false, 2, 42, 6.00, 10, 0.12, 'partial credit memo: order-time rate on the refunded shipping'],
             [false, true, 2, 42, 12.00, 10, 0.12, 'virtual order: billing stands in for shipping'],
+        ];
+    }
+
+    // ── TWO-26082: the fallback is off unless enabled per store by CLI ──
+
+    private const MERCHANT_DISABLED = 'Shipping tax could not be determined for this order: Magento recorded no'
+        . ' shipping tax rate and the shipping tax fallback is not enabled for this store.';
+
+    private const BUYER_REFUSAL = 'This order could not be placed. Please contact the merchant.';
+
+    /**
+     * @param array<int, bool> $fallbackByStore
+     * @dataProvider fallbackFlagCases
+     */
+    public function testShippingTaxFallbackIsOffUnlessEnabledForTheStore(
+        string $service,
+        int $storeId,
+        array $fallbackByStore,
+        float $shippingTax,
+        $expected,
+        string $case
+    ): void {
+        $orderService = $this->orderService(null, [1 => 5, 2 => 7], $fallbackByStore, $service);
+        $entity = $this->entity([
+            'shipping_tax_amount' => $shippingTax,
+            'shipping_address' => new DataObject(['country_id' => 'NO']),
+            'store_id' => $storeId,
+        ]);
+
+        try {
+            $actual = $orderService->getTaxRateShipping($entity);
+        } catch (LocalizedException $e) {
+            $actual = $e->getMessage();
+        }
+
+        $this->assertSame($expected, $actual, $case);
+    }
+
+    public static function fallbackFlagCases(): array
+    {
+        return [
+            [Order::class, 1, [], 25.00, self::MERCHANT_DISABLED, 'disabled, needs fallback: refused at capture/refund'],
+            [ComposeOrder::class, 1, [], 25.00, self::BUYER_REFUSAL, 'disabled, needs fallback: refused at placement'],
+            [Order::class, 1, [1 => true], 25.00, 0.25, 'enabled, needs fallback: resolved via core class'],
+            [Order::class, 1, [], 0.00, 0.0, 'disabled, untaxed shipping: 0% accepted'],
+            [Order::class, 2, [2 => true], 15.00, 0.15, 'scope: enabled on store 2 only, store 2 resolves'],
+            [Order::class, 1, [2 => true], 25.00, self::MERCHANT_DISABLED, 'scope: enabled on store 2 only, store 1 refused'],
         ];
     }
 }

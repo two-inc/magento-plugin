@@ -581,7 +581,8 @@ abstract class Order
      * @param OrderModel|CreditmemoModel $entity
      * @return float
      * @throws LocalizedException when shipping is taxed, no rate is declared
-     *                            and core's shipping tax class is unset
+     *                            and the fallback is off or core's shipping
+     *                            tax class is unset
      */
     public function getTaxRateShipping($entity): float
     {
@@ -599,6 +600,21 @@ abstract class Order
         }
 
         $storeId = (int)$entity->getStoreId();
+        if (!$this->configRepository->isShippingTaxFallbackEnabled($storeId)) {
+            $this->logRepository->addErrorLog(
+                'ShippingTaxFallbackDisabled',
+                sprintf(
+                    'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
+                    . 'and the shipping tax fallback (enable_shipping_tax_fallback) is off for store %d. '
+                    . 'Refusing rather than deriving a rate.',
+                    $this->getTaxAmountShipping($entity),
+                    $entity->getIncrementId(),
+                    $storeId
+                )
+            );
+            throw new LocalizedException($this->shippingTaxRefusal(false));
+        }
+
         $taxClassId = $this->configRepository->getShippingTaxClassId($storeId);
         if ($taxClassId === null) {
             $this->logRepository->addErrorLog(
@@ -611,7 +627,7 @@ abstract class Order
                     $entity->getIncrementId()
                 )
             );
-            throw new LocalizedException($this->shippingTaxRefusal());
+            throw new LocalizedException($this->shippingTaxRefusal(true));
         }
 
         $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
@@ -632,9 +648,16 @@ abstract class Order
      * Refusal for a taxed shipping line with no resolvable rate. Capture,
      * refund and shipment run after placement, so this default speaks to
      * the merchant; ComposeOrder overrides it with the buyer's wording.
+     *
+     * @param bool $fallbackEnabled false when the fallback is off for the store (TWO-26082)
      */
-    protected function shippingTaxRefusal(): Phrase
+    protected function shippingTaxRefusal(bool $fallbackEnabled): Phrase
     {
+        if (!$fallbackEnabled) {
+            return __(
+                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store.'
+            );
+        }
         return __(
             'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and no Tax Class for Shipping is set (Stores > Configuration > Sales > Tax > Tax Classes).'
         );

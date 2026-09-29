@@ -111,6 +111,22 @@ overlay's own tab only if it names
 Both settings are per store view, so you can trial them on one storefront
 before rolling them out.
 
+## Shipping tax fallback
+
+When a taxed shipping line reaches the plugin with no tax rate recorded by
+Magento, the order, capture or refund is refused. A fallback that resolves the
+rate from Magento's own **Tax > Tax Classes > Tax Class for Shipping** exists,
+but it is off by default and has no admin field. Talk to us before enabling it
+for a store:
+
+```bash
+bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
+bin/magento cache:flush config
+```
+
+On a brand overlay the path is `payment/<brand code>/enable_shipping_tax_fallback`.
+Untaxed shipping is sent at 0% whether or not the fallback is enabled.
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.

@@ -59,6 +59,7 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
     public const XML_PATH_SHIPPING_TAX_CLASS = 'tax/classes/shipping_tax_class';
+    public const XML_PATH_ENABLE_SHIPPING_TAX_FALLBACK = 'payment/two_payment/enable_shipping_tax_fallback';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 
@@ -171,6 +172,17 @@ interface RepositoryInterface
      * @return int|null
      */
     public function getShippingTaxClassId(?int $storeId = null): ?int;
+
+    /**
+     * Whether a taxed shipping line with no declared rate may resolve its
+     * rate through getShippingTaxClassId() (TWO-26082). Off unless set by
+     * `bin/magento config:set`; it has no admin field.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isShippingTaxFallbackEnabled(?int $storeId = null): bool;
 
     /**
      * Check if department is enabled
