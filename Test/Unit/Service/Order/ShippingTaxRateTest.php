@@ -13,6 +13,7 @@ use Magento\Tax\Api\Data\OrderTaxDetailsItemInterface;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order;
@@ -78,6 +79,9 @@ class ShippingTaxRateTest extends TestCase
         $this->setProperty($orderService, 'orderTaxManagement', $this->taxManagement($declaredPercent));
         $this->setProperty($orderService, 'taxCalculation', $this->taxCalculation());
         $this->setProperty($orderService, 'groupRepository', $groupRepository);
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getProvider')->willReturn('Acme');
+        $this->setProperty($orderService, 'brandRegistry', $brandRegistry);
 
         return $orderService;
     }
@@ -468,7 +472,7 @@ class ShippingTaxRateTest extends TestCase
 
     private const MERCHANT_DISABLED = 'Shipping tax could not be determined for this order: Magento recorded no'
         . ' shipping tax rate and the shipping tax fallback is not enabled for this store.'
-        . ' Contact Two to enable it.';
+        . ' Contact Acme to enable it.';
 
     private const BUYER_REFUSAL = 'This order could not be placed. Please contact the merchant.';
 

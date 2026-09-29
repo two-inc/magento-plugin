@@ -31,6 +31,7 @@ use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
 use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
@@ -124,6 +125,11 @@ abstract class Order
     private $groupRepository;
 
     /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -138,6 +144,7 @@ abstract class Order
      * @param TaxCalculation $taxCalculation
      * @param OrderTaxCollectionFactory $orderTaxCollectionFactory
      * @param GroupRepositoryInterface $groupRepository
+     * @param BrandRegistryInterface $brandRegistry
      */
     public function __construct(
         Image $imageHelper,
@@ -151,7 +158,8 @@ abstract class Order
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
-        GroupRepositoryInterface $groupRepository
+        GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -165,6 +173,7 @@ abstract class Order
         $this->taxCalculation = $taxCalculation;
         $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
         $this->groupRepository = $groupRepository;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -655,7 +664,8 @@ abstract class Order
     {
         if (!$fallbackEnabled) {
             return __(
-                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store. Contact Two to enable it.'
+                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store. Contact %1 to enable it.',
+                $this->brandRegistry->getProvider()
             );
         }
         return __(

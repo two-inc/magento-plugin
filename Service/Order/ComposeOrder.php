@@ -21,6 +21,7 @@ use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
@@ -49,7 +50,8 @@ class ComposeOrder extends OrderService
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
-        GroupRepositoryInterface $groupRepository
+        GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry
     ) {
         parent::__construct(
             $imageHelper,
@@ -63,7 +65,8 @@ class ComposeOrder extends OrderService
             $orderTaxManagement,
             $taxCalculation,
             $orderTaxCollectionFactory,
-            $groupRepository
+            $groupRepository,
+            $brandRegistry
         );
         $this->checkoutSession = $checkoutSession;
     }
