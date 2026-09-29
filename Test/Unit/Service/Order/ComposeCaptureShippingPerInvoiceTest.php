@@ -179,17 +179,23 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $service->method('getProductImageUrl')->willReturn('');
         $service->method('getCategories')->willReturn([]);
 
+        $taxCalculation = $this->createMock(\Magento\Tax\Model\Calculation::class);
+        $taxCalculation->method('getRateRequest')->willReturn(new \Magento\Framework\DataObject());
+        $taxCalculation->method('getRate')->willReturn(25.0);
         foreach (['logRepository' => $this->createMock(LogRepository::class),
-                     'feeLineProviderPool' => new FeeLineProviderPool([])] as $name => $value) {
+                     'feeLineProviderPool' => new FeeLineProviderPool([]),
+                     'taxCalculation' => $taxCalculation,
+                     'groupRepository' => $this->createMock(\Magento\Customer\Api\GroupRepositoryInterface::class),
+                 ] as $name => $value) {
             (new \ReflectionProperty(\Two\Gateway\Service\Order::class, $name))->setValue($service, $value);
         }
 
         $config = $this->createMock(ConfigRepository::class);
         $config->method('isTaxSubtotalsEnabled')->willReturn(true);
         $config->method('getWeightUnit')->willReturn('kg');
-        $config->method('getDefaultShippingTaxClassId')->willReturn(null);
-        // Resolves the shipping rate through the existing deprecated flat-rate fallback.
-        $config->method('getDefaultShippingTaxRate')->willReturn(25.0);
+        // Resolves the shipping rate through the shipping tax fallback and core's shipping class (TWO-26073).
+        $config->method('isShippingTaxFallbackEnabled')->willReturn(true);
+        $config->method('getShippingTaxClassId')->willReturn(2);
         $service->configRepository = $config;
 
         return $service;
