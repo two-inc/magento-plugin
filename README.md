@@ -142,6 +142,154 @@ bin/magento cache:flush config
 On a brand overlay the path is `payment/<brand code>/enable_shipping_tax_fallback`.
 Untaxed shipping is sent at 0% whether or not the fallback is enabled.
 
+## Stable extension contract: order postprocessing
+
+Every request this plugin sends to Two about an order passes through one
+extension point first. It presents the entire request body and lets your code
+change any part of it: split a charge differently, change an amount, add a
+field. Use it when the shop is not your accounting source of record and the
+invoice Two issues has to follow your books rather than the shop's figures.
+
+**Name and mechanism.** An `after` plugin on
+`Two\Gateway\Api\OrderPostprocessingInterface::process(array $payload, array $context): array`.
+The default implementation returns the payload unchanged. Plugins chain by
+`sortOrder`, and only the final result is checked and sent.
+
+```xml
+<!-- your module's etc/di.xml -->
+<type name="Two\Gateway\Api\OrderPostprocessingInterface">
+    <plugin name="acme_order_postprocessing" type="Acme\Two\Plugin\OrderPostprocessing"/>
+</type>
+```
+
+**Parameters.**
+
+- `$payload`: the complete request body exactly as it would be sent, amounts as
+  2dp decimal strings: `line_items`, `tax_subtotals`, `net_amount`,
+  `tax_amount`, `gross_amount`, buyer, addresses and the rest. A partial
+  capture carries its lines under `partial`; a refund carries `amount`. A
+  request with no body (confirm, cancel, whole-order capture) is `[]`.
+- `$context`, an array:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `request_type` | string | `order_intent`, `order_create`, `order_update`, `order_confirm`, `capture`, `refund` or `cancel` |
+| `trigger` | string | What caused the request: `checkout`, `admin_edit`, `confirmation`, `invoice`, `shipment`, `status_change`, `credit_memo`, `cancel`, `buyer_cancel` |
+| `endpoint` | string | The API path, for example `/v1/order/{id}/refund` |
+| `quote` or `order` | object | The quote for `order_intent`, the order for everything else |
+| `invoice`, `shipment`, `creditmemo` | object | Present where the request has one |
+| `shipping_tax_rate` | float or null | The rate Magento's **Tax Class for Shipping** applies at the order's tax address, whether or not the shipping line was taxed. `0.21` means 21%. Null when no class is set |
+| `fallback_shipping_tax_rate` | float or null | The shipping tax fallback's rate, null unless the fallback is enabled for the store |
+| `contract_version` | int | `1` |
+
+**Return.** The full payload, edited or not.
+
+**When it fires.** Immediately before every order request is sent, once per
+request:
+
+| Request type | When |
+|---|---|
+| `order_intent` | The checkout's approval check. The body is built here from the quote, with the same lines as the order |
+| `order_create` | Order placement |
+| `order_update` | An admin edit of the order's address |
+| `order_confirm` | The buyer returns from Two's checkout |
+| `capture` | An online invoice, a shipment, or the order reaching a fulfil-on status, per the fulfilment trigger |
+| `refund` | A credit memo |
+| `cancel` | The order is cancelled or voided, or the buyer abandons Two's checkout |
+
+**Invariants the plugin checks on what you return.** Your edits are yours to
+make, and Two's API validates whatever arrives. The plugin still refuses a
+payload that is inconsistent with itself, and names the reason in the log and,
+for an admin action, in the error:
+
+| Code | Refused when |
+|---|---|
+| `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` | A subscriber threw, or returned something other than an array |
+| `TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED` | A body was added to confirm or cancel, which take none |
+| `TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT` | A line's net, tax and gross disagree, or its tax does not follow from its `tax_rate` |
+| `TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT` | Order or capture totals differ from the sum of the lines, gross is not net + tax, or a refund's `amount` differs from its lines' gross |
+| `TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT` | A `tax_subtotals` bucket differs from the lines at its rate |
+
+The same checks run when no subscriber changed anything; a failure then carries
+the code without `POSTPROCESSING_`. Tolerances are the plugin's usual rounding
+allowances, never tighter for your output. The buyer only ever sees the
+plugin's generic refusal.
+
+The plugin never recomputes anything after the hook, because that would
+overwrite your edits. If you change a line, update the totals and subtotals it
+affects: inject `Two\Gateway\Api\OrderPostprocessingTotalsInterface` and call
+`recompute($payload)`, which rebuilds `net_amount`, `tax_amount`,
+`gross_amount` (or a refund's `amount`) and any `tax_subtotals` from the lines.
+
+Every change is logged with the request type and a list of the changed fields,
+and noted in the order's comment history where there is an order.
+
+**Your code owns what it declares.** With a subscriber that changes amounts,
+the invoice Two issues can differ from what the shop charged. That is your
+decision, and nothing in the plugin compares your result with the shop's own
+totals.
+
+**Requirements on a subscriber.**
+
+- Deterministic: the same inputs give the same output.
+- Cheap: it runs on every approval check during checkout as well as on every
+  order request.
+- Present: a disabled module simply means the shop's own figures are sent, and
+  the plugin cannot tell that from having no subscriber.
+
+**Example.** Treat untaxed shipping as VAT-inclusive at the shop's shipping tax
+rate. A 29.00 shipping line becomes net `round(29.00 / 1.21, 2)` = 23.97 and tax
+5.03, gross unchanged:
+
+```php
+namespace Acme\Two\Plugin;
+
+use Two\Gateway\Api\OrderPostprocessingInterface;
+use Two\Gateway\Api\OrderPostprocessingTotalsInterface;
+
+class OrderPostprocessing
+{
+    public function __construct(private OrderPostprocessingTotalsInterface $totals)
+    {
+    }
+
+    public function afterProcess(OrderPostprocessingInterface $subject, array $result, array $payload, array $context): array
+    {
+        $rate = $context['shipping_tax_rate'];
+        if (!$rate || empty($result['line_items'])) {
+            return $result;
+        }
+        foreach ($result['line_items'] as &$line) {
+            if ($line['type'] !== 'SHIPPING_FEE' || (float)$line['tax_amount'] != 0.0) {
+                continue;
+            }
+            $gross = (float)$line['gross_amount'];
+            $net = round($gross / (1 + $rate), 2);
+            $line['net_amount'] = number_format($net, 2, '.', '');
+            $line['tax_amount'] = number_format($gross - $net, 2, '.', '');
+            $line['unit_price'] = $line['net_amount'];
+            $line['tax_rate'] = number_format($rate, 6, '.', '');
+            $line['tax_class_name'] = 'VAT ' . number_format($rate * 100, 2) . '%';
+        }
+        unset($line);
+
+        return $this->totals->recompute($result);
+    }
+}
+```
+
+`Test/Integration/OrderPostprocessingFixture` is a working module that does
+this, and CI runs it inside a real Magento on every change.
+
+**Versioning.** This contract is permanent. The interface, its method and the
+v1 context keys and request types are never removed or renamed, and it fires
+consistently in response to the same events in every release. New context keys,
+new request types or triggers, and relaxed checks may be added without notice.
+Removing a key, changing a unit (rates stay decimal fractions), tightening a
+check a v1 subscriber could already pass, or firing on fewer requests is never
+done. A genuinely incompatible change would arrive as a new interface, with this
+one still firing alongside it.
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
