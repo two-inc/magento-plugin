@@ -13,8 +13,11 @@ use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\ResourceModel\Category\Collection;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
+use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\App\Area;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Phrase;
 use Magento\Framework\Url;
 use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
@@ -116,6 +119,11 @@ abstract class Order
     private $orderTaxCollectionFactory;
 
     /**
+     * @var GroupRepositoryInterface
+     */
+    private $groupRepository;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -129,6 +137,7 @@ abstract class Order
      * @param OrderTaxManagementInterface $orderTaxManagement
      * @param TaxCalculation $taxCalculation
      * @param OrderTaxCollectionFactory $orderTaxCollectionFactory
+     * @param GroupRepositoryInterface $groupRepository
      */
     public function __construct(
         Image $imageHelper,
@@ -141,7 +150,8 @@ abstract class Order
         FeeLineProviderPool $feeLineProviderPool,
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
-        OrderTaxCollectionFactory $orderTaxCollectionFactory
+        OrderTaxCollectionFactory $orderTaxCollectionFactory,
+        GroupRepositoryInterface $groupRepository
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -154,6 +164,7 @@ abstract class Order
         $this->orderTaxManagement = $orderTaxManagement;
         $this->taxCalculation = $taxCalculation;
         $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
+        $this->groupRepository = $groupRepository;
     }
 
     /**
@@ -600,9 +611,7 @@ abstract class Order
                     $entity->getIncrementId()
                 )
             );
-            throw new LocalizedException(
-                __('This order could not be placed. Please contact the merchant.')
-            );
+            throw new LocalizedException($this->shippingTaxRefusal());
         }
 
         $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
@@ -620,12 +629,25 @@ abstract class Order
     }
 
     /**
+     * Refusal for a taxed shipping line with no resolvable rate. Capture,
+     * refund and shipment run after placement, so this default speaks to
+     * the merchant; ComposeOrder overrides it with the buyer's wording.
+     */
+    protected function shippingTaxRefusal(): Phrase
+    {
+        return __(
+            'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and no Tax Class for Shipping is set (Stores > Configuration > Sales > Tax > Tax Classes).'
+        );
+    }
+
+    /**
      * Resolves a shipping tax rate through Magento's tax rules engine for
-     * core's shipping tax class, with the same getRateRequest() arguments
-     * core's tax calculator uses (Tax\Model\Calculation\AbstractCalculator::
+     * core's shipping tax class, with the getRateRequest() arguments core's
+     * quote-time calculator uses (Tax\Model\Calculation\AbstractCalculator::
      * getAddressRateRequest()): shipping and billing separately so
-     * tax/calculation/based_on picks, the store, and the customer so their
-     * group's tax class applies (a guest resolves to NOT LOGGED IN).
+     * tax/calculation/based_on picks, the store, the customer tax class of
+     * the group the order was placed under, and the customer id, which core
+     * reads only for its default-address fallback.
      *
      * A destination with no matching Tax Rule resolves to 0.0, same as an
      * ordinary product line in an untaxed region.
@@ -638,12 +660,33 @@ abstract class Order
         $request = $this->taxCalculation->getRateRequest(
             $this->resolveShippingAddressForTax($entity),
             method_exists($order, 'getBillingAddress') ? $order->getBillingAddress() : null,
-            null,
+            $this->resolveCustomerTaxClassId($order),
             $storeId,
             method_exists($order, 'getCustomerId') ? $order->getCustomerId() : null
         );
         $request->setProductClassId($taxClassId);
         return (float)$this->taxCalculation->getRate($request) / 100;
+    }
+
+    /**
+     * Tax class of the customer group the order was placed under, resolved
+     * as core's Quote::getCustomerTaxClassId() does. NULL when that group no
+     * longer exists: getRateRequest() then falls back to the customer's
+     * current group (NOT LOGGED IN for a guest), the same fallback as core's.
+     *
+     * @param OrderModel $order
+     */
+    private function resolveCustomerTaxClassId($order): ?int
+    {
+        $groupId = method_exists($order, 'getCustomerGroupId') ? $order->getCustomerGroupId() : null;
+        if ($groupId === null) {
+            return null;
+        }
+        try {
+            return (int)$this->groupRepository->getById((int)$groupId)->getTaxClassId();
+        } catch (NoSuchEntityException $e) {
+            return null;
+        }
     }
 
     /**

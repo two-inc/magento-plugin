@@ -1068,11 +1068,10 @@ Nothing declared and no shipping tax charged is 0% — a store whose shipping
 is untaxed records no tax row at all, and 0% is a statement rather than a
 guess. Nothing declared but tax charged resolves the rate through Magento
 core's own shipping tax class (`tax/classes/shipping_tax_class`, store scope)
-and the tax rules engine, with the arguments core's tax calculator uses
+and the tax rules engine, with the arguments core's quote-time tax calculator
+uses, including the tax class of the customer group the order was placed under
 (TWO-26073). With that class unset the order is refused rather than given an
-assumed rate. The plugin has no shipping tax setting of its own; its former
-class and flat-rate fields were removed and their stored rows deleted by a
-data patch.
+assumed rate. The plugin has no shipping tax setting of its own.
 
 `validateTaxReconciliation()` closes the same loop at composition time: a
 line whose declared tax does not follow from its own declared rate and net

@@ -22,7 +22,7 @@ use Magento\Framework\Setup\Patch\DataPatchInterface;
  */
 class RemoveDefaultShippingTaxSettings implements DataPatchInterface
 {
-    public const KEYS = ['default_shipping_tax_class', 'default_shipping_tax_rate'];
+    private const KEYS = ['default_shipping_tax_class', 'default_shipping_tax_rate'];
 
     /**
      * @var ModuleDataSetupInterface
