@@ -113,7 +113,8 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             $orderRepository,
             $composeOrder,
             $this->apiAdapter,
-            $overlayRegistry
+            $overlayRegistry,
+            $this->createMock(\Magento\Framework\Message\ManagerInterface::class)
         );
     }
 
