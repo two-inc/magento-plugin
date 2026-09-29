@@ -10,6 +10,7 @@ namespace Two\Gateway\Service\Order;
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
@@ -51,7 +52,8 @@ class ComposeOrder extends OrderService
         TaxCalculation $taxCalculation,
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
         GroupRepositoryInterface $groupRepository,
-        BrandRegistryInterface $brandRegistry
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository
     ) {
         parent::__construct(
             $imageHelper,
@@ -66,7 +68,8 @@ class ComposeOrder extends OrderService
             $taxCalculation,
             $orderTaxCollectionFactory,
             $groupRepository,
-            $brandRegistry
+            $brandRegistry,
+            $customerRepository
         );
         $this->checkoutSession = $checkoutSession;
     }

@@ -137,6 +137,12 @@ namespace Magento\Customer\Api {
             public function getById($id);
         }
     }
+    if (!interface_exists(CustomerRepositoryInterface::class, false)) {
+        interface CustomerRepositoryInterface
+        {
+            public function getById($customerId);
+        }
+    }
 }
 
 namespace Magento\Customer\Api\Data {

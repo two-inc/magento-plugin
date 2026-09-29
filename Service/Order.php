@@ -13,6 +13,7 @@ use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\ResourceModel\Category\Collection;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
+use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\App\Area;
 use Magento\Framework\Exception\LocalizedException;
@@ -125,6 +126,11 @@ abstract class Order
     private $groupRepository;
 
     /**
+     * @var CustomerRepositoryInterface
+     */
+    private $customerRepository;
+
+    /**
      * @var BrandRegistryInterface
      */
     private $brandRegistry;
@@ -145,6 +151,7 @@ abstract class Order
      * @param OrderTaxCollectionFactory $orderTaxCollectionFactory
      * @param GroupRepositoryInterface $groupRepository
      * @param BrandRegistryInterface $brandRegistry
+     * @param CustomerRepositoryInterface $customerRepository
      */
     public function __construct(
         Image $imageHelper,
@@ -159,7 +166,8 @@ abstract class Order
         TaxCalculation $taxCalculation,
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
         GroupRepositoryInterface $groupRepository,
-        BrandRegistryInterface $brandRegistry
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -174,6 +182,7 @@ abstract class Order
         $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
         $this->groupRepository = $groupRepository;
         $this->brandRegistry = $brandRegistry;
+        $this->customerRepository = $customerRepository;
     }
 
     /**
@@ -680,7 +689,11 @@ abstract class Order
      * getAddressRateRequest()): shipping and billing separately so
      * tax/calculation/based_on picks, the store, the current tax class of
      * the order-time customer group, and the customer id, which core reads
-     * only for its default-address fallback.
+     * for its default-address fallback.
+     *
+     * Once that group is deleted the class is null, as in core's
+     * Quote::getCustomerTaxClassId(): core then uses the customer's current
+     * group, or NOT LOGGED IN for a guest or a customer who is also deleted.
      *
      * sales_order stores no customer tax class, so a class edit on that
      * group since placement still changes the rate.
@@ -694,10 +707,11 @@ abstract class Order
     {
         $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
         $customerTaxClassId = $this->resolveCustomerTaxClassId($order);
+        $customerId = method_exists($order, 'getCustomerId') ? $order->getCustomerId() : null;
         // A null class with a customer id makes core load that customer, which throws once they are deleted.
-        $customerId = $customerTaxClassId !== null && method_exists($order, 'getCustomerId')
-            ? $order->getCustomerId()
-            : null;
+        if ($customerTaxClassId === null && $customerId && !$this->customerExists((int)$customerId)) {
+            $customerId = null;
+        }
         $request = $this->taxCalculation->getRateRequest(
             $this->resolveShippingAddressForTax($order),
             method_exists($order, 'getBillingAddress') ? $order->getBillingAddress() : null,
@@ -712,8 +726,8 @@ abstract class Order
     /**
      * Current tax class of the customer group the order was placed under,
      * resolved as core's Quote::getCustomerTaxClassId() does. NULL when the
-     * order has no group or it no longer exists: the caller then drops the
-     * customer id too, so getRateRequest() uses the NOT LOGGED IN class.
+     * order has no group or it no longer exists, leaving getRateRequest() to
+     * resolve the class from the customer id.
      *
      * @param OrderModel $order
      */
@@ -727,6 +741,16 @@ abstract class Order
             return (int)$this->groupRepository->getById((int)$groupId)->getTaxClassId();
         } catch (NoSuchEntityException $e) {
             return null;
+        }
+    }
+
+    private function customerExists(int $customerId): bool
+    {
+        try {
+            $this->customerRepository->getById($customerId);
+            return true;
+        } catch (NoSuchEntityException $e) {
+            return false;
         }
     }
 

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
+use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
@@ -36,10 +37,10 @@ class ShippingTaxRateTest extends TestCase
     private const CLASS_BY_GROUP = [0 => 3, 1 => 3, 2 => 10];
 
     /** Customer id => tax class of their CURRENT group; customer 43 was deleted. */
-    private const CURRENT_CLASS_BY_CUSTOMER = [42 => 3];
+    private const CURRENT_CLASS_BY_CUSTOMER = [42 => 11];
 
     /** Percent keyed "<store>/<product class>/<customer class>". */
-    private const RATES = ['1/5/3' => 25.0, '1/5/10' => 12.0, '2/7/3' => 15.0, '1/6/3' => 0.0];
+    private const RATES = ['1/5/3' => 25.0, '1/5/10' => 12.0, '1/5/11' => 20.0, '2/7/3' => 15.0, '1/6/3' => 0.0];
 
     /** @var array<int, array> getRateRequest() arguments, one entry per call */
     private $rateRequests = [];
@@ -79,6 +80,13 @@ class ShippingTaxRateTest extends TestCase
         $this->setProperty($orderService, 'orderTaxManagement', $this->taxManagement($declaredPercent));
         $this->setProperty($orderService, 'taxCalculation', $this->taxCalculation());
         $this->setProperty($orderService, 'groupRepository', $groupRepository);
+        $customerRepository = $this->createMock(CustomerRepositoryInterface::class);
+        $customerRepository->method('getById')->willReturnCallback(
+            static fn ($id) => isset(self::CURRENT_CLASS_BY_CUSTOMER[$id])
+                ? new DataObject(['id' => $id])
+                : throw NoSuchEntityException::singleField('customerId', $id)
+        );
+        $this->setProperty($orderService, 'customerRepository', $customerRepository);
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProvider')->willReturn('Acme');
         $this->setProperty($orderService, 'brandRegistry', $brandRegistry);
@@ -460,7 +468,7 @@ class ShippingTaxRateTest extends TestCase
             [false, false, 0, null, 25.00, 3, null, 0.25, 'guest: NOT LOGGED IN class'],
             [false, false, 2, 42, 12.00, 10, 42, 0.12, 'capture after a customer group change: order-time group'],
             [false, false, 2, 43, 12.00, 10, 43, 0.12, 'deleted customer: order-time group, no customer lookup'],
-            [false, false, 99, 42, 25.00, null, null, 0.25, 'order group deleted: NOT LOGGED IN class'],
+            [false, false, 99, 42, 20.00, null, 42, 0.20, 'order group deleted, customer alive: current group class'],
             [false, false, 99, 43, 25.00, null, null, 0.25, 'order group and customer deleted: NOT LOGGED IN class'],
             [true, false, 2, 42, 12.00, 10, 42, 0.12, 'refund after a customer group change: order-time group'],
             [true, false, 2, 42, 6.00, 10, 42, 0.12, 'partial credit memo: order-time rate on the refunded shipping'],
