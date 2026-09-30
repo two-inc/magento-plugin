@@ -1064,27 +1064,35 @@ has no entity id and the `sales_order_tax_item` rows the management interface
 reads do not exist yet. That interface stays the source for the post-save
 consumers (capture, refund).
 
-Nothing declared and no shipping tax charged is 0% — a store whose shipping
-is untaxed records no tax row at all, and 0% is a statement rather than a
-guess. Nothing declared but tax charged is refused unless the shipping tax
-fallback is enabled for the store (TWO-26082); it has no admin field, so a
-merchant only gets it after talking to us:
+Nothing declared is "no rate provided" (TWO-26117), whatever the line's tax.
+The shipping tax fallback decides what happens then. It has no admin field,
+so a merchant only gets it after talking to us:
 
 ```
 bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
 ```
 
 (`payment/<brand code>/...` on an overlay; drop the scope flags for the whole
-install.) With the fallback enabled, the rate resolves through Magento
-core's own shipping tax class (`tax/classes/shipping_tax_class`, store scope)
-and the tax rules engine, with the arguments core's quote-time tax calculator
-uses, including the tax class of the customer group the order was placed under
-(TWO-26073). With that class unset the order is refused rather than given an
-assumed rate. The plugin has no shipping tax setting of its own.
+install.) It is populated only when enabled AND Magento core's own shipping tax
+class (`tax/classes/shipping_tax_class`, store scope) is set. Blank, the line
+goes at 0% with its tax as charged, unchecked, and the API validates it: the
+plugin never refuses over shipping tax. Populated, the rate resolves through
+that class and the tax rules engine, with the arguments core's quote-time tax
+calculator uses, including the tax class of the customer group the order was
+placed under (TWO-26073), and the line's tax must reconcile with it within
+0.02 or the request is refused. A declared rate, 0% included, is always sent
+as is and never checked by the plugin. A refund relays the rate without the
+check. The plugin has no shipping tax setting of its own.
+
+Magento 2.4.7 core records a 0% shipping rate on the quote only when shipping
+prices exclude tax (`getAppliedTaxes()` skips 0% on the tax-inclusive path),
+and `ConvertQuoteTaxToOrderTax` never saves a 0% row. So a declared 0% reads as
+declared at placement and as "no rate" on every later request; the resolved
+rate is the same 0% unless the tax configuration changed in between.
 
 `validateTaxReconciliation()` closes the same loop at composition time: a
-line whose declared tax does not follow from its own declared rate and net
-declines the checkout with a generic buyer notice. It never corrects the
+line other than shipping whose declared tax does not follow from its own
+declared rate and net declines the checkout with a generic buyer notice. It never corrects the
 numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
 the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
 fraction-of-net term, and a discounted line may reconcile against
@@ -1139,7 +1147,7 @@ from the order columns, where `ComposeOrder::execute()` still falls back to
 the checkout session. It also loads no products, which a totals collector
 re-run on every credit-memo render cannot afford, and it avoids
 `getShippingLineOrder()`, because resolving the shipping tax rate queries the
-tax engine and throws when none is declared.
+tax engine and can refuse the line (TWO-26117).
 
 **The fee's VAT is not already on the credit memo.** Core's
 `Creditmemo\Total\Tax` builds the tax up from item `tax_invoiced` plus
