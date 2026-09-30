@@ -31,6 +31,20 @@ class PostprocessingTotalsTest extends TestCase
         $stale = ['taxable_amount' => '1.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000'];
         $untaxed = self::line('29.00', '0.00', '29.00', '0.000000');
         $credited = ['net_amount' => '109.00', 'tax_amount' => '21.00', 'gross_amount' => '130.00', 'line_items' => [$a, $untaxed]];
+        $composedBuckets = [
+            ['taxable_amount' => '100.00', 'tax_amount' => '21.00', 'tax_rate' => '0.210000'],
+            ['taxable_amount' => '29.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000'],
+        ];
+        $giftCard = ['net_amount' => '109.00', 'tax_amount' => '21.00', 'gross_amount' => '130.00', 'tax_subtotals' => $composedBuckets, 'line_items' => [$a, $untaxed]];
+        // 10.00 net at 21% the shop declared outside its lines.
+        $rateResidual = ['net_amount' => '119.00', 'tax_amount' => '18.90', 'gross_amount' => '137.90', 'tax_subtotals' => [['taxable_amount' => '90.00', 'tax_amount' => '18.90', 'tax_rate' => '0.210000'], $composedBuckets[1]], 'line_items' => [$a, $untaxed]];
+        $composed = ['net_amount' => '129.00', 'tax_amount' => '21.00', 'gross_amount' => '150.00', 'line_items' => [$a, $untaxed]];
+        $reduced = self::line('26.61', '2.39', '29.00', '0.090000');
+        $newRate = ['net_amount' => '129.00', 'tax_amount' => '21.00', 'gross_amount' => '150.00', 'tax_subtotals' => $composedBuckets, 'line_items' => [$a, $untaxed]];
+        $cheaper = self::line('90.00', '18.90', '108.90', '0.210000');
+        // A 5.00 fee the shop declared at 0% with no line of its own.
+        $fee = ['net_amount' => '105.00', 'tax_amount' => '21.00', 'gross_amount' => '126.00', 'tax_subtotals' => [$composedBuckets[0], ['taxable_amount' => '5.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000']], 'line_items' => [$a]];
+        $refund = ['amount' => '140.00', 'currency' => 'EUR', 'line_items' => [$a, $untaxed], 'tax_subtotals' => $composedBuckets];
 
         return [
             [['net_amount' => '0', 'tax_amount' => '0', 'gross_amount' => '0', 'tax_subtotals' => [$stale], 'line_items' => [$a, $b]], [], ['net_amount' => '123.97', 'tax_amount' => '26.03', 'gross_amount' => '150.00', 'tax_subtotals' => $bucket, 'line_items' => [$a, $b]], 'order totals and one bucket for 0.21 and 0.210000'],
@@ -40,6 +54,12 @@ class PostprocessingTotalsTest extends TestCase
             [['discount_amount' => '5.00', 'net_amount' => '0', 'line_items' => [$b]], [], ['discount_amount' => '5.00', 'net_amount' => '23.97', 'line_items' => [$b], 'tax_amount' => '5.03', 'gross_amount' => '29.00'], 'discount_amount is left alone'],
             [['line_items' => [$a, $b]] + $credited, $credited, ['line_items' => [$a, $b], 'net_amount' => '103.97', 'tax_amount' => '26.03', 'gross_amount' => '130.00'], 'a re-split keeps the 20.00 of store credit the totals carried'],
             [['amount' => '130.00', 'line_items' => [$a, $b]], ['amount' => '130.00', 'line_items' => [$a, $untaxed]], ['amount' => '130.00', 'line_items' => [$a, $b]], 'so does a refund amount'],
+            [['line_items' => [$a, $b]] + $giftCard, $giftCard, ['line_items' => [$a, $b], 'net_amount' => '103.97', 'tax_amount' => '26.03', 'gross_amount' => '130.00', 'tax_subtotals' => $bucket], 'a gift-card order with a re-split keeps the 20.00 of gift card'],
+            [['line_items' => [$a, $b]] + $rateResidual, $rateResidual, ['line_items' => [$a, $b], 'net_amount' => '113.97', 'tax_amount' => '23.93', 'gross_amount' => '137.90', 'tax_subtotals' => [['taxable_amount' => '113.97', 'tax_amount' => '23.93', 'tax_rate' => '0.210000']]], 'a per-rate residual survives in its bucket'],
+            [['net_amount' => '999.00', 'tax_amount' => '0.00', 'gross_amount' => '999.00', 'line_items' => [$a, $b]], $composed, ['net_amount' => '123.97', 'tax_amount' => '26.03', 'gross_amount' => '150.00', 'line_items' => [$a, $b]], 'a hand-edited total is replaced, not moved by the line change'],
+            [['line_items' => [$a, $b]] + $refund, $refund, ['line_items' => [$a, $b], 'amount' => '140.00', 'currency' => 'EUR', 'tax_subtotals' => $bucket], 'a refund with a re-split line keeps its positive amount and 10.00 residual'],
+            [['line_items' => [$a, $reduced]] + $newRate, $newRate, ['line_items' => [$a, $reduced], 'net_amount' => '126.61', 'tax_amount' => '23.39', 'gross_amount' => '150.00', 'tax_subtotals' => [$composedBuckets[0], ['taxable_amount' => '26.61', 'tax_amount' => '2.39', 'tax_rate' => '0.090000']]], 'a new rate gets its own bucket beside the received ones'],
+            [['line_items' => [$cheaper]] + $fee, $fee, ['line_items' => [$cheaper], 'net_amount' => '95.00', 'tax_amount' => '18.90', 'gross_amount' => '113.90', 'tax_subtotals' => [['taxable_amount' => '90.00', 'tax_amount' => '18.90', 'tax_rate' => '0.210000'], ['taxable_amount' => '5.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000']]], 'a bucket with a residual and no lines is kept'],
             [[], [], [], 'a body-less request is untouched'],
         ];
     }

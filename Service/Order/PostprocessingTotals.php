@@ -10,8 +10,8 @@ namespace Two\Gateway\Service\Order;
 use Two\Gateway\Api\OrderPostprocessingTotalsInterface;
 
 /**
- * Moves totals by the change in a payload's lines, and rebuilds its tax
- * subtotals from them (TWO-26092).
+ * Sets a payload's totals, and its tax subtotals per rate, to the sums over
+ * its lines plus the residual each carried in `$before` (TWO-26092).
  */
 class PostprocessingTotals implements OrderPostprocessingTotalsInterface
 {
@@ -22,7 +22,7 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
     {
         foreach (self::lineBlockKeys($payload) as $key) {
             $original = $key === '' ? $before : $before[$key] ?? [];
-            $original = is_array($original['line_items'] ?? null) ? $original['line_items'] : [];
+            $original = is_array($original) ? $original : [];
             if ($key === '') {
                 $payload = $this->recomputeBlock($payload, $original);
             } else {
@@ -40,7 +40,7 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
      * @param array $payload
      * @return string[]
      */
-    public static function lineBlockKeys(array $payload): array
+    private static function lineBlockKeys(array $payload): array
     {
         $keys = [];
         if (isset($payload['line_items']) && is_array($payload['line_items'])) {
@@ -60,7 +60,7 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
      * @param array $lines
      * @return array<string, array{taxable_amount: float, tax_amount: float}>
      */
-    public static function sumByRate(array $lines): array
+    private static function sumByRate(array $lines): array
     {
         $buckets = [];
         foreach ($lines as $line) {
@@ -101,37 +101,83 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
     }
 
     /**
+     * Each total, and each per-rate subtotal, is the sum over the block's lines
+     * plus the residual it carried over its lines in the block as received.
+     *
      * @param array $block
-     * @param array $originalLines
+     * @param array $original The same block as the subscriber received it.
      * @return array
      */
-    private function recomputeBlock(array $block, array $originalLines): array
+    private function recomputeBlock(array $block, array $original): array
     {
-        $change = self::sums($block['line_items']);
-        foreach (self::sums($originalLines) as $field => $sum) {
-            $change[$field] -= $sum;
-        }
+        $originalLines = is_array($original['line_items'] ?? null) ? $original['line_items'] : [];
+        $sums = self::sums($block['line_items']);
+        $originalSums = self::sums($originalLines);
+        $residual = static fn (string $total, string $field): float => is_numeric($original[$total] ?? null)
+            ? (float)$original[$total] - $originalSums[$field]
+            : 0.0;
 
-        if (array_key_exists('amount', $block)) {
-            $block['amount'] = self::amount((float)$block['amount'] + $change['gross_amount']);
-        } else {
-            foreach ($change as $field => $delta) {
-                $block[$field] = self::amount((float)($block[$field] ?? 0) + $delta);
-            }
+        // Refund lines carry positive amounts, like `amount` itself.
+        $totals = array_key_exists('amount', $block)
+            ? ['amount' => 'gross_amount']
+            : ['net_amount' => 'net_amount', 'tax_amount' => 'tax_amount', 'gross_amount' => 'gross_amount'];
+        foreach ($totals as $total => $field) {
+            $block[$total] = self::amount($sums[$field] + $residual($total, $field));
         }
 
         if (isset($block['tax_subtotals'])) {
-            $subtotals = [];
-            foreach (self::sumByRate($block['line_items']) as $rate => $sums) {
-                $subtotals[] = [
-                    'taxable_amount' => self::amount($sums['taxable_amount']),
-                    'tax_amount' => self::amount($sums['tax_amount']),
-                    'tax_rate' => (string)$rate,
-                ];
-            }
-            $block['tax_subtotals'] = $subtotals;
+            $block['tax_subtotals'] = $this->subtotals($block['line_items'], $original, $originalLines);
         }
 
         return $block;
+    }
+
+    /**
+     * One bucket per rate: its lines, plus what the received bucket at that
+     * rate carried over the received lines at it. A rate the received payload
+     * had no bucket for carries nothing extra.
+     *
+     * @param array $lines
+     * @param array $original
+     * @param array $originalLines
+     * @return array
+     */
+    private function subtotals(array $lines, array $original, array $originalLines): array
+    {
+        $residuals = [];
+        foreach (is_array($original['tax_subtotals'] ?? null) ? $original['tax_subtotals'] : [] as $bucket) {
+            $rate = self::amount($bucket['tax_rate'] ?? 0, 6);
+            $residuals[$rate]['taxable_amount'] = ($residuals[$rate]['taxable_amount'] ?? 0.0)
+                + (float)($bucket['taxable_amount'] ?? 0);
+            $residuals[$rate]['tax_amount'] = ($residuals[$rate]['tax_amount'] ?? 0.0)
+                + (float)($bucket['tax_amount'] ?? 0);
+        }
+        foreach (self::sumByRate($originalLines) as $rate => $sums) {
+            if (isset($residuals[$rate])) {
+                $residuals[$rate]['taxable_amount'] -= $sums['taxable_amount'];
+                $residuals[$rate]['tax_amount'] -= $sums['tax_amount'];
+            }
+        }
+
+        $buckets = self::sumByRate($lines);
+        foreach ($residuals as $rate => $residual) {
+            if (!isset($buckets[$rate]) && abs($residual['taxable_amount']) < 0.005 && abs($residual['tax_amount']) < 0.005) {
+                continue;
+            }
+            foreach ($residual as $field => $value) {
+                $buckets[$rate][$field] = ($buckets[$rate][$field] ?? 0.0) + $value;
+            }
+        }
+
+        $subtotals = [];
+        foreach ($buckets as $rate => $sums) {
+            $subtotals[] = [
+                'taxable_amount' => self::amount($sums['taxable_amount']),
+                'tax_amount' => self::amount($sums['tax_amount']),
+                'tax_rate' => (string)$rate,
+            ];
+        }
+
+        return $subtotals;
     }
 }

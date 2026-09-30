@@ -23,8 +23,8 @@ use Two\OrderPostprocessingFixture\Plugin\Subscriber;
 require_once __DIR__ . '/../../../Integration/OrderPostprocessingFixture/Plugin/Subscriber.php';
 
 /**
- * The postprocessing hook and the gates it runs on the payload it returns
- * (TWO-26092), driven through the CI fixture subscriber.
+ * The postprocessing hook (TWO-26092), driven through the CI fixture
+ * subscriber: what it returns is sent, and only a subscriber bug refuses.
  */
 class OrderPostprocessorTest extends TestCase
 {
@@ -34,7 +34,7 @@ class OrderPostprocessorTest extends TestCase
     private $errorLog = [];
 
     /** @var array<int, array{0: string, 1: mixed}> */
-    private $infoLog = [];
+    private $debugLog = [];
 
     /** @var string[] */
     private $comments = [];
@@ -58,7 +58,7 @@ class OrderPostprocessorTest extends TestCase
         $sent = $this->postprocessor()->process($requestType, $composed, $this->context());
 
         $this->assertSame(json_encode($composed), json_encode($sent), $description);
-        $this->assertSame([], $this->infoLog, $description);
+        $this->assertSame([], $this->debugLog, $description);
         $this->assertSame([], $this->comments, $description);
     }
 
@@ -83,7 +83,7 @@ class OrderPostprocessorTest extends TestCase
      *
      * @dataProvider editCases
      */
-    public function testASubscriberEditThatKeepsTheGatesIsSent(
+    public function testASubscriberEditIsSentAsReturned(
         string $requestType,
         string $payload,
         string $mode,
@@ -99,7 +99,12 @@ class OrderPostprocessorTest extends TestCase
         }
         $this->assertCount(1, $this->comments, $description);
         $this->assertStringContainsString('/line_items/1/', $this->comments[0], $description);
-        $this->assertSame('OrderPostprocessingChanged', $this->infoLog[0][0], $description);
+        $this->assertSame('OrderPostprocessingChanged', $this->debugLog[0][0], $description);
+        $this->assertStringContainsString(
+            '/line_items/1/net_amount',
+            implode(' ', array_keys($this->debugLog[0][1]['diff'])),
+            $description . ': the debug log keys each change by its JSON pointer'
+        );
     }
 
     public static function editCases(): array
@@ -110,6 +115,7 @@ class OrderPostprocessorTest extends TestCase
             [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_RESPLIT, 'capture re-split', 'the same re-split inside a partial capture'],
             [Hook::REQUEST_REFUND, 'refund', Subscriber::MODE_RESPLIT, 'refund re-split', 'a full shipping refund mirrors the re-split'],
             [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_GROSS_CHANGE, 'gross change', 'a gross change is the merchant\'s to make: no platform comparison refuses it'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_RESPLIT_WITHOUT_TOTALS, 'totals broken', 're-split lines under stale totals are sent: the API validates them'],
         ];
     }
 
@@ -138,6 +144,7 @@ class OrderPostprocessorTest extends TestCase
             'intent re-split' => $line + $totals,
             'capture re-split' => $partial,
             'refund re-split' => $line + $subtotals + ['/amount' => '150.00'],
+            'totals broken' => $line + ['/net_amount' => '129.00', '/tax_amount' => '21.00', '/tax_subtotals' => self::subtotals()],
             'gross change' => [
                 '/line_items/1/gross_amount' => '30.00',
                 '/gross_amount' => '151.00',
@@ -149,7 +156,7 @@ class OrderPostprocessorTest extends TestCase
     /**
      * @dataProvider refusalCases
      */
-    public function testAGateFailureRefusesWithItsNamedCode(
+    public function testASubscriberBugRefusesWithItsNamedCode(
         string $requestType,
         string $payload,
         ?string $mode,
@@ -179,38 +186,46 @@ class OrderPostprocessorTest extends TestCase
     public static function refusalCases(): array
     {
         return [
-            [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_RESPLIT_WITHOUT_TOTALS, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 're-split lines, stale order totals'],
-            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_LINE_OFF, 'TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT', 'a line whose net, tax and gross no longer agree'],
-            [Hook::REQUEST_REFUND, 'refund', Subscriber::MODE_SUBTOTALS_STALE, 'TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT', 're-split lines and totals, stale subtotals'],
             [Hook::REQUEST_ORDER_UPDATE, 'order', Subscriber::MODE_THROW, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'a subscriber that throws'],
             [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_RETURN_NON_ARRAY, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'a subscriber that returns no array'],
-            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_RATE_OFF, 'TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT', 'a line whose tax no longer follows its rate'],
-            [Hook::REQUEST_ORDER_CREATE, 'store credit order', Subscriber::MODE_DROP_RESIDUAL, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'totals rebuilt as the bare sum of the lines, dropping the store credit'],
-            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_DROP_PARTIAL, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'a partial capture\'s block deleted'],
-            [Hook::REQUEST_REFUND, 'refund', Subscriber::MODE_DROP_LINES, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'the lines deleted'],
-            [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_NULL_SUBTOTALS, 'TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT', 'the subtotals nulled'],
-            [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_DROP_GROSS, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'the gross total deleted'],
-            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_DROP_GROSS, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'a partial capture\'s gross total deleted'],
+            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_NOT_ENCODABLE, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'a subscriber whose result cannot be JSON-encoded'],
         ];
     }
 
     /**
-     * With no subscriber the line tax gate fails exactly as it did inside
-     * ComposeOrder before it moved behind the hook.
+     * The builders' line tax reconcile refuses a mistaxed line as it did
+     * before the hook existed, and before the hook runs, whatever a
+     * subscriber would have done with it.
+     *
+     * @dataProvider mistaxedCases
      */
-    public function testAnUnchangedCreateFailsTheLineTaxGateWithTodaysError(): void
-    {
+    public function testTheBuilderTaxReconcileStillRefusesAMistaxedLine(
+        string $requestType,
+        ?string $mode,
+        string $description
+    ): void {
+        Subscriber::$mode = $mode;
         $payload = self::orderPayload();
         $payload['line_items'][0]['tax_amount'] = '25.00';
         $payload['line_items'][0]['gross_amount'] = '125.00';
 
         try {
-            $this->postprocessor()->process(Hook::REQUEST_ORDER_CREATE, $payload, $this->context());
-            $this->fail('nothing was refused');
+            $this->postprocessor()->process($requestType, $payload, $this->context());
+            $this->fail($description . ': nothing was refused');
         } catch (LocalizedException $e) {
-            $this->assertSame('This order could not be placed. Please contact the merchant.', $e->getMessage());
-            $this->assertSame(['TaxReconciliationFailed'], array_column($this->errorLog, 0));
+            $this->assertSame('This order could not be placed. Please contact the merchant.', $e->getMessage(), $description);
+            $this->assertSame(['TaxReconciliationFailed'], array_column($this->errorLog, 0), $description);
+            $this->assertSame([], Subscriber::$calls, $description . ': the hook never ran');
         }
+    }
+
+    public static function mistaxedCases(): array
+    {
+        return [
+            [Hook::REQUEST_ORDER_CREATE, null, 'create, no subscriber'],
+            [Hook::REQUEST_ORDER_UPDATE, null, 'update, no subscriber'],
+            [Hook::REQUEST_ORDER_CREATE, Subscriber::MODE_RESPLIT, 'create, with a subscriber armed'],
+        ];
     }
 
     /**
@@ -242,79 +257,6 @@ class OrderPostprocessorTest extends TestCase
             [Hook::REQUEST_CANCEL, Subscriber::MODE_BODY_ON_BODYLESS, 'TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED', 'a body added to cancel'],
             [Hook::REQUEST_ORDER_CONFIRM, Subscriber::MODE_BODY_ON_BODYLESS, 'TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED', 'a body added to confirm'],
         ];
-    }
-
-    /**
-     * A subscriber edit is gated on what it changed: a residual the plugin
-     * already sent survives, and a line it left alone is not re-judged.
-     *
-     * @dataProvider unchangedPartCases
-     */
-    public function testAnEditIsGatedOnWhatItChanged(
-        string $requestType,
-        string $payload,
-        array $expected,
-        string $description
-    ): void {
-        Subscriber::$mode = Subscriber::MODE_RESPLIT;
-
-        $sent = $this->postprocessor()->process($requestType, self::payload($payload), $this->context());
-
-        foreach ($expected as $pointer => $value) {
-            $this->assertSame($value, self::at($sent, $pointer), $description . ' ' . $pointer);
-        }
-    }
-
-    public static function unchangedPartCases(): array
-    {
-        return [
-            [Hook::REQUEST_ORDER_CREATE, 'store credit order', ['/gross_amount' => '130.00', '/net_amount' => '103.97', '/tax_amount' => '26.03', '/line_items/1/tax_amount' => '5.03'], 're-split on an order paid partly with store credit keeps the credit'],
-            [Hook::REQUEST_REFUND, 'store credit refund', ['/amount' => '130.00', '/line_items/1/tax_amount' => '5.03'], 'the same on a refund'],
-            [Hook::REQUEST_CAPTURE, 'unreconciled capture', ['/partial/line_items/1/tax_amount' => '5.03', '/partial/tax_amount' => '27.03'], 're-split beside a product line whose tax never followed its rate'],
-        ];
-    }
-
-    /**
-     * The line tax gate logs which line failed and by how much, beside the refusal.
-     */
-    public function testALineTaxRefusalLogsTheGatesMessage(): void
-    {
-        Subscriber::$mode = Subscriber::MODE_RATE_OFF;
-
-        try {
-            $this->postprocessor()->process(Hook::REQUEST_REFUND, self::refundPayload(), $this->context());
-            $this->fail('nothing was refused');
-        } catch (LocalizedException $e) {
-            $refusal = array_values(array_filter(
-                $this->errorLog,
-                static fn (array $entry): bool => $entry[0] === 'OrderPostprocessingRefused'
-            ));
-            $this->assertSame(['TaxReconciliationFailed', 'OrderPostprocessingRefused'], array_column($this->errorLog, 0));
-            $this->assertStringStartsWith(
-                'Line 11 declares tax 21.00 but rate 0.500000 on base 100.00 implies 50.00 (off by 29.00,',
-                $this->errorLog[0][1]
-            );
-            $this->assertSame('failed', $refusal[0][1]['details']['tax_reconciliation'] ?? null);
-        }
-    }
-
-    /**
-     * An unchanged update runs the line tax gate create always ran, since both
-     * compose through ComposeOrder.
-     */
-    public function testAnUnchangedUpdateFailsTheLineTaxGateWithTodaysError(): void
-    {
-        $payload = self::orderPayload();
-        $payload['line_items'][0]['tax_amount'] = '25.00';
-        $payload['line_items'][0]['gross_amount'] = '125.00';
-
-        try {
-            $this->postprocessor()->process(Hook::REQUEST_ORDER_UPDATE, $payload, $this->context());
-            $this->fail('nothing was refused');
-        } catch (LocalizedException $e) {
-            $this->assertSame('This order could not be placed. Please contact the merchant.', $e->getMessage());
-            $this->assertSame(['TaxReconciliationFailed'], array_column($this->errorLog, 0));
-        }
     }
 
     /**
@@ -371,8 +313,8 @@ class OrderPostprocessorTest extends TestCase
         $log->method('addErrorLog')->willReturnCallback(function (string $type, $data) {
             $this->errorLog[] = [$type, $data];
         });
-        $log->method('addLog')->willReturnCallback(function (string $type, $data) {
-            $this->infoLog[] = [$type, $data];
+        $log->method('addDebugLog')->willReturnCallback(function (string $type, $data) {
+            $this->debugLog[] = [$type, $data];
         });
 
         $plugin = new Subscriber(new PostprocessingTotals());
@@ -433,23 +375,8 @@ class OrderPostprocessorTest extends TestCase
         $unbalanced = self::orderPayload();
         $unbalanced['gross_amount'] = '151.00';
 
-        $storeCredit = self::orderPayload();
-        $storeCredit['gross_amount'] = '130.00';
-        $storeCredit['net_amount'] = '109.00';
-        $storeCreditRefund = self::refundPayload();
-        $storeCreditRefund['amount'] = '130.00';
-        $unreconciled = self::capturePayload();
-        $unreconciled['line_items'][0]['tax_amount'] = '22.00';
-        $unreconciled['line_items'][0]['gross_amount'] = '122.00';
-        $unreconciled['tax_amount'] = '22.00';
-        $unreconciled['gross_amount'] = '151.00';
-        $unreconciled['tax_subtotals'][0]['tax_amount'] = '22.00';
-
         return [
             'none' => [],
-            'store credit order' => $storeCredit,
-            'store credit refund' => $storeCreditRefund,
-            'unreconciled capture' => ['partial' => $unreconciled],
             'intent' => self::intentPayload(),
             'order' => self::orderPayload(),
             'unbalanced order' => $unbalanced,

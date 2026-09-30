@@ -19,21 +19,24 @@ namespace Two\Gateway\Api;
 interface OrderPostprocessingTotalsInterface
 {
     /**
-     * Carry a subscriber's line edits into the totals that derive from
-     * `line_items`, wherever lines appear (the top level, or the `partial`
-     * block of a capture):
+     * Set the totals that derive from `line_items` from a subscriber's lines,
+     * wherever lines appear (the top level, or the `partial` block of a
+     * capture):
      *
-     * - `net_amount`, `tax_amount` and `gross_amount` each move by the change
-     *   in the sum of that field over the lines between `$before` and
-     *   `$payload`, and a refund's `amount` by the change in line gross. Any
-     *   difference the composed payload already carried between a total and
-     *   its lines (store credit, a gift card, an unitemised fee) is kept;
-     * - `tax_subtotals`, when the key is present and not null, is rebuilt
-     *   with one bucket per distinct `tax_rate`.
+     * - `net_amount`, `tax_amount` and `gross_amount` (or a refund's
+     *   `amount`, against line gross) each become the sum of that field over
+     *   the lines, plus the residual the total carried over the lines in
+     *   `$before`: anything the shop declared outside its lines, such as a
+     *   gift card or store credit;
+     * - `tax_subtotals`, when the key is present and not null, gets one bucket
+     *   per distinct `tax_rate`: the lines at that rate, plus the residual the
+     *   `$before` bucket at that rate carried over its lines.
      *
-     * Amounts are written as 2dp decimal strings and rates as 6dp. Every
-     * other field, `discount_amount` included, is left as it is. A payload
-     * with no lines is returned unchanged.
+     * Totals already in `$payload` are replaced, so a total edited by hand
+     * before the call is not counted twice. Amounts are written as 2dp
+     * decimal strings and rates as 6dp. Every other field, `discount_amount`
+     * included, is left as it is. A payload with no lines is returned
+     * unchanged.
      *
      * @param array $payload The payload with the subscriber's line edits.
      * @param array $before The payload the subscriber received.

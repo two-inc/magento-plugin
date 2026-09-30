@@ -17,8 +17,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
 
 /**
- * Every order request passes through here just before it is sent (TWO-26092). An unchanged
- * request is sent as composed, behind only the gates it had before the hook existed.
+ * Every order request passes through here just before it is sent (TWO-26092). A subscriber's
+ * result is sent as returned: the plugin checks only what it builds, and Two's API validates the rest.
  */
 class OrderPostprocessor
 {
@@ -26,9 +26,6 @@ class OrderPostprocessor
 
     public const HOOK_FAILED = 'HOOK_FAILED';
     public const BODY_NOT_ACCEPTED = 'BODY_NOT_ACCEPTED';
-    public const LINE_INCONSISTENT = 'LINE_INCONSISTENT';
-    public const SUBTOTALS_INCONSISTENT = 'SUBTOTALS_INCONSISTENT';
-    public const TOTALS_INCONSISTENT = 'TOTALS_INCONSISTENT';
 
     /** Requests the API defines no body for. */
     private const BODYLESS = [Hook::REQUEST_ORDER_CONFIRM, Hook::REQUEST_CANCEL];
@@ -38,9 +35,6 @@ class OrderPostprocessor
 
     /** Composed by ComposeOrder, which ran the line tax gate before the hook existed. */
     private const LINE_TAX_GATED = [Hook::REQUEST_ORDER_CREATE, Hook::REQUEST_ORDER_UPDATE];
-
-    /** One cent, plus float noise: independently rounded net and tax may sum a cent off their gross. */
-    private const CENT_TOLERANCE = 0.010001;
 
     /**
      * @var ComposeOrder
@@ -96,7 +90,8 @@ class OrderPostprocessor
      * @param array $context trigger, endpoint and the platform objects
      *                       (quote or order, invoice, shipment, creditmemo).
      * @return array
-     * @throws LocalizedException when a gate fails, or the hook throws on a request with a body
+     * @throws LocalizedException when the plugin's own lines fail the tax reconcile, or the hook
+     *                            throws or returns what cannot be sent on a request with a body
      */
     public function process(string $requestType, array $payload, array $context): array
     {
@@ -112,10 +107,11 @@ class OrderPostprocessor
         try {
             $result = $this->hook->process($payload, $context);
         } catch (Throwable $e) {
+            // A non-array return lands here too, as the interface's return type fails.
             throw $this->refusal(self::HOOK_FAILED, $context, [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
-            ], []);
+            ]);
         }
 
         $diff = $this->diff($payload, $result);
@@ -123,7 +119,10 @@ class OrderPostprocessor
             // Byte for byte as composed, even if a subscriber only reordered keys.
             return $payload;
         }
-        $this->gate($payload, $result, $diff, $context);
+        if (json_encode($result) === false) {
+            // The adapter would send an empty body: a bug in the subscriber, not a declaration.
+            throw $this->refusal(self::HOOK_FAILED, $context, ['json_error' => json_last_error_msg()]);
+        }
         $this->recordChange($context, $diff);
 
         return $result;
@@ -203,210 +202,9 @@ class OrderPostprocessor
     }
 
     /**
-     * Gates on a changed payload, judging only the change: edited or added lines, and residual drift.
-     *
-     * @param array $before The payload as composed.
-     * @param array $after The payload the subscriber returned.
-     * @param array $diff
-     * @param array $context
-     * @return void
-     * @throws LocalizedException
-     */
-    private function gate(array $before, array $after, array $diff, array $context): void
-    {
-        $composedKeys = PostprocessingTotals::lineBlockKeys($before);
-        $keys = array_unique(array_merge($composedKeys, PostprocessingTotals::lineBlockKeys($after)));
-        foreach ($keys as $key) {
-            $block = $key === '' ? $after : $after[$key] ?? null;
-            $original = $key === '' ? $before : $before[$key] ?? [];
-            $original = is_array($original) ? $original : [];
-            $originalLines = is_array($original['line_items'] ?? null) ? $original['line_items'] : [];
-
-            // A block the plugin composed must survive, or deleting it would escape every check below.
-            if (in_array($key, $composedKeys, true)) {
-                $this->gatePresence($key, $block, $original, $diff, $context);
-            }
-
-            $this->gateLines($block['line_items'], $originalLines, $diff, $context);
-            // Totals before subtotals: forgotten totals are the commoner slip, and the one worth naming.
-            $this->gateResiduals(self::TOTALS_INCONSISTENT, $this->totalsResiduals($block), $this->totalsResiduals($original), $diff, $context);
-            $this->gateResiduals(self::SUBTOTALS_INCONSISTENT, $this->subtotalsResiduals($block), $this->subtotalsResiduals($original), $diff, $context);
-        }
-    }
-
-    /**
-     * A composed block still carries its lines, its totals, and its subtotals if it had them.
-     *
-     * @param string $key
-     * @param mixed $block
-     * @param array $original
-     * @param array $diff
-     * @param array $context
-     * @throws LocalizedException
-     */
-    private function gatePresence(string $key, $block, array $original, array $diff, array $context): void
-    {
-        $where = $key === '' ? '' : '/' . $key;
-        if (!is_array($block) || !is_array($block['line_items'] ?? null)) {
-            throw $this->refusal(self::TOTALS_INCONSISTENT, $context, [
-                'missing' => $where . '/line_items',
-            ], $diff);
-        }
-        foreach (['amount', 'net_amount', 'tax_amount', 'gross_amount'] as $field) {
-            if (is_numeric($original[$field] ?? null) && !is_numeric($block[$field] ?? null)) {
-                throw $this->refusal(self::TOTALS_INCONSISTENT, $context, [
-                    'missing' => $where . '/' . $field,
-                ], $diff);
-            }
-        }
-        if (is_array($original['tax_subtotals'] ?? null) && !is_array($block['tax_subtotals'] ?? null)) {
-            throw $this->refusal(self::SUBTOTALS_INCONSISTENT, $context, [
-                'missing' => $where . '/tax_subtotals',
-            ], $diff);
-        }
-    }
-
-    /**
-     * G3: each changed or added line's net, tax and gross agree, and its tax
-     * follows from its declared rate.
-     *
-     * @throws LocalizedException
-     */
-    private function gateLines(array $lines, array $originalLines, array $diff, array $context): void
-    {
-        $changedLines = [];
-        foreach ($lines as $index => $line) {
-            if (in_array($line, $originalLines, true)) {
-                continue;
-            }
-            if (!is_array($line)) {
-                throw $this->refusal(self::LINE_INCONSISTENT, $context, ['line' => $index], $diff);
-            }
-            $net = (float)($line['net_amount'] ?? 0);
-            $tax = (float)($line['tax_amount'] ?? 0);
-            $gross = (float)($line['gross_amount'] ?? 0);
-            if (abs($net + $tax - $gross) > self::CENT_TOLERANCE) {
-                throw $this->refusal(self::LINE_INCONSISTENT, $context, [
-                    'line' => $line['order_item_id'] ?? $index,
-                    'net_amount' => $net,
-                    'tax_amount' => $tax,
-                    'gross_amount' => $gross,
-                ], $diff);
-            }
-            $changedLines[] = $line;
-        }
-
-        try {
-            $this->orderService->validateTaxReconciliation($changedLines);
-        } catch (LocalizedException $e) {
-            throw $this->refusal(self::LINE_INCONSISTENT, $context, [
-                'tax_reconciliation' => 'failed',
-                'message' => $e->getMessage(),
-            ], $diff);
-        }
-    }
-
-    /**
-     * Refuse when a residual moved from what the composed payload carried.
-     *
-     * @param string $gate
-     * @param array<string, float> $residuals
-     * @param array<string, float> $originalResiduals
-     * @param array $diff
-     * @param array $context
-     * @throws LocalizedException
-     */
-    private function gateResiduals(
-        string $gate,
-        array $residuals,
-        array $originalResiduals,
-        array $diff,
-        array $context
-    ): void {
-        foreach ($residuals as $check => $residual) {
-            $original = $originalResiduals[$check] ?? 0.0;
-            if (abs($residual - $original) > self::CENT_TOLERANCE) {
-                throw $this->refusal($gate, $context, [
-                    'check' => $check,
-                    'residual' => round($residual, 2),
-                    'residual_before_hook' => round($original, 2),
-                ], $diff);
-            }
-        }
-    }
-
-    /**
-     * G5 and G6: each total less the sum of its lines, and gross less net + tax.
-     *
-     * @param array $block
-     * @return array<string, float>
-     */
-    private function totalsResiduals(array $block): array
-    {
-        if (!is_array($block['line_items'] ?? null)) {
-            return [];
-        }
-        $sums = ['net_amount' => 0.0, 'tax_amount' => 0.0, 'gross_amount' => 0.0];
-        foreach ($block['line_items'] as $line) {
-            foreach (array_keys($sums) as $field) {
-                $sums[$field] += is_array($line) ? (float)($line[$field] ?? 0) : 0.0;
-            }
-        }
-
-        $residuals = [];
-        if (array_key_exists('amount', $block)) {
-            $residuals['amount'] = (float)$block['amount'] - $sums['gross_amount'];
-        }
-        foreach ($sums as $field => $sum) {
-            if (array_key_exists($field, $block)) {
-                $residuals[$field] = (float)$block[$field] - $sum;
-            }
-        }
-        if (isset($residuals['gross_amount'], $residuals['net_amount'], $residuals['tax_amount'])) {
-            $residuals['gross = net + tax'] = (float)$block['gross_amount']
-                - (float)$block['net_amount'] - (float)$block['tax_amount'];
-        }
-
-        return $residuals;
-    }
-
-    /**
-     * G4: each tax_subtotals bucket less the lines at its rate.
-     *
-     * @param array $block
-     * @return array<string, float>
-     */
-    private function subtotalsResiduals(array $block): array
-    {
-        if (!is_array($block['tax_subtotals'] ?? null) || !is_array($block['line_items'] ?? null)) {
-            return [];
-        }
-
-        $residuals = [];
-        foreach ($block['tax_subtotals'] as $index => $subtotal) {
-            if (!is_array($subtotal)) {
-                $residuals["subtotal $index"] = INF;
-                continue;
-            }
-            $rate = PostprocessingTotals::amount($subtotal['tax_rate'] ?? 0, 6);
-            foreach (['taxable_amount', 'tax_amount'] as $field) {
-                $residuals["$rate $field"] = ($residuals["$rate $field"] ?? 0.0) + (float)($subtotal[$field] ?? 0);
-            }
-        }
-        $lines = array_filter($block['line_items'], 'is_array');
-        foreach (PostprocessingTotals::sumByRate($lines) as $rate => $sums) {
-            foreach ($sums as $field => $sum) {
-                $residuals["$rate $field"] = ($residuals["$rate $field"] ?? 0.0) - $sum;
-            }
-        }
-
-        return $residuals;
-    }
-
-    /**
      * Log the refusal and build the exception that stops the request.
      */
-    private function refusal(string $gate, array $context, array $details, array $diff): LocalizedException
+    private function refusal(string $gate, array $context, array $details): LocalizedException
     {
         $code = self::CODE_PREFIX . $gate;
         $this->logRepository->addErrorLog('OrderPostprocessingRefused', [
@@ -414,7 +212,6 @@ class OrderPostprocessor
             'request_type' => $context['request_type'],
             'trigger' => $context['trigger'],
             'details' => $details,
-            'diff' => $diff,
         ]);
 
         if (in_array($context['request_type'], self::BUYER_FACING, true)) {
@@ -439,7 +236,7 @@ class OrderPostprocessor
     }
 
     /**
-     * Log the change, and note it on the order where there is one.
+     * Log the change for support, and note it on the order where there is one.
      *
      * @param array $context
      * @param array $diff
@@ -447,7 +244,11 @@ class OrderPostprocessor
      */
     private function recordChange(array $context, array $diff): void
     {
-        $this->logRepository->addLog('OrderPostprocessingChanged', [
+        $diff = array_combine(
+            array_column($diff, 'path'),
+            array_map(static fn (array $change): array => [$change['before'], $change['after']], $diff)
+        );
+        $this->logRepository->addDebugLog('OrderPostprocessingChanged', [
             'request_type' => $context['request_type'],
             'trigger' => $context['trigger'],
             'diff' => $diff,
