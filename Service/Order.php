@@ -48,7 +48,7 @@ abstract class Order
      * a large order" to this amount, regardless of how many line items the
      * order has. See that method's docblock.
      */
-    protected const OTHER_CHARGES_EPSILON_CEILING = 1.00;
+    private const OTHER_CHARGES_EPSILON_CEILING = 1.00;
 
     /**
      * Tolerance, in currency units, on tax == net * rate for a single line.
@@ -703,7 +703,7 @@ abstract class Order
      *
      * @param OrderModel|CreditmemoModel $entity
      */
-    protected function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
+    public function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
     {
         $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
         $customerTaxClassId = $this->resolveCustomerTaxClassId($order);

@@ -10,20 +10,23 @@ namespace Two\Gateway\Service\Order;
 use Two\Gateway\Api\OrderPostprocessingTotalsInterface;
 
 /**
- * Recomputes totals and tax subtotals from a payload's own lines (TWO-26092).
+ * Moves totals by the change in a payload's lines, and rebuilds its tax
+ * subtotals from them (TWO-26092).
  */
 class PostprocessingTotals implements OrderPostprocessingTotalsInterface
 {
     /**
      * @inheritDoc
      */
-    public function recompute(array $payload): array
+    public function recompute(array $payload, array $before): array
     {
         foreach (self::lineBlockKeys($payload) as $key) {
+            $original = $key === '' ? $before : $before[$key] ?? [];
+            $original = is_array($original['line_items'] ?? null) ? $original['line_items'] : [];
             if ($key === '') {
-                $payload = $this->recomputeBlock($payload);
+                $payload = $this->recomputeBlock($payload, $original);
             } else {
-                $payload[$key] = $this->recomputeBlock($payload[$key]);
+                $payload[$key] = $this->recomputeBlock($payload[$key], $original);
             }
         }
 
@@ -72,6 +75,22 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
     }
 
     /**
+     * @param array $lines
+     * @return array{net_amount: float, tax_amount: float, gross_amount: float}
+     */
+    private static function sums(array $lines): array
+    {
+        $sums = ['net_amount' => 0.0, 'tax_amount' => 0.0, 'gross_amount' => 0.0];
+        foreach ($lines as $line) {
+            foreach (array_keys($sums) as $field) {
+                $sums[$field] += (float)($line[$field] ?? 0);
+            }
+        }
+
+        return $sums;
+    }
+
+    /**
      * @param mixed $value
      * @param int $dp
      * @return string
@@ -83,25 +102,22 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
 
     /**
      * @param array $block
+     * @param array $originalLines
      * @return array
      */
-    private function recomputeBlock(array $block): array
+    private function recomputeBlock(array $block, array $originalLines): array
     {
-        $net = 0.0;
-        $tax = 0.0;
-        $gross = 0.0;
-        foreach ($block['line_items'] as $line) {
-            $net += (float)($line['net_amount'] ?? 0);
-            $tax += (float)($line['tax_amount'] ?? 0);
-            $gross += (float)($line['gross_amount'] ?? 0);
+        $change = self::sums($block['line_items']);
+        foreach (self::sums($originalLines) as $field => $sum) {
+            $change[$field] -= $sum;
         }
 
         if (array_key_exists('amount', $block)) {
-            $block['amount'] = self::amount($gross);
+            $block['amount'] = self::amount((float)$block['amount'] + $change['gross_amount']);
         } else {
-            $block['net_amount'] = self::amount($net);
-            $block['tax_amount'] = self::amount($tax);
-            $block['gross_amount'] = self::amount($gross);
+            foreach ($change as $field => $delta) {
+                $block[$field] = self::amount((float)($block[$field] ?? 0) + $delta);
+            }
         }
 
         if (isset($block['tax_subtotals'])) {

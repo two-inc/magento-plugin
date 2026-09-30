@@ -26,6 +26,8 @@ class Subscriber
     public const MODE_THROW = 'throw';
     public const MODE_RETURN_NON_ARRAY = 'return_non_array';
     public const MODE_BODY_ON_BODYLESS = 'body_on_bodyless';
+    public const MODE_RATE_OFF = 'rate_off';
+    public const MODE_DROP_RESIDUAL = 'drop_residual';
 
     /** @var string|null Null leaves the payload untouched. */
     public static $mode = null;
@@ -65,16 +67,29 @@ class Subscriber
 
         switch (self::$mode) {
             case self::MODE_RESPLIT:
-                return $this->totals->recompute($this->resplitShipping($result, $context));
+                return $this->totals->recompute($this->resplitShipping($result, $context), $result);
             case self::MODE_RESPLIT_WITHOUT_TOTALS:
                 return $this->resplitShipping($result, $context);
             case self::MODE_GROSS_CHANGE:
-                return $this->totals->recompute($this->addToShipping($result, 1.00));
+                return $this->totals->recompute($this->addToShipping($result, 1.00), $result);
             case self::MODE_LINE_OFF:
                 return $this->editLines($result, static function (array $line): array {
                     $line['tax_amount'] = number_format((float)$line['tax_amount'] + 1.00, 2, '.', '');
                     return $line;
                 });
+            case self::MODE_RATE_OFF:
+                return $this->editLines($result, static function (array $line): array {
+                    if (($line['type'] ?? '') === 'PHYSICAL') {
+                        $line['tax_rate'] = '0.500000';
+                    }
+                    return $line;
+                });
+            case self::MODE_DROP_RESIDUAL:
+                $payload = $this->resplitShipping($result, $context);
+                foreach (['net_amount', 'tax_amount', 'gross_amount'] as $field) {
+                    $payload[$field] = number_format(array_sum(array_map('floatval', array_column($payload['line_items'], $field))), 2, '.', '');
+                }
+                return $payload;
             case self::MODE_SUBTOTALS_STALE:
                 return $this->resplitShipping($result, $context, true);
             case self::MODE_THROW:
@@ -104,6 +119,7 @@ class Subscriber
             return $payload;
         }
         $subtotals = $payload['tax_subtotals'] ?? null;
+        $before = $payload;
         $payload = $this->editLines($payload, static function (array $line) use ($rate): array {
             if (($line['type'] ?? '') !== 'SHIPPING_FEE' || (float)$line['tax_amount'] != 0.0) {
                 return $line;
@@ -118,7 +134,7 @@ class Subscriber
             return $line;
         });
         if ($totalsOnly) {
-            $payload = $this->totals->recompute($payload);
+            $payload = $this->totals->recompute($payload, $before);
             $payload['tax_subtotals'] = $subtotals;
         }
 

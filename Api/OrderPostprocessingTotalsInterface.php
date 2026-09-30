@@ -19,11 +19,15 @@ namespace Two\Gateway\Api;
 interface OrderPostprocessingTotalsInterface
 {
     /**
-     * Rebuild the totals that derive from `line_items`, wherever lines appear
-     * (the top level, or the `partial` block of a capture):
+     * Carry a subscriber's line edits into the totals that derive from
+     * `line_items`, wherever lines appear (the top level, or the `partial`
+     * block of a capture):
      *
-     * - `net_amount`, `tax_amount` and `gross_amount` become the sums of the
-     *   lines, and a refund's `amount` the sum of its line gross;
+     * - `net_amount`, `tax_amount` and `gross_amount` each move by the change
+     *   in the sum of that field over the lines between `$before` and
+     *   `$payload`, and a refund's `amount` by the change in line gross. Any
+     *   difference the composed payload already carried between a total and
+     *   its lines (store credit, a gift card, an unitemised fee) is kept;
      * - `tax_subtotals`, when the key is present and not null, is rebuilt
      *   with one bucket per distinct `tax_rate`.
      *
@@ -31,8 +35,9 @@ interface OrderPostprocessingTotalsInterface
      * other field, `discount_amount` included, is left as it is. A payload
      * with no lines is returned unchanged.
      *
-     * @param array $payload
+     * @param array $payload The payload with the subscriber's line edits.
+     * @param array $before The payload the subscriber received.
      * @return array
      */
-    public function recompute(array $payload): array;
+    public function recompute(array $payload, array $before): array;
 }
