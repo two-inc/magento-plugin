@@ -5,8 +5,8 @@
  *
  * CI probe (TWO-26092), run inside a real Magento with the
  * Two_OrderPostprocessingFixture module enabled: proves the fixture's `after`
- * plugin is woven into the hook, fires for every request type, and that the
- * gates hold on what it returns. The context carries a real quote or order at
+ * plugin is woven into the hook, fires for every request type, and that what
+ * it returns is sent. The context carries a real quote or order at
  * a Dutch address, so the shipping tax rate resolves and the re-split really
  * runs. Usage, from the Magento root:
  *   php <plugin>/Test/Integration/order-postprocessing-probe.php
@@ -99,8 +99,9 @@ $cases = [
     [Hook::REQUEST_ORDER_CREATE, Subscriber::MODE_RESPLIT, ['pointers' => $resplit('')], 'create re-split at the order\'s shipping rate is sent'],
     [Hook::REQUEST_CAPTURE, Subscriber::MODE_RESPLIT, ['pointers' => $resplit('/partial')], 'partial capture re-split is sent'],
     [Hook::REQUEST_CAPTURE, Subscriber::MODE_GROSS_CHANGE, ['pointers' => ['/partial/gross_amount' => '151.00']], 'a gross change through the DI-bound totals helper is sent'],
-    [Hook::REQUEST_CAPTURE, Subscriber::MODE_LINE_OFF, 'TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT', 'a broken line is refused by name'],
+    [Hook::REQUEST_CAPTURE, Subscriber::MODE_RESPLIT_WITHOUT_TOTALS, ['pointers' => ['/partial/line_items/1/net_amount' => '23.97', '/partial/net_amount' => '129.00']], 'a re-split under stale totals is sent for the API to judge'],
     [Hook::REQUEST_REFUND, Subscriber::MODE_THROW, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'a throwing subscriber is refused by name'],
+    [Hook::REQUEST_REFUND, Subscriber::MODE_NOT_ENCODABLE, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'a result that cannot be JSON-encoded is refused by name'],
     [Hook::REQUEST_ORDER_UPDATE, Subscriber::MODE_RETURN_NON_ARRAY, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'the interceptor\'s array return type catches a non-array'],
     [Hook::REQUEST_CANCEL, Subscriber::MODE_BODY_ON_BODYLESS, [], 'a body added to cancel is dropped, the cancel still sent'],
     [Hook::REQUEST_CANCEL, Subscriber::MODE_THROW, [], 'a throwing subscriber never blocks a cancel'],
