@@ -153,7 +153,7 @@ invoice Two issues has to follow your books rather than the shop's figures.
 **Name and mechanism.** An `after` plugin on
 `Two\Gateway\Api\OrderPostprocessingInterface::process(array $payload, array $context): array`.
 The default implementation returns the payload unchanged. Plugins chain by
-`sortOrder`, and only the final result is checked and sent.
+`sortOrder`, and the final result is sent as returned.
 
 ```xml
 <!-- your module's etc/di.xml -->
@@ -214,47 +214,24 @@ A few specifics:
 
 **Unchanged means unchanged.** When no subscriber changes the payload, every
 request is sent byte for byte as the plugin composed it, and is accepted or
-refused exactly as it was before this hook existed. Order create and address
-update still refuse a line whose tax does not follow from its rate, as they
-always have. Nothing else is checked.
+refused exactly as it was before this hook existed.
 
-**What the plugin checks when you change the payload.** Your edits are yours to
-make, and Two's API validates whatever arrives. The plugin still refuses a
-change that leaves the payload inconsistent with itself. It names the reason
-in the log and, for an admin action, in the error. The checks judge only what
-you changed: lines you edited or added, and totals against the payload as it
-was composed.
+**What you return is sent.** The payload goes out exactly as your subscriber
+returns it, and Two's API validates it as it validates any request. The plugin
+checks only what it builds itself: before the hook runs, order create and
+address update refuse a line the plugin composed whose tax does not follow
+from its rate, as they always have. If the API rejects your payload, its
+response is written to `var/log/two/debug.log` and its message is shown to the
+admin for an admin action, or to the buyer at checkout.
 
-A line counts as edited if it differs from the composed line in any way,
-including a changed description, a value retyped (`'21.00'` to `21.0`) or its
-keys reordered. An edited line must reconcile on its own, so a line the plugin
-composed that did not reconcile will be refused once you touch it. Leave a line
-exactly as you received it to keep it out of the line check. The lines, a
-partial capture's `partial` block, its totals and any `tax_subtotals` the
-plugin composed must stay present: deleting one, or making a total
-non-numeric, is refused as inconsistent totals or subtotals.
-
-| Code | Refused when |
-|---|---|
-| `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` | A subscriber threw, or returned something other than an array |
-| `TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT` | A line you changed or added has net, tax and gross that disagree, or tax that does not follow from its `tax_rate` |
-| `TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT` | A total moved away from its lines: the difference between an order or capture total (or a refund's `amount`) and the sum of its lines is no longer what the plugin composed, or gross stopped being net + tax |
-| `TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT` | A `tax_subtotals` bucket no longer matches the lines at its rate |
-
-A composed payload's totals can legitimately differ from the sum of its lines.
-Store credit, gift cards and reward points are payment, not discounts, so they
-lower the grand total without a line of their own. A third-party fee whose tax
-rate Magento does not vouch for is sent unitemised. The totals check keeps
-whatever difference the plugin composed and refuses only a change to it.
-Tolerances are the plugin's usual rounding allowances, never tighter for your
-output. The buyer only ever sees the plugin's generic refusal.
-
-A refusal stops that one request:
+A subscriber that throws, returns something other than an array, or returns a
+payload that cannot be JSON-encoded has a bug. That request is refused and
+logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED`:
 
 | Request type | Effect of a refusal |
 |---|---|
-| `order_intent` | The approval check is refused and the buyer sees the generic notice |
-| `order_create` | Checkout is refused with the generic notice |
+| `order_intent` | The approval check is refused and the buyer sees a generic notice |
+| `order_create` | Checkout is refused with a generic notice |
 | `order_update` | The update is not sent to Two. The address edit still saves in Magento, and the admin sees the error as a warning and in the order's history |
 | `capture` | The invoice, shipment or fulfil-on status change that triggered it is blocked with the error |
 | `refund` | The credit memo is refused with the error |
@@ -262,14 +239,17 @@ A refusal stops that one request:
 
 The plugin never recomputes anything after the hook, because that would
 overwrite your edits. If you change a line, move the totals and subtotals it
-affects: inject `Two\Gateway\Api\OrderPostprocessingTotalsInterface` and call
+affects, or the API will reject the request: inject
+`Two\Gateway\Api\OrderPostprocessingTotalsInterface` and call
 `recompute($edited, $before)`, passing the payload you received as `$before`.
 It moves `net_amount`, `tax_amount` and `gross_amount` (or a refund's `amount`)
-by the change in your lines, keeping any difference the plugin composed, and
-rebuilds any `tax_subtotals` from the lines.
+by the change in your lines, keeping any difference the plugin composed (store
+credit, a gift card, an unitemised fee), and rebuilds any `tax_subtotals` from
+the lines.
 
-Every change is logged with the request type and a list of the changed fields,
-and noted in the order's comment history where there is an order.
+Every change is written to the debug log with the request type and each
+changed field's JSON pointer, old and new value, and noted in the order's
+comment history where there is an order.
 
 **Your code owns what it declares.** With a subscriber that changes amounts,
 the invoice Two issues can differ from what the shop charged. That is your
