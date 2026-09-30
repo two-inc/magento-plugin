@@ -277,8 +277,8 @@ jobs:
             || { echo "::error::two_gateway cache type not enabled after setup:upgrade"; exit 1; }
 
       # TWO-26092: a real subscriber module on the order postprocessing hook,
+      # proving the interceptor wiring, that it fires for every request type,
       # and that what a subscriber returns is sent as returned. The probes
-      # and that the gates hold on what a subscriber returns. The probes
       # create their own products, tax rules and coupon in this throwaway shop.
       - name: Order postprocessing fixture probe
         run: |
