@@ -299,6 +299,10 @@ class ProbeFixtures
             ->setStatus(Status::STATUS_ENABLED)
             ->setStockData(['use_config_manage_stock' => 1, 'is_in_stock' => 1]);
         $repository->save($parent);
+        // 2.4.7 saves the parent out of stock, judging before its child links exist.
+        $stockRegistry = $this->om->get(\Magento\CatalogInventory\Api\StockRegistryInterface::class);
+        $stockItem = $stockRegistry->getStockItemBySku('probe-configurable');
+        $stockRegistry->updateStockItemBySku('probe-configurable', $stockItem->setIsInStock(true));
     }
 
     /** Dynamic-price bundle of one standard-rate and one reduced-rate product. */
