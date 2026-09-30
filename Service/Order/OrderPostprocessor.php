@@ -235,7 +235,7 @@ class OrderPostprocessor
     }
 
     /**
-     * A composed block still carries its lines, and its subtotals if it had them.
+     * A composed block still carries its lines, its totals, and its subtotals if it had them.
      *
      * @param string $key
      * @param mixed $block
@@ -251,6 +251,13 @@ class OrderPostprocessor
             throw $this->refusal(self::TOTALS_INCONSISTENT, $context, [
                 'missing' => $where . '/line_items',
             ], $diff);
+        }
+        foreach (['amount', 'net_amount', 'tax_amount', 'gross_amount'] as $field) {
+            if (is_numeric($original[$field] ?? null) && !is_numeric($block[$field] ?? null)) {
+                throw $this->refusal(self::TOTALS_INCONSISTENT, $context, [
+                    'missing' => $where . '/' . $field,
+                ], $diff);
+            }
         }
         if (is_array($original['tax_subtotals'] ?? null) && !is_array($block['tax_subtotals'] ?? null)) {
             throw $this->refusal(self::SUBTOTALS_INCONSISTENT, $context, [

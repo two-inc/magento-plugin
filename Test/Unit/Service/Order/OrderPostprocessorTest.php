@@ -189,6 +189,8 @@ class OrderPostprocessorTest extends TestCase
             [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_DROP_PARTIAL, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'a partial capture\'s block deleted'],
             [Hook::REQUEST_REFUND, 'refund', Subscriber::MODE_DROP_LINES, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'the lines deleted'],
             [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_NULL_SUBTOTALS, 'TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT', 'the subtotals nulled'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_DROP_GROSS, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'the gross total deleted'],
+            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_DROP_GROSS, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'a partial capture\'s gross total deleted'],
         ];
     }
 

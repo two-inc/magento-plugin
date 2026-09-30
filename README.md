@@ -230,8 +230,9 @@ including a changed description, a value retyped (`'21.00'` to `21.0`) or its
 keys reordered. An edited line must reconcile on its own, so a line the plugin
 composed that did not reconcile will be refused once you touch it. Leave a line
 exactly as you received it to keep it out of the line check. The lines, a
-partial capture's `partial` block and any `tax_subtotals` the plugin composed
-must stay present: deleting one is refused as inconsistent totals or subtotals.
+partial capture's `partial` block, its totals and any `tax_subtotals` the
+plugin composed must stay present: deleting one, or making a total
+non-numeric, is refused as inconsistent totals or subtotals.
 
 | Code | Refused when |
 |---|---|

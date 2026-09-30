@@ -31,6 +31,7 @@ class Subscriber
     public const MODE_DROP_PARTIAL = 'drop_partial';
     public const MODE_DROP_LINES = 'drop_lines';
     public const MODE_NULL_SUBTOTALS = 'null_subtotals';
+    public const MODE_DROP_GROSS = 'drop_gross';
 
     /** @var string|null Null leaves the payload untouched. */
     public static $mode = null;
@@ -103,6 +104,9 @@ class Subscriber
                 return $result;
             case self::MODE_NULL_SUBTOTALS:
                 $result['tax_subtotals'] = null;
+                return $result;
+            case self::MODE_DROP_GROSS:
+                unset($result['gross_amount'], $result['partial']['gross_amount']);
                 return $result;
             case self::MODE_THROW:
                 throw new RuntimeException('fixture subscriber failed');
