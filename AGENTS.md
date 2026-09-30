@@ -1086,9 +1086,14 @@ check. The plugin has no shipping tax setting of its own.
 
 Magento 2.4.7 core records a 0% shipping rate on the quote only when shipping
 prices exclude tax (`getAppliedTaxes()` skips 0% on the tax-inclusive path),
-and `ConvertQuoteTaxToOrderTax` never saves a 0% row. So a declared 0% reads as
-declared at placement and as "no rate" on every later request; the resolved
-rate is the same 0% unless the tax configuration changed in between.
+and `ConvertQuoteTaxToOrderTax` never saves a 0% row, so after placement the
+tax rows cannot tell a declared 0% from no rate. Placement therefore records
+the case on `sales_order`: `two_shipping_tax_rate_source` (`declared`/`none`)
+and `two_shipping_tax_rate` (percent; the declared rate, or for `none` the
+fallback's resolved rate, NULL when the fallback was blank). Every later
+request reads that record and never the current configuration; a `none` with a
+rate is re-checked against it (except on refund). Both NULL is an order placed
+before the record existed, which resolves live as at placement.
 
 `validateTaxReconciliation()` closes the same loop at composition time: a
 line other than shipping whose declared tax does not follow from its own

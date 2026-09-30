@@ -148,15 +148,19 @@ for Shipping is set. Enabled with no class set, it does nothing.
 
 With the fallback blank, the plugin never refuses a request over shipping tax.
 
-"Recorded a rate" means Magento applied a tax rate to the shipping line, read
-from the order's own tax records: at placement from the order being placed, and
-later (update, capture, shipment, refund) from the saved order. A Tax Class for
-Shipping of **None**, or no tax rule matching the address, applies none, so it
-reads as no rate. A rule applying 0% is recorded at placement when shipping
-prices exclude tax, but Magento does not save 0% rates with the order, so from
-then on it reads as no rate. Either way the line goes at 0%: with the fallback
-blank as is, and with it populated from the same class, which resolves 0% again
-unless the tax configuration has changed since. A refund takes the order's
+"Recorded a rate" means Magento applied a tax rate to the shipping line when
+the order was placed. A Tax Class for Shipping of **None**, or no tax rule
+matching the address, applies none, so it reads as no rate. A rule applying 0%
+is recorded when shipping prices exclude tax.
+
+Placement stores which case applied on the order, in `two_shipping_tax_rate_source`
+(`declared` or `none`), with the rate in `two_shipping_tax_rate` (percent): the
+recorded rate, 0 included, or for `none` the fallback's rate, empty when the
+fallback was blank. Magento does not save a 0% shipping rate with the order,
+so this record is what update, capture, shipment and refund read, never the
+current configuration: a later change to the fallback or the tax rules does not
+move an order already placed. An order placed before this record existed has
+both empty and resolves as it would at placement. A refund takes the order's
 shipping rate and does not re-check the tax it carries.
 
 The check runs while the plugin builds the request, before the postprocessing

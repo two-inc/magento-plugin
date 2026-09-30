@@ -188,6 +188,8 @@ class ShippingTaxRateTest extends TestCase
             'customer_id' => null,
             'customer_group_id' => 0,
             'store_id' => 1,
+            'two_shipping_tax_rate_source' => null,
+            'two_shipping_tax_rate' => null,
         ]) {
             /** @var array<string, mixed> */
             private $data;
@@ -205,6 +207,16 @@ class ShippingTaxRateTest extends TestCase
             public function getOrder()
             {
                 return $this->data['order'];
+            }
+
+            public function getData(string $key)
+            {
+                return $this->data[$key] ?? null;
+            }
+
+            public function setData(string $key, $value): void
+            {
+                $this->data[$key] = $value;
             }
 
             public function getExtensionAttributes()
@@ -461,6 +473,98 @@ class ShippingTaxRateTest extends TestCase
             ['populated on store 2', null, 100.00, 0.00, 15.00, 0.15, 'scope: store 2 is populated and reads its own class', 2],
             ['populated on store 2', null, 100.00, 0.00, 25.00, 0.0, 'scope: store 1 is blank, sent as is', 1],
             ['populated', null, 100.00, 0.00, 0.00, self::BUYER_REFUSAL, 'refused at placement in the buyer wording', 1, ComposeOrder::class],
+        ];
+    }
+
+    /**
+     * Placement records which case of the table applied, and the fallback's
+     * rate, on the order it composes.
+     *
+     * @dataProvider placementRecords
+     */
+    public function testPlacementRecordsTheCaseOnTheOrder(
+        string $control,
+        ?float $declaredPercent,
+        float $tax,
+        array $expected,
+        string $case
+    ): void {
+        [$classByStore, $fallbackByStore] = self::CONTROLS[$control];
+        $taxes = $declaredPercent === null ? [] : [['type' => 'shipping', 'applied_taxes' => [['percent' => $declaredPercent]]]];
+        $order = $this->entity([
+            'id' => null,
+            'item_applied_taxes' => $taxes,
+            'shipping_tax_amount' => $tax,
+            'shipping_address' => new DataObject(),
+        ]);
+
+        $this->orderService(null, $classByStore, $fallbackByStore)->getTaxRateShipping($order);
+
+        $this->assertSame(
+            $expected,
+            [$order->getData('two_shipping_tax_rate_source'), $order->getData('two_shipping_tax_rate')],
+            $case
+        );
+    }
+
+    public static function placementRecords(): array
+    {
+        return [
+            ['blank', 0.0, 0.00, ['declared', 0.0], 'a recorded 0% is stored as 0'],
+            ['populated', 25.0, 25.00, ['declared', 25.0], 'a recorded rate is stored as is'],
+            ['blank', null, 25.00, ['none', null], 'no rate, fallback blank: none, no rate'],
+            ['populated', null, 25.00, ['none', 25.0], 'no rate, fallback populated: none, with its rate'],
+        ];
+    }
+
+    /**
+     * After placement the record decides, never the configuration or the
+     * tax rows as they read now; Magento saves no 0% shipping rate, so a
+     * recorded 0% reads back as no tax row at all. An order placed before
+     * the record existed resolves as at placement.
+     *
+     * @param float|string $expected
+     * @dataProvider recordedCases
+     */
+    public function testTheRecordedCaseOutlivesAConfigChange(
+        ?string $source,
+        ?float $recordedPercent,
+        string $controlNow,
+        float $tax,
+        $expected,
+        string $case,
+        bool $reconcile = true
+    ): void {
+        [$classByStore, $fallbackByStore] = self::CONTROLS[$controlNow];
+        $order = $this->entity([
+            'shipping_address' => new DataObject(),
+            'shipping_tax_amount' => $tax,
+            'two_shipping_tax_rate_source' => $source,
+            'two_shipping_tax_rate' => $recordedPercent,
+        ]);
+        $invoice = $this->entity(['order' => $order, 'shipping_tax_amount' => $tax]);
+
+        try {
+            $actual = $this->orderService(null, $classByStore, $fallbackByStore)->getTaxRateShipping($invoice, $reconcile);
+        } catch (LocalizedException $e) {
+            $actual = $e->getMessage();
+        }
+
+        $this->assertSame($expected, $actual, $case);
+    }
+
+    public static function recordedCases(): array
+    {
+        return [
+            ['declared', 0.0, 'populated', 0.00, 0.0, '0% at placement, fallback populated since: 0%, not resolved'],
+            ['declared', 0.0, 'blank', 0.00, 0.0, '0% at placement, fallback blank: 0%'],
+            ['none', null, 'populated', 25.00, 0.0, 'no rate with the fallback blank at placement, populated since: 0% as charged'],
+            ['none', 25.0, 'blank', 25.00, 0.25, 'no rate, fallback rate recorded, fallback blanked since: the recorded rate'],
+            ['none', 25.0, 'populated at 0%', 25.00, 0.25, 'no rate, fallback rate recorded, class changed since: the recorded rate'],
+            ['none', 25.0, 'populated', 19.00, self::REFUSED, 'recorded fallback rate, tax off it: refused'],
+            ['none', 25.0, 'blank', 19.00, 0.25, 'recorded fallback rate on a refund: relayed without the check', false],
+            [null, null, 'populated', 25.00, 0.25, 'legacy order, nothing recorded: resolved as at placement'],
+            [null, null, 'blank', 25.00, 0.0, 'legacy order, fallback blank: 0% as charged'],
         ];
     }
 
