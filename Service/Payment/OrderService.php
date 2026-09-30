@@ -24,8 +24,10 @@ use Magento\Sales\Model\Service\InvoiceService;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
@@ -107,6 +109,9 @@ class OrderService
     /** @var BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var OrderPostprocessor */
+    private $orderPostprocessor;
+
     /**
      * OrderService constructor.
      * @param Adapter $apiAdapter
@@ -124,6 +129,8 @@ class OrderService
      * @param OrderPaymentRepositoryInterface $orderPaymentRepository
      * @param OrderRepositoryInterface $orderRepository
      * @param LogRepository $logRepository
+     * @param BrandOverlayRegistryInterface $overlayRegistry
+     * @param OrderPostprocessor $orderPostprocessor
      */
     public function __construct(
         Adapter $apiAdapter,
@@ -142,7 +149,8 @@ class OrderService
         OrderPaymentRepositoryInterface $orderPaymentRepository,
         OrderRepositoryInterface $orderRepository,
         LogRepository $logRepository,
-        BrandOverlayRegistryInterface $overlayRegistry
+        BrandOverlayRegistryInterface $overlayRegistry,
+        OrderPostprocessor $orderPostprocessor
     ) {
         $this->apiAdapter = $apiAdapter;
         $this->restoreQuote = $restoreQuote;
@@ -161,6 +169,7 @@ class OrderService
         $this->orderPaymentRepository = $orderPaymentRepository;
         $this->logRepository = $logRepository;
         $this->overlayRegistry = $overlayRegistry;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -238,7 +247,11 @@ class OrderService
     {
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/confirm",
-            [],
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_ORDER_CONFIRM,
+                [],
+                ['trigger' => 'confirmation', 'endpoint' => '/v1/order/{id}/confirm', 'order' => $order]
+            ),
             'POST',
             (int)$order->getStoreId()
         );
@@ -254,14 +267,19 @@ class OrderService
      * Send cancel request to api
      *
      * @param Order $order
+     * @param string $trigger what caused the cancel, for the postprocessing hook's context
      * @return bool
      * @throws LocalizedException
      */
-    public function cancelTwoOrder(Order $order): bool
+    public function cancelTwoOrder(Order $order, string $trigger = 'cancel'): bool
     {
         $response = $this->apiAdapter->execute(
             '/v1/order/' . $order->getTwoOrderId() . '/cancel',
-            [],
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_CANCEL,
+                [],
+                ['trigger' => $trigger, 'endpoint' => '/v1/order/{id}/cancel', 'order' => $order]
+            ),
             'POST',
             (int)$order->getStoreId()
         );

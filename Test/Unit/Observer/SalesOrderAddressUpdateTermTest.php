@@ -107,7 +107,8 @@ class SalesOrderAddressUpdateTermTest extends TestCase
             $this->makeComposeOrder($offeredTerms, $defaultTerm, $termsType),
             $adapter,
             $overlayRegistry,
-            $messageManager
+            $messageManager,
+            $this->passThroughPostprocessor()
         );
         $observer->execute(new AddressUpdateObserverStub(new AddressUpdateEventStub(42)));
 
@@ -172,5 +173,13 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         $session->setValue($composeOrder, new \Magento\Checkout\Model\Session());
 
         return $composeOrder;
+    }
+
+    private function passThroughPostprocessor(): \Two\Gateway\Service\Order\OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
     }
 }

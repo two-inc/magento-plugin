@@ -1575,9 +1575,7 @@ define([
             return quote.guestEmail ? quote.guestEmail : window.checkoutConfig.customerData.email;
         },
         placeOrderIntent: function () {
-            let totals = quote.getTotals()(),
-                billingAddress = quote.billingAddress(),
-                lineItems = [];
+            let billingAddress = quote.billingAddress();
 
             // Do not fire order intent for BV companies in NL
             if (billingAddress.countryId.toLowerCase() == 'nl') {
@@ -1592,73 +1590,8 @@ define([
                 }
             }
 
-            // Capture brand config before the iteration so the callback
-            // closure has access to it — arrow-fn would also work but
-            // keeping the existing `function` shape minimises diff.
-            var brandConfig = this._brandConfig;
-            _.each(quote.getItems(), function (item) {
-                lineItems.push({
-                    name: item['name'],
-                    description: item['description'] ? item['description'] : '',
-                    discount_amount: parseFloat(item['discount_amount']).toFixed(2),
-                    gross_amount: parseFloat(item['row_total_incl_tax']).toFixed(2),
-                    net_amount: parseFloat(item['row_total']).toFixed(2),
-                    quantity: item['qty'],
-                    unit_price: parseFloat(item['price']).toFixed(2),
-                    tax_amount: parseFloat(item['tax_amount']).toFixed(2),
-                    tax_rate: (parseFloat(item['tax_percent']) / 100).toFixed(6),
-                    tax_class_name: '',
-                    quantity_unit: brandConfig.orderIntentConfig.weightUnit,
-                    image_url: item['thumbnail'],
-                    type: item['is_virtual'] === '0' ? 'PHYSICAL' : 'DIGITAL'
-                });
-            });
-            lineItems.push({
-                name: 'Shipping',
-                description: 'Shipping fee',
-                gross_amount: parseFloat(totals['shipping_incl_tax']).toFixed(2),
-                net_amount: parseFloat(totals['shipping_amount']).toFixed(2),
-                quantity: 1,
-                unit_price: parseFloat(totals['shipping_amount']).toFixed(2),
-                tax_amount: parseFloat(totals['shipping_tax_amount']).toFixed(2),
-                // Free shipping makes shipping_amount 0, and 0/0 is NaN, not
-                // 0 — order_intent then 400s on every free-shipping cart
-                // (found investigating TWO-25326: it blocked testing the
-                // gating fix on a free-shipping cart). A zero-taxed shipping
-                // line rate is genuinely 0, not "no rate" (the tax AMOUNT
-                // above is already faithfully 0.00), so the guard resolves
-                // to '0.000000' rather than omitting the key or inventing a
-                // non-zero rate.
-                //
-                // Guarded on `!isFinite`, not `=== 0`, since adversarial
-                // review (2026-08-04) found the narrower check still let a
-                // literal "NaN" reach the wire: `shipping_amount` can arrive
-                // non-numeric/undefined mid totals-recalc (Amasty's async
-                // shipping-method changes), and `parseFloat(undefined) === 0`
-                // is false, so that case fell through to the division branch
-                // and produced `NaN / NaN` — same 400, different trigger.
-                tax_rate: (
-                    !isFinite(parseFloat(totals['shipping_amount'])) ||
-                    parseFloat(totals['shipping_amount']) === 0
-                        ? 0
-                        : parseFloat(totals['shipping_tax_amount']) /
-                          parseFloat(totals['shipping_amount'])
-                ).toFixed(6),
-                tax_class_name: '',
-                quantity_unit: 'unit',
-                type: 'SHIPPING_FEE'
-            });
-
-            const gross_amount = parseFloat(totals['grand_total']);
-            const tax_amount =
-                parseFloat(totals['tax_amount']) + parseFloat(totals['shipping_tax_amount']);
-            const net_amount = gross_amount - tax_amount;
+            // Amounts and lines are composed from the quote server-side (TWO-26092).
             const orderIntentRequestBody = {
-                gross_amount: gross_amount.toFixed(2),
-                net_amount: net_amount.toFixed(2),
-                tax_amount: tax_amount.toFixed(2),
-                currency: totals['quote_currency_code'],
-                line_items: lineItems,
                 buyer: {
                     company: {
                         organization_number: this.companyId(),

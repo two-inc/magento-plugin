@@ -703,7 +703,7 @@ abstract class Order
      *
      * @param OrderModel|CreditmemoModel $entity
      */
-    private function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
+    public function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
     {
         $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
         $customerTaxClassId = $this->resolveCustomerTaxClassId($order);

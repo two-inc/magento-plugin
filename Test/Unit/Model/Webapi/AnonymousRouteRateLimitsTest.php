@@ -124,7 +124,9 @@ class AnonymousRouteRateLimitsTest extends TestCase
                     $this->createMock(LogRepository::class),
                     $this->createMock(CheckoutSession::class),
                     $this->createMock(BuyerCountryResolver::class),
-                    $this->createMock(SupportedCountriesProvider::class)
+                    $this->createMock(SupportedCountriesProvider::class),
+                    $this->createMock(\Two\Gateway\Service\Order\ComposeIntent::class),
+                    $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class)
                 ))->place('{}');
                 return;
             case 'surcharges':
