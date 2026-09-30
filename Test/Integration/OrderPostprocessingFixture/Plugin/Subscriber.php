@@ -28,6 +28,9 @@ class Subscriber
     public const MODE_BODY_ON_BODYLESS = 'body_on_bodyless';
     public const MODE_RATE_OFF = 'rate_off';
     public const MODE_DROP_RESIDUAL = 'drop_residual';
+    public const MODE_DROP_PARTIAL = 'drop_partial';
+    public const MODE_DROP_LINES = 'drop_lines';
+    public const MODE_NULL_SUBTOTALS = 'null_subtotals';
 
     /** @var string|null Null leaves the payload untouched. */
     public static $mode = null;
@@ -92,6 +95,15 @@ class Subscriber
                 return $payload;
             case self::MODE_SUBTOTALS_STALE:
                 return $this->resplitShipping($result, $context, true);
+            case self::MODE_DROP_PARTIAL:
+                unset($result['partial']);
+                return $result;
+            case self::MODE_DROP_LINES:
+                unset($result['line_items']);
+                return $result;
+            case self::MODE_NULL_SUBTOTALS:
+                $result['tax_subtotals'] = null;
+                return $result;
             case self::MODE_THROW:
                 throw new RuntimeException('fixture subscriber failed');
             case self::MODE_RETURN_NON_ARRAY:

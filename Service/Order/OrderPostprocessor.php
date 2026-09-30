@@ -214,16 +214,48 @@ class OrderPostprocessor
      */
     private function gate(array $before, array $after, array $diff, array $context): void
     {
-        foreach (PostprocessingTotals::lineBlockKeys($after) as $key) {
-            $block = $key === '' ? $after : $after[$key];
+        $composedKeys = PostprocessingTotals::lineBlockKeys($before);
+        $keys = array_unique(array_merge($composedKeys, PostprocessingTotals::lineBlockKeys($after)));
+        foreach ($keys as $key) {
+            $block = $key === '' ? $after : $after[$key] ?? null;
             $original = $key === '' ? $before : $before[$key] ?? [];
             $original = is_array($original) ? $original : [];
             $originalLines = is_array($original['line_items'] ?? null) ? $original['line_items'] : [];
+
+            // A block the plugin composed must survive, or deleting it would escape every check below.
+            if (in_array($key, $composedKeys, true)) {
+                $this->gatePresence($key, $block, $original, $diff, $context);
+            }
 
             $this->gateLines($block['line_items'], $originalLines, $diff, $context);
             // Totals before subtotals: forgotten totals are the commoner slip, and the one worth naming.
             $this->gateResiduals(self::TOTALS_INCONSISTENT, $this->totalsResiduals($block), $this->totalsResiduals($original), $diff, $context);
             $this->gateResiduals(self::SUBTOTALS_INCONSISTENT, $this->subtotalsResiduals($block), $this->subtotalsResiduals($original), $diff, $context);
+        }
+    }
+
+    /**
+     * A composed block still carries its lines, and its subtotals if it had them.
+     *
+     * @param string $key
+     * @param mixed $block
+     * @param array $original
+     * @param array $diff
+     * @param array $context
+     * @throws LocalizedException
+     */
+    private function gatePresence(string $key, $block, array $original, array $diff, array $context): void
+    {
+        $where = $key === '' ? '' : '/' . $key;
+        if (!is_array($block) || !is_array($block['line_items'] ?? null)) {
+            throw $this->refusal(self::TOTALS_INCONSISTENT, $context, [
+                'missing' => $where . '/line_items',
+            ], $diff);
+        }
+        if (is_array($original['tax_subtotals'] ?? null) && !is_array($block['tax_subtotals'] ?? null)) {
+            throw $this->refusal(self::SUBTOTALS_INCONSISTENT, $context, [
+                'missing' => $where . '/tax_subtotals',
+            ], $diff);
         }
     }
 

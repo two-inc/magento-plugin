@@ -225,6 +225,14 @@ in the log and, for an admin action, in the error. The checks judge only what
 you changed: lines you edited or added, and totals against the payload as it
 was composed.
 
+A line counts as edited if it differs from the composed line in any way,
+including a changed description, a value retyped (`'21.00'` to `21.0`) or its
+keys reordered. An edited line must reconcile on its own, so a line the plugin
+composed that did not reconcile will be refused once you touch it. Leave a line
+exactly as you received it to keep it out of the line check. The lines, a
+partial capture's `partial` block and any `tax_subtotals` the plugin composed
+must stay present: deleting one is refused as inconsistent totals or subtotals.
+
 | Code | Refused when |
 |---|---|
 | `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` | A subscriber threw, or returned something other than an array |

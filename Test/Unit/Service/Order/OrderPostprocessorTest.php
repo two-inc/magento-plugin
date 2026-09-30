@@ -186,6 +186,9 @@ class OrderPostprocessorTest extends TestCase
             [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_RETURN_NON_ARRAY, 'TWO_ORDER_POSTPROCESSING_HOOK_FAILED', 'a subscriber that returns no array'],
             [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_RATE_OFF, 'TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT', 'a line whose tax no longer follows its rate'],
             [Hook::REQUEST_ORDER_CREATE, 'store credit order', Subscriber::MODE_DROP_RESIDUAL, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'totals rebuilt as the bare sum of the lines, dropping the store credit'],
+            [Hook::REQUEST_CAPTURE, 'partial capture', Subscriber::MODE_DROP_PARTIAL, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'a partial capture\'s block deleted'],
+            [Hook::REQUEST_REFUND, 'refund', Subscriber::MODE_DROP_LINES, 'TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT', 'the lines deleted'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', Subscriber::MODE_NULL_SUBTOTALS, 'TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT', 'the subtotals nulled'],
         ];
     }
 
@@ -270,7 +273,7 @@ class OrderPostprocessorTest extends TestCase
     }
 
     /**
-     * The refusal log carries the gate's own message, not only its verdict.
+     * The line tax gate logs which line failed and by how much, beside the refusal.
      */
     public function testALineTaxRefusalLogsTheGatesMessage(): void
     {
@@ -284,10 +287,12 @@ class OrderPostprocessorTest extends TestCase
                 $this->errorLog,
                 static fn (array $entry): bool => $entry[0] === 'OrderPostprocessingRefused'
             ));
-            $this->assertSame(
-                'This order could not be placed. Please contact the merchant.',
-                $refusal[0][1]['details']['message'] ?? null
+            $this->assertSame(['TaxReconciliationFailed', 'OrderPostprocessingRefused'], array_column($this->errorLog, 0));
+            $this->assertStringStartsWith(
+                'Line 11 declares tax 21.00 but rate 0.500000 on base 100.00 implies 50.00 (off by 29.00,',
+                $this->errorLog[0][1]
             );
+            $this->assertSame('failed', $refusal[0][1]['details']['tax_reconciliation'] ?? null);
         }
     }
 
