@@ -216,6 +216,8 @@ class ComposeRefund extends OrderService
             $grossAmount = $this->roundAmt($this->getGrossAmountShipping($creditmemo));
             $netAmount = $this->roundAmt($this->getNetAmountShipping($creditmemo));
             $taxAmount = $grossAmount - $netAmount;
+            // The order's rate, relayed: a refund does not re-check the charged tax.
+            $taxRate = $this->getTaxRateShipping($creditmemo, false);
 
             $items['shipping'] = [
                 'name' => 'Shipping - ' . $order->getShippingDescription(),
@@ -228,8 +230,8 @@ class ComposeRefund extends OrderService
                 'tax_amount' => $taxAmount,
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($creditmemo)),
                 'unit_price' => $this->roundAmt($this->getUnitPriceShipping($creditmemo), 6),
-                'tax_rate' => $this->roundAmt($this->getTaxRateShipping($creditmemo), 6),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($this->getTaxRateShipping($creditmemo) * 100) . '%',
+                'tax_rate' => $this->roundAmt($taxRate, 6),
+                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRate * 100) . '%',
                 'quantity' => 1,
                 'quantity_unit' => 'sc',
             ];

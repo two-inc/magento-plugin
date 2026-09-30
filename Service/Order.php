@@ -588,72 +588,44 @@ abstract class Order
     }
 
     /**
-     * Shipping tax rate as a fraction, relayed from Magento's tax engine.
+     * Shipping tax rate as a fraction (TWO-26117).
      *
-     * Never derived from the amounts (TWO-25503). A rate computed as
-     * tax/net is a different statement from the rate the store actually
-     * applied: rounding, mixed rates and a discounted shipping base all
-     * make the quotient land somewhere no tax rule declares, and Two
-     * validates the declared rate against the line's own numbers.
+     * A rate Magento's tax engine recorded for the shipping line, 0% included,
+     * is sent as is: never derived from the amounts (TWO-25503) and not
+     * checked here, Two's API validates it. Without a recorded rate the line
+     * is sent at 0% with its tax as charged, unless the store's shipping tax
+     * fallback is populated: then the rate comes from core's Tax Class for
+     * Shipping and the line's tax has to reconcile with it.
      *
-     * @param OrderModel|CreditmemoModel $entity
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @param bool $reconcile false for a refund, which relays its parent line's rate
      * @return float
-     * @throws LocalizedException when shipping is taxed, no rate is declared
-     *                            and the fallback is off or core's shipping
-     *                            tax class is unset
+     * @throws LocalizedException when the fallback rate does not reconcile with the line's tax
      */
-    public function getTaxRateShipping($entity): float
+    public function getTaxRateShipping($entity, bool $reconcile = true): float
     {
         $declaredPercent = $this->getDeclaredShippingTaxPercent($entity);
         if ($declaredPercent !== null) {
             return $declaredPercent / 100;
         }
 
-        // A shipping line carrying no tax needs no declaration: 0% is a
-        // statement, not a guess. This is also the ordinary shape of a
-        // store whose shipping is not taxed at all — no tax rule applied
-        // means no rate to look up.
-        if (round($this->getTaxAmountShipping($entity), 2) === 0.0) {
+        $storeId = (int)$entity->getStoreId();
+        $taxClassId = $this->configRepository->isShippingTaxFallbackEnabled($storeId)
+            ? $this->configRepository->getShippingTaxClassId($storeId)
+            : null;
+        if ($taxClassId === null) {
             return 0.0;
         }
 
-        $storeId = (int)$entity->getStoreId();
-        if (!$this->configRepository->isShippingTaxFallbackEnabled($storeId)) {
-            $this->logRepository->addErrorLog(
-                'ShippingTaxFallbackDisabled',
-                sprintf(
-                    'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
-                    . 'and the shipping tax fallback (enable_shipping_tax_fallback) is off for store %d. '
-                    . 'Refusing rather than deriving a rate.',
-                    $this->getTaxAmountShipping($entity),
-                    $entity->getIncrementId(),
-                    $storeId
-                )
-            );
-            throw new LocalizedException($this->shippingTaxRefusal(false));
-        }
-
-        $taxClassId = $this->configRepository->getShippingTaxClassId($storeId);
-        if ($taxClassId === null) {
-            $this->logRepository->addErrorLog(
-                'ShippingTaxRateUnresolvable',
-                sprintf(
-                    'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
-                    . 'and no shipping tax class (tax/classes/shipping_tax_class) is configured. '
-                    . 'Refusing rather than deriving a rate.',
-                    $this->getTaxAmountShipping($entity),
-                    $entity->getIncrementId()
-                )
-            );
-            throw new LocalizedException($this->shippingTaxRefusal(true));
-        }
-
         $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
+        if ($reconcile) {
+            $this->assertShippingTaxReconciles($entity, $rate, $taxClassId);
+        }
         $this->logRepository->addDebugLog(
             'ShippingTaxRateFallback',
             sprintf(
                 'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
-                . 'Magento declared no rate for a taxed shipping line.',
+                . 'Magento recorded no rate for the shipping line.',
                 $rate * 100,
                 $entity->getIncrementId(),
                 $taxClassId
@@ -663,22 +635,50 @@ abstract class Order
     }
 
     /**
-     * Refusal for a taxed shipping line with no resolvable rate. Capture,
-     * refund and shipment run after placement, so this default speaks to
-     * the merchant; ComposeOrder overrides it with the buyer's wording.
+     * The fallback rate must account for the tax Magento charged on shipping,
+     * on the discounted base or, under "Before Discount", the undiscounted one.
+     * An invoice books the order's shipping discount, as ComposeCapture does.
      *
-     * @param bool $fallbackEnabled false when the fallback is off for the store (TWO-26082)
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
+     * @throws LocalizedException
      */
-    protected function shippingTaxRefusal(bool $fallbackEnabled): Phrase
+    private function assertShippingTaxReconciles($entity, float $rate, int $taxClassId): void
     {
-        if (!$fallbackEnabled) {
-            return __(
-                'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and the shipping tax fallback is not enabled for this store. Contact %1 to enable it.',
-                $this->brandRegistry->getProvider()
-            );
+        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+        $tax = round($this->getTaxAmountShipping($entity), 2);
+        $gross = $this->getUnitPriceShipping($entity);
+        $net = $gross - $this->getDiscountAmountShipping($order);
+        $discrepancy = min(abs($tax - $net * $rate), abs($tax - $gross * $rate));
+        if ($discrepancy <= self::TAX_FORMULA_TOLERANCE) {
+            return;
         }
+
+        $this->logRepository->addErrorLog(
+            'ShippingTaxFallbackMismatch',
+            sprintf(
+                'Shipping tax %.2F on entity %s does not reconcile with the %.6F%% rate of shipping tax class %d '
+                . 'on base %.2F (off by %.2F, tolerance %.2F). Magento recorded no rate for the shipping line.',
+                $tax,
+                $entity->getIncrementId(),
+                $rate * 100,
+                $taxClassId,
+                $net,
+                $discrepancy,
+                self::TAX_FORMULA_TOLERANCE
+            )
+        );
+        throw new LocalizedException($this->shippingTaxRefusal());
+    }
+
+    /**
+     * Refusal for a shipping line whose tax does not reconcile with the
+     * fallback rate. Capture runs after placement, so this default speaks to
+     * the merchant; ComposeOrder overrides it with the buyer's wording.
+     */
+    protected function shippingTaxRefusal(): Phrase
+    {
         return __(
-            'Shipping tax could not be determined for this order: Magento recorded no shipping tax rate and no Tax Class for Shipping is set (Stores > Configuration > Sales > Tax > Tax Classes).'
+            'Shipping tax on this order does not match the rate of the Tax Class for Shipping (Stores > Configuration > Sales > Tax > Tax Classes), which applies because Magento recorded no shipping tax rate.'
         );
     }
 
@@ -892,6 +892,9 @@ abstract class Order
      * getOtherChargesLineItem()'s epsilon — see lineTaxTolerance() for what
      * widens it, and the "before discount" base below.
      *
+     * The shipping line is not checked here: getTaxRateShipping() checks it
+     * only when its rate came from the shipping tax fallback (TWO-26117).
+     *
      * @param array $lineItems Composed payload line items.
      * @return void
      * @throws LocalizedException when a line's tax does not reconcile
@@ -899,6 +902,9 @@ abstract class Order
     public function validateTaxReconciliation(array $lineItems): void
     {
         foreach ($lineItems as $lineItem) {
+            if (($lineItem['order_item_id'] ?? null) === 'shipping') {
+                continue;
+            }
             $net = (float)($lineItem['net_amount'] ?? 0);
             $tax = (float)($lineItem['tax_amount'] ?? 0);
             $rate = (float)($lineItem['tax_rate'] ?? 0);

@@ -14,7 +14,6 @@ use Magento\Tax\Api\Data\OrderTaxDetailsItemInterface;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order;
@@ -27,9 +26,8 @@ use Two\Gateway\Service\Order\ComposeOrder;
  * discount are involved, and Two validates the declared rate against the
  * line's own amounts.
  *
- * Where nothing is declared: an untaxed line is 0% (a statement, not a
- * guess); a taxed line falls back to Magento's own shipping tax class
- * (tax/classes/shipping_tax_class), and refuses the order when that is unset.
+ * Where nothing is declared, the line goes at 0% as charged unless the
+ * shipping tax fallback is populated (TWO-26117): see the behaviour table.
  */
 class ShippingTaxRateTest extends TestCase
 {
@@ -87,9 +85,6 @@ class ShippingTaxRateTest extends TestCase
                 : throw NoSuchEntityException::singleField('customerId', $id)
         );
         $this->setProperty($orderService, 'customerRepository', $customerRepository);
-        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
-        $brandRegistry->method('getProvider')->willReturn('Acme');
-        $this->setProperty($orderService, 'brandRegistry', $brandRegistry);
 
         return $orderService;
     }
@@ -184,6 +179,8 @@ class ShippingTaxRateTest extends TestCase
             'id' => 7,
             'order' => null,
             'item_applied_taxes' => null,
+            'shipping_amount' => 100.0,
+            'shipping_discount_amount' => 0.0,
             'shipping_tax_amount' => 0.0,
             'shipping_address' => null,
             'billing_address' => null,
@@ -227,6 +224,21 @@ class ShippingTaxRateTest extends TestCase
                             return $this->taxes;
                         }
                     };
+            }
+
+            public function getShippingAmount(): float
+            {
+                return $this->data['shipping_amount'];
+            }
+
+            public function getShippingDiscountAmount(): float
+            {
+                return $this->data['shipping_discount_amount'];
+            }
+
+            public function getShippingDiscountTaxCompensationAmount(): float
+            {
+                return 0.0;
             }
 
             public function getShippingTaxAmount(): float
@@ -311,23 +323,17 @@ class ShippingTaxRateTest extends TestCase
      */
     public function testThePlacementPathReadsTheUnsavedOrdersOwnAppliedTaxes(
         array $itemAppliedTaxes,
-        ?float $expected,
+        float $expected,
         string $case
     ): void {
-        // No core shipping tax class, so a rate that fails to come off the
-        // extension attribute is refused rather than masked by a fallback.
+        // Control blank, so a rate that fails to come off the extension
+        // attribute is sent as 0%, never masked by a fallback.
         $orderService = $this->orderService(null);
         $taxManagement = $this->createMock(OrderTaxManagementInterface::class);
         $taxManagement->expects($this->never())->method('getOrderTaxDetails');
         $this->setProperty($orderService, 'orderTaxManagement', $taxManagement);
 
         $entity = $this->entity(['id' => null, 'shipping_tax_amount' => 25.00, 'item_applied_taxes' => $itemAppliedTaxes]);
-
-        if ($expected === null) {
-            $this->expectException(LocalizedException::class);
-            $orderService->getTaxRateShipping($entity);
-            return;
-        }
 
         $this->assertSame($expected, $orderService->getTaxRateShipping($entity), $case);
     }
@@ -355,70 +361,119 @@ class ShippingTaxRateTest extends TestCase
             ],
             [
                 [['type' => 'product', 'applied_taxes' => [['percent' => 12.0]]]],
-                null,
-                'no shipping entry at all: refused, never the product rate',
+                0.0,
+                'no shipping entry at all: no rate, never the product rate',
             ],
         ];
     }
 
-    // ── TWO-26073: no declared rate falls back to core's
-    // tax/classes/shipping_tax_class, resolved per store ────────────────
+    // ── TWO-26117: the behaviour table. A rate Magento recorded, 0% included,
+    // is sent as is and never checked by the plugin. With no rate recorded,
+    // a blank control sends the line at 0% as charged; a populated one
+    // (fallback enabled AND a Tax Class for Shipping set) resolves the rate
+    // from that class and refuses a line whose tax does not reconcile. ──
+
+    private const REFUSED = 'Shipping tax on this order does not match the rate of the Tax Class for Shipping'
+        . ' (Stores > Configuration > Sales > Tax > Tax Classes), which applies because Magento recorded no'
+        . ' shipping tax rate.';
+
+    private const BUYER_REFUSAL = 'This order could not be placed. Please contact the merchant.';
+
+    /** Control name => [tax/classes/shipping_tax_class per store, enable_shipping_tax_fallback per store]. */
+    private const CONTROLS = [
+        'blank' => [[], []],
+        'enabled, no class' => [[], [1 => true]],
+        'class, not enabled' => [[1 => 5], []],
+        'populated' => [[1 => 5], [1 => true]],
+        'populated at 0%' => [[1 => 6], [1 => true]],
+        'populated on store 2' => [[1 => 5, 2 => 7], [2 => true]],
+    ];
 
     /**
-     * Resolves the rate, then runs the shipping line through the same
-     * reconciliation gate ComposeOrder applies; null means refused.
+     * Resolves the rate, then runs the composed shipping line through the
+     * builder's line tax reconcile, as ComposeOrder does before the hook.
+     * A string expectation is the refusal message.
      *
-     * @param array<int, int> $classByStore
-     * @dataProvider coreShippingTaxClassCases
+     * @param float|string $expected
+     * @dataProvider behaviourTable
      */
-    public function testShippingTaxRateFallsBackToTheCoreShippingTaxClass(
+    public function testTheShippingRateFollowsTheBehaviourTable(
+        string $control,
         ?float $declaredPercent,
-        int $storeId,
-        array $classByStore,
-        float $net,
-        float $shippingTax,
+        float $shipping,
         float $discount,
-        ?float $expected,
-        string $case
+        float $tax,
+        $expected,
+        string $case,
+        int $storeId = 1,
+        string $service = Order::class
     ): void {
-        $orderService = $this->orderService($declaredPercent, $classByStore);
+        [$classByStore, $fallbackByStore] = self::CONTROLS[$control];
+        $orderService = $this->orderService($declaredPercent, $classByStore, $fallbackByStore, $service);
         $entity = $this->entity([
-            'shipping_tax_amount' => $shippingTax,
+            'shipping_amount' => $shipping,
+            'shipping_discount_amount' => $discount,
+            'shipping_tax_amount' => $tax,
             'shipping_address' => new DataObject(['country_id' => 'NO']),
             'store_id' => $storeId,
         ]);
 
         try {
-            $rate = $orderService->getTaxRateShipping($entity);
+            $actual = $orderService->getTaxRateShipping($entity);
             $orderService->validateTaxReconciliation([[
                 'order_item_id' => 'shipping',
-                'net_amount' => $net,
-                'tax_amount' => $shippingTax,
+                'net_amount' => $shipping - $discount,
+                'tax_amount' => $tax,
                 'discount_amount' => $discount,
-                'tax_rate' => $rate,
+                'tax_rate' => $actual,
                 'quantity' => 1,
             ]]);
         } catch (LocalizedException $e) {
-            $rate = null;
+            $actual = $e->getMessage();
         }
 
-        $this->assertSame($expected, $rate, $case);
+        $this->assertSame($expected, $actual, $case);
     }
 
-    public static function coreShippingTaxClassCases(): array
+    public static function behaviourTable(): array
     {
         return [
-            [19.0, 1, [1 => 5], 100.00, 19.00, 0.00, 0.19, 'declared rate present: relayed, core class not consulted'],
-            [null, 1, [1 => 5], 100.00, 25.00, 0.00, 0.25, 'no declared rate: resolved via the core shipping tax class'],
-            [null, 1, [], 100.00, 25.00, 0.00, null, 'core shipping tax class None (0) or unset, shipping taxed: refused'],
-            [null, 1, [], 100.00, 0.00, 0.00, 0.0, 'core shipping tax class None (0) or unset, shipping untaxed: 0%'],
-            [0.0, 1, [], 100.00, 0.00, 0.00, 0.0, 'core shipping tax class None (0) or unset, declared 0%: accepted'],
-            [null, 1, [1 => 5], 100.00, 19.00, 0.00, null, 'core class rate does not reconcile with the shipping tax: refused'],
-            [null, 2, [1 => 5, 2 => 7], 100.00, 15.00, 0.00, 0.15, 'multi-store: store 2 reads its own class and rate'],
-            [null, 1, [1 => 6], 100.00, 0.01, 0.00, 0.0, 'zero-rate class within tolerance: a real resolution, not unset'],
-            [null, 1, [1 => 6], 100.00, 5.00, 0.00, null, 'zero-rate class with tax above tolerance: refused'],
-            [null, 1, [1 => 5], 80.00, 20.00, 20.00, 0.25, 'shipping discount: class rate on the discounted base'],
+            ['blank', 25.0, 100.00, 0.00, 25.00, 0.25, 'rate provided, control blank: sent as recorded'],
+            ['blank', 25.0, 100.00, 0.00, 19.00, 0.25, 'rate provided, control blank, tax off the rate: sent, the API validates'],
+            ['blank', 0.0, 100.00, 0.00, 0.00, 0.0, 'explicit 0% provided, control blank: sent as recorded'],
+            ['blank', 0.0, 100.00, 0.00, 5.00, 0.0, 'explicit 0% provided with tax, control blank: sent, the API validates'],
+            ['populated', 19.0, 100.00, 0.00, 19.00, 0.19, 'rate provided, control populated: the recorded rate, not the control'],
+            ['populated', 0.0, 100.00, 0.00, 0.00, 0.0, 'explicit 0% provided, control populated: not resolved from the control'],
+            ['populated', 19.0, 100.00, 0.00, 25.00, 0.19, 'rate provided, control populated, tax off the rate: sent, no plugin check'],
+            ['blank', null, 100.00, 0.00, 0.00, 0.0, 'no rate, control blank, untaxed: rate 0'],
+            ['blank', null, 100.00, 0.00, 25.00, 0.0, 'no rate, control blank, taxed: rate 0 and the tax as charged, never refused'],
+            ['enabled, no class', null, 100.00, 0.00, 25.00, 0.0, 'no rate, fallback on but no Tax Class for Shipping: blank'],
+            ['class, not enabled', null, 100.00, 0.00, 25.00, 0.0, 'no rate, Tax Class for Shipping set but fallback off: blank'],
+            ['populated', null, 100.00, 0.00, 25.00, 0.25, 'no rate, control populated, tax reconciles: the control rate'],
+            ['populated', null, 100.00, 0.00, 0.00, self::REFUSED, 'no rate, control populated, untaxed: resolved from the control and refused'],
+            ['populated', null, 100.00, 0.00, 19.00, self::REFUSED, 'no rate, control populated, tax off the rate: refused'],
+            ['populated', null, 100.00, 0.00, 25.02, 0.25, 'no rate, control populated, at the 0.02 tolerance: sent'],
+            ['populated', null, 100.00, 0.00, 25.03, self::REFUSED, 'no rate, control populated, past the 0.02 tolerance: refused'],
+            ['populated at 0%', null, 100.00, 0.00, 0.00, 0.0, 'no rate, control resolves 0%, untaxed: 0%'],
+            ['populated at 0%', null, 100.00, 0.00, 5.00, self::REFUSED, 'no rate, control resolves 0%, taxed: refused'],
+            ['populated', null, 100.00, 20.00, 20.00, 0.25, 'no rate, control populated, shipping discount: the discounted base'],
+            ['populated', null, 100.00, 20.00, 25.00, 0.25, 'no rate, control populated, Before Discount: the undiscounted base'],
+            ['populated on store 2', null, 100.00, 0.00, 15.00, 0.15, 'scope: store 2 is populated and reads its own class', 2],
+            ['populated on store 2', null, 100.00, 0.00, 25.00, 0.0, 'scope: store 1 is blank, sent as is', 1],
+            ['populated', null, 100.00, 0.00, 0.00, self::BUYER_REFUSAL, 'refused at placement in the buyer wording', 1, ComposeOrder::class],
         ];
+    }
+
+    /**
+     * An invoice carries no shipping discount of its own: the check uses the
+     * order's, as ComposeCapture composes the line.
+     */
+    public function testAnInvoiceIsCheckedOnTheOrdersShippingDiscount(): void
+    {
+        $order = $this->entity(['shipping_discount_amount' => 20.00, 'shipping_address' => new DataObject()]);
+        $invoice = $this->entity(['order' => $order, 'shipping_tax_amount' => 20.00]);
+
+        $this->assertSame(0.25, $this->orderService(null, [1 => 5], [1 => true])->getTaxRateShipping($invoice));
     }
 
     /**
@@ -443,6 +498,7 @@ class ShippingTaxRateTest extends TestCase
         $shippingAddress = $isVirtual ? null : new DataObject(['country_id' => 'NO']);
         $billingAddress = new DataObject(['country_id' => 'SE']);
         $order = $this->entity([
+            'shipping_amount' => 12.00 / $expected,
             'shipping_tax_amount' => 12.00,
             'shipping_address' => $shippingAddress,
             'billing_address' => $billingAddress,
@@ -450,7 +506,11 @@ class ShippingTaxRateTest extends TestCase
             'customer_id' => $customerId,
             'customer_group_id' => $groupId,
         ]);
-        $entity = $isCreditmemo ? $this->entity(['order' => $order, 'shipping_tax_amount' => $shippingTax]) : $order;
+        $entity = $isCreditmemo ? $this->entity([
+            'order' => $order,
+            'shipping_amount' => $shippingTax / $expected,
+            'shipping_tax_amount' => $shippingTax,
+        ]) : $order;
 
         $rate = $this->orderService(null, [1 => 5])->getTaxRateShipping($entity);
 
@@ -473,54 +533,6 @@ class ShippingTaxRateTest extends TestCase
             [true, false, 2, 42, 12.00, 10, 42, 0.12, 'refund after a customer group change: order-time group'],
             [true, false, 2, 42, 6.00, 10, 42, 0.12, 'partial credit memo: order-time rate on the refunded shipping'],
             [false, true, 2, 42, 12.00, 10, 42, 0.12, 'virtual order: billing stands in for shipping'],
-        ];
-    }
-
-    // ── TWO-26082: the fallback is off unless enabled per store by CLI ──
-
-    private const MERCHANT_DISABLED = 'Shipping tax could not be determined for this order: Magento recorded no'
-        . ' shipping tax rate and the shipping tax fallback is not enabled for this store.'
-        . ' Contact Acme to enable it.';
-
-    private const BUYER_REFUSAL = 'This order could not be placed. Please contact the merchant.';
-
-    /**
-     * @param array<int, bool> $fallbackByStore
-     * @dataProvider fallbackFlagCases
-     */
-    public function testShippingTaxFallbackIsOffUnlessEnabledForTheStore(
-        string $service,
-        int $storeId,
-        array $fallbackByStore,
-        float $shippingTax,
-        $expected,
-        string $case
-    ): void {
-        $orderService = $this->orderService(null, [1 => 5, 2 => 7], $fallbackByStore, $service);
-        $entity = $this->entity([
-            'shipping_tax_amount' => $shippingTax,
-            'shipping_address' => new DataObject(['country_id' => 'NO']),
-            'store_id' => $storeId,
-        ]);
-
-        try {
-            $actual = $orderService->getTaxRateShipping($entity);
-        } catch (LocalizedException $e) {
-            $actual = $e->getMessage();
-        }
-
-        $this->assertSame($expected, $actual, $case);
-    }
-
-    public static function fallbackFlagCases(): array
-    {
-        return [
-            [Order::class, 1, [], 25.00, self::MERCHANT_DISABLED, 'disabled, needs fallback: refused at capture/refund'],
-            [ComposeOrder::class, 1, [], 25.00, self::BUYER_REFUSAL, 'disabled, needs fallback: refused at placement'],
-            [Order::class, 1, [1 => true], 25.00, 0.25, 'enabled, needs fallback: resolved via core class'],
-            [Order::class, 1, [], 0.00, 0.0, 'disabled, untaxed shipping: 0% accepted'],
-            [Order::class, 2, [2 => true], 15.00, 0.15, 'scope: enabled on store 2 only, store 2 resolves'],
-            [Order::class, 1, [2 => true], 25.00, self::MERCHANT_DISABLED, 'scope: enabled on store 2 only, store 1 refused'],
         ];
     }
 }

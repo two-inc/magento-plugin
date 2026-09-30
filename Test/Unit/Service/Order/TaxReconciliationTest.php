@@ -85,6 +85,9 @@ class TaxReconciliationTest extends TestCase
                 $this->line('7', '90.00', '25.00', '0.250000', ['discount_amount' => '10.00']),
                 'tax computed before discount',
             ],
+            // TWO-26117: getTaxRateShipping() owns the shipping line's check.
+            [$this->line('shipping', '100.00', '25.00', '0.000000'), 'shipping line with no rate recorded, sent as charged'],
+            [$this->line('shipping', '100.00', '19.00', '0.250000'), 'shipping line whose recorded rate is off its tax'],
         ];
     }
 
@@ -111,7 +114,7 @@ class TaxReconciliationTest extends TestCase
         return [
             [$this->line('1', '100.00', '25.03', '0.250000'), 'just outside tolerance'],
             [$this->line('2', '100.00', '25.00', '0.150000'), 'rate does not match the tax charged'],
-            [$this->line('shipping', '100.00', '25.00', '0.000000'), 'taxed line declaring a zero rate'],
+            [$this->line('6', '100.00', '25.00', '0.000000'), 'taxed line declaring a zero rate'],
             [$this->line('3', '100.00', '0.00', '0.250000'), 'rate declared but no tax charged'],
             [
                 $this->line('4', '19.80', '5.20', '0.250000', ['quantity' => 10]),
@@ -134,13 +137,13 @@ class TaxReconciliationTest extends TestCase
             ->method('addErrorLog')
             ->with(
                 'TaxReconciliationFailed',
-                $this->stringContains('Line shipping declares tax 25.00')
+                $this->stringContains('Line 2 declares tax 25.00')
             );
 
         $this->expectException(LocalizedException::class);
         $this->orderService->validateTaxReconciliation([
             $this->line('1', '100.00', '25.00', '0.250000'),
-            $this->line('shipping', '100.00', '25.00', '0.100000'),
+            $this->line('2', '100.00', '25.00', '0.100000'),
         ]);
     }
 
