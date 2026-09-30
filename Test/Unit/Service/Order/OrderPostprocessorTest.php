@@ -229,6 +229,32 @@ class OrderPostprocessorTest extends TestCase
     }
 
     /**
+     * TWO-26117: a shipping line with no rate recorded and the control blank
+     * goes at 0% with its tax as charged. The builder reconcile leaves it to
+     * the API, so it reaches the hook.
+     *
+     * @dataProvider builderGatedRequests
+     */
+    public function testANoRateShippingLineWithTaxReachesTheHook(string $requestType): void
+    {
+        Subscriber::$mode = null;
+        $payload = self::orderPayload();
+        $payload['line_items'][1]['tax_amount'] = '5.03';
+        $payload['line_items'][1]['gross_amount'] = '34.03';
+
+        $sent = $this->postprocessor()->process($requestType, $payload, $this->context());
+
+        $this->assertSame($payload, $sent, $requestType);
+        $this->assertSame([], $this->errorLog, $requestType);
+        $this->assertCount(1, Subscriber::$calls, $requestType . ': the hook ran');
+    }
+
+    public static function builderGatedRequests(): array
+    {
+        return [[Hook::REQUEST_ORDER_CREATE], [Hook::REQUEST_ORDER_UPDATE]];
+    }
+
+    /**
      * A body-less request is never blocked: Magento has already cancelled or
      * confirmed, and a Two order left live could still be invoiced.
      *

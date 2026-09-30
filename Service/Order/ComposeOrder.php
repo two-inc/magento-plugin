@@ -77,7 +77,7 @@ class ComposeOrder extends OrderService
     /**
      * @inheritDoc
      */
-    protected function shippingTaxRefusal(bool $fallbackEnabled): Phrase
+    protected function shippingTaxRefusal(): Phrase
     {
         return __('This order could not be placed. Please contact the merchant.');
     }

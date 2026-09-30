@@ -161,11 +161,14 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
 
         $buckets = self::sumByRate($lines);
         foreach ($residuals as $rate => $residual) {
-            if (!isset($buckets[$rate]) && abs($residual['taxable_amount']) < 0.005 && abs($residual['tax_amount']) < 0.005) {
+            // A sub-cent residual is float noise, not an amount (TWO-26117).
+            $residual = array_filter($residual, static fn (float $value): bool => abs($value) >= 0.005);
+            if ($residual === []) {
                 continue;
             }
+            $buckets[$rate] ??= ['taxable_amount' => 0.0, 'tax_amount' => 0.0];
             foreach ($residual as $field => $value) {
-                $buckets[$rate][$field] = ($buckets[$rate][$field] ?? 0.0) + $value;
+                $buckets[$rate][$field] += $value;
             }
         }
 

@@ -118,21 +118,18 @@ class** field and the deprecated flat-percentage **Default shipping tax rate**
 field. `setup:upgrade` deletes their stored values and does not carry them
 over anywhere.
 
-Where Magento records no tax rate for a taxed shipping line, the fallback now
-uses Magento's own **Stores > Configuration > Sales > Tax > Tax Classes > Tax
-Class for Shipping**, and only on stores where the fallback has been enabled
-(see below). A store that relied on the removed fields refuses such orders
-until both are in place. This includes orders placed on 3.x: their capture,
-refund and shipment are refused after upgrading unless the fallback is enabled
-and core's Tax Class for Shipping is set.
+Where Magento records no tax rate for a shipping line, the fallback now uses
+Magento's own **Stores > Configuration > Sales > Tax > Tax Classes > Tax Class
+for Shipping**, and only on stores where the fallback has been enabled (see
+below). Anywhere else such a line is sent at 0% with its tax as charged, and
+Two's API validates it. This includes orders placed on 3.x.
 
 ## Shipping tax fallback
 
-When a taxed shipping line reaches the plugin with no tax rate recorded by
-Magento, the order, capture, refund or shipment is refused. A fallback that
-resolves the rate from Magento's own **Tax > Tax Classes > Tax Class for
-Shipping** exists, but it is off by default and has no admin field. Contact Two
-before enabling it for a store:
+The shipping tax fallback resolves a shipping line's rate from Magento's own
+**Tax > Tax Classes > Tax Class for Shipping** when Magento recorded no rate for
+that line. It is off by default and has no admin field. Contact Two before
+enabling it for a store:
 
 ```bash
 bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
@@ -140,7 +137,36 @@ bin/magento cache:flush config
 ```
 
 On a brand overlay the path is `payment/<brand code>/enable_shipping_tax_fallback`.
-Untaxed shipping is sent at 0% whether or not the fallback is enabled.
+
+The fallback is **populated** when it is enabled for the store and the Tax Class
+for Shipping is set. Enabled with no class set, it does nothing.
+
+| Shipping line | Fallback blank (the default) | Fallback populated |
+|---|---|---|
+| Magento recorded a rate, including an explicit 0% | Sent at the recorded rate. The plugin does not check it; the postprocessing hook runs, then Two's API validates it. | Same as blank. |
+| Magento recorded no rate, whatever the line's tax (0 included) | Sent as is: rate 0, tax as charged. The plugin does not check it; the hook runs, then Two's API validates it. | The rate comes from the Tax Class for Shipping, and the line's tax must reconcile with it within 0.02. If it does not, the request is refused; if it does, the line is sent at that rate and the hook runs. |
+
+With the fallback blank, the plugin never refuses a request over shipping tax.
+
+"Recorded a rate" means Magento applied a tax rate to the shipping line when
+the order was placed. A Tax Class for Shipping of **None**, or no tax rule
+matching the address, applies none, so it reads as no rate. A rule applying 0%
+is recorded when shipping prices exclude tax.
+
+Placement stores which case applied on the order, in `two_shipping_tax_rate_source`
+(`declared` or `none`), with the rate in `two_shipping_tax_rate` (percent): the
+recorded rate, 0 included, or for `none` the fallback's rate, empty when the
+fallback was blank. Magento does not save a 0% shipping rate with the order,
+so this record is what update, capture, shipment and refund read, never the
+current configuration: a later change to the fallback or the tax rules does not
+move an order already placed. An order placed before this record existed has
+both empty and resolves as it would at placement. A refund takes the order's
+shipping rate and does not re-check the tax it carries.
+
+The check runs while the plugin builds the request, before the postprocessing
+hook, and never on what a subscriber returns. **If your subscriber re-splits a
+shipping line that has no recorded rate, keep the fallback blank**: a populated
+fallback can refuse that line before your subscriber ever sees it.
 
 ## Stable extension contract: order postprocessing
 
@@ -219,8 +245,9 @@ refused exactly as it was before this hook existed.
 **What you return is sent.** The payload goes out exactly as your subscriber
 returns it, and Two's API validates it as it validates any request. The plugin
 checks only what it builds itself: before the hook runs, order create and
-address update refuse a line the plugin composed whose tax does not follow
-from its rate, as they always have. If the API rejects your payload, its
+address update refuse a product or fee line the plugin composed whose tax does
+not follow from its rate, as they always have. The shipping line is checked
+only as the shipping tax fallback describes. If the API rejects your payload, its
 response is written to `var/log/two/debug.log` and its message is shown to the
 admin for an admin action, or to the buyer at checkout.
 
@@ -245,8 +272,9 @@ affects, or the API will reject the request: inject
 It sets `net_amount`, `tax_amount` and `gross_amount` (or a refund's `amount`)
 to the sum over your lines plus whatever the total carried outside its lines
 in `$before` (store credit, a gift card, an unitemised fee), and does the same
-for each `tax_subtotals` bucket by rate. A total you set by hand before the
-call is replaced, not counted twice.
+for each `tax_subtotals` bucket by rate. A bucket residual under half a cent is
+float noise and is dropped. A total you set by hand before the call is replaced, not
+counted twice.
 
 Every change is written to the debug log with the request type and each
 changed field's JSON pointer, old and new value, and noted in the order's
