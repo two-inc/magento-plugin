@@ -278,7 +278,8 @@ jobs:
 
       # TWO-26092: a real subscriber module on the order postprocessing hook,
       # proving the interceptor wiring, that it fires for every request type,
-      # and that the gates hold on what a subscriber returns.
+      # and that the gates hold on what a subscriber returns. The probes
+      # create their own products, tax rules and coupon in this throwaway shop.
       - name: Order postprocessing fixture probe
         run: |
           docker exec magento-project-community-edition /bin/bash -c \
@@ -287,6 +288,14 @@ jobs:
             "php bin/magento module:enable Two_OrderPostprocessingFixture && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
           docker exec magento-project-community-edition \
             php /data/extensions/magento-plugin/Test/Integration/order-postprocessing-probe.php
+
+      # TWO-26092: order intent composed from real quotes (coupon, multi-rate,
+      # tax-inclusive, guest, configurable, bundle) through core's own
+      # quote-to-order conversion, checked against the quote's totals.
+      - name: Order intent composition probe
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-plugin/Test/Integration/compose-intent-probe.php
 
   # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
   # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
