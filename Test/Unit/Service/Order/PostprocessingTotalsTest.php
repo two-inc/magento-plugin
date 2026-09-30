@@ -45,6 +45,11 @@ class PostprocessingTotalsTest extends TestCase
         // A 5.00 fee the shop declared at 0% with no line of its own.
         $fee = ['net_amount' => '105.00', 'tax_amount' => '21.00', 'gross_amount' => '126.00', 'tax_subtotals' => [$composedBuckets[0], ['taxable_amount' => '5.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000']], 'line_items' => [$a]];
         $refund = ['amount' => '140.00', 'currency' => 'EUR', 'line_items' => [$a, $untaxed], 'tax_subtotals' => $composedBuckets];
+        // A subscriber's line at 3dp; the received bucket sits 0.004 over its line, float noise.
+        $odd = self::line('10.003', '2.10', '12.103', '0.210000');
+        $noisy = ['net_amount' => '10.00', 'tax_amount' => '2.10', 'gross_amount' => '12.10', 'tax_subtotals' => [['taxable_amount' => '10.004', 'tax_amount' => '2.10', 'tax_rate' => '0.210000']], 'line_items' => [self::line('10.00', '2.10', '12.10', '0.210000')]];
+        $cent = ['net_amount' => '10.00', 'tax_amount' => '2.10', 'gross_amount' => '12.10', 'tax_subtotals' => [['taxable_amount' => '10.01', 'tax_amount' => '2.10', 'tax_rate' => '0.210000']], 'line_items' => [self::line('10.00', '2.10', '12.10', '0.210000')]];
+        $negligible = self::line('-0.001', '-0.001', '-0.002', '-0.0000001');
 
         return [
             [['net_amount' => '0', 'tax_amount' => '0', 'gross_amount' => '0', 'tax_subtotals' => [$stale], 'line_items' => [$a, $b]], [], ['net_amount' => '123.97', 'tax_amount' => '26.03', 'gross_amount' => '150.00', 'tax_subtotals' => $bucket, 'line_items' => [$a, $b]], 'order totals and one bucket for 0.21 and 0.210000'],
@@ -61,6 +66,10 @@ class PostprocessingTotalsTest extends TestCase
             [['line_items' => [$a, $reduced]] + $newRate, $newRate, ['line_items' => [$a, $reduced], 'net_amount' => '126.61', 'tax_amount' => '23.39', 'gross_amount' => '150.00', 'tax_subtotals' => [$composedBuckets[0], ['taxable_amount' => '26.61', 'tax_amount' => '2.39', 'tax_rate' => '0.090000']]], 'a new rate gets its own bucket beside the received ones'],
             [['line_items' => [$cheaper]] + $fee, $fee, ['line_items' => [$cheaper], 'net_amount' => '95.00', 'tax_amount' => '18.90', 'gross_amount' => '113.90', 'tax_subtotals' => [['taxable_amount' => '90.00', 'tax_amount' => '18.90', 'tax_rate' => '0.210000'], ['taxable_amount' => '5.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000']]], 'a bucket with a residual and no lines is kept'],
             [[], [], [], 'a body-less request is untouched'],
+            // TWO-26117: a sub-cent residual is float noise, dropped per figure; no total reads -0.00.
+            [['line_items' => [$odd]] + $noisy, $noisy, ['line_items' => [$odd], 'net_amount' => '10.00', 'tax_amount' => '2.10', 'gross_amount' => '12.10', 'tax_subtotals' => [['taxable_amount' => '10.00', 'tax_amount' => '2.10', 'tax_rate' => '0.210000']]], 'a sub-cent residual on a bucket with lines is dropped'],
+            [['line_items' => [$odd]] + $cent, $cent, ['line_items' => [$odd], 'net_amount' => '10.00', 'tax_amount' => '2.10', 'gross_amount' => '12.10', 'tax_subtotals' => [['taxable_amount' => '10.01', 'tax_amount' => '2.10', 'tax_rate' => '0.210000']]], 'a whole-cent residual is kept'],
+            [['net_amount' => '1', 'tax_amount' => '1', 'gross_amount' => '1', 'tax_subtotals' => [], 'line_items' => [$negligible]], [], ['net_amount' => '0.00', 'tax_amount' => '0.00', 'gross_amount' => '0.00', 'tax_subtotals' => [['taxable_amount' => '0.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000']], 'line_items' => [$negligible]], 'a line summing to minus nothing reads 0.00, never -0.00'],
         ];
     }
 
