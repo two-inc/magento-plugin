@@ -230,7 +230,6 @@ class ConfigProvider implements ConfigProviderInterface
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
-            'weightUnit' => $this->configRepository->getWeightUnit(),
             'merchant' => $merchant,
         ];
 

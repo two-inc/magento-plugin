@@ -71,7 +71,6 @@ function loadRenderer() {
         getTelephone: function () { return '+4712345678'; },
         _brandConfig: {
             orderIntentConfig: {
-                weightUnit: 'kg',
                 extensionPlatformName: 'magento2',
                 extensionDBVersion: '1.0.0',
                 merchant: { id: 'm-1', short_name: 'acme' }

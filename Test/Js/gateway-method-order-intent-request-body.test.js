@@ -153,7 +153,6 @@ function makeContext(component) {
         _brandConfig: {
             checkoutApiUrl: 'https://api.example.two.inc',
             orderIntentConfig: {
-                weightUnit: 'kg',
                 extensionPlatformName: 'magento2',
                 extensionDBVersion: '1.0.0',
                 merchant: { id: 'm-1', short_name: 'acme' }
