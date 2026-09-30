@@ -242,10 +242,11 @@ overwrite your edits. If you change a line, move the totals and subtotals it
 affects, or the API will reject the request: inject
 `Two\Gateway\Api\OrderPostprocessingTotalsInterface` and call
 `recompute($edited, $before)`, passing the payload you received as `$before`.
-It moves `net_amount`, `tax_amount` and `gross_amount` (or a refund's `amount`)
-by the change in your lines, keeping any difference the plugin composed (store
-credit, a gift card, an unitemised fee), and rebuilds any `tax_subtotals` from
-the lines.
+It sets `net_amount`, `tax_amount` and `gross_amount` (or a refund's `amount`)
+to the sum over your lines plus whatever the total carried outside its lines
+in `$before` (store credit, a gift card, an unitemised fee), and does the same
+for each `tax_subtotals` bucket by rate. A total you set by hand before the
+call is replaced, not counted twice.
 
 Every change is written to the debug log with the request type and each
 changed field's JSON pointer, old and new value, and noted in the order's
