@@ -10,8 +10,8 @@ namespace Two\Gateway\Service\Order;
 use Two\Gateway\Api\OrderPostprocessingTotalsInterface;
 
 /**
- * Moves totals by the change in a payload's lines, and rebuilds its tax
- * subtotals from them (TWO-26092).
+ * Sets a payload's totals, and its tax subtotals per rate, to the sums over
+ * its lines plus the residual each carried in `$before` (TWO-26092).
  */
 class PostprocessingTotals implements OrderPostprocessingTotalsInterface
 {
@@ -40,7 +40,7 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
      * @param array $payload
      * @return string[]
      */
-    public static function lineBlockKeys(array $payload): array
+    private static function lineBlockKeys(array $payload): array
     {
         $keys = [];
         if (isset($payload['line_items']) && is_array($payload['line_items'])) {
@@ -60,7 +60,7 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
      * @param array $lines
      * @return array<string, array{taxable_amount: float, tax_amount: float}>
      */
-    public static function sumByRate(array $lines): array
+    private static function sumByRate(array $lines): array
     {
         $buckets = [];
         foreach ($lines as $line) {
