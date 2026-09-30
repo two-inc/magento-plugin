@@ -197,29 +197,67 @@ request:
 | `refund` | A credit memo |
 | `cancel` | The order is cancelled or voided, or the buyer abandons Two's checkout |
 
-**Invariants the plugin checks on what you return.** Your edits are yours to
+A few specifics:
+
+- A whole-order capture has no body and its `invoice` is null. That covers an
+  invoice for everything still open and the fulfil-on status trigger (which
+  carries no `invoice` key at all).
+- If Two answers a whole-order capture with `PARTIAL_ORDER_MISSING_DATA`, the
+  plugin retries it as a partial capture of the latest invoice, so the hook
+  fires twice for one capture: first with `[]`, then with the `partial` body.
+- For `order_intent` the plugin builds an unsaved order from the live checkout
+  quote. It re-collects the quote's totals and runs core's quote-to-order
+  conversion in memory, which dispatches `sales_convert_quote_to_order`. That
+  happens on every approval check, and no order is placed. An observer on that
+  event, or on the totals collection, that assumes a real placement (reserving
+  stock, numbering, writing records) will run then too.
+
+**Unchanged means unchanged.** When no subscriber changes the payload, every
+request is sent byte for byte as the plugin composed it, and is accepted or
+refused exactly as it was before this hook existed. Order create and address
+update still refuse a line whose tax does not follow from its rate, as they
+always have. Nothing else is checked.
+
+**What the plugin checks when you change the payload.** Your edits are yours to
 make, and Two's API validates whatever arrives. The plugin still refuses a
-payload that is inconsistent with itself, and names the reason in the log and,
-for an admin action, in the error:
+change that leaves the payload inconsistent with itself. It names the reason
+in the log and, for an admin action, in the error. The checks judge only what
+you changed: lines you edited or added, and totals against the payload as it
+was composed.
 
 | Code | Refused when |
 |---|---|
 | `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` | A subscriber threw, or returned something other than an array |
-| `TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED` | A body was added to confirm or cancel, which take none |
-| `TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT` | A line's net, tax and gross disagree, or its tax does not follow from its `tax_rate` |
-| `TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT` | Order or capture totals differ from the sum of the lines, gross is not net + tax, or a refund's `amount` differs from its lines' gross |
-| `TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT` | A `tax_subtotals` bucket differs from the lines at its rate |
+| `TWO_ORDER_POSTPROCESSING_LINE_INCONSISTENT` | A line you changed or added has net, tax and gross that disagree, or tax that does not follow from its `tax_rate` |
+| `TWO_ORDER_POSTPROCESSING_TOTALS_INCONSISTENT` | A total moved away from its lines: the difference between an order or capture total (or a refund's `amount`) and the sum of its lines is no longer what the plugin composed, or gross stopped being net + tax |
+| `TWO_ORDER_POSTPROCESSING_SUBTOTALS_INCONSISTENT` | A `tax_subtotals` bucket no longer matches the lines at its rate |
 
-The same checks run when no subscriber changed anything; a failure then carries
-the code without `POSTPROCESSING_`. Tolerances are the plugin's usual rounding
-allowances, never tighter for your output. The buyer only ever sees the
-plugin's generic refusal.
+A composed payload's totals can legitimately differ from the sum of its lines.
+Store credit, gift cards and reward points are payment, not discounts, so they
+lower the grand total without a line of their own. A third-party fee whose tax
+rate Magento does not vouch for is sent unitemised. The totals check keeps
+whatever difference the plugin composed and refuses only a change to it.
+Tolerances are the plugin's usual rounding allowances, never tighter for your
+output. The buyer only ever sees the plugin's generic refusal.
+
+A refusal stops that one request:
+
+| Request type | Effect of a refusal |
+|---|---|
+| `order_intent` | The approval check is refused and the buyer sees the generic notice |
+| `order_create` | Checkout is refused with the generic notice |
+| `order_update` | The update is not sent to Two. The address edit still saves in Magento, and the admin sees the error as a warning and in the order's history |
+| `capture` | The invoice, shipment or fulfil-on status change that triggered it is blocked with the error |
+| `refund` | The credit memo is refused with the error |
+| `order_confirm`, `cancel` | Never refused. These take no body, so a subscriber that throws or adds one is logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` or `TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED`, and the request is sent empty. Magento has already confirmed or cancelled the order by then, and a Two order left live could still be invoiced |
 
 The plugin never recomputes anything after the hook, because that would
-overwrite your edits. If you change a line, update the totals and subtotals it
+overwrite your edits. If you change a line, move the totals and subtotals it
 affects: inject `Two\Gateway\Api\OrderPostprocessingTotalsInterface` and call
-`recompute($payload)`, which rebuilds `net_amount`, `tax_amount`,
-`gross_amount` (or a refund's `amount`) and any `tax_subtotals` from the lines.
+`recompute($edited, $before)`, passing the payload you received as `$before`.
+It moves `net_amount`, `tax_amount` and `gross_amount` (or a refund's `amount`)
+by the change in your lines, keeping any difference the plugin composed, and
+rebuilds any `tax_subtotals` from the lines.
 
 Every change is logged with the request type and a list of the changed fields,
 and noted in the order's comment history where there is an order.
@@ -239,7 +277,8 @@ totals.
 
 **Example.** Treat untaxed shipping as VAT-inclusive at the shop's shipping tax
 rate. A 29.00 shipping line becomes net `round(29.00 / 1.21, 2)` = 23.97 and tax
-5.03, gross unchanged:
+5.03, gross unchanged. A partial capture carries its lines under `partial`, so
+the edit covers both places:
 
 ```php
 namespace Acme\Two\Plugin;
@@ -256,12 +295,12 @@ class OrderPostprocessing
     public function afterProcess(OrderPostprocessingInterface $subject, array $result, array $payload, array $context): array
     {
         $rate = $context['shipping_tax_rate'];
-        if (!$rate || empty($result['line_items'])) {
+        if (!$rate) {
             return $result;
         }
-        foreach ($result['line_items'] as &$line) {
+        $resplit = static function (array $line) use ($rate): array {
             if ($line['type'] !== 'SHIPPING_FEE' || (float)$line['tax_amount'] != 0.0) {
-                continue;
+                return $line;
             }
             $gross = (float)$line['gross_amount'];
             $net = round($gross / (1 + $rate), 2);
@@ -270,10 +309,18 @@ class OrderPostprocessing
             $line['unit_price'] = $line['net_amount'];
             $line['tax_rate'] = number_format($rate, 6, '.', '');
             $line['tax_class_name'] = 'VAT ' . number_format($rate * 100, 2) . '%';
-        }
-        unset($line);
+            return $line;
+        };
 
-        return $this->totals->recompute($result);
+        $edited = $result;
+        if (isset($edited['line_items'])) {
+            $edited['line_items'] = array_map($resplit, $edited['line_items']);
+        }
+        if (isset($edited['partial']['line_items'])) {
+            $edited['partial']['line_items'] = array_map($resplit, $edited['partial']['line_items']);
+        }
+
+        return $this->totals->recompute($edited, $result);
     }
 }
 ```
