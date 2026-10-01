@@ -23,8 +23,10 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  *    Two's API validates what is sent.
  *
  * Placement records what each line resolved to, "no code" included, on the
- * order (STORED_CODES): product lines by quote item id, every other line by its
- * own order_item_id. Every later request on that order reads the record rather
+ * order (STORED_CODES): product lines by quote item id, then shipping, the
+ * payment terms fee, and one shared key for every other fee line, since those
+ * all resolve alike and a fee can change id between placement and a later
+ * request. Every later request on that order reads the record rather
  * than resolving again, so a changed address, mapping or product tax class
  * never moves a placed order. A line the record does not cover (an order placed
  * before it existed, or a line placement never sent, such as a refund
@@ -56,6 +58,15 @@ class TaxCodeResolver
 
     /** The line types the composers give product lines; nothing else is an order item. */
     private const PRODUCT_LINE_TYPES = ['PHYSICAL', 'DIGITAL'];
+
+    /** The line types of fee lines: "Other charges", fee providers and the payment terms fee. */
+    private const FEE_LINE_TYPES = ['OTHER', 'BUYER_FEE'];
+
+    /**
+     * The refund adjustment line, which keeps resolving live (TWO-24877): it
+     * is never placed, and how it should be split is still open.
+     */
+    private const REFUND_ADJUSTMENT_ID = 'adjustment';
 
     /**
      * @var ConfigRepository
@@ -171,28 +182,29 @@ class TaxCodeResolver
     /**
      * Where the line's code is recorded: product lines by quote item id, which
      * the item carries from placement on; shipping by name, since a refund's
-     * shipping line has no order_item_id; every other line by its own
-     * order_item_id (surcharge, other charges, a fee provider's id). Null for a
-     * line the record cannot cover.
+     * shipping line has no order_item_id; the payment terms fee, which has its
+     * own tax class; and every other fee line under one key, whatever its id.
+     * Null for a line the record does not cover.
      */
     private function storeKey(array $line, $item): ?string
     {
+        $type = $line['type'] ?? '';
+        $lineId = $line['order_item_id'] ?? null;
         if ($item !== null) {
             $quoteItemId = $item->getQuoteItemId();
             return is_numeric($quoteItemId) ? 'item:' . (int)$quoteItemId : null;
         }
-        if (($line['type'] ?? '') === 'SHIPPING_FEE') {
+        if ($type === 'SHIPPING_FEE') {
             return 'shipping';
         }
-        if (in_array($line['type'] ?? '', self::PRODUCT_LINE_TYPES, true)) {
-            return null;
-        }
-        $lineId = $line['order_item_id'] ?? null;
         if ($lineId === 'surcharge') {
             return 'surcharge';
         }
+        if ($lineId === self::REFUND_ADJUSTMENT_ID || !in_array($type, self::FEE_LINE_TYPES, true)) {
+            return null;
+        }
 
-        return is_scalar($lineId) && (string)$lineId !== '' ? 'line:' . $lineId : null;
+        return 'fee';
     }
 
     /**
@@ -234,6 +246,9 @@ class TaxCodeResolver
                 $this->configRepository->getSurchargeTaxClassId($context['store_id']),
                 !$context['has_goods'],
             ];
+        } elseif (in_array($line['type'] ?? '', self::PRODUCT_LINE_TYPES, true)) {
+            // A product line no item matched: its own type still says goods or service.
+            [$classId, $isService] = [null, $line['type'] === 'DIGITAL'];
         } else {
             [$classId, $isService] = [null, !$context['has_goods']];
         }

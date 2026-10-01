@@ -217,12 +217,15 @@ domestic exempt sales, or services to buyers outside the EU). A non-Spanish
 merchant with no mapping sends exactly what it sent before.
 
 Placement records each line's code, or that it had none, on the order
-(`two_tax_codes`): product, shipping, payment terms fee, "Other charges" and
-fee-provider lines alike. Order edit, capture, shipment and refund send those
-codes, so a later change to the addresses, the mapping or a product's tax
-class does not move a placed order. Only a line placement never sent (a refund
-adjustment), a product line whose item has no quote item, and orders placed
-before this record existed resolve afresh.
+(`two_tax_codes`): per product line, for shipping, for the payment terms fee,
+and once for all other fee lines ("Other charges" and fee-provider lines),
+which share one code whatever their id. Order edit, capture, shipment and
+refund send those codes, so a later change to the addresses, the mapping or a
+product's tax class does not move a placed order. These resolve afresh
+instead: the refund adjustment line, a product line placement could not match
+to its item (its SKU was changed by another extension, or its item has no
+quote item), a fee line on an order that had none at placement, and every
+line of an order placed before this record existed.
 
 ## Stable extension contract: order postprocessing
 

@@ -223,10 +223,11 @@ abstract class Order
     }
 
     /**
-     * The item behind each product line, by line key. Matched on SKU and name
-     * rather than position, so a plugin on getLineItemsOrder() that drops,
-     * reorders or adds lines cannot hand a line another item's class. A line
-     * whose SKU or name it changed matches nothing and is resolved as a fee.
+     * The item behind each product line, by line key. Matched on SKU rather
+     * than position, so a plugin on getLineItemsOrder() that drops, reorders or
+     * adds lines cannot hand a line another item's class; the name only picks
+     * between items sharing a SKU. A line whose SKU a plugin changed matches
+     * nothing, keeps its goods or service type, and resolves afresh later.
      *
      * @param array $lineItems
      * @param OrderModel $order
@@ -238,13 +239,14 @@ abstract class Order
         $matched = [];
         foreach ($lineItems as $key => $line) {
             $sku = $line['details']['barcodes'][0]['value'] ?? null;
-            foreach ($unused as $i => $item) {
-                if ($sku !== null && $item->getSku() === $sku && $item->getName() === ($line['name'] ?? null)) {
-                    $matched[$key] = $item;
-                    unset($unused[$i]);
-                    break;
-                }
+            $candidates = array_filter($unused, static fn ($item) => $sku !== null && $item->getSku() === $sku);
+            if ($candidates === []) {
+                continue;
             }
+            $named = array_filter($candidates, static fn ($item) => $item->getName() === ($line['name'] ?? null));
+            $i = array_key_first($named ?: $candidates);
+            $matched[$key] = $unused[$i];
+            unset($unused[$i]);
         }
 
         return $matched;

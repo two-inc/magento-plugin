@@ -36,7 +36,10 @@ interface FeeLineProviderInterface
     /**
      * Return zero or more fully-formed line items (same shape as
      * Order::getLineItemsOrder()'s entries) for the fee(s) this provider
-     * knows how to itemize on the given entity. Return an empty array if
+     * knows how to itemize on the given entity. A fee line's `type` is
+     * `OTHER` or `BUYER_FEE`, never `PHYSICAL` or `DIGITAL`: those mark
+     * product lines, which are matched to order items and recorded per item
+     * for the tax code a 0% line carries (TWO-24877). Return an empty array if
      * the fee this provider targets isn't present/active on the entity —
      * never throw for "not applicable".
      *
