@@ -297,6 +297,16 @@ jobs:
           docker exec magento-project-community-edition \
             php /data/extensions/magento-plugin/Test/Integration/compose-intent-probe.php
 
+      # TWO-26150: the admin order edit and the self-invoice upload request,
+      # driven through the real Adapter and Magento's Curl client to a local
+      # server that, like the API, accepts only PUT on both routes. Checks
+      # the method, route and payload on the wire, and what the order
+      # history records for an accepted and a refused edit.
+      - name: API wire probe
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-plugin/Test/Integration/api-wire-probe.php
+
   # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
   # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
   # di:compile — proves the cross-major vanilla merchant upgrade (1.x -> 2.x) lands

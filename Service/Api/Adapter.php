@@ -119,7 +119,7 @@ class Adapter
             $url = $this->configRepository->addVersionDataInURL(
                 sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
             );
-            $body = ($method == "POST" || $method == "PUT")
+            $body = strtoupper($method) !== 'GET'
                 ? (empty($payload) ? '' : (string)json_encode($payload))
                 : '';
             $headers = [
@@ -160,12 +160,21 @@ class Adapter
             }
             $curl->setOption(CURLOPT_TIMEOUT, $timeoutSeconds ?? self::DEFAULT_TIMEOUT_SECONDS);
 
-            if ($call->method == "POST" || $call->method == "PUT") {
-                $curl->addHeader("Content-Length", strlen($call->body));
-                $curl->post($call->url, $call->body);
-            } else {
+            $httpMethod = strtoupper($call->method);
+            if ($httpMethod === 'GET') {
                 $curl->setOption(CURLOPT_FOLLOWLOCATION, true);
                 $curl->get($call->url);
+            } else {
+                // Curl::post() always issues a POST. Every other method
+                // (PUT for an order edit) must name itself, or the API
+                // refuses the call with 405. Magento applies user options
+                // after its own, so this overrides the POST verb while
+                // post() still attaches the body (TWO-26150).
+                if ($httpMethod !== 'POST') {
+                    $curl->setOption(CURLOPT_CUSTOMREQUEST, $httpMethod);
+                }
+                $curl->addHeader("Content-Length", strlen($call->body));
+                $curl->post($call->url, $call->body);
             }
 
             $result = new ApiResult(

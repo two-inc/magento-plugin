@@ -245,22 +245,55 @@ class OrderService
      */
     public function confirmOrder(Order $order)
     {
-        $response = $this->apiAdapter->execute(
-            "/v1/order/" . $order->getTwoOrderId() . "/confirm",
-            $this->orderPostprocessor->process(
-                Postprocessing::REQUEST_ORDER_CONFIRM,
-                [],
-                ['trigger' => 'confirmation', 'endpoint' => '/v1/order/{id}/confirm', 'order' => $order]
-            ),
-            'POST',
-            (int)$order->getStoreId()
-        );
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+        // A transport failure or a 5xx does not say whether the confirm
+        // landed, so it is sent once more: confirming an already confirmed
+        // order succeeds, so the retry cannot do harm. Nothing is cancelled
+        // here, because a cancel can race a confirm still in flight
+        // (TWO-26150). Each attempt is its own request and fires the hook.
+        $result = ['status' => 0, 'body' => []];
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            $result = $this->apiAdapter->executeWithStatus(
+                "/v1/order/" . $order->getTwoOrderId() . "/confirm",
+                $this->orderPostprocessor->process(
+                    Postprocessing::REQUEST_ORDER_CONFIRM,
+                    [],
+                    ['trigger' => 'confirmation', 'endpoint' => '/v1/order/{id}/confirm', 'order' => $order]
+                ),
+                'POST',
+                (int)$order->getStoreId()
+            );
+            if (!$this->isAmbiguous($result['status'])) {
+                break;
+            }
+        }
+        if ($this->isAmbiguous($result['status'])) {
+            $this->logRepository->addErrorLog(
+                'confirm-outcome-unknown',
+                [
+                    'two_order_id' => $order->getTwoOrderId(),
+                    'order_increment_id' => $order->getIncrementId(),
+                    'status' => $result['status'],
+                    'message' => 'Confirm failed twice without an answer from the API;'
+                        . ' the order may be confirmed upstream. Reconcile it by hand.',
+                ]
+            );
+        }
+
+        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($result['body']);
         if ($error) {
             throw new LocalizedException($error);
         }
 
-        return $response;
+        return $result['body'];
+    }
+
+    /**
+     * A status that does not say whether the request took effect: no HTTP
+     * exchange at all (0) or a server-side error (5xx).
+     */
+    private function isAmbiguous(int $status): bool
+    {
+        return $status === 0 || $status >= 500;
     }
 
     /**
