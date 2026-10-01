@@ -64,6 +64,10 @@ class OrderServiceRefusalTest extends TestCase
                 'HTTP status 502', [self::CONFIRM, self::FETCH, self::CANCEL], 'confirm 502, re-read and cancel fail too: still refuse'],
             ['confirmOrder', [self::CONFIRM => $invalid],
                 'Order is invalid', [self::CONFIRM], 'confirm 4xx with error_code: refuse, no re-read, no cancel'],
+            ['cancelTwoOrder', [self::CANCEL => self::GATEWAY_502],
+                'HTTP status 502', [self::CANCEL], 'cancel 502 with an HTML body refuses'],
+            ['getTwoOrderFromApi', [self::FETCH => self::GATEWAY_502],
+                'HTTP status 502', [self::FETCH], 'order fetch 502 with an HTML body refuses'],
         ];
     }
 
