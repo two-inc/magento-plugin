@@ -121,6 +121,7 @@ $edits = [
     ['probe-order-id', true, 'accepted', 'an accepted edit'],
     ['refused-order-id', true, 'failed', 'a refused edit'],
     ['fulfilled-order-id', false, 'already invoiced', 'an edit to a fully fulfilled order'],
+    ['partial-order-id', false, 'already invoiced', 'an edit to a partially fulfilled order'],
 ];
 foreach ($edits as [$twoOrderId, $editSent, $recorded, $description]) {
     $order->setTwoOrderId($twoOrderId);

@@ -9,8 +9,9 @@
  * self-invoice upload request are PUT-only, and any other method is refused
  * with a 405 and an HTML body. An order id starting `refused-` is refused the
  * same way whatever the method, standing in for an edit the API turns down.
- * A GET of an order answers its state: FULFILLED for an id starting
- * `fulfilled-`, CONFIRMED otherwise.
+ * A GET of an order answers its state and status: FULFILLED for an id
+ * starting `fulfilled-`, status PARTIAL for one starting `partial-`, and
+ * CONFIRMED and APPROVED otherwise.
  */
 declare(strict_types=1);
 
@@ -39,7 +40,11 @@ $routes = [
 ];
 if ($method === 'GET' && preg_match('#^/v1/order/([^/]+)$#', $path, $m) && !str_starts_with($m[1], 'refused-')) {
     header('Content-Type: application/json');
-    echo json_encode(['id' => $m[1], 'state' => str_starts_with($m[1], 'fulfilled-') ? 'FULFILLED' : 'CONFIRMED']);
+    echo json_encode([
+        'id' => $m[1],
+        'state' => str_starts_with($m[1], 'fulfilled-') ? 'FULFILLED' : 'CONFIRMED',
+        'status' => str_starts_with($m[1], 'partial-') ? 'PARTIAL' : 'APPROVED',
+    ]);
     return true;
 }
 foreach ($routes as $pattern => [$status, $response]) {

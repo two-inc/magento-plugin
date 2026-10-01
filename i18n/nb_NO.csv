@@ -431,4 +431,5 @@
 "Tax code","Avgiftskode"
 "(none)","(ingen)"
 "HTTP status %1","HTTP-status %1"
-"%1 has already invoiced this order, so this change was not sent to %1.","%1 har allerede fakturert denne bestillingen, så endringen ble ikke sendt til %1."
+"%1 has already invoiced all or part of this order, so this change was not sent to %1.","%1 har allerede fakturert hele eller deler av denne bestillingen, så endringen ble ikke sendt til %1."
+"%1 no longer accepts changes to this order (%2), so this change was not sent to %1.","%1 godtar ikke lenger endringer i denne bestillingen (%2), så endringen ble ikke sendt til %1."

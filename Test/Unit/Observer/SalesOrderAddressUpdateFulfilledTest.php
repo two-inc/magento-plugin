@@ -18,32 +18,35 @@ use Two\Gateway\Service\Order\OrderPostprocessor;
 require_once __DIR__ . '/SalesOrderAddressUpdateOptionalFieldsTest.php';
 
 /**
- * TWO-26150: an address edit on an order the provider has already invoiced is
- * not sent, because the API refuses it. The admin gets a plain notice instead
- * of a refusal warning. A partially fulfilled order is still sent.
+ * TWO-26150: an address edit is not sent when the order's live state or status
+ * is one the API's edit handler refuses, such as an order invoiced in full or
+ * in part. The admin gets a plain notice instead of a refusal warning.
  */
 class SalesOrderAddressUpdateFulfilledTest extends TestCase
 {
-    private const NOTICE = 'Test Product has already invoiced this order, so this change was not sent to Test Product.';
+    private const INVOICED = 'Test Product has already invoiced all or part of this order, so this change was not sent to Test Product.';
 
     /**
-     * @return array<int, array{array, bool, string}> [state lookup response, edit sent, description]
+     * @return array<int, array{array, ?string, string}> [state lookup response, notice (null: edit sent), description]
      */
     public static function fulfilmentCases(): array
     {
+        $closed = 'Test Product no longer accepts changes to this order (%s), so this change was not sent to Test Product.';
         return [
-            [['state' => 'CONFIRMED', 'status' => 'APPROVED'], true, 'unfulfilled order sends the edit'],
-            [['state' => 'CONFIRMED', 'status' => 'PARTIAL'], true, 'partially fulfilled order sends the edit'],
-            [['state' => 'FULFILLED', 'status' => 'APPROVED'], false, 'fully fulfilled order skips the edit'],
-            [['state' => 'FULFILLED', 'status' => 'PARTIAL'], false, 'order fulfilled in parts, now complete, skips the edit'],
-            [['error_message' => 'lookup failed'], true, 'failed state lookup still sends the edit'],
+            [['state' => 'CONFIRMED', 'status' => 'APPROVED'], null, 'approved order with no fulfilment sends the edit'],
+            [['state' => 'VERIFIED', 'status' => 'APPROVED'], null, 'verified order not yet confirmed sends the edit'],
+            [['state' => 'CONFIRMED', 'status' => 'PARTIAL'], self::INVOICED, 'partially fulfilled order skips the edit'],
+            [['state' => 'FULFILLED', 'status' => 'APPROVED'], self::INVOICED, 'fully fulfilled order skips the edit'],
+            [['state' => 'FULFILLED', 'status' => 'PARTIAL'], self::INVOICED, 'order fulfilled in parts, now complete, skips the edit'],
+            [['state' => 'CANCELLED', 'status' => 'APPROVED'], sprintf($closed, 'CANCELLED'), 'cancelled order skips the edit'],
+            [['error_message' => 'lookup failed'], null, 'failed state lookup still sends the edit'],
         ];
     }
 
     #[DataProvider('fulfilmentCases')]
-    public function testEditIsSkippedOnlyOnceTheOrderIsFullyFulfilled(
+    public function testEditIsSkippedWhenTheApiWouldRefuseIt(
         array $lookup,
-        bool $editSent,
+        ?string $notice,
         string $description
     ): void {
         $order = new AddressUpdateOrderStub();
@@ -107,7 +110,7 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
 
         $history = array_map('strval', $order->historyComments);
         $this->assertSame(1, $order->saveCount, $description . ': the order is saved once');
-        if ($editSent) {
+        if ($notice === null) {
             $this->assertSame(1, $puts, $description . ': one edit request');
             $this->assertSame([], $messages, $description . ': no admin message');
             $this->assertCount(1, $history, $description);
@@ -115,7 +118,7 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
             return;
         }
         $this->assertSame(0, $puts, $description . ': no edit request');
-        $this->assertSame(['notice: ' . self::NOTICE], $messages, $description . ': admin notice');
-        $this->assertSame([self::NOTICE], $history, $description . ': history comment');
+        $this->assertSame(['notice: ' . $notice], $messages, $description . ': admin notice');
+        $this->assertSame([$notice], $history, $description . ': history comment');
     }
 }

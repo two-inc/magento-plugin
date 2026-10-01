@@ -27,8 +27,13 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class SalesOrderAddressUpdate implements ObserverInterface
 {
-    /** Order states in which the provider has issued the invoice, or is issuing it, and refuses edits. */
+    /** The order states and statuses in which the API accepts an edit; it refuses any other. */
+    private const EDITABLE_STATES = ['UNVERIFIED', 'VERIFIED', 'CONFIRMED'];
+    private const EDITABLE_STATUSES = ['APPROVED', 'REJECTED', 'DECLINED'];
+
+    /** States and status meaning all or part of the order has been invoiced. */
     private const INVOICED_STATES = ['FULFILLING', 'FULFILLED', 'DELIVERED', 'REFUNDED'];
+    private const PARTIAL_STATUS = 'PARTIAL';
 
     /**
      * @var ConfigRepository
@@ -103,14 +108,11 @@ class SalesOrderAddressUpdate implements ObserverInterface
             && $order->getTwoOrderId()
         ) {
             try {
-                if ($this->isInvoicedByProvider($order)) {
-                    // The API refuses edits once the order is invoiced, so say so plainly instead of sending one.
-                    $notice = __(
-                        '%1 has already invoiced this order, so this change was not sent to %1.',
-                        $this->brandRegistry->getProductName()
-                    );
-                    $order->addStatusToHistory($order->getStatus(), $notice->render());
-                    $this->messageManager->addNoticeMessage($notice->render());
+                $refusal = $this->editRefusal($order);
+                if ($refusal !== null) {
+                    // The API would refuse this edit, so say why plainly instead of sending it.
+                    $order->addStatusToHistory($order->getStatus(), $refusal);
+                    $this->messageManager->addNoticeMessage($refusal);
                     $order->save();
                     return $this;
                 }
@@ -193,19 +195,21 @@ class SalesOrderAddressUpdate implements ObserverInterface
     }
 
     /**
-     * Whether the provider has fully fulfilled, and so invoiced, the order.
+     * Why the API would refuse an edit to this order, or null when it would accept one.
      *
-     * Asks the API for the order's live state rather than trusting local
-     * flags: the stored completion marker is also set by a partial
-     * fulfilment, and the order an admin edits is the root order, whose state
-     * becomes FULFILLED only once every part of it has been fulfilled. A
-     * failed lookup returns false, so the edit is sent and any refusal is
+     * Reads the order's live state and status and applies the same rule as
+     * the API's edit handler: only the editable states and statuses above are
+     * accepted. Local flags cannot stand in for this, because the stored
+     * completion marker is set by a partial fulfilment as well as a full one.
+     * After a partial fulfilment the order the admin edits has the PARTIAL
+     * status, and once every part is fulfilled its state becomes FULFILLED.
+     * A failed lookup returns null, so the edit is sent and any refusal is
      * reported as before.
      *
      * @param \Magento\Sales\Model\Order $order
-     * @return bool
+     * @return string|null
      */
-    private function isInvoicedByProvider($order): bool
+    private function editRefusal($order): ?string
     {
         try {
             $response = $this->apiAdapter->execute(
@@ -215,12 +219,30 @@ class SalesOrderAddressUpdate implements ObserverInterface
                 (int)$order->getStoreId()
             );
         } catch (Exception $e) {
-            return false;
+            return null;
         }
         if ($order->getPayment()->getMethodInstance()->getErrorFromResponse($response)) {
-            return false;
+            return null;
+        }
+        $state = $response['state'] ?? null;
+        $status = $response['status'] ?? null;
+        $refusedState = is_string($state) && !in_array($state, self::EDITABLE_STATES, true);
+        $refusedStatus = is_string($status) && !in_array($status, self::EDITABLE_STATUSES, true);
+        if (!$refusedState && !$refusedStatus) {
+            return null;
+        }
+        $productName = $this->brandRegistry->getProductName();
+        if (in_array($state, self::INVOICED_STATES, true) || $status === self::PARTIAL_STATUS) {
+            return __(
+                '%1 has already invoiced all or part of this order, so this change was not sent to %1.',
+                $productName
+            )->render();
         }
 
-        return in_array($response['state'] ?? null, self::INVOICED_STATES, true);
+        return __(
+            '%1 no longer accepts changes to this order (%2), so this change was not sent to %1.',
+            $productName,
+            $refusedState ? $state : $status
+        )->render();
     }
 }
