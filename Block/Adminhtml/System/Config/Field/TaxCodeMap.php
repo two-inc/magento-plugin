@@ -95,7 +95,8 @@ class TaxCodeMap extends Field
             return $html;
         }
 
-        $shippingClassId = (string)$this->configRepository->getShippingTaxClassId($storeId);
+        // Core's None is class 0, which the repository reports as null.
+        $shippingClassId = (string)($this->configRepository->getShippingTaxClassId($storeId) ?? 0);
         $rows = '';
         foreach ($this->taxClassSource->getAllOptions(true) as $class) {
             $classId = (string)$class['value'];
