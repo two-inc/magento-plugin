@@ -9,6 +9,7 @@ namespace Two\Gateway\Service\Api;
 
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\Serialize\Serializer\Json;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Cache\Type\TwoGateway;
 
@@ -16,7 +17,7 @@ use Two\Gateway\Model\Cache\Type\TwoGateway;
  * The tax codes a merchant may map a tax class to, from
  * GET /v1/tax_codes/{country} (TWO-24877).
  *
- * A successful answer is cached per country and store for a day: the list
+ * A successful answer is cached per country, store and environment for a day: the list
  * changes only when Two deploys. A failure is not cached, and there is no
  * built-in fallback list, so the caller shows the error instead.
  *
@@ -50,16 +51,23 @@ class TaxCodes
      */
     private $logRepository;
 
+    /**
+     * @var ConfigRepository
+     */
+    private $configRepository;
+
     public function __construct(
         Adapter $apiAdapter,
         CacheInterface $cache,
         Json $json,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        ConfigRepository $configRepository
     ) {
         $this->apiAdapter = $apiAdapter;
         $this->cache = $cache;
         $this->json = $json;
         $this->logRepository = $logRepository;
+        $this->configRepository = $configRepository;
     }
 
     /**
@@ -74,7 +82,9 @@ class TaxCodes
             return null;
         }
 
-        $cacheKey = self::CACHE_KEY_PREFIX . $countryCode . '_' . ($storeId ?? 'default');
+        // Sandbox and production answer separately.
+        $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : '';
+        $cacheKey = self::CACHE_KEY_PREFIX . $countryCode . '_' . ($storeId ?? 'default') . '_' . $mode;
         $cached = $this->cache->load($cacheKey);
         if ($cached !== false) {
             $codes = $this->json->unserialize($cached);
