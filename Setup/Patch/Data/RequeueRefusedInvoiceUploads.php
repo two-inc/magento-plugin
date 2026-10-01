@@ -26,6 +26,8 @@ class RequeueRefusedInvoiceUploads implements DataPatchInterface
     /** What UploadService records when the upload request is refused with a bare 405. */
     public const REFUSED_ERROR = 'Failed to request upload URL (HTTP 405)';
 
+    private const CHUNK_SIZE = 500;
+
     /**
      * @var ModuleDataSetupInterface
      */
@@ -42,19 +44,31 @@ class RequeueRefusedInvoiceUploads implements DataPatchInterface
     public function apply()
     {
         $connection = $this->moduleDataSetup->getConnection();
+        $table = $this->moduleDataSetup->getTable('sales_order');
         $connection->startSetup();
-        $connection->update(
-            $this->moduleDataSetup->getTable('sales_order'),
-            [
-                'two_invoice_upload_status' => UploadService::STATUS_UPLOADING,
-                'two_invoice_upload_error' => null,
-            ],
-            [
-                'two_invoice_upload_status = ?' => UploadService::STATUS_FAILED,
-                'two_invoice_upload_error = ?' => self::REFUSED_ERROR,
-                "two_invoice_id IS NOT NULL AND two_invoice_id <> ''",
-            ]
+        // A plain select is a non-locking read, so finding the rows takes no
+        // locks across the order table; only the matched rows are then
+        // locked, by primary key, a chunk at a time.
+        $ids = $connection->fetchCol(
+            $connection->select()
+                ->from($table, ['entity_id'])
+                ->where('two_invoice_upload_status = ?', UploadService::STATUS_FAILED)
+                ->where('two_invoice_upload_error = ?', self::REFUSED_ERROR)
+                ->where("two_invoice_id IS NOT NULL AND two_invoice_id <> ''")
         );
+        foreach (array_chunk($ids, self::CHUNK_SIZE) as $chunk) {
+            $connection->update(
+                $table,
+                [
+                    'two_invoice_upload_status' => UploadService::STATUS_UPLOADING,
+                    'two_invoice_upload_error' => null,
+                ],
+                [
+                    'entity_id IN (?)' => $chunk,
+                    'two_invoice_upload_status = ?' => UploadService::STATUS_FAILED,
+                ]
+            );
+        }
         $connection->endSetup();
 
         return $this;
