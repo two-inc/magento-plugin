@@ -168,6 +168,54 @@ hook, and never on what a subscriber returns. **If your subscriber re-splits a
 shipping line that has no recorded rate, keep the fallback blank**: a populated
 fallback can refuse that line before your subscriber ever sees it.
 
+## Tax codes on 0% lines
+
+Every line the plugin sends at a 0% tax rate can carry a Two `tax_code` saying
+why it is zero. For a merchant whose Two account is in Spain the API requires
+one on every 0% line. The plugin adds it to order create, order edit, partial
+capture, shipment and refund lines, while it builds the request and before the
+postprocessing hook, so a subscriber can still change it. Lines at any other
+rate are sent exactly as before.
+
+A line's code comes from the first of these that gives one:
+
+1. **Your mapping.** **Order management > Tax codes for 0% lines** has one row
+   per product tax class (including **None**), each with a dropdown of Two's
+   tax codes for your country, fetched from Two and cached for a day. A
+   product line uses its product's tax class (a configurable product, its
+   child's). The shipping line uses Magento's **Tax Class for Shipping**, and
+   the payment terms fee its own surcharge tax class. Every row defaults to
+   (none). Codes that need an exemption reason the plugin has no way to supply
+   are not offered; set those, with their reason, in the postprocessing hook.
+2. **Derivation, for merchants in Spain only.** Physical products are goods;
+   virtual and downloadable products are services. Shipping and other fee
+   lines count as goods when the order has a physical product, and as services
+   when it has none. Goods follow the delivery address (the billing address
+   when there is none). Services follow the buyer company's country, which is
+   the billing country the plugin sends.
+
+   | Line | Where | Code |
+   |---|---|---|
+   | Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
+   | Goods | Delivered to the Canary Islands, Ceuta or Melilla (Spanish postcodes starting 35, 38, 51 or 52) | `ES_IVA_EXPORT` |
+   | Goods | Delivered to another EU state, buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY` |
+   | Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
+   | Service | Buyer in an EU state other than Spain | `ES_IVA_REVERSE_CHARGE` |
+   | Service | Buyer in Spain or outside the EU | none |
+
+   Monaco counts as part of the EU (through France). Two only sells to
+   verified businesses, so every buyer counts as a business.
+3. **Otherwise no code is sent.**
+
+**The plugin never refuses; the API does.** A 0% line with no code is sent
+as is, and Two's API decides. For a Spanish merchant it refuses such a line, so
+map the tax classes that produce 0% lines nothing above covers (for example
+domestic exempt sales, or services to buyers outside the EU). A non-Spanish
+merchant with no mapping sends exactly what it sent before.
+
+A refund recomputes each line's code from the order, the same way the create
+did, so a mapping changed in between applies to the refund too.
+
 ## Stable extension contract: order postprocessing
 
 Every request this plugin sends to Two about an order passes through one
