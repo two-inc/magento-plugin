@@ -279,7 +279,7 @@ request:
 |---|---|
 | `order_intent` | The checkout's approval check. The body is built here from the quote, with the same lines as the order |
 | `order_create` | Order placement |
-| `order_update` | An admin edit of the order's address |
+| `order_update` | An admin edit of the order's address. Not sent once the order can no longer be edited, for example once Two has invoiced all or part of it: the admin sees a notice instead |
 | `order_confirm` | The buyer returns from Two's checkout |
 | `capture` | An online invoice, a shipment, or the order reaching a fulfil-on status, per the fulfilment trigger |
 | `refund` | A credit memo |

@@ -78,7 +78,10 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         $sent = null;
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('execute')->willReturnCallback(
-            function (string $endpoint, array $payload = []) use (&$sent, $apiError): array {
+            function (string $endpoint, array $payload = [], string $method = 'POST') use (&$sent, $apiError): array {
+                if ($method === 'GET') {
+                    return ['state' => 'CONFIRMED'];
+                }
                 $sent = $payload;
                 return $apiError === null ? ['id' => 'remote-order-id'] : ['error_code' => 400, 'error_message' => $apiError];
             }

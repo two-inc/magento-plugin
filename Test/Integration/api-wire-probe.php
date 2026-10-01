@@ -116,26 +116,41 @@ $repository = new class ($order) implements OrderRepositoryInterface {
     }
 };
 $observer = $objectManager->create(SalesOrderAddressUpdate::class, ['orderRepository' => $repository]);
-// [Two order id, accepted by the server, description]
+// [Two order id, edit sent, history comment contains, description]
 $edits = [
-    ['probe-order-id', true, 'an accepted edit'],
-    ['refused-order-id', false, 'a refused edit'],
+    ['probe-order-id', true, 'accepted', 'an accepted edit'],
+    ['refused-order-id', true, 'failed', 'a refused edit'],
+    ['fulfilled-order-id', false, 'already invoiced', 'an edit to a fully fulfilled order'],
+    ['partial-order-id', false, 'already invoiced', 'an edit to a partially fulfilled order'],
 ];
-foreach ($edits as [$twoOrderId, $accepted, $description]) {
+foreach ($edits as [$twoOrderId, $editSent, $recorded, $description]) {
     $order->setTwoOrderId($twoOrderId);
+    $historyBefore = count($order->getAllStatusHistory());
     $observer->execute(new Observer(['event' => new Event(['order_id' => 1])]));
 
+    // Every edit first looks up the order's state; the edit itself is the PUT after it.
     $calls = $received();
-    $edit = $calls[0] ?? [];
-    $sent = json_decode($edit['body'] ?? '', true);
-    $check(count($calls) === 1, "$description made one request (" . count($calls) . ')');
-    $check(($edit['method'] ?? null) === 'PUT', "$description arrived as PUT (" . ($edit['method'] ?? 'none') . ')');
-    $check(($edit['path'] ?? null) === "/v1/order/$twoOrderId", "$description arrived at /v1/order/{id}");
-    $check(($edit['content_type'] ?? null) === 'application/json', "$description carried a JSON body");
+    $lookup = $calls[0] ?? [];
     $check(
-        is_array($sent) && !empty($sent['line_items']) && isset($sent['gross_amount']),
-        "$description carried the composed order"
+        ($lookup['method'] ?? null) === 'GET' && ($lookup['path'] ?? null) === "/v1/order/$twoOrderId",
+        "$description first looked up the order (" . ($lookup['method'] ?? 'none') . ')'
     );
+    $puts = array_values(array_filter($calls, static fn (array $c): bool => $c['method'] !== 'GET'));
+    $check(
+        count($puts) === ($editSent ? 1 : 0),
+        "$description made " . ($editSent ? 'one edit request' : 'no edit request') . ' (' . count($puts) . ')'
+    );
+    if ($editSent) {
+        $edit = $puts[0] ?? [];
+        $sent = json_decode($edit['body'] ?? '', true);
+        $check(($edit['method'] ?? null) === 'PUT', "$description arrived as PUT (" . ($edit['method'] ?? 'none') . ')');
+        $check(($edit['path'] ?? null) === "/v1/order/$twoOrderId", "$description arrived at /v1/order/{id}");
+        $check(($edit['content_type'] ?? null) === 'application/json', "$description carried a JSON body");
+        $check(
+            is_array($sent) && !empty($sent['line_items']) && isset($sent['gross_amount']),
+            "$description carried the composed order"
+        );
+    }
     // The history collection reads newest first, so take the newest by id.
     $comments = [];
     foreach ($order->getAllStatusHistory() as $entry) {
@@ -143,10 +158,10 @@ foreach ($edits as [$twoOrderId, $accepted, $description]) {
     }
     krsort($comments);
     $last = (string)reset($comments);
-    $check(
-        str_contains($last, 'accepted') === $accepted,
-        "$description is recorded as " . ($accepted ? 'accepted' : 'failed') . " in the order history ($last)"
-    );
+    // Exactly one new entry, so a previous row's identical comment cannot pass for this one.
+    $added = count($order->getAllStatusHistory()) - $historyBefore;
+    $check($added === 1, "$description added one order history entry ($added)");
+    $check(str_contains($last, $recorded), "$description is recorded as $recorded in the order history ($last)");
 }
 
 // ── 2. Self-invoice upload, first request ───────────────────────────
