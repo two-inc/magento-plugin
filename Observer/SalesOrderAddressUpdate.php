@@ -27,6 +27,9 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class SalesOrderAddressUpdate implements ObserverInterface
 {
+    /** Order states in which the provider has issued the invoice, or is issuing it, and refuses edits. */
+    private const INVOICED_STATES = ['FULFILLING', 'FULFILLED', 'DELIVERED', 'REFUNDED'];
+
     /**
      * @var ConfigRepository
      */
@@ -100,6 +103,17 @@ class SalesOrderAddressUpdate implements ObserverInterface
             && $order->getTwoOrderId()
         ) {
             try {
+                if ($this->isInvoicedByProvider($order)) {
+                    // The API refuses edits once the order is invoiced, so say so plainly instead of sending one.
+                    $notice = __(
+                        '%1 has already invoiced this order, so this change was not sent to %1.',
+                        $this->brandRegistry->getProductName()
+                    );
+                    $order->addStatusToHistory($order->getStatus(), $notice->render());
+                    $this->messageManager->addNoticeMessage($notice->render());
+                    $order->save();
+                    return $this;
+                }
                 $additionalInformation = $order->getPayment()->getAdditionalInformation();
                 // Orders placed before terms were stored have none; the edit then omits terms so Two keeps the agreed ones.
                 $placedTerms = is_array($additionalInformation['terms'] ?? null) ? $additionalInformation['terms'] : null;
@@ -176,5 +190,37 @@ class SalesOrderAddressUpdate implements ObserverInterface
             $order->save();
         }
         return $this;
+    }
+
+    /**
+     * Whether the provider has fully fulfilled, and so invoiced, the order.
+     *
+     * Asks the API for the order's live state rather than trusting local
+     * flags: the stored completion marker is also set by a partial
+     * fulfilment, and the order an admin edits is the root order, whose state
+     * becomes FULFILLED only once every part of it has been fulfilled. A
+     * failed lookup returns false, so the edit is sent and any refusal is
+     * reported as before.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return bool
+     */
+    private function isInvoicedByProvider($order): bool
+    {
+        try {
+            $response = $this->apiAdapter->execute(
+                '/v1/order/' . $order->getTwoOrderId(),
+                [],
+                'GET',
+                (int)$order->getStoreId()
+            );
+        } catch (Exception $e) {
+            return false;
+        }
+        if ($order->getPayment()->getMethodInstance()->getErrorFromResponse($response)) {
+            return false;
+        }
+
+        return in_array($response['state'] ?? null, self::INVOICED_STATES, true);
     }
 }

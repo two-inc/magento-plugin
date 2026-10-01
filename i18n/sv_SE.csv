@@ -431,3 +431,4 @@
 "Tax code","Skattekod"
 "(none)","(ingen)"
 "HTTP status %1","HTTP-status %1"
+"%1 has already invoiced this order, so this change was not sent to %1.","%1 har redan fakturerat den här beställningen, så ändringen skickades inte till %1."

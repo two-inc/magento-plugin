@@ -431,3 +431,4 @@
 "Tax code","Código fiscal"
 "(none)","(ninguno)"
 "HTTP status %1","Estado HTTP %1"
+"%1 has already invoiced this order, so this change was not sent to %1.","%1 ya ha facturado este pedido, por lo que este cambio no se envió a %1."

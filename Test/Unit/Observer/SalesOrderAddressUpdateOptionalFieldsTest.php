@@ -86,7 +86,8 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             });
 
         $this->apiAdapter = $this->createMock(Adapter::class);
-        $this->apiAdapter->expects($this->once())
+        // One state lookup, then the edit itself.
+        $this->apiAdapter->expects($this->exactly(2))
             ->method('execute')
             ->willReturnCallback(function (
                 string $endpoint,
@@ -94,6 +95,9 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                 string $method = 'POST',
                 ?int $storeId = null
             ): array {
+                if ($method === 'GET') {
+                    return ['state' => 'CONFIRMED'];
+                }
                 $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
                 return ['id' => 'remote-order-id'];
             });
