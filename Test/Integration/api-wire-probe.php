@@ -125,6 +125,7 @@ $edits = [
 ];
 foreach ($edits as [$twoOrderId, $editSent, $recorded, $description]) {
     $order->setTwoOrderId($twoOrderId);
+    $historyBefore = count($order->getAllStatusHistory());
     $observer->execute(new Observer(['event' => new Event(['order_id' => 1])]));
 
     // Every edit first looks up the order's state; the edit itself is the PUT after it.
@@ -157,6 +158,9 @@ foreach ($edits as [$twoOrderId, $editSent, $recorded, $description]) {
     }
     krsort($comments);
     $last = (string)reset($comments);
+    // Exactly one new entry, so a previous row's identical comment cannot pass for this one.
+    $added = count($order->getAllStatusHistory()) - $historyBefore;
+    $check($added === 1, "$description added one order history entry ($added)");
     $check(str_contains($last, $recorded), "$description is recorded as $recorded in the order history ($last)");
 }
 

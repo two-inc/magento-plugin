@@ -10,12 +10,14 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
 use Two\Gateway\Observer\SalesOrderAddressUpdate;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 
 require_once __DIR__ . '/SalesOrderAddressUpdateOptionalFieldsTest.php';
+require_once __DIR__ . '/SalesOrderAddressUpdateFailedEditTest.php';
 
 /**
  * TWO-26150: an address edit is not sent when the order's live state or status
@@ -39,7 +41,10 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
             [['state' => 'FULFILLED', 'status' => 'APPROVED'], self::INVOICED, 'fully fulfilled order skips the edit'],
             [['state' => 'FULFILLED', 'status' => 'PARTIAL'], self::INVOICED, 'order fulfilled in parts, now complete, skips the edit'],
             [['state' => 'CANCELLED', 'status' => 'APPROVED'], sprintf($closed, 'CANCELLED'), 'cancelled order skips the edit'],
-            [['error_message' => 'lookup failed'], null, 'failed state lookup still sends the edit'],
+            [['state' => 'FULFILMENT_NEEDS_MANUAL_RESOLUTION', 'status' => 'APPROVED'], self::INVOICED, 'order stuck in fulfilment skips the edit'],
+            [['http_status' => 502], null, 'lookup failing with a gateway error still sends the edit'],
+            [['error_code' => 400, 'error_message' => 'Operation timed out'], null, 'lookup timing out still sends the edit'],
+            [['id' => 'remote-order-id'], null, 'lookup with no state or status sends the edit'],
         ];
     }
 
@@ -53,7 +58,8 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
         $order->setData('store_id', 1);
         $order->setData('two_order_id', 'remote-order-id');
         $order->setData('two_order_reference', 'order-reference');
-        $order->setData('payment', new AddressUpdatePaymentStub([
+        // The real error check, so a failed lookup has the adapter's own failure shapes.
+        $order->setData('payment', new FailedEditPaymentStub($this->twoModel(), [
             'buyer' => [
                 'company' => ['company_name' => 'Buyer Company', 'organization_number' => '123456789'],
                 'representative' => ['phone_number' => '+4712345678'],
@@ -62,10 +68,12 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
         ]));
 
         $puts = 0;
+        $lookups = [];
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('execute')->willReturnCallback(
-            function (string $endpoint, array $payload = [], string $method = 'POST') use ($lookup, &$puts): array {
+            function (string $endpoint, array $payload = [], string $method = 'POST', ...$rest) use ($lookup, &$puts, &$lookups): array {
                 if ($method === 'GET') {
+                    $lookups[] = [$endpoint, $rest[0] ?? null, $rest[3] ?? null];
                     return $lookup;
                 }
                 $puts++;
@@ -82,8 +90,7 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
         $orderRepository->method('get')->willReturn($order);
         $overlayRegistry = $this->createMock(BrandOverlayRegistryInterface::class);
         $overlayRegistry->method('isTwoStackMethod')->willReturn(true);
-        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
-        $brandRegistry->method('getProductName')->willReturn('Test Product');
+        $brandRegistry = $this->brandRegistry();
         $postprocessor = $this->createMock(OrderPostprocessor::class);
         $postprocessor->method('process')->willReturnArgument(1);
         $messages = [];
@@ -108,6 +115,11 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
             $postprocessor
         ))->execute(new AddressUpdateObserverStub(new AddressUpdateEventStub(42)));
 
+        $this->assertSame(
+            [['/v1/order/remote-order-id', 1, 10]],
+            $lookups,
+            $description . ': one lookup of the order, in its store, with a short timeout'
+        );
         $history = array_map('strval', $order->historyComments);
         $this->assertSame(1, $order->saveCount, $description . ': the order is saved once');
         if ($notice === null) {
@@ -120,5 +132,30 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
         $this->assertSame(0, $puts, $description . ': no edit request');
         $this->assertSame(['notice: ' . $notice], $messages, $description . ': admin notice');
         $this->assertSame([$notice], $history, $description . ': history comment');
+    }
+
+    private function twoModel(): Two
+    {
+        $model = $this->getMockBuilder(Two::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods([])
+            ->getMock();
+        $ref = new \ReflectionClass(Two::class);
+        foreach (['configRepository' => $this->createMock(ConfigRepository::class),
+                     'brandRegistry' => $this->brandRegistry()] as $name => $value) {
+            $prop = $ref->getProperty($name);
+            $prop->setAccessible(true);
+            $prop->setValue($model, $value);
+        }
+
+        return $model;
+    }
+
+    private function brandRegistry(): BrandRegistryInterface
+    {
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Test Product');
+
+        return $brand;
     }
 }
