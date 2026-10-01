@@ -209,7 +209,84 @@ class TaxCodeResolverTest extends TestCase
         return [
             ['capture', [self::EXPORT, self::EXPORT, self::EXPORT]],
             ['edit', [self::EXPORT, self::EXPORT, self::EXPORT]],
+            // The adjustment stays out of the record and resolves against the edited Madrid address.
+            ['refund', [self::EXPORT, null, self::EXPORT, self::EXPORT]],
         ];
+    }
+
+    /**
+     * A fee a provider itemizes only once the order is saved reaches the
+     * create as "Other charges" and the edit under its own id; both are fee
+     * lines and send the one code placement recorded.
+     */
+    public function testAFeeWhoseIdAppearsAfterPlacementSendsTheRecordedCode(): void
+    {
+        $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US', true, 12.50);
+        $pool = new FeeLineProviderPool([new class implements \Two\Gateway\Api\Fee\FeeLineProviderInterface {
+            public function getFeeLines($entity): array
+            {
+                return $entity->getId() ? [[
+                    'order_item_id' => 'acme_fee_1', 'name' => 'Fee', 'description' => 'Fee', 'type' => 'OTHER',
+                    'gross_amount' => '12.50', 'net_amount' => '12.50', 'tax_amount' => '0.00',
+                    'discount_amount' => '0.00', 'tax_rate' => '0.000000', 'unit_price' => '12.500000',
+                    'quantity' => 1, 'quantity_unit' => 'sc',
+                ]] : [];
+            }
+        }]);
+        $create = $this->composer(ComposeOrder::class, 'ES', [], null, $pool)->execute($order, 'ref', []);
+        $this->assertSame('other_charges', $create['line_items'][2]['order_item_id']);
+        $this->save($order);
+        $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
+
+        $edit = $this->composer(ComposeOrder::class, 'ES', [], null, $pool)
+            ->execute($order, 'ref', ['isEdit' => true, 'placedTerms' => null]);
+
+        $this->assertSame('acme_fee_1', $edit['line_items'][2]['order_item_id']);
+        $this->assertSame([self::EXPORT, self::EXPORT, self::EXPORT], $this->codes($edit['line_items']));
+    }
+
+    /**
+     * Two lines sharing a SKU and name each record under their own quote item.
+     */
+    public function testTheSameSkuTwiceRecordsEachItemSeparately(): void
+    {
+        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
+        $order->itemsById[2]->data['sku'] = 'SKU1';
+        $order->itemsById[2]->data['name'] = 'Item 1';
+        $create = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20])->execute($order, 'ref', []);
+
+        $this->assertSame([self::ART20, self::EXPORT], $this->codes($create['line_items']));
+        $this->assertSame(
+            ['item:101' => self::ART20, 'item:102' => self::EXPORT],
+            json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true)
+        );
+    }
+
+    /**
+     * A line another extension renamed still finds its item by SKU, so its mapping applies.
+     */
+    public function testARenamedLineStillTakesItsItemsMapping(): void
+    {
+        $order = $this->order([['virtual', 0.0]], ['US', '10001'], 'US');
+        $service = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20]);
+        $lines = $service->getLineItemsOrder($order);
+        $lines[0]['name'] = 'Item 1 (renamed)';
+
+        $this->assertSame([self::ART20], $this->codes($service->applyTaxCodes($lines, $order, true)));
+    }
+
+    /**
+     * A line whose SKU another extension changed matches no item, but its own
+     * DIGITAL type still makes it a service in a mixed order.
+     */
+    public function testAnUnmatchedDigitalLineIsAService(): void
+    {
+        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['FR', '75001'], 'FR');
+        $service = $this->composer(ComposeOrder::class, 'ES', []);
+        $lines = $service->getLineItemsOrder($order);
+        $lines[0]['details']['barcodes'][0]['value'] = 'CHANGED';
+
+        $this->assertSame([self::REVERSE, self::INTRA], $this->codes($service->applyTaxCodes($lines, $order, true)));
     }
 
     /**
@@ -586,7 +663,13 @@ class TaxCodeResolverTest extends TestCase
      *
      * @return \PHPUnit\Framework\MockObject\MockObject
      */
-    private function composer(string $class, string $merchant, array $map, ?Order $order = null)
+    private function composer(
+        string $class,
+        string $merchant,
+        array $map,
+        ?Order $order = null,
+        ?FeeLineProviderPool $pool = null
+    )
     {
         $stubs = ['getProduct', 'getProductImageUrl', 'getCategories', 'getOrderItem'];
         if ($class === ComposeOrder::class) {
@@ -620,7 +703,7 @@ class TaxCodeResolverTest extends TestCase
         $config = $this->config($map);
         $properties = [
             'logRepository' => $this->createMock(LogRepository::class),
-            'feeLineProviderPool' => new FeeLineProviderPool([]),
+            'feeLineProviderPool' => $pool ?? new FeeLineProviderPool([]),
         ];
         if ($this->withResolver) {
             $properties['taxCodeResolver'] = new TaxCodeResolver($config, $this->records($merchant));
