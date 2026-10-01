@@ -152,7 +152,6 @@ foreach ($edits as [$twoOrderId, $accepted, $description]) {
 // ── 2. Self-invoice upload, first request ───────────────────────────
 $upload = $objectManager->get(UploadService::class);
 $request = new \ReflectionMethod($upload, 'requestSignedUploadUrl');
-$request->setAccessible(true);
 $result = $request->invoke($upload, 'probe-invoice-id', 0);
 
 $calls = $received();
