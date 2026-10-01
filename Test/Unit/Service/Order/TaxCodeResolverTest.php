@@ -56,7 +56,7 @@ class TaxCodeResolverTest extends TestCase
      * @dataProvider createCases
      * @param array $products [product type, tax percent] per line
      * @param array|null $shipping [delivery country, postcode], null for no delivery address
-     * @param string $billing buyer (billing) country, optionally followed by a space and the billing postcode
+     * @param string $billing buyer (billing) country, optionally followed by the billing postcode and VAT id
      * @param array $expected tax_code per line, null for none; the shipping line last when there is one
      * @param bool $withShipping whether the order charges shipping at 0%
      */
@@ -92,17 +92,17 @@ class TaxCodeResolverTest extends TestCase
             ['ES', [], $goods, ['ES', '38001'], 'ES', [self::EXPORT], 'goods delivered to Tenerife'],
             ['ES', [], $goods, ['ES', '51001'], 'ES', [self::EXPORT], 'goods delivered to Ceuta'],
             ['ES', [], $goods, ['ES', '52001'], 'ES', [self::EXPORT], 'goods delivered to Melilla'],
-            ['ES', [], $goods, ['DE', '10115'], 'FR', [self::INTRA], 'goods to another EU state, buyer in another EU state'],
-            ['ES', [], $goods, ['MC', '98000'], 'MC', [self::INTRA], 'goods to Monaco, which counts as France'],
+            ['ES', [], $goods, ['DE', '10115'], 'FR 75001 FR12345678901', [self::INTRA], 'goods to another EU state, buyer in another EU state'],
+            ['ES', [], $goods, ['MC', '98000'], 'MC 98000 FR12345678901', [self::INTRA], 'goods to Monaco, which counts as France'],
             ['ES', [], $goods, ['FR', '75001'], 'ES', [null], 'goods to another EU state, Spanish buyer'],
             ['ES', [], $goods, ['ES', '28001'], 'ES', [null], 'domestic goods'],
             ['ES', [], $goods, ['ES', '07001'], 'ES', [null], 'goods to the Balearics'],
             ['ES', [], $goods, ['ES', '28001'], 'FR', [null], 'goods delivered in Spain to a French buyer'],
-            ['ES', [], $service, null, 'DE', [self::SERVICES], 'service to a buyer in another EU state'],
-            ['ES', [], [['downloadable', 0.0]], null, 'FR', [self::SERVICES], 'download to a buyer in another EU state'],
-            ['ES', [], [['bundle', 0.0, true]], null, 'FR', [self::SERVICES], 'a bundle with nothing to ship is a service'],
-            ['ES', [], [['bundle', 0.0, false]], ['FR', '75001'], 'FR', [self::INTRA], 'a bundle that ships is goods'],
-            ['ES', [], [['configurable', 0.0, true]], ['ES', '28001'], 'DE', [self::SERVICES], 'a configurable with a virtual child is a service'],
+            ['ES', [], $service, null, 'DE 10115 DE123456789', [self::SERVICES], 'service to a buyer in another EU state'],
+            ['ES', [], [['downloadable', 0.0]], null, 'FR 75001 FR12345678901', [self::SERVICES], 'download to a buyer in another EU state'],
+            ['ES', [], [['bundle', 0.0, true]], null, 'FR 75001 FR12345678901', [self::SERVICES], 'a bundle with nothing to ship is a service'],
+            ['ES', [], [['bundle', 0.0, false]], ['FR', '75001'], 'FR 75001 FR12345678901', [self::INTRA], 'a bundle that ships is goods'],
+            ['ES', [], [['configurable', 0.0, true]], ['ES', '28001'], 'DE 10115 DE123456789', [self::SERVICES], 'a configurable with a virtual child is a service'],
             ['ES', ['7' => self::ART20], [['configurable', 0.0, true]], ['US', '10001'], 'US', [self::ART20], 'a configurable maps by its child\'s class'],
             ['ES', [], $service, null, 'ES', [null], 'service to a Spanish buyer'],
             ['ES', [], $service, null, 'NO', [self::NON_EU], 'service to a buyer outside the EU'],
@@ -114,9 +114,9 @@ class TaxCodeResolverTest extends TestCase
             ['ES', [], $service, ['ES', '35001'], 'ES 28001', [null], 'service delivered to the Canaries for a mainland buyer'],
             ['ES', [], $goods, ['ES', '28001'], 'ES 35001', [null], 'goods delivered in mainland Spain for a buyer billed in the Canaries'],
             ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT, self::EXPORT], 'shipping follows goods', true],
-            ['ES', [], $service, ['US', '10001'], 'DE', [self::SERVICES, self::SERVICES], 'shipping follows services', true],
+            ['ES', [], $service, ['US', '10001'], 'DE 10115 DE123456789', [self::SERVICES, self::SERVICES], 'shipping follows services', true],
             ['ES', [], $service, ['US', '10001'], 'NO', [self::NON_EU, self::NON_EU], 'shipping follows non-EU services', true],
-            ['ES', [], $mixed, ['ES', '28001'], 'DE', [self::SERVICES, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
+            ['ES', [], $mixed, ['ES', '28001'], 'DE 10115 DE123456789', [self::SERVICES, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
             ['ES', [], $mixed, ['US', '10001'], 'US', [self::NON_EU, self::EXPORT, self::EXPORT], 'a mixed order: the service is a non-EU service, not an export', true],
             ['ES', ['5' => self::ART20], $goods, ['US', '10001'], 'US', [self::ART20], 'the mapping beats the derivation'],
             ['ES', ['5' => self::ART20], $goods, ['ES', '28001'], 'ES', [self::ART20], 'the mapping covers a line nothing derives'],
@@ -126,6 +126,212 @@ class TaxCodeResolverTest extends TestCase
             ['DE', ['5' => 'DE_ZERO'], $goods, ['DE', '10115'], 'DE', ['DE_ZERO'], 'a non-Spanish merchant with a mapping'],
             ['ES', ['5' => self::ART20], [['simple', 21.0]], ['US', '10001'], 'US', [null], 'a mapped line at 21%'],
             ['ES', [], [['simple', 21.0], ['simple', 0.0]], ['US', '10001'], 'US', [null, self::EXPORT], 'only the 0% line of two'],
+        ];
+    }
+
+    /**
+     * TWO-26153: both intra-community codes need a buyer VAT number whose
+     * prefix is an EU state other than the merchant's country. Without one the
+     * line gets no code, never the export or non-EU services code instead.
+     *
+     * @dataProvider vatCases
+     * @param array $products [product type, tax percent] per line
+     * @param array|null $shipping [delivery country, postcode], null for no delivery address
+     * @param string $billing billing country and postcode
+     * @param string|null $vatId billing address VAT id
+     * @param string|null $taxvat the order's customer tax/VAT number
+     * @param array $expected tax_code per line
+     */
+    public function testTheIntraCommunityCodesNeedABuyerVatNumber(
+        array $map,
+        array $products,
+        ?array $shipping,
+        string $billing,
+        ?string $vatId,
+        ?string $taxvat,
+        array $expected,
+        string $description
+    ): void {
+        $order = $this->order($products, $shipping, $billing);
+        $order->billing->setData('vat_id', $vatId);
+        $order->setData('customer_taxvat', $taxvat);
+
+        $create = $this->create($order, 'ES', $map);
+        $this->assertSame($expected, $this->codes($create['line_items']), $description);
+    }
+
+    public static function vatCases(): array
+    {
+        $goods = [['simple', 0.0]];
+        $service = [['virtual', 0.0]];
+        $art20 = ['5' => self::ART20, '7' => self::ART20];
+        return [
+            [[], $goods, ['FR', '75001'], 'FR 75001', 'FR12345678901', null, [self::INTRA], 'goods: VAT from another EU state'],
+            [[], $goods, ['FR', '75001'], 'FR 75001', null, null, [null], 'goods: no VAT number derives nothing, not an export'],
+            [[], $goods, ['FR', '75001'], 'FR 75001', 'ESB12345678', null, [null], 'goods: VAT prefix of the merchant\'s country'],
+            [[], $goods, ['FR', '75001'], 'FR 75001', 'GB123456789', null, [null], 'goods: VAT prefix outside the EU'],
+            [[], $goods, ['GR', '10431'], 'GR 10431', 'EL123456789', null, [self::INTRA], 'goods: EL is Greece'],
+            [[], $goods, ['GR', '10431'], 'GR 10431', '123456789', null, [self::INTRA], 'goods: unprefixed Greek number takes EL'],
+            [[], $goods, ['MC', '98000'], 'MC 98000', '12345678901', null, [self::INTRA], 'goods: unprefixed Monaco number takes FR'],
+            [[], $goods, ['MC', '98000'], 'MC 98000', 'MC12345678901', null, [null], 'goods: MC is not a VAT prefix'],
+            [[], $goods, ['FR', '75001'], 'DE 10115', 'FR12345678901', null, [self::INTRA], 'goods: VAT state need not be the buyer\'s or delivery state'],
+            [[], $goods, ['US', '10001'], 'US 10001', null, null, [self::EXPORT], 'goods: an export needs no VAT number'],
+            [[], $service, null, 'DE 10115', 'DE123456789', null, [self::SERVICES], 'services: VAT from another EU state'],
+            [[], $service, null, 'DE 10115', null, null, [null], 'services: no VAT number derives nothing, not non-EU services'],
+            [[], $service, null, 'DE 10115', '', '  ', [null], 'services: blank VAT numbers are none'],
+            [[], $service, null, 'DE 10115', 'ES B12345678', null, [null], 'services: VAT prefix of the merchant\'s country'],
+            [[], $service, null, 'DE 10115', 'NO123456789', null, [null], 'services: VAT prefix outside the EU'],
+            [[], $service, null, 'GR 10431', 'el 123 456 789', null, [self::SERVICES], 'services: EL is Greece, lower case and spaces'],
+            [[], $service, null, 'DE 10115', '123.456-789', null, [self::SERVICES], 'services: unprefixed number takes the billing country'],
+            [[], $service, null, 'DE 10115', null, 'DE123456789', [self::SERVICES], 'services: the customer VAT number when the address has none'],
+            [[], $service, null, 'US 10001', null, null, [self::NON_EU], 'services: a non-EU buyer needs no VAT number'],
+            [$art20, $goods, ['FR', '75001'], 'FR 75001', null, null, [self::ART20], 'goods: the mapping wins without a VAT number'],
+            [$art20, $service, null, 'DE 10115', 'DE123456789', null, [self::ART20], 'services: the mapping wins over a VAT number'],
+        ];
+    }
+
+    /**
+     * TWO-26153: the VAT condition compares the prefix with the merchant's
+     * country, whatever that country is.
+     *
+     * @dataProvider deriveVatCases
+     */
+    public function testDeriveComparesTheVatPrefixWithTheMerchantsCountry(
+        bool $isService,
+        string $merchantCountry,
+        string $vat,
+        ?string $expected,
+        string $description
+    ): void {
+        $this->assertSame(
+            $expected,
+            TaxCodeResolver::derive($isService, 'DE', '10115', 'DE', '10115', $merchantCountry, $vat),
+            $description
+        );
+    }
+
+    public static function deriveVatCases(): array
+    {
+        return [
+            [false, 'ES', 'FR12345678901', self::INTRA, 'goods: prefix of another EU state'],
+            [false, 'FR', 'FR12345678901', null, 'goods: prefix equal to the merchant\'s country'],
+            [true, 'ES', 'FR12345678901', self::SERVICES, 'services: prefix of another EU state'],
+            [true, 'FR', 'FR12345678901', null, 'services: prefix equal to the merchant\'s country'],
+            [true, 'GR', 'EL123456789', null, 'services: EL equals a Greek merchant\'s country'],
+            [true, 'ES', '', null, 'services: no VAT number'],
+            [false, 'ES', 'MC123456789', null, 'goods: MC is not a VAT prefix'],
+            [true, 'ES', 'MC123456789', null, 'services: MC is not a VAT prefix'],
+        ];
+    }
+
+    /**
+     * @dataProvider normaliseCases
+     */
+    public function testNormaliseVatNumber(string $raw, string $country, string $expected, string $description): void
+    {
+        $this->assertSame($expected, TaxCodeResolver::normaliseVatNumber($raw, $country), $description);
+    }
+
+    public static function normaliseCases(): array
+    {
+        return [
+            [' de 123.456-789 ', 'DE', 'DE123456789', 'strips spaces, dots and hyphens and upper-cases'],
+            ['123456789', 'DE', 'DE123456789', 'unprefixed takes the address country'],
+            ['123456789', 'gr', 'EL123456789', 'unprefixed Greek number takes EL'],
+            ['EL123456789', 'GR', 'EL123456789', 'an EL prefix is kept'],
+            ['12345678901', 'MC', 'FR12345678901', 'unprefixed Monaco number takes FR'],
+            ['FR12345678901', 'DE', 'FR12345678901', 'an existing prefix is kept'],
+            ['1A2345678', 'DE', 'DE1A2345678', 'one leading letter is not a prefix'],
+            ['123456789', '', '123456789', 'no address country leaves it unprefixed'],
+            [' .- ', 'DE', '', 'nothing left is no number'],
+            ["de\u{00A0}123\t456\n789", 'DE', 'DE123456789', 'strips no-break spaces, tabs and newlines'],
+        ];
+    }
+
+    /**
+     * The buyer VAT number comes from the billing address VAT id, unless a VAT
+     * check that got an answer marked it invalid, then the order's customer
+     * tax/VAT number.
+     *
+     * @dataProvider vatSourceCases
+     * @param mixed $vatIsValid the billing address VAT check result
+     * @param mixed $requestSuccess whether the VAT check request got an answer
+     */
+    public function testBuyerVatNumberSourceOrder(
+        ?string $vatId,
+        $vatIsValid,
+        $requestSuccess,
+        ?string $taxvat,
+        string $expected,
+        string $description
+    ): void {
+        $order = $this->order([['simple', 0.0]], null, 'DE 10115');
+        $order->billing->setData('vat_id', $vatId);
+        $order->billing->setData('vat_is_valid', $vatIsValid);
+        $order->billing->setData('vat_request_success', $requestSuccess);
+        $order->setData('customer_taxvat', $taxvat);
+
+        $this->assertSame($expected, TaxCodeResolver::buyerVatNumber($order), $description);
+    }
+
+    public static function vatSourceCases(): array
+    {
+        return [
+            ['DE111111111', null, null, 'DE222222222', 'DE111111111', 'address VAT id first'],
+            [null, null, null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
+            [' ', null, null, 'DE222222222', 'DE222222222', 'a blank address VAT id is none'],
+            ['DE111111111', 1, 1, 'DE222222222', 'DE111111111', 'a VAT check that passed keeps the address VAT id'],
+            ['DE111111111', '0', '1', 'DE222222222', 'DE222222222', 'a VAT check that answered invalid drops the address VAT id'],
+            ['DE111111111', 0, 1, null, '', 'answered invalid and no customer VAT number is no number'],
+            ['DE111111111', 0, 0, 'DE222222222', 'DE111111111', 'a VAT check request that failed keeps the address VAT id'],
+            ['DE111111111', 0, null, null, 'DE111111111', 'invalid with no request result keeps the address VAT id'],
+            ['DE111111111', '', 1, null, 'DE111111111', 'an empty check result is no check'],
+            ['111111111', null, null, null, 'DE111111111', 'normalised against the billing country'],
+            [null, null, null, null, '', 'neither source is no number'],
+        ];
+    }
+
+    /**
+     * TWO-26153: order create sends buyer_vat_number only for a Spanish
+     * merchant and a buyer outside Spain; otherwise the key is absent. An
+     * edit never sends it.
+     *
+     * @dataProvider sentVatCases
+     */
+    public function testCreateSendsTheBuyerVatNumber(
+        string $merchant,
+        string $billing,
+        ?string $vatId,
+        ?string $taxvat,
+        ?string $expected,
+        string $description
+    ): void {
+        $order = $this->order([['simple', 0.0]], null, $billing);
+        $order->billing->setData('vat_id', $vatId);
+        $order->setData('customer_taxvat', $taxvat);
+
+        $create = $this->create($order, $merchant, []);
+        $this->assertSame($expected, $create['buyer_vat_number'] ?? null, "$description: create");
+        $this->assertSame($expected !== null, array_key_exists('buyer_vat_number', $create), "$description: key");
+
+        $this->save($order);
+        $edit = $this->composer(ComposeOrder::class, $merchant, [])
+            ->execute($order, 'ref', ['isEdit' => true, 'placedTerms' => null]);
+        $this->assertArrayNotHasKey('buyer_vat_number', $edit, "$description: edit");
+    }
+
+    public static function sentVatCases(): array
+    {
+        return [
+            ['ES', 'DE 10115', 'DE 123.456.789', null, 'DE123456789', 'Spanish merchant, EU buyer with a VAT number'],
+            ['ES', 'DE 10115', '123456789', null, 'DE123456789', 'unprefixed number sent with the billing prefix'],
+            ['ES', 'GR 10431', '123456789', null, 'EL123456789', 'Greek buyer sent with EL'],
+            ['ES', 'MC 98000', '12345678901', null, 'FR12345678901', 'Monaco buyer sent with FR'],
+            ['ES', 'US 10001', 'US123', null, 'US123', 'Spanish merchant, non-EU buyer with a number'],
+            ['ES', 'DE 10115', null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
+            ['ES', 'ES 28001', 'ESB12345678', null, null, 'Spanish buyer: never sent'],
+            ['NO', 'DE 10115', 'DE123456789', null, null, 'non-Spanish merchant with a VAT number'],
+            ['ES', 'DE 10115', null, null, null, 'Spanish merchant, no VAT number'],
         ];
     }
 
@@ -290,7 +496,7 @@ class TaxCodeResolverTest extends TestCase
      */
     public function testAnUnmatchedDigitalLineIsAService(): void
     {
-        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['FR', '75001'], 'FR');
+        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['FR', '75001'], 'FR 75001 FR12345678901');
         $service = $this->composer(ComposeOrder::class, 'ES', []);
         $lines = $service->getLineItemsOrder($order);
         $lines[0]['details']['barcodes'][0]['value'] = 'CHANGED';
@@ -349,7 +555,7 @@ class TaxCodeResolverTest extends TestCase
      */
     public function testAnOrderWithNoRecordResolvesAsAtPlacement(string $payload, array $expected): void
     {
-        $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['ES', '28001'], 'DE', true);
+        $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['ES', '28001'], 'DE 10115 DE123456789', true);
         $this->save($order);
 
         $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', ['5' => self::ART20])), $payload);
@@ -522,7 +728,8 @@ class TaxCodeResolverTest extends TestCase
      *
      * @param array $products [product type, tax percent, is virtual] per item, 100.00 net each, quantity 2
      * @param array|null $shipping [country, postcode] of the delivery address; null for none
-     * @param string $billing billing country, optionally followed by a space and the billing postcode
+     * @param string $billing billing country, optionally followed by the billing postcode and VAT id,
+     *                        space separated
      * @param bool $withShipping whether the order charges 10.00 shipping at 0%
      * @param float $fee an untaxed charge in the grand total that no line itemizes
      */
@@ -593,8 +800,10 @@ class TaxCodeResolverTest extends TestCase
             $grand += 100.00 + $tax;
             $taxTotal += $tax;
         }
-        [$billingCountry, $billingPostcode] = array_pad(explode(' ', $billing, 2), 2, '00000');
-        $order->billing = new UnderscoreDataObject(['country_id' => $billingCountry, 'postcode' => $billingPostcode]);
+        [$billingCountry, $billingPostcode, $vatId] = array_pad(explode(' ', $billing, 3), 3, null);
+        $order->billing = new UnderscoreDataObject(
+            ['country_id' => $billingCountry, 'postcode' => $billingPostcode ?? '00000', 'vat_id' => $vatId]
+        );
         $order->shipping = $shipping
             ? new UnderscoreDataObject(['country_id' => $shipping[0], 'postcode' => $shipping[1]])
             : null;

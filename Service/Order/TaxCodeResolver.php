@@ -19,7 +19,9 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * 2. Otherwise, for a Spanish merchant only, a code derived from the order:
  *    goods by where they are delivered, services by where the buyer company
  *    is. Shipping and fee lines are goods when the order has a physical
- *    product and services when it has none.
+ *    product and services when it has none. Both intra-community codes also
+ *    need a buyer VAT number whose prefix is an EU state other than the
+ *    merchant's country (TWO-26153); without one the line gets no code.
  * 3. Otherwise no code. The plugin never refuses an order over a missing code:
  *    Two's API validates what is sent.
  *
@@ -54,6 +56,15 @@ class TaxCodeResolver
 
     /** Spanish postcodes outside the EU VAT area: the Canaries (35, 38), Ceuta (51) and Melilla (52). */
     private const ES_OUTSIDE_VAT_AREA = ['35', '38', '51', '52'];
+
+    /**
+     * VAT prefixes that are not the country's ISO code: Greece's is EL, and a
+     * Monaco business holds a French number.
+     */
+    private const VAT_PREFIX_FOR_COUNTRY = ['GR' => 'EL', 'MC' => 'FR'];
+
+    /** Greece's VAT prefix, which names GR. */
+    private const VAT_PREFIX_GREECE = 'EL';
 
     /** Product types that are always services. */
     private const SERVICE_TYPES = ['virtual', 'downloadable'];
@@ -137,12 +148,17 @@ class TaxCodeResolver
      * The code a Spanish merchant's 0% line takes from the order, or null.
      * Goods go by the delivery address; services by where the buyer company
      * is, where the Canaries, Ceuta and Melilla count as outside the EU.
+     * Either intra-community code also needs a buyer VAT number whose prefix
+     * is an EU state other than the merchant's country (TWO-26153); without
+     * one the line gets no code, never the non-EU or export code instead.
      *
      * @param bool $isService
      * @param string $destCountry delivery country (billing when there is no delivery address)
      * @param string $destPostcode delivery postcode
      * @param string $buyerCountry buyer company country
      * @param string $buyerPostcode billing postcode
+     * @param string $merchantCountry the merchant record's country
+     * @param string $buyerVat buyer VAT number as normaliseVatNumber() returns it, '' for none
      * @return string|null
      */
     public static function derive(
@@ -150,15 +166,19 @@ class TaxCodeResolver
         string $destCountry,
         string $destPostcode,
         string $buyerCountry,
-        string $buyerPostcode
+        string $buyerPostcode,
+        string $merchantCountry,
+        string $buyerVat
     ): ?string {
         $destCountry = strtoupper(trim($destCountry));
         $buyerCountry = strtoupper(trim($buyerCountry));
         $buyerInOtherEuState = $buyerCountry !== 'ES' && in_array($buyerCountry, self::EU, true);
+        $intraCommunity = $buyerInOtherEuState
+            && self::vatIsFromAnotherEuState($buyerVat, strtoupper(trim($merchantCountry)));
 
         if ($isService) {
             if ($buyerInOtherEuState) {
-                return self::INTRA_COMMUNITY_SERVICES;
+                return $intraCommunity ? self::INTRA_COMMUNITY_SERVICES : null;
             }
             if ($buyerCountry !== '' && self::outsideEu($buyerCountry, $buyerPostcode)) {
                 return self::NON_EU_SERVICES;
@@ -171,11 +191,95 @@ class TaxCodeResolver
         if (self::outsideEu($destCountry, $destPostcode)) {
             return self::EXPORT;
         }
-        if ($destCountry !== 'ES' && $buyerInOtherEuState) {
+        if ($destCountry !== 'ES' && $intraCommunity) {
             return self::INTRA_COMMUNITY;
         }
 
         return null;
+    }
+
+    /**
+     * A VAT number in the form the API takes: whitespace (no-break spaces and
+     * tabs included), dots and hyphens removed, upper case, and the address
+     * country added in front when it does not start with two letters
+     * (Greece's prefix is EL, Monaco's FR). '' when nothing is left.
+     *
+     * @param string $raw as the shop holds it
+     * @param string $country the address country it belongs to, '' for none
+     */
+    public static function normaliseVatNumber(string $raw, string $country): string
+    {
+        $vat = strtoupper((string)preg_replace('/[\s\x{00A0}.\-]+/u', '', $raw));
+        if ($vat === '' || preg_match('/^[A-Z]{2}/', $vat)) {
+            return $vat;
+        }
+        $country = strtoupper(trim($country));
+        $country = self::VAT_PREFIX_FOR_COUNTRY[$country] ?? $country;
+
+        return preg_match('/^[A-Z]{2}$/', $country) ? $country . $vat : $vat;
+    }
+
+    /**
+     * The order's buyer VAT number, normalised against the billing country:
+     * the billing address VAT id, unless a VAT check that got an answer marked
+     * it invalid, then the customer's tax/VAT number. A check whose request
+     * failed (the VAT service down or unreachable) also stores the number as
+     * invalid, so that alone never drops it. '' when the order holds neither.
+     */
+    public static function buyerVatNumber(Order $order): string
+    {
+        $billing = $order->getBillingAddress();
+        $country = $billing ? (string)$billing->getCountryId() : '';
+        $candidates = [];
+        if ($billing) {
+            $checked = $billing->getVatIsValid();
+            $refused = (bool)$billing->getVatRequestSuccess()
+                && $checked !== null && $checked !== '' && !(bool)$checked;
+            $candidates[] = $refused ? null : $billing->getVatId();
+        }
+        $candidates[] = $order->getCustomerTaxvat();
+        foreach ($candidates as $raw) {
+            $vat = is_scalar($raw) ? self::normaliseVatNumber((string)$raw, $country) : '';
+            if ($vat !== '') {
+                return $vat;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * The buyer VAT number order create sends as `buyer_vat_number`, or null
+     * to leave the key out: only for a Spanish merchant and a buyer company
+     * outside Spain (TWO-26153). The API requires a Spanish buyer's VAT number
+     * to equal its organisation number, so one is never sent for a Spanish
+     * buyer, and every other merchant's payload is unchanged.
+     */
+    public function vatNumberToSend(Order $order): ?string
+    {
+        $billing = $order->getBillingAddress();
+        $buyerCountry = $billing ? strtoupper(trim((string)$billing->getCountryId())) : '';
+        if ($buyerCountry === 'ES' || $this->merchantCountry((int)$order->getStoreId()) !== 'ES') {
+            return null;
+        }
+        $vat = self::buyerVatNumber($order);
+
+        return $vat !== '' ? $vat : null;
+    }
+
+    /**
+     * Whether the VAT number's prefix names an EU state other than the
+     * merchant's country. The prefix EL is Greece; MC is no VAT prefix, since
+     * Monaco is in the EU VAT area through France.
+     */
+    private static function vatIsFromAnotherEuState(string $vat, string $merchantCountry): bool
+    {
+        $prefix = substr($vat, 0, 2);
+        if ($prefix === self::VAT_PREFIX_GREECE) {
+            $prefix = 'GR';
+        }
+
+        return $prefix !== 'MC' && $prefix !== $merchantCountry && in_array($prefix, self::EU, true);
     }
 
     /**
@@ -240,15 +344,19 @@ class TaxCodeResolver
             $hasGoods = $hasGoods || !self::isService($visible);
         }
 
+        $merchantCountry = $this->merchantCountry($storeId);
+
         return [
             'store_id' => $storeId,
             'map' => $this->configRepository->getTaxCodeMap($storeId),
-            'derive' => $this->merchantCountry($storeId) === 'ES',
+            'merchant_country' => $merchantCountry,
+            'derive' => $merchantCountry === 'ES',
             'dest_country' => $destination ? (string)$destination->getCountryId() : '',
             'dest_postcode' => $destination ? (string)$destination->getPostcode() : '',
             'buyer_country' => $billing ? (string)$billing->getCountryId() : '',
             'buyer_postcode' => $billing ? (string)$billing->getPostcode() : '',
             'has_goods' => $hasGoods,
+            'buyer_vat' => self::buyerVatNumber($order),
         ];
     }
 
@@ -281,7 +389,9 @@ class TaxCodeResolver
                 $context['dest_country'],
                 $context['dest_postcode'],
                 $context['buyer_country'],
-                $context['buyer_postcode']
+                $context['buyer_postcode'],
+                $context['merchant_country'],
+                $context['buyer_vat']
             );
         }
 
