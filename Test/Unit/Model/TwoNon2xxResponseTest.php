@@ -48,6 +48,37 @@ class TwoNon2xxResponseTest extends TestCase
         $this->assertStringContainsString((string)$status, $error->render(), $description);
     }
 
+    /**
+     * @return array<int, array{int, string, string}> [status, body, description]
+     */
+    public static function successCases(): array
+    {
+        return [
+            [200, '{"id":"abc"}', '200 with a JSON body'],
+            [201, '{"id":"abc"}', '201 with a JSON body'],
+            [202, '{"url":"u","headers":{},"reference":"r"}', '202 as the upload request answers'],
+        ];
+    }
+
+    #[DataProvider('successCases')]
+    public function testSuccessIsNotAnError(int $status, string $body, string $description): void
+    {
+        $response = $this->adapterReturning($status, $body)->execute('/v1/order/abc', ['x' => 1], 'PUT');
+
+        $this->assertNull($this->twoModel()->getErrorFromResponse($response), $description);
+    }
+
+    public function testNon2xxKeepsAnErrorMessageThatHasNoErrorCode(): void
+    {
+        $response = $this->adapterReturning(409, '{"error_message":"Order already fulfilled"}')
+            ->execute('/v1/order/abc', ['x' => 1], 'PUT');
+
+        $error = $this->twoModel()->getErrorFromResponse($response);
+
+        $this->assertNotNull($error);
+        $this->assertStringContainsString('Order already fulfilled', $error->render());
+    }
+
     private function adapterReturning(int $status, string $body): Adapter
     {
         $curl = $this->createMock(Curl::class);

@@ -179,17 +179,6 @@ class AdapterTest extends TestCase
         $this->adapter->execute('/v1/order', []);
     }
 
-    public function testPutRoutesThoughPostBranch(): void
-    {
-        $this->curl->method('getStatus')->willReturn(200);
-        $this->curl->method('getBody')->willReturn('{}');
-
-        $this->curl->expects($this->once())->method('post');
-        $this->curl->expects($this->never())->method('get');
-
-        $this->adapter->execute('/v1/order/123', ['status' => 'fulfilled'], 'PUT');
-    }
-
     /**
      * TWO-26150: Curl::post() always issues a POST, so every other
      * non-GET method must name itself through CURLOPT_CUSTOMREQUEST.
