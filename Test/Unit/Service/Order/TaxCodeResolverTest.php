@@ -101,6 +101,8 @@ class TaxCodeResolverTest extends TestCase
             ['ES', [], [['downloadable', 0.0]], null, 'FR', [self::REVERSE], 'download to a buyer in another EU state'],
             ['ES', [], [['bundle', 0.0, true]], null, 'FR', [self::REVERSE], 'a bundle with nothing to ship is a service'],
             ['ES', [], [['bundle', 0.0, false]], ['FR', '75001'], 'FR', [self::INTRA], 'a bundle that ships is goods'],
+            ['ES', [], [['configurable', 0.0, true]], ['ES', '28001'], 'DE', [self::REVERSE], 'a configurable with a virtual child is a service'],
+            ['ES', ['7' => self::ART20], [['configurable', 0.0, true]], ['US', '10001'], 'US', [self::ART20], 'a configurable maps by its child\'s class'],
             ['ES', [], $service, null, 'ES', [null], 'service to a Spanish buyer'],
             ['ES', [], $service, null, 'NO', [null], 'service to a buyer outside the EU'],
             ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT, self::EXPORT], 'shipping follows goods', true],
@@ -155,7 +157,103 @@ class TaxCodeResolverTest extends TestCase
             ['shipment', [self::EXPORT, self::ART20, self::EXPORT]],
             // The adjustment was never placed, so it resolves against the edited Madrid address.
             ['refund', [self::EXPORT, self::ART20, null, self::EXPORT]],
+            ['edit', [self::EXPORT, self::ART20, self::EXPORT]],
         ];
+    }
+
+    /**
+     * Placement recorded no code; a later change that would now derive one is ignored.
+     *
+     * @dataProvider recordedNoCodePayloads
+     */
+    public function testARecordedNoCodeStaysNoCode(string $payload, array $expected): void
+    {
+        $order = $this->order([['simple', 0.0]], ['ES', '28001'], 'ES', true);
+        $this->composer(ComposeOrder::class, 'ES', [])->execute($order, 'ref', []);
+        $this->save($order);
+        $order->shipping = new UnderscoreDataObject(['country_id' => 'US', 'postcode' => '10001']);
+
+        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', [])), $payload);
+    }
+
+    public static function recordedNoCodePayloads(): array
+    {
+        return [
+            ['capture', [null, null]],
+            ['shipment', [null, null]],
+            // The adjustment was never placed, so it resolves against the edited US address.
+            ['refund', [null, self::EXPORT, null]],
+            ['edit', [null, null]],
+        ];
+    }
+
+    /**
+     * An untaxed "Other charges" line is recorded at placement like any other line.
+     *
+     * @dataProvider feeLinePayloads
+     */
+    public function testAFeeLineSendsTheCodeRecordedAtPlacement(string $payload, array $expected): void
+    {
+        $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US', true, 12.50);
+        $create = $this->composer(ComposeOrder::class, 'ES', [])->execute($order, 'ref', []);
+        $this->assertSame([self::EXPORT, self::EXPORT, self::EXPORT], $this->codes($create['line_items']));
+        $this->assertSame('other_charges', $create['line_items'][2]['order_item_id']);
+        $this->save($order);
+        $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
+
+        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', [])), $payload);
+    }
+
+    public static function feeLinePayloads(): array
+    {
+        return [
+            ['capture', [self::EXPORT, self::EXPORT, self::EXPORT]],
+            ['edit', [self::EXPORT, self::EXPORT, self::EXPORT]],
+        ];
+    }
+
+    /**
+     * A configurable parent and a bundle child keep the codes recorded under their own quote items.
+     */
+    public function testConfigurableAndBundleChildLinesKeepTheirRecordedCodes(): void
+    {
+        $order = $this->order([['configurable', 0.0, true], ['simple', 0.0]], ['US', '10001'], 'US', true);
+        $order->itemsById[2]->data['parent_item_id'] = 50;
+        $create = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20])->execute($order, 'ref', []);
+        $this->assertSame([self::ART20, self::EXPORT, self::EXPORT], $this->codes($create['line_items']));
+        $this->save($order);
+        $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
+
+        foreach (['capture', 'shipment', 'refund'] as $payload) {
+            $codes = $this->codes($this->{$payload}($order, 'ES', []));
+            $this->assertSame([self::ART20, self::EXPORT], array_slice($codes, 0, 2), $payload);
+        }
+    }
+
+    /**
+     * A fee line whose order_item_id happens to be numeric is not taken for that order item.
+     */
+    public function testANumericFeeIdIsNotAnOrderItem(): void
+    {
+        $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US');
+        $this->save($order);
+        $resolver = new TaxCodeResolver($this->config(['5' => self::ART20]), $this->records('ES'));
+        $lines = [['order_item_id' => 1, 'type' => 'OTHER', 'tax_rate' => '0.00']];
+
+        $this->assertSame([self::EXPORT], $this->codes($resolver->apply($lines, $order)));
+    }
+
+    /**
+     * Placement matches product lines to their items by identity, not position,
+     * so a plugin that reorders getLineItemsOrder() cannot swap their classes.
+     */
+    public function testPlacementMatchesLinesToItemsWhateverTheirOrder(): void
+    {
+        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
+        $service = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20]);
+        $reordered = array_reverse($service->getLineItemsOrder($order));
+
+        $this->assertSame([self::EXPORT, self::ART20], $this->codes($service->applyTaxCodes($reordered, $order, true)));
     }
 
     /**
@@ -239,6 +337,12 @@ class TaxCodeResolverTest extends TestCase
         $this->assertSame($lines, $resolver->apply($lines, $order));
     }
 
+    private function edit(Order $order, string $merchant, array $map): array
+    {
+        return $this->composer(ComposeOrder::class, $merchant, $map)
+            ->execute($order, 'ref', ['isEdit' => true, 'placedTerms' => null])['line_items'];
+    }
+
     private function create(Order $order, string $merchant, array $map): array
     {
         return $this->composer(ComposeOrder::class, $merchant, $map)->execute($order, 'ref', []);
@@ -258,7 +362,7 @@ class TaxCodeResolverTest extends TestCase
         $invoice->setShippingTaxAmount(0.0);
         $invoice->setShippingInclTax(10.00);
         $tax = array_sum(array_map(static fn ($item) => $item->getTaxAmount(), $items));
-        $invoice->setGrandTotal(50.00 * count($items) + 10.00 + $tax);
+        $invoice->setGrandTotal(50.00 * count($items) + 10.00 + $tax + (float)$order->getData('test_fee'));
         $invoice->setTaxAmount($tax);
         $invoice->setDiscountAmount(0.0);
 
@@ -302,7 +406,7 @@ class TaxCodeResolverTest extends TestCase
         $creditmemo->setShippingAmount(10.00);
         $creditmemo->setShippingInclTax(10.00);
         $creditmemo->setShippingTaxAmount(0.0);
-        $creditmemo->setGrandTotal(50.00 * count($items) + 15.00 + $tax);
+        $creditmemo->setGrandTotal(50.00 * count($items) + 15.00 + $tax + (float)$order->getData('test_fee'));
         $creditmemo->setTaxAmount($tax);
         $creditmemo->setOrder($order);
 
@@ -334,8 +438,15 @@ class TaxCodeResolverTest extends TestCase
      * @param array|null $shipping [country, postcode] of the delivery address; null for none
      * @param string $billing billing country
      * @param bool $withShipping whether the order charges 10.00 shipping at 0%
+     * @param float $fee an untaxed charge in the grand total that no line itemizes
      */
-    private function order(array $products, ?array $shipping, string $billing, bool $withShipping = false): Order
+    private function order(
+        array $products,
+        ?array $shipping,
+        string $billing,
+        bool $withShipping = false,
+        float $fee = 0.0
+    ): Order
     {
         $order = new class extends Order {
             /** @var array */
@@ -381,8 +492,12 @@ class TaxCodeResolverTest extends TestCase
                 'name' => "Item $id",
                 'sku' => "SKU$id",
                 'product_type' => $type,
-                'is_virtual' => $product[2] ?? in_array($type, ['virtual', 'downloadable'], true),
-                'product' => new DataObject(['tax_class_id' => in_array($type, ['virtual', 'downloadable'], true) ? '7' : '5']),
+                'is_virtual' => $virtual = $product[2] ?? in_array($type, ['virtual', 'downloadable'], true),
+                'product' => new DataObject(['tax_class_id' => $type === 'configurable' ? '3' : ($virtual ? '7' : '5')]),
+                // A configurable is taxed by its child's class.
+                'children_items' => $type === 'configurable'
+                    ? [$this->item(['product' => new DataObject(['tax_class_id' => $virtual ? '7' : '5'])])]
+                    : null,
                 'qty_ordered' => 2,
                 'row_total' => 100.00,
                 'tax_amount' => $tax,
@@ -415,7 +530,8 @@ class TaxCodeResolverTest extends TestCase
                 }
             });
         }
-        $order->setGrandTotal($grand);
+        $order->setGrandTotal($grand + $fee);
+        $order->setData('test_fee', $fee);
         $order->setTaxAmount($taxTotal);
 
         return $order;
