@@ -39,7 +39,7 @@ use Two\Gateway\Service\Merchant\RecordProvider;
 class TaxCodeResolver
 {
     public const EXPORT = 'ES_IVA_EXPORT';
-    public const INTRA_COMMUNITY_GOODS = 'ES_IVA_INTRA_COMMUNITY_GOODS';
+    public const INTRA_COMMUNITY = 'ES_IVA_INTRA_COMMUNITY';
     public const INTRA_COMMUNITY_SERVICES = 'ES_IVA_INTRA_COMMUNITY_SERVICES';
     public const NON_EU_SERVICES = 'ES_IVA_NON_EU_SERVICES';
 
@@ -172,7 +172,7 @@ class TaxCodeResolver
             return self::EXPORT;
         }
         if ($destCountry !== 'ES' && $buyerInOtherEuState) {
-            return self::INTRA_COMMUNITY_GOODS;
+            return self::INTRA_COMMUNITY;
         }
 
         return null;

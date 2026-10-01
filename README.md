@@ -203,7 +203,7 @@ A line's code comes from the first of these that gives one:
    |---|---|---|
    | Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
    | Goods | Delivered to the Canary Islands, Ceuta or Melilla | `ES_IVA_EXPORT` |
-   | Goods | Delivered to another EU state, buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY_GOODS` |
+   | Goods | Delivered to another EU state, buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY` |
    | Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
    | Service | Buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
    | Service | Buyer outside the EU, or billed in the Canary Islands, Ceuta or Melilla | `ES_IVA_NON_EU_SERVICES` |
