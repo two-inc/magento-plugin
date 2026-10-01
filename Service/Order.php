@@ -223,6 +223,18 @@ abstract class Order
     }
 
     /**
+     * The buyer VAT number order create sends, or null to leave the key out
+     * (TWO-26153). See TaxCodeResolver::vatNumberToSend().
+     *
+     * @param OrderModel $order
+     * @return string|null
+     */
+    public function getBuyerVatNumber(OrderModel $order): ?string
+    {
+        return $this->taxCodeResolver ? $this->taxCodeResolver->vatNumberToSend($order) : null;
+    }
+
+    /**
      * The item behind each product line, by line key. Matched on SKU rather
      * than position, so a plugin on getLineItemsOrder() that drops, reorders or
      * adds lines cannot hand a line another item's class; the name only picks
