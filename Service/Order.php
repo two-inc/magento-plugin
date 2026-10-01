@@ -36,6 +36,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
+use Two\Gateway\Service\Order\TaxCodeResolver;
 
 /**
  * Abstract order class
@@ -142,6 +143,11 @@ abstract class Order
     private $brandRegistry;
 
     /**
+     * @var TaxCodeResolver|null
+     */
+    private $taxCodeResolver;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -158,6 +164,7 @@ abstract class Order
      * @param GroupRepositoryInterface $groupRepository
      * @param BrandRegistryInterface $brandRegistry
      * @param CustomerRepositoryInterface $customerRepository
+     * @param TaxCodeResolver|null $taxCodeResolver
      */
     public function __construct(
         Image $imageHelper,
@@ -173,7 +180,8 @@ abstract class Order
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
         GroupRepositoryInterface $groupRepository,
         BrandRegistryInterface $brandRegistry,
-        CustomerRepositoryInterface $customerRepository
+        CustomerRepositoryInterface $customerRepository,
+        ?TaxCodeResolver $taxCodeResolver = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -189,6 +197,78 @@ abstract class Order
         $this->groupRepository = $groupRepository;
         $this->brandRegistry = $brandRegistry;
         $this->customerRepository = $customerRepository;
+        $this->taxCodeResolver = $taxCodeResolver;
+    }
+
+    /**
+     * The lines with a Two tax code on each 0% line that resolves one
+     * (TWO-24877). Every request that carries lines calls this before the
+     * postprocessing hook, so a subscriber can still change the code.
+     *
+     * @param array $lineItems
+     * @param OrderModel $order
+     * @param bool $orderLines true when $lineItems starts with getLineItemsOrder()'s product
+     *                         lines, whose items have no id yet at placement
+     * @return array
+     */
+    public function applyTaxCodes(array $lineItems, OrderModel $order, bool $orderLines = false): array
+    {
+        // Null only where a test skipped the constructor; etc/di.xml names it.
+        if (!$this->taxCodeResolver) {
+            return $lineItems;
+        }
+        $items = $orderLines ? $this->matchLineItemSources($lineItems, $order) : [];
+
+        return $this->taxCodeResolver->apply($lineItems, $order, $items);
+    }
+
+    /**
+     * The item behind each product line, by line key. Matched on SKU rather
+     * than position, so a plugin on getLineItemsOrder() that drops, reorders or
+     * adds lines cannot hand a line another item's class; the name only picks
+     * between items sharing a SKU. A line whose SKU a plugin changed matches
+     * nothing, keeps its goods or service type, and resolves afresh later.
+     *
+     * @param array $lineItems
+     * @param OrderModel $order
+     * @return array<int|string, OrderModel\Item>
+     */
+    private function matchLineItemSources(array $lineItems, OrderModel $order): array
+    {
+        $unused = array_column($this->getLineItemSourcesOrder($order), 0);
+        $matched = [];
+        foreach ($lineItems as $key => $line) {
+            $sku = $line['details']['barcodes'][0]['value'] ?? null;
+            $candidates = array_filter($unused, static fn ($item) => $sku !== null && $item->getSku() === $sku);
+            if ($candidates === []) {
+                continue;
+            }
+            $named = array_filter($candidates, static fn ($item) => $item->getName() === ($line['name'] ?? null));
+            $i = array_key_first($named ?: $candidates);
+            $matched[$key] = $unused[$i];
+            unset($unused[$i]);
+        }
+
+        return $matched;
+    }
+
+    /**
+     * The order items getLineItemsOrder() turns into lines, in the same order,
+     * each with the product its line describes.
+     *
+     * @param OrderModel $order
+     * @return array<int, array{0: OrderModel\Item, 1: Product}>
+     */
+    public function getLineItemSourcesOrder(OrderModel $order): array
+    {
+        $sources = [];
+        foreach ($order->getAllVisibleItems() as $item) {
+            if ($product = $this->getProduct($order, $item)) {
+                $sources[] = [$item, $product];
+            }
+        }
+
+        return $sources;
     }
 
     /**
@@ -287,10 +367,7 @@ abstract class Order
     public function getLineItemsOrder(OrderModel $order): array
     {
         $items = [];
-        foreach ($order->getAllVisibleItems() as $item) {
-            if (!$product = $this->getProduct($order, $item)) {
-                continue;
-            }
+        foreach ($this->getLineItemSourcesOrder($order) as [$item, $product]) {
             $items[] = [
                 'order_item_id' => $item->getId(),
                 'name' => $item->getName(),
