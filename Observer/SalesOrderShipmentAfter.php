@@ -182,7 +182,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
 
             if ($error) {
-                if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                if (($response['error_code'] ?? null) == 'PARTIAL_ORDER_MISSING_DATA') {
                     $isPartialOrder = true;
                     continue;
                 }

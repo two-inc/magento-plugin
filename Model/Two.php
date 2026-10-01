@@ -550,6 +550,19 @@ class Two extends AbstractMethod
             return $this->_getMessageWithTrace($message, $traceID);
         }
 
+        // A non-2xx status with no error fields (a 405 or a gateway's HTML
+        // error page) is still a failure. The adapter only sets http_status
+        // on its non-2xx branch (TWO-26150).
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        if ($status !== null && ($status < 200 || $status >= 300)) {
+            $message = __(
+                'Your request to %1 failed. Reason: %2',
+                $this->brandRegistry->getProductName(),
+                __('HTTP status %1', $status)
+            );
+            return $this->_getMessageWithTrace($message, $traceID);
+        }
+
         return null;
     }
 
@@ -710,7 +723,7 @@ class Two extends AbstractMethod
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
-                    if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                    if (($response['error_code'] ?? null) == 'PARTIAL_ORDER_MISSING_DATA') {
                         $isPartialOrder = true;
                         continue;
                     }
