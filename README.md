@@ -220,7 +220,7 @@ A line's code comes from the first of these that gives one:
    **The buyer's VAT number** (TWO-26153) is the order billing address's VAT
    number, unless Magento's VAT check got an answer that marked it invalid (a
    check that could not reach the VAT service keeps it), and otherwise the
-   customer's Tax/VAT number. Spaces, dots and hyphens are removed and it is
+   customer's Tax/VAT number. Whitespace, dots and hyphens are removed and it is
    upper-cased; a number that does not start with two letters gets the
    billing country in front (`EL` for Greece, `FR` for Monaco). The prefix
    `EL` counts as Greece, and `MC` is not a VAT prefix. Order create also sends it to Two as `buyer_vat_number`, for a
