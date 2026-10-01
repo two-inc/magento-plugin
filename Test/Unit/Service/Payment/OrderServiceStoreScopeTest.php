@@ -79,6 +79,15 @@ class OrderServiceStoreScopeTest extends TestCase
             $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
             return ['id' => 'remote-order-id'];
         });
+        $apiAdapter->method('executeWithStatus')->willReturnCallback(function (
+            string $endpoint,
+            array $payload = [],
+            string $method = 'POST',
+            ?int $storeId = null
+        ): array {
+            $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
+            return ['status' => 200, 'body' => ['id' => 'remote-order-id']];
+        });
 
         return new OrderService(
             $apiAdapter,

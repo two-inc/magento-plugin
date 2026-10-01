@@ -245,41 +245,55 @@ class OrderService
      */
     public function confirmOrder(Order $order)
     {
-        $response = $this->apiAdapter->execute(
-            "/v1/order/" . $order->getTwoOrderId() . "/confirm",
-            $this->orderPostprocessor->process(
-                Postprocessing::REQUEST_ORDER_CONFIRM,
-                [],
-                ['trigger' => 'confirmation', 'endpoint' => '/v1/order/{id}/confirm', 'order' => $order]
-            ),
-            'POST',
-            (int)$order->getStoreId()
-        );
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-        if (!$error) {
-            return $response;
-        }
-        if (isset($response['http_status']) && !isset($response['error_code'])) {
-            // No error_code means the API never answered (a gateway error),
-            // so the confirm may still have landed. Ask Two which it was
-            // rather than fail a Magento order whose Two order is live, and
-            // if it is not confirmed, cancel it before the caller fails the
-            // Magento order (TWO-26150).
-            try {
-                $twoOrder = $this->getTwoOrderFromApi($order);
-                if (($twoOrder['state'] ?? null) === 'CONFIRMED') {
-                    return $twoOrder;
-                }
-            } catch (Exception $e) {
-                $this->logRepository->addErrorLog('confirm-recheck-failed', $e->getMessage());
-            }
-            try {
-                $this->cancelTwoOrder($order, 'confirmation');
-            } catch (Exception $e) {
-                $this->logRepository->addErrorLog('confirm-cancel-failed', $e->getMessage());
+        // A transport failure or a 5xx does not say whether the confirm
+        // landed, so it is sent once more: confirming an already confirmed
+        // order succeeds, so the retry cannot do harm. Nothing is cancelled
+        // here, because a cancel can race a confirm still in flight
+        // (TWO-26150). Each attempt is its own request and fires the hook.
+        $result = ['status' => 0, 'body' => []];
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            $result = $this->apiAdapter->executeWithStatus(
+                "/v1/order/" . $order->getTwoOrderId() . "/confirm",
+                $this->orderPostprocessor->process(
+                    Postprocessing::REQUEST_ORDER_CONFIRM,
+                    [],
+                    ['trigger' => 'confirmation', 'endpoint' => '/v1/order/{id}/confirm', 'order' => $order]
+                ),
+                'POST',
+                (int)$order->getStoreId()
+            );
+            if (!$this->isAmbiguous($result['status'])) {
+                break;
             }
         }
-        throw new LocalizedException($error);
+        if ($this->isAmbiguous($result['status'])) {
+            $this->logRepository->addErrorLog(
+                'confirm-outcome-unknown',
+                [
+                    'two_order_id' => $order->getTwoOrderId(),
+                    'order_increment_id' => $order->getIncrementId(),
+                    'status' => $result['status'],
+                    'message' => 'Confirm failed twice without an answer from the API;'
+                        . ' the order may be confirmed at Two. Reconcile it by hand.',
+                ]
+            );
+        }
+
+        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($result['body']);
+        if ($error) {
+            throw new LocalizedException($error);
+        }
+
+        return $result['body'];
+    }
+
+    /**
+     * A status that does not say whether the request took effect: no HTTP
+     * exchange at all (0) or a server-side error (5xx).
+     */
+    private function isAmbiguous(int $status): bool
+    {
+        return $status === 0 || $status >= 500;
     }
 
     /**
