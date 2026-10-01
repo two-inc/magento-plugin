@@ -32,8 +32,13 @@ class SalesOrderAddressUpdate implements ObserverInterface
     private const EDITABLE_STATUSES = ['APPROVED', 'REJECTED', 'DECLINED'];
 
     /** States and status meaning all or part of the order has been invoiced. */
-    private const INVOICED_STATES = ['FULFILLING', 'FULFILLED', 'DELIVERED', 'REFUNDED'];
+    private const INVOICED_STATES = [
+        'FULFILLING', 'FULFILMENT_NEEDS_MANUAL_RESOLUTION', 'FULFILLED', 'DELIVERED', 'REFUNDED',
+    ];
     private const PARTIAL_STATUS = 'PARTIAL';
+
+    /** Keeps an address save from hanging on the lookup when the API is unreachable; a timeout sends the edit. */
+    private const LOOKUP_TIMEOUT_SECONDS = 10;
 
     /**
      * @var ConfigRepository
@@ -216,7 +221,10 @@ class SalesOrderAddressUpdate implements ObserverInterface
                 '/v1/order/' . $order->getTwoOrderId(),
                 [],
                 'GET',
-                (int)$order->getStoreId()
+                (int)$order->getStoreId(),
+                null,
+                null,
+                self::LOOKUP_TIMEOUT_SECONDS
             );
         } catch (Exception $e) {
             return null;
