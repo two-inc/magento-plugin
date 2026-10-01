@@ -301,7 +301,8 @@ jobs:
       # driven through the real Adapter and Magento's Curl client to a local
       # server that, like the API, accepts only PUT on both routes. Checks
       # the method, route and payload on the wire, and what the order
-      # history records for an accepted and a refused edit.
+      # history records for an accepted and a refused edit, and that a fully
+      # fulfilled order gets no edit at all.
       - name: API wire probe
         run: |
           docker exec magento-project-community-edition \
