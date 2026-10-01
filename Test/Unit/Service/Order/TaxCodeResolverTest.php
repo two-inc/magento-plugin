@@ -39,7 +39,7 @@ use Two\Gateway\Test\Stubs\UnderscoreDataObject;
 class TaxCodeResolverTest extends TestCase
 {
     private const EXPORT = 'ES_IVA_EXPORT';
-    private const INTRA = 'ES_IVA_INTRA_COMMUNITY_GOODS';
+    private const INTRA = 'ES_IVA_INTRA_COMMUNITY';
     private const SERVICES = 'ES_IVA_INTRA_COMMUNITY_SERVICES';
     private const NON_EU = 'ES_IVA_NON_EU_SERVICES';
     private const ART20 = 'ES_IVA_EXEMPT_ART20';
