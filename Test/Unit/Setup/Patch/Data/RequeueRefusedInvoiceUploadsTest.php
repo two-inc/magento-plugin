@@ -99,6 +99,11 @@ class RequeueRefusedInvoiceUploadsTest extends TestCase
             $this->assertSame('prefix_sales_order', $table, $description);
             $this->assertSame(['two_invoice_upload_status' => 'UPLOADING', 'two_invoice_upload_error' => null], $bind, $description);
             $this->assertSame('FAILED', $where['two_invoice_upload_status = ?'], $description);
+            $this->assertSame(
+                'Failed to request upload URL (HTTP 405)',
+                $where['two_invoice_upload_error = ?'] ?? null,
+                "$description: a row that failed again since the select keeps its error"
+            );
         }
     }
 

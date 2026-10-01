@@ -66,6 +66,7 @@ class RequeueRefusedInvoiceUploads implements DataPatchInterface
                 [
                     'entity_id IN (?)' => $chunk,
                     'two_invoice_upload_status = ?' => UploadService::STATUS_FAILED,
+                    'two_invoice_upload_error = ?' => self::REFUSED_ERROR,
                 ]
             );
         }
