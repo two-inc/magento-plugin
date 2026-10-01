@@ -189,8 +189,9 @@ A line's code comes from the first of these that gives one:
    (none). Codes that need an exemption reason the plugin has no way to supply
    are not offered; set those, with their reason, in the postprocessing hook.
 2. **Derivation, for merchants in Spain only.** Physical products are goods;
-   virtual and downloadable products are services, and so is a bundle or gift
-   card Magento marks virtual (nothing in it ships). Shipping and other fee
+   virtual and downloadable products are services, and so is any item Magento
+   marks virtual, such as a bundle, gift card or configurable product with
+   nothing to ship. Shipping and other fee
    lines count as goods when the order has a physical product, and as services
    when it has none. Goods follow the delivery address (the billing address
    when there is none). Services follow the buyer company's country, which is
@@ -216,10 +217,12 @@ domestic exempt sales, or services to buyers outside the EU). A non-Spanish
 merchant with no mapping sends exactly what it sent before.
 
 Placement records each line's code, or that it had none, on the order
-(`two_tax_codes`). Order edit, capture, shipment and refund send those codes,
-so a later change to the addresses, the mapping or a product's tax class does
-not move a placed order. Only a line placement never sent (a refund
-adjustment) and orders placed before this record existed resolve afresh.
+(`two_tax_codes`): product, shipping, payment terms fee, "Other charges" and
+fee-provider lines alike. Order edit, capture, shipment and refund send those
+codes, so a later change to the addresses, the mapping or a product's tax
+class does not move a placed order. Only a line placement never sent (a refund
+adjustment), a product line whose item has no quote item, and orders placed
+before this record existed resolve afresh.
 
 ## Stable extension contract: order postprocessing
 

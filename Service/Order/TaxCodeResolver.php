@@ -23,10 +23,11 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  *    Two's API validates what is sent.
  *
  * Placement records what each line resolved to, "no code" included, on the
- * order (STORED_CODES). Every later request on that order reads the record
- * rather than resolving again, so a changed address, mapping or product tax
- * class never moves a placed order. A line the record does not cover (an order
- * placed before it existed, or a line placement never sent, such as a refund
+ * order (STORED_CODES): product lines by quote item id, every other line by its
+ * own order_item_id. Every later request on that order reads the record rather
+ * than resolving again, so a changed address, mapping or product tax class
+ * never moves a placed order. A line the record does not cover (an order placed
+ * before it existed, or a line placement never sent, such as a refund
  * adjustment) is resolved as at placement.
  *
  * Lines at any other rate are left exactly as composed, and so is every line of
@@ -53,8 +54,8 @@ class TaxCodeResolver
     /** Product types that are always services. */
     private const SERVICE_TYPES = ['virtual', 'downloadable'];
 
-    /** Product types that are services when every part of them is virtual. */
-    private const SERVICE_WHEN_VIRTUAL_TYPES = ['bundle', 'giftcard'];
+    /** The line types the composers give product lines; nothing else is an order item. */
+    private const PRODUCT_LINE_TYPES = ['PHYSICAL', 'DIGITAL'];
 
     /**
      * @var ConfigRepository
@@ -75,7 +76,7 @@ class TaxCodeResolver
     /**
      * @param array $lineItems composed lines, keys kept
      * @param Order $order the order the lines belong to
-     * @param array $items order items by line key, for lines whose order_item_id is not an id yet
+     * @param array $items order items by line key, for product lines whose order_item_id is not an id yet
      * @return array
      */
     public function apply(array $lineItems, Order $order, array $items = []): array
@@ -92,7 +93,10 @@ class TaxCodeResolver
                 continue;
             }
             $itemId = $line['order_item_id'] ?? null;
-            $item = $items[$key] ?? (is_numeric($itemId) ? $order->getItemById($itemId) : null);
+            $item = null;
+            if (in_array($line['type'] ?? '', self::PRODUCT_LINE_TYPES, true)) {
+                $item = $items[$key] ?? (is_numeric($itemId) ? $order->getItemById($itemId) : null);
+            }
             $storeKey = $this->storeKey($line, $item ?: null);
 
             if ($stored !== null && $storeKey !== null && array_key_exists($storeKey, $stored)) {
@@ -166,8 +170,10 @@ class TaxCodeResolver
 
     /**
      * Where the line's code is recorded: product lines by quote item id, which
-     * the item carries from placement on, and the shipping and surcharge lines
-     * by name. Null for a line the record does not cover.
+     * the item carries from placement on; shipping by name, since a refund's
+     * shipping line has no order_item_id; every other line by its own
+     * order_item_id (surcharge, other charges, a fee provider's id). Null for a
+     * line the record cannot cover.
      */
     private function storeKey(array $line, $item): ?string
     {
@@ -178,8 +184,15 @@ class TaxCodeResolver
         if (($line['type'] ?? '') === 'SHIPPING_FEE') {
             return 'shipping';
         }
+        if (in_array($line['type'] ?? '', self::PRODUCT_LINE_TYPES, true)) {
+            return null;
+        }
+        $lineId = $line['order_item_id'] ?? null;
+        if ($lineId === 'surcharge') {
+            return 'surcharge';
+        }
 
-        return ($line['order_item_id'] ?? null) === 'surcharge' ? 'surcharge' : null;
+        return is_scalar($lineId) && (string)$lineId !== '' ? 'line:' . $lineId : null;
     }
 
     /**
@@ -255,17 +268,15 @@ class TaxCodeResolver
     }
 
     /**
-     * Virtual and downloadable products are services; so is a bundle or gift
-     * card Magento marked virtual, which it does only when nothing in it ships.
+     * Virtual and downloadable products are services; so is any item Magento
+     * marked virtual (a bundle, gift card or configurable with nothing to ship).
      *
      * @param Order\Item $item
      */
     private static function isService($item): bool
     {
-        $type = (string)$item->getProductType();
-
-        return in_array($type, self::SERVICE_TYPES, true)
-            || (in_array($type, self::SERVICE_WHEN_VIRTUAL_TYPES, true) && (bool)$item->getIsVirtual());
+        return (bool)$item->getIsVirtual()
+            || in_array((string)$item->getProductType(), self::SERVICE_TYPES, true);
     }
 
     private function merchantCountry(int $storeId): string

@@ -1129,13 +1129,16 @@ Two rules hold the invariants and should not be loosened:
     Two merchant's.
 
 Placement stores what each 0% line resolved to, "no code" included, in
-`sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, plus
-`shipping` and `surcharge`), the same pattern as the shipping rate record.
-Edit, capture, shipment and refund read it and never resolve those lines
-again; a line it does not cover, or an order placed before it existed,
-resolves live. At placement the items have no id, so `ComposeOrder` hands the
-resolver the items behind its product lines directly
-(`getLineItemSourcesOrder()`). The dropdown list comes from
+`sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`,
+`shipping`, and every other line `line:<order_item_id>`, `surcharge` aside),
+the same pattern as the shipping rate record. Edit, capture, shipment and
+refund read it and never resolve those lines again; a line it does not cover,
+or an order placed before it existed, resolves live. Only `PHYSICAL` and
+`DIGITAL` lines are looked up as order items, so a fee provider's numeric id
+is never taken for one. At placement the items have no id, so `ComposeOrder`
+matches its product lines to the items behind them on SKU and name, never by
+position (`matchLineItemSources()`), which keeps a plugin that reorders or
+adds lines from shifting classes. The dropdown list comes from
 `Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
 when it cannot be read, the admin field carries the saved mapping as hidden
 inputs so a section save keeps it.

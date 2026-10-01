@@ -217,9 +217,37 @@ abstract class Order
         if (!$this->taxCodeResolver) {
             return $lineItems;
         }
-        $items = $orderLines ? array_column($this->getLineItemSourcesOrder($order), 0) : [];
+        $items = $orderLines ? $this->matchLineItemSources($lineItems, $order) : [];
 
         return $this->taxCodeResolver->apply($lineItems, $order, $items);
+    }
+
+    /**
+     * The item behind each product line, by line key. Matched on SKU and name
+     * rather than position, so a plugin on getLineItemsOrder() that drops,
+     * reorders or adds lines cannot hand a line another item's class. A line
+     * whose SKU or name it changed matches nothing and is resolved as a fee.
+     *
+     * @param array $lineItems
+     * @param OrderModel $order
+     * @return array<int|string, OrderModel\Item>
+     */
+    private function matchLineItemSources(array $lineItems, OrderModel $order): array
+    {
+        $unused = array_column($this->getLineItemSourcesOrder($order), 0);
+        $matched = [];
+        foreach ($lineItems as $key => $line) {
+            $sku = $line['details']['barcodes'][0]['value'] ?? null;
+            foreach ($unused as $i => $item) {
+                if ($sku !== null && $item->getSku() === $sku && $item->getName() === ($line['name'] ?? null)) {
+                    $matched[$key] = $item;
+                    unset($unused[$i]);
+                    break;
+                }
+            }
+        }
+
+        return $matched;
     }
 
     /**
