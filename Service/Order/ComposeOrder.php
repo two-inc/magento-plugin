@@ -27,6 +27,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order as OrderService;
+use Two\Gateway\Service\Order\TaxCodeResolver;
 
 /**
  * Compose Order Service
@@ -53,7 +54,8 @@ class ComposeOrder extends OrderService
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
         GroupRepositoryInterface $groupRepository,
         BrandRegistryInterface $brandRegistry,
-        CustomerRepositoryInterface $customerRepository
+        CustomerRepositoryInterface $customerRepository,
+        ?TaxCodeResolver $taxCodeResolver = null
     ) {
         parent::__construct(
             $imageHelper,
@@ -69,7 +71,8 @@ class ComposeOrder extends OrderService
             $orderTaxCollectionFactory,
             $groupRepository,
             $brandRegistry,
-            $customerRepository
+            $customerRepository,
+            $taxCodeResolver
         );
         $this->checkoutSession = $checkoutSession;
     }
@@ -99,7 +102,7 @@ class ComposeOrder extends OrderService
         $placedTerms = is_array($additionalData['placedTerms'] ?? null) ? $additionalData['placedTerms'] : null;
         $selectedTermDays = $isEdit ? 0 : $this->getSelectedTermDays($additionalData, $storeId);
 
-        $lineItems = $this->composeLineItems($order);
+        $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order);
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;

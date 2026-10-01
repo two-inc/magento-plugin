@@ -36,6 +36,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
+use Two\Gateway\Service\Order\TaxCodeResolver;
 
 /**
  * Abstract order class
@@ -142,6 +143,11 @@ abstract class Order
     private $brandRegistry;
 
     /**
+     * @var TaxCodeResolver|null
+     */
+    private $taxCodeResolver;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -158,6 +164,7 @@ abstract class Order
      * @param GroupRepositoryInterface $groupRepository
      * @param BrandRegistryInterface $brandRegistry
      * @param CustomerRepositoryInterface $customerRepository
+     * @param TaxCodeResolver|null $taxCodeResolver
      */
     public function __construct(
         Image $imageHelper,
@@ -173,7 +180,8 @@ abstract class Order
         OrderTaxCollectionFactory $orderTaxCollectionFactory,
         GroupRepositoryInterface $groupRepository,
         BrandRegistryInterface $brandRegistry,
-        CustomerRepositoryInterface $customerRepository
+        CustomerRepositoryInterface $customerRepository,
+        ?TaxCodeResolver $taxCodeResolver = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -189,6 +197,22 @@ abstract class Order
         $this->groupRepository = $groupRepository;
         $this->brandRegistry = $brandRegistry;
         $this->customerRepository = $customerRepository;
+        $this->taxCodeResolver = $taxCodeResolver;
+    }
+
+    /**
+     * The lines with a Two tax code on each 0% line that resolves one
+     * (TWO-24877). Every request that carries lines calls this before the
+     * postprocessing hook, so a subscriber can still change the code.
+     *
+     * @param array $lineItems
+     * @param OrderModel $order
+     * @return array
+     */
+    public function applyTaxCodes(array $lineItems, OrderModel $order): array
+    {
+        // Null only where a test skipped the constructor; etc/di.xml names it.
+        return $this->taxCodeResolver ? $this->taxCodeResolver->apply($lineItems, $order) : $lineItems;
     }
 
     /**

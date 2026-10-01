@@ -185,6 +185,16 @@ interface RepositoryInterface
     public function isShippingTaxFallbackEnabled(?int $storeId = null): bool;
 
     /**
+     * The merchant's tax code mapping for 0% lines: product tax class id =>
+     * Two tax code, with "(none)" absent (TWO-24877).
+     *
+     * @param int|null $storeId
+     *
+     * @return array<string, string>
+     */
+    public function getTaxCodeMap(?int $storeId = null): array;
+
+    /**
      * Check if department is enabled
      *
      * @param int|null $storeId

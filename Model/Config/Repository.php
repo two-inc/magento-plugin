@@ -20,6 +20,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
+use Two\Gateway\Model\Config\Backend\TaxCodeMap as TaxCodeMapBackend;
 use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
@@ -309,6 +310,14 @@ class Repository implements RepositoryInterface
     public function isShippingTaxFallbackEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('enable_shipping_tax_fallback'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getTaxCodeMap(?int $storeId = null): array
+    {
+        return TaxCodeMapBackend::normalise($this->getConfig($this->path('tax_code_map'), $storeId));
     }
 
     /**

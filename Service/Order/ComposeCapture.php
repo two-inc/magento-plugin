@@ -46,6 +46,7 @@ class ComposeCapture extends OrderService
             (float)$invoice->getGrandTotal(),
             (float)$invoice->getTaxAmount()
         );
+        $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),

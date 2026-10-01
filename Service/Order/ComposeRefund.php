@@ -44,6 +44,7 @@ class ComposeRefund extends OrderService
             (float)$creditmemo->getGrandTotal(),
             (float)$creditmemo->getTaxAmount()
         );
+        $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         // Use creditmemo->getGrandTotal() rather than re-summing line items.
         // It's the canonical post-collector refund value Magento records
