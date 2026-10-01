@@ -244,14 +244,17 @@ class TaxCodeResolverTest extends TestCase
 
     /**
      * The buyer VAT number comes from the billing address VAT id, unless a VAT
-     * check marked it invalid, then the order's customer tax/VAT number.
+     * check that got an answer marked it invalid, then the order's customer
+     * tax/VAT number.
      *
      * @dataProvider vatSourceCases
      * @param mixed $vatIsValid the billing address VAT check result
+     * @param mixed $requestSuccess whether the VAT check request got an answer
      */
     public function testBuyerVatNumberSourceOrder(
         ?string $vatId,
         $vatIsValid,
+        $requestSuccess,
         ?string $taxvat,
         string $expected,
         string $description
@@ -259,6 +262,7 @@ class TaxCodeResolverTest extends TestCase
         $order = $this->order([['simple', 0.0]], null, 'DE 10115');
         $order->billing->setData('vat_id', $vatId);
         $order->billing->setData('vat_is_valid', $vatIsValid);
+        $order->billing->setData('vat_request_success', $requestSuccess);
         $order->setData('customer_taxvat', $taxvat);
 
         $this->assertSame($expected, TaxCodeResolver::buyerVatNumber($order), $description);
@@ -267,15 +271,17 @@ class TaxCodeResolverTest extends TestCase
     public static function vatSourceCases(): array
     {
         return [
-            ['DE111111111', null, 'DE222222222', 'DE111111111', 'address VAT id first'],
-            [null, null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
-            [' ', null, 'DE222222222', 'DE222222222', 'a blank address VAT id is none'],
-            ['DE111111111', 1, 'DE222222222', 'DE111111111', 'a VAT check that passed keeps the address VAT id'],
-            ['DE111111111', '0', 'DE222222222', 'DE222222222', 'a VAT check that failed drops the address VAT id'],
-            ['DE111111111', 0, null, '', 'a failed check and no customer VAT number is no number'],
-            ['DE111111111', '', null, 'DE111111111', 'an empty check result is no check'],
-            ['111111111', null, null, 'DE111111111', 'normalised against the billing country'],
-            [null, null, null, '', 'neither source is no number'],
+            ['DE111111111', null, null, 'DE222222222', 'DE111111111', 'address VAT id first'],
+            [null, null, null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
+            [' ', null, null, 'DE222222222', 'DE222222222', 'a blank address VAT id is none'],
+            ['DE111111111', 1, 1, 'DE222222222', 'DE111111111', 'a VAT check that passed keeps the address VAT id'],
+            ['DE111111111', '0', '1', 'DE222222222', 'DE222222222', 'a VAT check that answered invalid drops the address VAT id'],
+            ['DE111111111', 0, 1, null, '', 'answered invalid and no customer VAT number is no number'],
+            ['DE111111111', 0, 0, 'DE222222222', 'DE111111111', 'a VAT check request that failed keeps the address VAT id'],
+            ['DE111111111', 0, null, null, 'DE111111111', 'invalid with no request result keeps the address VAT id'],
+            ['DE111111111', '', 1, null, 'DE111111111', 'an empty check result is no check'],
+            ['111111111', null, null, null, 'DE111111111', 'normalised against the billing country'],
+            [null, null, null, null, '', 'neither source is no number'],
         ];
     }
 

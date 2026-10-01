@@ -217,8 +217,10 @@ class TaxCodeResolver
 
     /**
      * The order's buyer VAT number, normalised against the billing country:
-     * the billing address VAT id, unless a VAT check marked it invalid, then
-     * the customer's tax/VAT number. '' when the order holds neither.
+     * the billing address VAT id, unless a VAT check that got an answer marked
+     * it invalid, then the customer's tax/VAT number. A check whose request
+     * failed (the VAT service down or unreachable) also stores the number as
+     * invalid, so that alone never drops it. '' when the order holds neither.
      */
     public static function buyerVatNumber(Order $order): string
     {
@@ -227,7 +229,8 @@ class TaxCodeResolver
         $candidates = [];
         if ($billing) {
             $checked = $billing->getVatIsValid();
-            $refused = $checked !== null && $checked !== '' && !(bool)$checked;
+            $refused = (bool)$billing->getVatRequestSuccess()
+                && $checked !== null && $checked !== '' && !(bool)$checked;
             $candidates[] = $refused ? null : $billing->getVatId();
         }
         $candidates[] = $order->getCustomerTaxvat();

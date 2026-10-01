@@ -1122,7 +1122,8 @@ buyer billed in the Canaries, Ceuta or Melilla is outside the EU for services
 and is never derived. Both intra-community codes also need a buyer VAT number
 whose prefix is an EU state other than the merchant's country (TWO-26153):
 `TaxCodeResolver::buyerVatNumber()` reads the billing address `vat_id` (unless
-`vat_is_valid` is set and false), then the order's `customer_taxvat`, and
+`vat_request_success` is true and `vat_is_valid` set and false: core stores a
+failed request as invalid too, and that must not drop the number), then the order's `customer_taxvat`, and
 normalises it against the billing country. Without one the line gets no code,
 never the export or non-EU services code. The same number goes on order
 create only as `buyer_vat_number` (`vatNumberToSend()`), for an ES merchant
