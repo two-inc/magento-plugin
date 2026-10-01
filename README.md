@@ -183,12 +183,14 @@ A line's code comes from the first of these that gives one:
    per product tax class (including **None**), each with a dropdown of Two's
    tax codes for your country, fetched from Two and cached for a day. A
    product line uses its product's tax class (a configurable product, its
-   child's). The shipping line uses Magento's **Tax Class for Shipping**, and
-   the payment terms fee its own surcharge tax class. Every row defaults to
+   child's). The shipping line uses Magento's **Tax Class for Shipping**
+   (marked "(shipping)" in the list; with that set to **None**, map the
+   **None** row), and the payment terms fee its own surcharge tax class. Every row defaults to
    (none). Codes that need an exemption reason the plugin has no way to supply
    are not offered; set those, with their reason, in the postprocessing hook.
 2. **Derivation, for merchants in Spain only.** Physical products are goods;
-   virtual and downloadable products are services. Shipping and other fee
+   virtual and downloadable products are services, and so is a bundle or gift
+   card Magento marks virtual (nothing in it ships). Shipping and other fee
    lines count as goods when the order has a physical product, and as services
    when it has none. Goods follow the delivery address (the billing address
    when there is none). Services follow the buyer company's country, which is
@@ -213,8 +215,11 @@ map the tax classes that produce 0% lines nothing above covers (for example
 domestic exempt sales, or services to buyers outside the EU). A non-Spanish
 merchant with no mapping sends exactly what it sent before.
 
-A refund recomputes each line's code from the order, the same way the create
-did, so a mapping changed in between applies to the refund too.
+Placement records each line's code, or that it had none, on the order
+(`two_tax_codes`). Order edit, capture, shipment and refund send those codes,
+so a later change to the addresses, the mapping or a product's tax class does
+not move a placed order. Only a line placement never sent (a refund
+adjustment) and orders placed before this record existed resolve afresh.
 
 ## Stable extension contract: order postprocessing
 
@@ -242,7 +247,10 @@ The default implementation returns the payload unchanged. Plugins chain by
   2dp decimal strings: `line_items`, `tax_subtotals`, `net_amount`,
   `tax_amount`, `gross_amount`, buyer, addresses and the rest. A partial
   capture carries its lines under `partial`; a refund carries `amount`. A
-  request with no body (confirm, cancel, whole-order capture) is `[]`.
+  request with no body (confirm, cancel, whole-order capture) is `[]`. A 0%
+  line may carry `tax_code` (see "Tax codes on 0% lines"); a subscriber may
+  change it, and may add `tax_exemption_reason_code` for a code that needs a
+  reason the plugin cannot supply.
 - `$context`, an array:
 
 | Key | Type | Meaning |

@@ -102,7 +102,7 @@ class ComposeOrder extends OrderService
         $placedTerms = is_array($additionalData['placedTerms'] ?? null) ? $additionalData['placedTerms'] : null;
         $selectedTermDays = $isEdit ? 0 : $this->getSelectedTermDays($additionalData, $storeId);
 
-        $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order);
+        $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order, true);
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;

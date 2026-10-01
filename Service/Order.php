@@ -207,12 +207,38 @@ abstract class Order
      *
      * @param array $lineItems
      * @param OrderModel $order
+     * @param bool $orderLines true when $lineItems starts with getLineItemsOrder()'s product
+     *                         lines, whose items have no id yet at placement
      * @return array
      */
-    public function applyTaxCodes(array $lineItems, OrderModel $order): array
+    public function applyTaxCodes(array $lineItems, OrderModel $order, bool $orderLines = false): array
     {
         // Null only where a test skipped the constructor; etc/di.xml names it.
-        return $this->taxCodeResolver ? $this->taxCodeResolver->apply($lineItems, $order) : $lineItems;
+        if (!$this->taxCodeResolver) {
+            return $lineItems;
+        }
+        $items = $orderLines ? array_column($this->getLineItemSourcesOrder($order), 0) : [];
+
+        return $this->taxCodeResolver->apply($lineItems, $order, $items);
+    }
+
+    /**
+     * The order items getLineItemsOrder() turns into lines, in the same order,
+     * each with the product its line describes.
+     *
+     * @param OrderModel $order
+     * @return array<int, array{0: OrderModel\Item, 1: Product}>
+     */
+    public function getLineItemSourcesOrder(OrderModel $order): array
+    {
+        $sources = [];
+        foreach ($order->getAllVisibleItems() as $item) {
+            if ($product = $this->getProduct($order, $item)) {
+                $sources[] = [$item, $product];
+            }
+        }
+
+        return $sources;
     }
 
     /**
@@ -311,10 +337,7 @@ abstract class Order
     public function getLineItemsOrder(OrderModel $order): array
     {
         $items = [];
-        foreach ($order->getAllVisibleItems() as $item) {
-            if (!$product = $this->getProduct($order, $item)) {
-                continue;
-            }
+        foreach ($this->getLineItemSourcesOrder($order) as [$item, $product]) {
             $items[] = [
                 'order_item_id' => $item->getId(),
                 'name' => $item->getName(),

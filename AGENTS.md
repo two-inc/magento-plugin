@@ -1128,8 +1128,14 @@ Two rules hold the invariants and should not be loosened:
     configured country: the API rejects a code whose country differs from the
     Two merchant's.
 
-A refund re-resolves from the order rather than reading what the create sent,
-since Magento keeps no per-line copy. The dropdown list comes from
+Placement stores what each 0% line resolved to, "no code" included, in
+`sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, plus
+`shipping` and `surcharge`), the same pattern as the shipping rate record.
+Edit, capture, shipment and refund read it and never resolve those lines
+again; a line it does not cover, or an order placed before it existed,
+resolves live. At placement the items have no id, so `ComposeOrder` hands the
+resolver the items behind its product lines directly
+(`getLineItemSourcesOrder()`). The dropdown list comes from
 `Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
 when it cannot be read, the admin field carries the saved mapping as hidden
 inputs so a section save keeps it.

@@ -22,14 +22,24 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * 3. Otherwise no code. The plugin never refuses an order over a missing code:
  *    Two's API validates what is sent.
  *
- * Lines at any other rate, and every line of a non-Spanish merchant with no
- * mapping, are left exactly as composed.
+ * Placement records what each line resolved to, "no code" included, on the
+ * order (STORED_CODES). Every later request on that order reads the record
+ * rather than resolving again, so a changed address, mapping or product tax
+ * class never moves a placed order. A line the record does not cover (an order
+ * placed before it existed, or a line placement never sent, such as a refund
+ * adjustment) is resolved as at placement.
+ *
+ * Lines at any other rate are left exactly as composed, and so is every line of
+ * a non-Spanish merchant with no mapping.
  */
 class TaxCodeResolver
 {
     public const EXPORT = 'ES_IVA_EXPORT';
     public const INTRA_COMMUNITY = 'ES_IVA_INTRA_COMMUNITY';
     public const REVERSE_CHARGE = 'ES_IVA_REVERSE_CHARGE';
+
+    /** sales_order column: JSON of line key => code or null, written at placement. */
+    public const STORED_CODES = 'two_tax_codes';
 
     /** The 27 member states, plus Monaco, which is inside the EU VAT area through France. */
     private const EU = [
@@ -40,8 +50,11 @@ class TaxCodeResolver
     /** Spanish postcodes outside the EU VAT area: the Canaries (35, 38), Ceuta (51) and Melilla (52). */
     private const ES_OUTSIDE_VAT_AREA = ['35', '38', '51', '52'];
 
-    /** Product types that are services rather than goods. */
+    /** Product types that are always services. */
     private const SERVICE_TYPES = ['virtual', 'downloadable'];
+
+    /** Product types that are services when every part of them is virtual. */
+    private const SERVICE_WHEN_VIRTUAL_TYPES = ['bundle', 'giftcard'];
 
     /**
      * @var ConfigRepository
@@ -62,23 +75,15 @@ class TaxCodeResolver
     /**
      * @param array $lineItems composed lines, keys kept
      * @param Order $order the order the lines belong to
+     * @param array $items order items by line key, for lines whose order_item_id is not an id yet
      * @return array
      */
-    public function apply(array $lineItems, Order $order): array
+    public function apply(array $lineItems, Order $order, array $items = []): array
     {
-        $storeId = (int)$order->getStoreId();
-        $map = $this->configRepository->getTaxCodeMap($storeId);
-        $derive = $this->merchantCountry($storeId) === 'ES';
-        if ($map === [] && !$derive) {
-            return $lineItems;
-        }
-
-        $billing = $order->getBillingAddress();
-        $destination = $order->getShippingAddress() ?: $billing;
-        $destCountry = $destination ? (string)$destination->getCountryId() : '';
-        $destPostcode = $destination ? (string)$destination->getPostcode() : '';
-        $buyerCountry = $billing ? (string)$billing->getCountryId() : '';
-        $orderHasGoods = $this->hasGoods($order);
+        $placing = !$order->getId();
+        $stored = $placing ? null : self::decodeStored($order->getData(self::STORED_CODES));
+        $context = null;
+        $record = [];
 
         foreach ($lineItems as $key => $line) {
             if (!is_array($line) || !isset($line['tax_rate']) || (float)$line['tax_rate'] != 0.0
@@ -86,14 +91,26 @@ class TaxCodeResolver
             ) {
                 continue;
             }
-            [$classId, $isService] = $this->classify($line, $order, $orderHasGoods, $storeId);
-            $code = $classId !== null ? ($map[(string)$classId] ?? null) : null;
-            if ($code === null && $derive) {
-                $code = self::derive($isService, $destCountry, $destPostcode, $buyerCountry);
+            $itemId = $line['order_item_id'] ?? null;
+            $item = $items[$key] ?? (is_numeric($itemId) ? $order->getItemById($itemId) : null);
+            $storeKey = $this->storeKey($line, $item ?: null);
+
+            if ($stored !== null && $storeKey !== null && array_key_exists($storeKey, $stored)) {
+                $code = $stored[$storeKey];
+            } else {
+                $context = $context ?? $this->context($order);
+                $code = $this->resolve($line, $item ?: null, $context);
+            }
+            if ($placing && $storeKey !== null) {
+                $record[$storeKey] = $code;
             }
             if ($code !== null) {
                 $lineItems[$key]['tax_code'] = $code;
             }
+        }
+
+        if ($placing) {
+            $order->setData(self::STORED_CODES, (string)json_encode($record, JSON_FORCE_OBJECT));
         }
 
         return $lineItems;
@@ -137,24 +154,88 @@ class TaxCodeResolver
     }
 
     /**
-     * The line's tax class id (null when it has none) and whether it is a service.
-     *
-     * @return array{0: int|null, 1: bool}
+     * @param mixed $stored
+     * @return array<string, string|null>|null null when the order has no record
      */
-    private function classify(array $line, Order $order, bool $orderHasGoods, int $storeId): array
+    private static function decodeStored($stored): ?array
     {
-        $itemId = $line['order_item_id'] ?? null;
-        if (is_numeric($itemId) && ($item = $order->getItemById($itemId))) {
-            return [$this->productTaxClassId($item), self::isServiceType($item->getProductType())];
+        $decoded = is_string($stored) && $stored !== '' ? json_decode($stored, true) : null;
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Where the line's code is recorded: product lines by quote item id, which
+     * the item carries from placement on, and the shipping and surcharge lines
+     * by name. Null for a line the record does not cover.
+     */
+    private function storeKey(array $line, $item): ?string
+    {
+        if ($item !== null) {
+            $quoteItemId = $item->getQuoteItemId();
+            return is_numeric($quoteItemId) ? 'item:' . (int)$quoteItemId : null;
         }
         if (($line['type'] ?? '') === 'SHIPPING_FEE') {
-            return [$this->configRepository->getShippingTaxClassId($storeId), !$orderHasGoods];
-        }
-        if ($itemId === 'surcharge') {
-            return [$this->configRepository->getSurchargeTaxClassId($storeId), !$orderHasGoods];
+            return 'shipping';
         }
 
-        return [null, !$orderHasGoods];
+        return ($line['order_item_id'] ?? null) === 'surcharge' ? 'surcharge' : null;
+    }
+
+    /**
+     * Everything resolution reads from the order and the configuration, read once per payload.
+     */
+    private function context(Order $order): array
+    {
+        $storeId = (int)$order->getStoreId();
+        $billing = $order->getBillingAddress();
+        $destination = $order->getShippingAddress() ?: $billing;
+        $hasGoods = false;
+        foreach ($order->getAllVisibleItems() as $visible) {
+            $hasGoods = $hasGoods || !self::isService($visible);
+        }
+
+        return [
+            'store_id' => $storeId,
+            'map' => $this->configRepository->getTaxCodeMap($storeId),
+            'derive' => $this->merchantCountry($storeId) === 'ES',
+            'dest_country' => $destination ? (string)$destination->getCountryId() : '',
+            'dest_postcode' => $destination ? (string)$destination->getPostcode() : '',
+            'buyer_country' => $billing ? (string)$billing->getCountryId() : '',
+            'has_goods' => $hasGoods,
+        ];
+    }
+
+    private function resolve(array $line, $item, array $context): ?string
+    {
+        if ($item !== null) {
+            [$classId, $isService] = [$this->productTaxClassId($item), self::isService($item)];
+        } elseif (($line['type'] ?? '') === 'SHIPPING_FEE') {
+            // Core's None is class 0, which the repository reports as null.
+            [$classId, $isService] = [
+                $this->configRepository->getShippingTaxClassId($context['store_id']) ?? 0,
+                !$context['has_goods'],
+            ];
+        } elseif (($line['order_item_id'] ?? null) === 'surcharge') {
+            [$classId, $isService] = [
+                $this->configRepository->getSurchargeTaxClassId($context['store_id']),
+                !$context['has_goods'],
+            ];
+        } else {
+            [$classId, $isService] = [null, !$context['has_goods']];
+        }
+
+        $code = $classId !== null ? ($context['map'][(string)$classId] ?? null) : null;
+        if ($code === null && $context['derive']) {
+            $code = self::derive(
+                $isService,
+                $context['dest_country'],
+                $context['dest_postcode'],
+                $context['buyer_country']
+            );
+        }
+
+        return $code;
     }
 
     /**
@@ -173,20 +254,18 @@ class TaxCodeResolver
         return is_numeric($classId) ? (int)$classId : null;
     }
 
-    private function hasGoods(Order $order): bool
+    /**
+     * Virtual and downloadable products are services; so is a bundle or gift
+     * card Magento marked virtual, which it does only when nothing in it ships.
+     *
+     * @param Order\Item $item
+     */
+    private static function isService($item): bool
     {
-        foreach ($order->getAllVisibleItems() as $item) {
-            if (!self::isServiceType($item->getProductType())) {
-                return true;
-            }
-        }
+        $type = (string)$item->getProductType();
 
-        return false;
-    }
-
-    private static function isServiceType($productType): bool
-    {
-        return in_array((string)$productType, self::SERVICE_TYPES, true);
+        return in_array($type, self::SERVICE_TYPES, true)
+            || (in_array($type, self::SERVICE_WHEN_VIRTUAL_TYPES, true) && (bool)$item->getIsVirtual());
     }
 
     private function merchantCountry(int $storeId): string
