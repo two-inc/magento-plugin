@@ -1115,7 +1115,11 @@ Order intent is left alone: the API does not check codes there.
 The order is: the merchant's mapping (`tax_code_map`, product tax class id to
 code; the shipping line keys on core's shipping tax class, the surcharge on its
 own), then, for a merchant whose record says `country_code` ES, the derivation
-table in the README, then nothing. **The plugin never refuses over a missing
+table in the README (`TaxCodeResolver::derive()`), then nothing. Goods take
+the delivery address, services the billing country and postcode, so a Spanish
+buyer billed in the Canaries, Ceuta or Melilla is outside the EU for services
+(TWO-26151). `ES_IVA_REVERSE_CHARGE` is Spanish domestic reverse charge only
+and is never derived. **The plugin never refuses over a missing
 code**: the API does. Do not add a guard that declines a Spanish 0% line with
 no code; the line is sent and Two decides.
 

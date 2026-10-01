@@ -195,16 +195,19 @@ A line's code comes from the first of these that gives one:
    lines count as goods when the order has a physical product, and as services
    when it has none. Goods follow the delivery address (the billing address
    when there is none). Services follow the buyer company's country, which is
-   the billing country the plugin sends.
+   the billing country the plugin sends. The Canary Islands, Ceuta and Melilla
+   (Spanish postcodes starting 35, 38, 51 or 52) count as outside the EU: the
+   delivery postcode decides for goods, the billing postcode for services.
 
    | Line | Where | Code |
    |---|---|---|
    | Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
-   | Goods | Delivered to the Canary Islands, Ceuta or Melilla (Spanish postcodes starting 35, 38, 51 or 52) | `ES_IVA_EXPORT` |
-   | Goods | Delivered to another EU state, buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY` |
+   | Goods | Delivered to the Canary Islands, Ceuta or Melilla | `ES_IVA_EXPORT` |
+   | Goods | Delivered to another EU state, buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY_GOODS` |
    | Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
-   | Service | Buyer in an EU state other than Spain | `ES_IVA_REVERSE_CHARGE` |
-   | Service | Buyer in Spain or outside the EU | none |
+   | Service | Buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
+   | Service | Buyer outside the EU, or billed in the Canary Islands, Ceuta or Melilla | `ES_IVA_NON_EU_SERVICES` |
+   | Service | Buyer in mainland Spain or the Balearics | none |
 
    Monaco counts as part of the EU (through France). Two only sells to
    verified businesses, so every buyer counts as a business.
@@ -213,7 +216,7 @@ A line's code comes from the first of these that gives one:
 **The plugin never refuses; the API does.** A 0% line with no code is sent
 as is, and Two's API decides. For a Spanish merchant it refuses such a line, so
 map the tax classes that produce 0% lines nothing above covers (for example
-domestic exempt sales, or services to buyers outside the EU). A non-Spanish
+domestic exempt sales, or services to buyers in mainland Spain). A non-Spanish
 merchant with no mapping sends exactly what it sent before.
 
 Placement records each line's code, or that it had none, on the order

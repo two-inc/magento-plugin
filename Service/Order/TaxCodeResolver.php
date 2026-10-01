@@ -12,7 +12,8 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Merchant\RecordProvider;
 
 /**
- * Adds a Two `tax_code` to every line composed at a 0% tax rate (TWO-24877).
+ * Adds a Two `tax_code` to every line composed at a 0% tax rate (TWO-24877,
+ * TWO-26151).
  *
  * 1. The merchant's mapping of the line's tax class, when there is one.
  * 2. Otherwise, for a Spanish merchant only, a code derived from the order:
@@ -38,8 +39,9 @@ use Two\Gateway\Service\Merchant\RecordProvider;
 class TaxCodeResolver
 {
     public const EXPORT = 'ES_IVA_EXPORT';
-    public const INTRA_COMMUNITY = 'ES_IVA_INTRA_COMMUNITY';
-    public const REVERSE_CHARGE = 'ES_IVA_REVERSE_CHARGE';
+    public const INTRA_COMMUNITY_GOODS = 'ES_IVA_INTRA_COMMUNITY_GOODS';
+    public const INTRA_COMMUNITY_SERVICES = 'ES_IVA_INTRA_COMMUNITY_SERVICES';
+    public const NON_EU_SERVICES = 'ES_IVA_NON_EU_SERVICES';
 
     /** sales_order column: JSON of line key => code or null, written at placement. */
     public const STORED_CODES = 'two_tax_codes';
@@ -133,39 +135,57 @@ class TaxCodeResolver
 
     /**
      * The code a Spanish merchant's 0% line takes from the order, or null.
+     * Goods go by the delivery address; services by where the buyer company
+     * is, where the Canaries, Ceuta and Melilla count as outside the EU.
      *
      * @param bool $isService
      * @param string $destCountry delivery country (billing when there is no delivery address)
      * @param string $destPostcode delivery postcode
      * @param string $buyerCountry buyer company country
+     * @param string $buyerPostcode billing postcode
      * @return string|null
      */
     public static function derive(
         bool $isService,
         string $destCountry,
         string $destPostcode,
-        string $buyerCountry
+        string $buyerCountry,
+        string $buyerPostcode
     ): ?string {
         $destCountry = strtoupper(trim($destCountry));
         $buyerCountry = strtoupper(trim($buyerCountry));
         $buyerInOtherEuState = $buyerCountry !== 'ES' && in_array($buyerCountry, self::EU, true);
 
         if ($isService) {
-            return $buyerInOtherEuState ? self::REVERSE_CHARGE : null;
+            if ($buyerInOtherEuState) {
+                return self::INTRA_COMMUNITY_SERVICES;
+            }
+            if ($buyerCountry !== '' && self::outsideEu($buyerCountry, $buyerPostcode)) {
+                return self::NON_EU_SERVICES;
+            }
+            return null;
         }
         if ($destCountry === '') {
             return null;
         }
-        if (!in_array($destCountry, self::EU, true)
-            || ($destCountry === 'ES' && in_array(substr(trim($destPostcode), 0, 2), self::ES_OUTSIDE_VAT_AREA, true))
-        ) {
+        if (self::outsideEu($destCountry, $destPostcode)) {
             return self::EXPORT;
         }
         if ($destCountry !== 'ES' && $buyerInOtherEuState) {
-            return self::INTRA_COMMUNITY;
+            return self::INTRA_COMMUNITY_GOODS;
         }
 
         return null;
+    }
+
+    /**
+     * Outside the EU VAT area: a country outside the EU, or a Spanish postcode
+     * in the Canaries, Ceuta or Melilla.
+     */
+    private static function outsideEu(string $country, string $postcode): bool
+    {
+        return !in_array($country, self::EU, true)
+            || ($country === 'ES' && in_array(substr(trim($postcode), 0, 2), self::ES_OUTSIDE_VAT_AREA, true));
     }
 
     /**
@@ -227,6 +247,7 @@ class TaxCodeResolver
             'dest_country' => $destination ? (string)$destination->getCountryId() : '',
             'dest_postcode' => $destination ? (string)$destination->getPostcode() : '',
             'buyer_country' => $billing ? (string)$billing->getCountryId() : '',
+            'buyer_postcode' => $billing ? (string)$billing->getPostcode() : '',
             'has_goods' => $hasGoods,
         ];
     }
@@ -259,7 +280,8 @@ class TaxCodeResolver
                 $isService,
                 $context['dest_country'],
                 $context['dest_postcode'],
-                $context['buyer_country']
+                $context['buyer_country'],
+                $context['buyer_postcode']
             );
         }
 
