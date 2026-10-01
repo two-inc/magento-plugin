@@ -223,8 +223,8 @@ A line's code comes from the first of these that gives one:
    check that could not reach the VAT service keeps it), and otherwise the
    customer's Tax/VAT number. Spaces, dots and hyphens are removed and it is
    upper-cased; a number that does not start with two letters gets the
-   billing country in front (`EL` for Greece). The prefix `EL` counts as
-   Greece. Order create also sends it to Two as `buyer_vat_number`, for a
+   billing country in front (`EL` for Greece, `FR` for Monaco). The prefix
+   `EL` counts as Greece, and `MC` is not a VAT prefix. Order create also sends it to Two as `buyer_vat_number`, for a
    merchant in Spain and a buyer outside Spain only: Two requires a Spanish
    buyer's VAT number to equal its organisation number, so it is never sent
    for one. Later requests leave it out, so Two keeps the number placement
