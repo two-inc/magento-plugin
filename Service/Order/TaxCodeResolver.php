@@ -199,17 +199,17 @@ class TaxCodeResolver
     }
 
     /**
-     * A VAT number in the form the API takes: spaces, dots and hyphens
-     * removed, upper case, and the address country added in front when it
-     * does not start with two letters (Greece's prefix is EL, Monaco's FR).
-     * '' when nothing is left.
+     * A VAT number in the form the API takes: whitespace (no-break spaces and
+     * tabs included), dots and hyphens removed, upper case, and the address
+     * country added in front when it does not start with two letters
+     * (Greece's prefix is EL, Monaco's FR). '' when nothing is left.
      *
      * @param string $raw as the shop holds it
      * @param string $country the address country it belongs to, '' for none
      */
     public static function normaliseVatNumber(string $raw, string $country): string
     {
-        $vat = strtoupper(str_replace([' ', '.', '-'], '', trim($raw)));
+        $vat = strtoupper((string)preg_replace('/[\s\x{00A0}.\-]+/u', '', $raw));
         if ($vat === '' || preg_match('/^[A-Z]{2}/', $vat)) {
             return $vat;
         }

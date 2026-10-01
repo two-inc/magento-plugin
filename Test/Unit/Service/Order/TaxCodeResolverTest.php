@@ -244,6 +244,7 @@ class TaxCodeResolverTest extends TestCase
             ['1A2345678', 'DE', 'DE1A2345678', 'one leading letter is not a prefix'],
             ['123456789', '', '123456789', 'no address country leaves it unprefixed'],
             [' .- ', 'DE', '', 'nothing left is no number'],
+            ["de\u{00A0}123\t456\n789", 'DE', 'DE123456789', 'strips no-break spaces, tabs and newlines'],
         ];
     }
 
