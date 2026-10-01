@@ -274,7 +274,7 @@ class OrderService
                     'order_increment_id' => $order->getIncrementId(),
                     'status' => $result['status'],
                     'message' => 'Confirm failed twice without an answer from the API;'
-                        . ' the order may be confirmed at Two. Reconcile it by hand.',
+                        . ' the order may be confirmed upstream. Reconcile it by hand.',
                 ]
             );
         }
