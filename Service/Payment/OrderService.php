@@ -256,11 +256,30 @@ class OrderService
             (int)$order->getStoreId()
         );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-        if ($error) {
-            throw new LocalizedException($error);
+        if (!$error) {
+            return $response;
         }
-
-        return $response;
+        if (isset($response['http_status']) && !isset($response['error_code'])) {
+            // No error_code means the API never answered (a gateway error),
+            // so the confirm may still have landed. Ask Two which it was
+            // rather than fail a Magento order whose Two order is live, and
+            // if it is not confirmed, cancel it before the caller fails the
+            // Magento order (TWO-26150).
+            try {
+                $twoOrder = $this->getTwoOrderFromApi($order);
+                if (($twoOrder['state'] ?? null) === 'CONFIRMED') {
+                    return $twoOrder;
+                }
+            } catch (Exception $e) {
+                $this->logRepository->addErrorLog('confirm-recheck-failed', $e->getMessage());
+            }
+            try {
+                $this->cancelTwoOrder($order, 'confirmation');
+            } catch (Exception $e) {
+                $this->logRepository->addErrorLog('confirm-cancel-failed', $e->getMessage());
+            }
+        }
+        throw new LocalizedException($error);
     }
 
     /**
