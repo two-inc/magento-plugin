@@ -57,7 +57,13 @@ class TaxCodeResolver
     /** Spanish postcodes outside the EU VAT area: the Canaries (35, 38), Ceuta (51) and Melilla (52). */
     private const ES_OUTSIDE_VAT_AREA = ['35', '38', '51', '52'];
 
-    /** Greece's VAT prefix, which is not its ISO country code. */
+    /**
+     * VAT prefixes that are not the country's ISO code: Greece's is EL, and a
+     * Monaco business holds a French number.
+     */
+    private const VAT_PREFIX_FOR_COUNTRY = ['GR' => 'EL', 'MC' => 'FR'];
+
+    /** Greece's VAT prefix, which names GR. */
     private const VAT_PREFIX_GREECE = 'EL';
 
     /** Product types that are always services. */
@@ -195,8 +201,8 @@ class TaxCodeResolver
     /**
      * A VAT number in the form the API takes: spaces, dots and hyphens
      * removed, upper case, and the address country added in front when it
-     * does not start with two letters (Greece's prefix is EL). '' when
-     * nothing is left.
+     * does not start with two letters (Greece's prefix is EL, Monaco's FR).
+     * '' when nothing is left.
      *
      * @param string $raw as the shop holds it
      * @param string $country the address country it belongs to, '' for none
@@ -208,9 +214,7 @@ class TaxCodeResolver
             return $vat;
         }
         $country = strtoupper(trim($country));
-        if ($country === 'GR') {
-            $country = self::VAT_PREFIX_GREECE;
-        }
+        $country = self::VAT_PREFIX_FOR_COUNTRY[$country] ?? $country;
 
         return preg_match('/^[A-Z]{2}$/', $country) ? $country . $vat : $vat;
     }
@@ -265,7 +269,8 @@ class TaxCodeResolver
 
     /**
      * Whether the VAT number's prefix names an EU state other than the
-     * merchant's country. The prefix EL is Greece.
+     * merchant's country. The prefix EL is Greece; MC is no VAT prefix, since
+     * Monaco is in the EU VAT area through France.
      */
     private static function vatIsFromAnotherEuState(string $vat, string $merchantCountry): bool
     {
@@ -274,7 +279,7 @@ class TaxCodeResolver
             $prefix = 'GR';
         }
 
-        return $prefix !== $merchantCountry && in_array($prefix, self::EU, true);
+        return $prefix !== 'MC' && $prefix !== $merchantCountry && in_array($prefix, self::EU, true);
     }
 
     /**
