@@ -37,6 +37,7 @@ use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 
@@ -93,6 +94,7 @@ class GenericPaymentMethod extends Two
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
         SettingsProvider $settingsProvider,
+        OrderPostprocessor $orderPostprocessor,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -128,6 +130,7 @@ class GenericPaymentMethod extends Two
             $buyerCountryResolver,
             $supportedCountriesProvider,
             $settingsProvider,
+            $orderPostprocessor,
             $resource,
             $resourceCollection,
             $data

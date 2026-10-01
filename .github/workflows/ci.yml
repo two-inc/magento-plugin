@@ -276,6 +276,38 @@ jobs:
           echo "$st" | grep -qE '^ *two_gateway: 1$' \
             || { echo "::error::two_gateway cache type not enabled after setup:upgrade"; exit 1; }
 
+      # TWO-26092: a real subscriber module on the order postprocessing hook,
+      # proving the interceptor wiring, that it fires for every request type,
+      # and that what a subscriber returns is sent as returned. The probes
+      # create their own products, tax rules and coupon in this throwaway shop.
+      - name: Order postprocessing fixture probe
+        run: |
+          docker exec magento-project-community-edition /bin/bash -c \
+            "mkdir -p app/code/Two && cp -r /data/extensions/magento-plugin/Test/Integration/OrderPostprocessingFixture app/code/Two/"
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_OrderPostprocessingFixture && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-plugin/Test/Integration/order-postprocessing-probe.php
+
+      # TWO-26092: order intent composed from real quotes (coupon, multi-rate,
+      # tax-inclusive, guest, configurable, bundle) through core's own
+      # quote-to-order conversion, checked against the quote's totals.
+      - name: Order intent composition probe
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-plugin/Test/Integration/compose-intent-probe.php
+
+      # TWO-26150: the admin order edit and the self-invoice upload request,
+      # driven through the real Adapter and Magento's Curl client to a local
+      # server that, like the API, accepts only PUT on both routes. Checks
+      # the method, route and payload on the wire, and what the order
+      # history records for an accepted and a refused edit, and that a fully
+      # or partially fulfilled order gets no edit at all.
+      - name: API wire probe
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-plugin/Test/Integration/api-wire-probe.php
+
   # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
   # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
   # di:compile — proves the cross-major vanilla merchant upgrade (1.x -> 2.x) lands

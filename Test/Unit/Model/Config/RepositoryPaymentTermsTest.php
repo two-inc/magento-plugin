@@ -673,28 +673,24 @@ class RepositoryPaymentTermsTest extends TestCase
         ];
     }
 
-    // ── getDefaultShippingTaxRate ────────────────────────────────────
-
     /**
-     * @dataProvider shippingTaxRateFallbacks
+     * @dataProvider shippingTaxClassValues
      */
-    public function testGetDefaultShippingTaxRate($stored, ?float $expected, string $case): void
+    public function testGetShippingTaxClassIdReadsCoresShippingTaxClass($stored, ?int $expected, string $case): void
     {
-        $this->stubConfig(['payment/two_payment/default_shipping_tax_rate' => $stored]);
+        $this->stubConfig(['tax/classes/shipping_tax_class' => $stored]);
 
-        $this->assertSame($expected, $this->repository->getDefaultShippingTaxRate(), $case);
+        $this->assertSame($expected, $this->repository->getShippingTaxClassId(1), $case);
     }
 
-    public function shippingTaxRateFallbacks(): array
+    public static function shippingTaxClassValues(): array
     {
         return [
-            ['25', 25.0, 'a configured rate'],
-            ['0', 0.0, 'a declared zero rate is a declaration, not an absence'],
-            [null, null, 'never configured'],
-            ['', null, 'the empty initial config node'],
-            ['abc', null, 'junk from a hand-edited row or config:set'],
-            ['-10', null, 'a negative rate is not a rate'],
-            [['25'], null, 'a non-scalar value'],
+            ['5', 5, 'a configured class'],
+            ['0', null, 'None'],
+            [null, null, 'never saved'],
+            ['', null, 'blank'],
+            ['junk', null, 'unparseable'],
         ];
     }
 

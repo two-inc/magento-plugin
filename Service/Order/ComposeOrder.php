@@ -10,8 +10,11 @@ namespace Two\Gateway\Service\Order;
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Phrase;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -19,10 +22,12 @@ use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order as OrderService;
+use Two\Gateway\Service\Order\TaxCodeResolver;
 
 /**
  * Compose Order Service
@@ -46,7 +51,11 @@ class ComposeOrder extends OrderService
         FeeLineProviderPool $feeLineProviderPool,
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
-        OrderTaxCollectionFactory $orderTaxCollectionFactory
+        OrderTaxCollectionFactory $orderTaxCollectionFactory,
+        GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository,
+        ?TaxCodeResolver $taxCodeResolver = null
     ) {
         parent::__construct(
             $imageHelper,
@@ -59,9 +68,21 @@ class ComposeOrder extends OrderService
             $feeLineProviderPool,
             $orderTaxManagement,
             $taxCalculation,
-            $orderTaxCollectionFactory
+            $orderTaxCollectionFactory,
+            $groupRepository,
+            $brandRegistry,
+            $customerRepository,
+            $taxCodeResolver
         );
         $this->checkoutSession = $checkoutSession;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function shippingTaxRefusal(): Phrase
+    {
+        return __('This order could not be placed. Please contact the merchant.');
     }
 
     /**
@@ -76,69 +97,15 @@ class ComposeOrder extends OrderService
     public function execute(Order $order, string $orderReference, array $additionalData): array
     {
         $storeId = (int)$order->getStoreId();
-        $selectedTermDays = $this->getSelectedTermDays($additionalData, $storeId);
+        // An edit of a placed order re-sends the agreed terms, or none; live config may have moved since.
+        $isEdit = !empty($additionalData['isEdit']);
+        $placedTerms = is_array($additionalData['placedTerms'] ?? null) ? $additionalData['placedTerms'] : null;
+        $selectedTermDays = $isEdit ? 0 : $this->getSelectedTermDays($additionalData, $storeId);
 
-        // Fetch line items from the order
-        $lineItems = $this->getLineItemsOrder($order);
-
-        // Prefer the persisted order columns (populated by the conversion
-        // fieldset) over the session. Session is the source of truth for the
-        // chip-render flow before placement, but by the time ComposeOrder
-        // runs the order has been converted from the quote and the columns
-        // are authoritative. Session can drift if multi-tab logout / GC /
-        // a custom plugin clears it between collectTotals and place().
-        $surchargeAmount = (float)$order->getTwoSurchargeAmount();
-        $surchargeTax = (float)$order->getTwoSurchargeTaxAmount();
-        $description = (string)$order->getTwoSurchargeDescription();
-        $taxRatePercent = (float)$order->getTwoSurchargeTaxRate();
-
-        if ($surchargeAmount <= 0) {
-            // Fallback to session for orders placed in the brief window where
-            // a buyer's order conversion runs without the columns populated
-            // (e.g. mid-deploy before the data patch lands). Remove this
-            // fallback once we're confident every placement persists.
-            $surchargeAmount = (float)$this->checkoutSession->getTwoSurchargeAmount();
-            $surchargeTax = (float)$this->checkoutSession->getTwoSurchargeTax();
-            $description = $this->checkoutSession->getTwoSurchargeDescription() ?: '';
-            $taxRatePercent = (float)$this->checkoutSession->getTwoSurchargeTaxRate();
-        }
-
-        if ($surchargeAmount > 0) {
-            $description = $description ?: (string)__('Payment terms fee');
-            $taxRate = $taxRatePercent / 100;
-
-            $lineItems[] = [
-                'order_item_id' => 'surcharge',
-                'name' => $description,
-                'description' => $description,
-                'type' => 'BUYER_FEE',
-                'image_url' => '',
-                'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
-                'net_amount' => $this->roundAmt($surchargeAmount),
-                'tax_amount' => $this->roundAmt($surchargeTax),
-                'discount_amount' => '0.00',
-                'tax_rate' => $this->roundAmt($taxRate, 6),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
-                'unit_price' => $this->roundAmt($surchargeAmount, 6),
-                'quantity' => 1,
-                'quantity_unit' => 'sc',
-            ];
-        }
-
-        // Grand total already includes surcharge from Total Collector
+        $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order, true);
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;
-
-        // Reconcile any known third-party fee (via a registered
-        // FeeLineProviderInterface) and, failing that, any genuinely
-        // untaxed residual. See Order::reconcileOtherCharges() docblock.
-        $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
-
-        // Last gate before the amounts go on the wire: every line's declared
-        // tax has to follow from its own declared rate and net.
-        $this->validateTaxReconciliation($lineItems);
 
         // Compose the final payload for the API call. Fields that may
         // legitimately be blank are NOT listed here — they go through the
@@ -153,8 +120,7 @@ class ComposeOrder extends OrderService
             'net_amount' => $this->roundAmt($netTotal),
             'tax_amount' => $this->roundAmt($taxTotal),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
-            'terms' => $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
-            'available_terms' => $this->getAvailableBuyerTerms($storeId),
+            'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
@@ -220,6 +186,14 @@ class ComposeOrder extends OrderService
             }
         }
 
+        if (!$isEdit) {
+            // The edit-order schema has no available_terms.
+            $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
+        } elseif ($placedTerms === null) {
+            // An absent terms key keeps the agreed ones (TWO-25386).
+            unset($payload['terms']);
+        }
+
         // Add invoice_details only if invoiceEmails are present. The payment
         // reference fields are left out for one reason: the plugin has no value
         // to put in them, and they are defaulted when the key is absent. Their
@@ -233,6 +207,76 @@ class ComposeOrder extends OrderService
         return $payload;
     }
 
+    /**
+     * The order's lines as the create request sends them, shared with order
+     * intent so both carry the same lines (TWO-26092). The line tax gate runs
+     * on them in OrderPostprocessor, before the hook.
+     *
+     * @param Order $order
+     * @return array
+     * @throws LocalizedException
+     */
+    public function composeLineItems(Order $order): array
+    {
+        // Fetch line items from the order
+        $lineItems = $this->getLineItemsOrder($order);
+
+        // Prefer the persisted order columns (populated by the conversion
+        // fieldset) over the session. Session is the source of truth for the
+        // chip-render flow before placement, but by the time ComposeOrder
+        // runs the order has been converted from the quote and the columns
+        // are authoritative. Session can drift if multi-tab logout / GC /
+        // a custom plugin clears it between collectTotals and place().
+        $surchargeAmount = (float)$order->getTwoSurchargeAmount();
+        $surchargeTax = (float)$order->getTwoSurchargeTaxAmount();
+        $description = (string)$order->getTwoSurchargeDescription();
+        $taxRatePercent = (float)$order->getTwoSurchargeTaxRate();
+
+        if ($surchargeAmount <= 0) {
+            // Fallback to session for orders placed in the brief window where
+            // a buyer's order conversion runs without the columns populated
+            // (e.g. mid-deploy before the data patch lands). Remove this
+            // fallback once we're confident every placement persists.
+            $surchargeAmount = (float)$this->checkoutSession->getTwoSurchargeAmount();
+            $surchargeTax = (float)$this->checkoutSession->getTwoSurchargeTax();
+            $description = $this->checkoutSession->getTwoSurchargeDescription() ?: '';
+            $taxRatePercent = (float)$this->checkoutSession->getTwoSurchargeTaxRate();
+        }
+
+        if ($surchargeAmount > 0) {
+            $description = $description ?: (string)__('Payment terms fee');
+            $taxRate = $taxRatePercent / 100;
+
+            $lineItems[] = [
+                'order_item_id' => 'surcharge',
+                'name' => $description,
+                'description' => $description,
+                'type' => 'BUYER_FEE',
+                'image_url' => '',
+                'product_page_url' => '',
+                'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
+                'net_amount' => $this->roundAmt($surchargeAmount),
+                'tax_amount' => $this->roundAmt($surchargeTax),
+                'discount_amount' => '0.00',
+                'tax_rate' => $this->roundAmt($taxRate, 6),
+                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
+                'unit_price' => $this->roundAmt($surchargeAmount, 6),
+                'quantity' => 1,
+                'quantity_unit' => 'sc',
+            ];
+        }
+
+        // Reconcile any known third-party fee (via a registered
+        // FeeLineProviderInterface) and, failing that, any genuinely
+        // untaxed residual. See Order::reconcileOtherCharges() docblock.
+        // Grand total already includes surcharge from Total Collector.
+        return $this->reconcileOtherCharges(
+            $lineItems,
+            $order,
+            (float)$order->getGrandTotal(),
+            (float)$order->getTaxAmount()
+        );
+    }
 
     /**
      * Get the buyer's selected term from checkout, validated against configured terms.

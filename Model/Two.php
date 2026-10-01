@@ -31,6 +31,7 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -44,6 +45,7 @@ use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -180,6 +182,10 @@ class Two extends AbstractMethod
      */
     private $settingsProvider;
     /**
+     * @var OrderPostprocessor
+     */
+    private $orderPostprocessor;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -218,6 +224,7 @@ class Two extends AbstractMethod
      * @param BuyerCountryResolver $buyerCountryResolver
      * @param SupportedCountriesProvider $supportedCountriesProvider
      * @param SettingsProvider $settingsProvider
+     * @param OrderPostprocessor $orderPostprocessor
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -253,6 +260,7 @@ class Two extends AbstractMethod
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
         SettingsProvider $settingsProvider,
+        OrderPostprocessor $orderPostprocessor,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -292,6 +300,7 @@ class Two extends AbstractMethod
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
         $this->settingsProvider = $settingsProvider;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -322,7 +331,16 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', (int)$order->getStoreId());
+        $response = $this->apiAdapter->execute(
+            '/v1/order',
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_ORDER_CREATE,
+                $payload,
+                ['trigger' => 'checkout', 'endpoint' => '/v1/order', 'order' => $order]
+            ),
+            'POST',
+            (int)$order->getStoreId()
+        );
         $error = $this->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -532,6 +550,20 @@ class Two extends AbstractMethod
             return $this->_getMessageWithTrace($message, $traceID);
         }
 
+        // A non-2xx status with no error_code (a 405 or a gateway's HTML
+        // error page) is still a failure. The adapter sets http_status on any
+        // status other than 200/201/202 (TWO-26150).
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        if ($status !== null && ($status < 200 || $status >= 300)) {
+            $reason = $response['error_message'] ?? null;
+            $message = __(
+                'Your request to %1 failed. Reason: %2',
+                $this->brandRegistry->getProductName(),
+                is_string($reason) && $reason !== '' ? $reason : __('HTTP status %1', $status)
+            );
+            return $this->_getMessageWithTrace($message, $traceID);
+        }
+
         return null;
     }
 
@@ -593,7 +625,11 @@ class Two extends AbstractMethod
             $twoOrderId = $order->getTwoOrderId();
             $response = $this->apiAdapter->execute(
                 '/v1/order/' . $order->getTwoOrderId() . '/cancel',
-                [],
+                $this->orderPostprocessor->process(
+                    Postprocessing::REQUEST_CANCEL,
+                    [],
+                    ['trigger' => 'cancel', 'endpoint' => '/v1/order/{id}/cancel', 'order' => $order]
+                ),
                 'POST',
                 (int)$order->getStoreId()
             );
@@ -651,6 +687,7 @@ class Two extends AbstractMethod
             }
 
             $payload = [];
+            $createdInvoice = null;
             $isWholeOrderInvoiced = $this->isWholeOrderInvoiced($order);
             $isPartialOrder = !$isWholeOrderInvoiced;
             while (true) {
@@ -671,14 +708,23 @@ class Two extends AbstractMethod
                 }
                 $response = $this->apiAdapter->execute(
                     '/v1/order/' . $twoOrderId . '/fulfillments',
-                    $payload,
+                    $this->orderPostprocessor->process(
+                        Postprocessing::REQUEST_CAPTURE,
+                        $payload,
+                        [
+                            'trigger' => 'invoice',
+                            'endpoint' => '/v1/order/{id}/fulfillments',
+                            'order' => $order,
+                            'invoice' => $createdInvoice,
+                        ]
+                    ),
                     'POST',
                     (int)$order->getStoreId()
                 );
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
-                    if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                    if (($response['error_code'] ?? null) == 'PARTIAL_ORDER_MISSING_DATA') {
                         $isPartialOrder = true;
                         continue;
                     }
@@ -786,7 +832,16 @@ class Two extends AbstractMethod
         );
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $payload,
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_REFUND,
+                $payload,
+                [
+                    'trigger' => 'credit_memo',
+                    'endpoint' => '/v1/order/{id}/refund',
+                    'order' => $order,
+                    'creditmemo' => $payment->getCreditmemo(),
+                ]
+            ),
             'POST',
             (int)$order->getStoreId()
         );

@@ -5,7 +5,6 @@ namespace Two\Gateway\Test\Unit\Setup\Patch\Data;
 
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\Storage\WriterInterface;
-use Magento\Framework\Setup\ModuleDataSetupInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Setup\Patch\Data\RemoveSkipConfirmTokenCheck;
 use Two\Gateway\Setup\Patch\Data\RenameSkipConfirmTokenCheck;
@@ -35,27 +34,6 @@ class RemoveSkipConfirmTokenCheckTest extends TestCase
         $this->connection = new RemoveConnection();
         $this->connection->rows = $rows;
 
-        $connection = $this->connection;
-        $moduleDataSetup = new class ($connection) implements ModuleDataSetupInterface {
-            /** @var RemoveConnection */
-            private $connection;
-
-            public function __construct($connection)
-            {
-                $this->connection = $connection;
-            }
-
-            public function getConnection()
-            {
-                return $this->connection;
-            }
-
-            public function getTable($tableName)
-            {
-                return 'prefix_' . $tableName;
-            }
-        };
-
         $deletes = &$this->deletes;
         $writer = $this->createMock(WriterInterface::class);
         $writer->method('delete')->willReturnCallback(
@@ -67,7 +45,7 @@ class RemoveSkipConfirmTokenCheckTest extends TestCase
 
         $this->cacheTypeList = $this->createMock(TypeListInterface::class);
 
-        return new RemoveSkipConfirmTokenCheck($moduleDataSetup, $writer, $this->cacheTypeList);
+        return new RemoveSkipConfirmTokenCheck($this->connection->setup(), $writer, $this->cacheTypeList);
     }
 
     private static function row(string $scope, int $scopeId, string $path): array
@@ -177,73 +155,5 @@ class RemoveSkipConfirmTokenCheckTest extends TestCase
         $patch = $this->buildPatch([]);
 
         $this->assertSame([], $patch->getAliases());
-    }
-}
-
-/**
- * Minimal scripted stand-in for Magento's DB adapter, covering only the
- * select()->from()->where() chain the patch consumes via fetchAll().
- */
-class RemoveConnection
-{
-    /** @var array<int, array<string, mixed>> core_config_data rows to return */
-    public $rows = [];
-
-    /** @var string|null */
-    public $queriedTable;
-
-    /** @var array<int, array{0: string, 1: mixed}> */
-    public $recordedWheres = [];
-
-    public function startSetup(): void
-    {
-    }
-
-    public function endSetup(): void
-    {
-    }
-
-    public function select(): RemoveSelect
-    {
-        return new RemoveSelect();
-    }
-
-    /**
-     * @param RemoveSelect $select
-     * @return array<int, array<string, mixed>>
-     */
-    public function fetchAll($select): array
-    {
-        $this->queriedTable = $select->table;
-        $this->recordedWheres = $select->wheres;
-
-        return $this->rows;
-    }
-}
-
-/**
- * Records the from/where chain so RemoveConnection::fetchAll() can report
- * which table was queried.
- */
-class RemoveSelect
-{
-    /** @var string|null */
-    public $table;
-
-    /** @var array<int, array{0: string, 1: mixed}> */
-    public $wheres = [];
-
-    public function from($table, $columns = '*'): self
-    {
-        $this->table = $table;
-
-        return $this;
-    }
-
-    public function where($condition, $value = null): self
-    {
-        $this->wheres[] = [$condition, $value];
-
-        return $this;
     }
 }

@@ -153,7 +153,6 @@ function makeContext(component) {
         _brandConfig: {
             checkoutApiUrl: 'https://api.example.two.inc',
             orderIntentConfig: {
-                weightUnit: 'kg',
                 extensionPlatformName: 'magento2',
                 extensionDBVersion: '1.0.0',
                 merchant: { id: 'm-1', short_name: 'acme' }
@@ -161,6 +160,24 @@ function makeContext(component) {
         }
     });
 }
+
+describe('order-intent request body carries the buyer only (TWO-26092)', () => {
+    test('amounts and lines are left to the server, which composes them from the quote', () => {
+        const { component, requests } = loadRenderer();
+        const ctx = makeContext(component);
+
+        ctx.placeOrderIntent.call(ctx);
+
+        const body = JSON.parse(JSON.parse(requests[0].data).payload);
+        expect(Object.keys(body)).toEqual(['buyer']);
+        expect(body.buyer.representative).toEqual({
+            email: 'ola@example.com',
+            first_name: 'Ola',
+            last_name: 'Nordmann',
+            phone_number: '+4712345678'
+        });
+    });
+});
 
 describe('order-intent request body omits buyer.company.website (TWO-25365)', () => {
     test('the composed request sends no `website` key at all', () => {

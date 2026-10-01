@@ -21,6 +21,8 @@ use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
+use Two\Gateway\Service\Order\ComposeIntent;
+use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\RateLimiter;
 
 /**
@@ -129,8 +131,28 @@ class ProxiedRegistryCallsTest extends TestCase
             $this->logRepository(),
             $this->checkoutSession($storeId, $buyerCountry),
             new BuyerCountryResolver(),
-            new SupportedCountriesProvider($recordProvider)
+            new SupportedCountriesProvider($recordProvider),
+            $this->composeIntent(),
+            $this->passThroughPostprocessor()
         );
+    }
+
+    private function composeIntent(): ComposeIntent
+    {
+        $composeIntent = $this->createMock(ComposeIntent::class);
+        $composeIntent->method('execute')->willReturnCallback(
+            static fn ($quote, array $buyer): array => ['gross_amount' => '10.00', 'buyer' => $buyer]
+        );
+
+        return $composeIntent;
+    }
+
+    private function passThroughPostprocessor(): OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
     }
 
     private function companyLookup(
@@ -207,16 +229,14 @@ class ProxiedRegistryCallsTest extends TestCase
     private function checkoutSession(?int $storeId = null, ?string $buyerCountry = null): CheckoutSession
     {
         $session = new CheckoutSession();
-        if ($storeId !== null || $buyerCountry !== null) {
-            $quote = $this->createMock(Quote::class);
-            $quote->method('getStoreId')->willReturn($storeId);
-            if ($buyerCountry !== null) {
-                $address = $this->createMock(Address::class);
-                $address->method('getCountryId')->willReturn($buyerCountry);
-                $quote->method('getBillingAddress')->willReturn($address);
-            }
-            $session->setData('quote', $quote);
+        $quote = $this->createMock(Quote::class);
+        $quote->method('getStoreId')->willReturn($storeId);
+        if ($buyerCountry !== null) {
+            $address = $this->createMock(Address::class);
+            $address->method('getCountryId')->willReturn($buyerCountry);
+            $quote->method('getBillingAddress')->willReturn($address);
         }
+        $session->setData('quote', $quote);
 
         return $session;
     }
@@ -356,7 +376,7 @@ class ProxiedRegistryCallsTest extends TestCase
             return $this->companyLookup($keyStatus)->get('lookup-1');
         }
 
-        return $this->orderIntent($keyStatus)->place('{"gross_amount":"10.00"}');
+        return $this->orderIntent($keyStatus)->place('{"buyer":{}}');
     }
 
     public function testSearchAsksTheRegistryForTheServerSideLimitNotACallerSuppliedOne(): void
@@ -385,7 +405,7 @@ class ProxiedRegistryCallsTest extends TestCase
     public function testOrderIntentReplacesTheMerchantIdentityTheBrowserSent(): void
     {
         $this->orderIntent()->place((string)json_encode([
-            'gross_amount' => '10.00',
+            'buyer' => [],
             'merchant_id' => 'spoofed',
             'merchant_short_name' => 'spoofed',
         ]));
@@ -410,7 +430,7 @@ class ProxiedRegistryCallsTest extends TestCase
     ): void {
         $decoded = json_decode(
             $this->orderIntent(ApiKeyStatus::OK, 1, $record, $buyerCountry)
-                ->place('{"gross_amount":"10.00"}'),
+                ->place('{"buyer":{}}'),
             true
         );
 
@@ -458,7 +478,7 @@ class ProxiedRegistryCallsTest extends TestCase
     public function testAnIntentRefusedOnCountryIsLoggedWithTheStateThatCausedIt(): void
     {
         $this->orderIntent(ApiKeyStatus::OK, 1, ['supported_buyer_countries' => []], 'GB')
-            ->place('{"gross_amount":"10.00"}');
+            ->place('{"buyer":{}}');
 
         $this->assertCount(1, $this->log);
         $this->assertStringContainsString('buyer country not supported', $this->log[0][0]);
@@ -507,7 +527,7 @@ class ProxiedRegistryCallsTest extends TestCase
         // The verdict carries no merchant for any of the non-OK rows, so an
         // identity that reaches upstream can only have come from the record.
         $decoded = json_decode(
-            $this->orderIntent($status)->place('{"gross_amount":"10.00"}'),
+            $this->orderIntent($status)->place('{"buyer":{}}'),
             true
         );
 
@@ -548,7 +568,7 @@ class ProxiedRegistryCallsTest extends TestCase
     public function testAnIntentIsStillRefusedWhenNoIdentityHasEverResolved(): void
     {
         $decoded = json_decode(
-            $this->orderIntent(ApiKeyStatus::UNREACHABLE, null, null)->place('{"gross_amount":"10.00"}'),
+            $this->orderIntent(ApiKeyStatus::UNREACHABLE, null, null)->place('{"buyer":{}}'),
             true
         );
 
@@ -820,7 +840,7 @@ class ProxiedRegistryCallsTest extends TestCase
     ): void {
         $this->stageUpstream($status, $body);
 
-        $answer = $this->orderIntent()->place('{"gross_amount":"10.00"}');
+        $answer = $this->orderIntent()->place('{"buyer":{}}');
         $decoded = json_decode($answer, true);
 
         $this->assertFalse($decoded['ok'], $description);
@@ -879,7 +899,7 @@ class ProxiedRegistryCallsTest extends TestCase
             new \RuntimeException('cURL error 6: Could not resolve host: api.internal.example')
         );
 
-        $decoded = json_decode($this->orderIntent()->place('{"gross_amount":"10.00"}'), true);
+        $decoded = json_decode($this->orderIntent()->place('{"buyer":{}}'), true);
 
         $this->assertSame(0, $decoded['status']);
         $this->assertSame('PROXY_REFUSED', $decoded['body']['error_code']);
@@ -926,8 +946,10 @@ class ProxiedRegistryCallsTest extends TestCase
             $this->logRepository(),
             $this->checkoutSession(),
             new BuyerCountryResolver(),
-            new SupportedCountriesProvider($this->createMock(RecordProvider::class))
-        ))->place('{"gross_amount":"10.00"}');
+            new SupportedCountriesProvider($this->createMock(RecordProvider::class)),
+            $this->composeIntent(),
+            $this->passThroughPostprocessor()
+        ))->place('{"buyer":{}}');
 
         $sent = json_decode($this->requestedBody, true);
         $this->assertArrayNotHasKey('merchant_short_name', $sent);
@@ -1003,6 +1025,6 @@ class ProxiedRegistryCallsTest extends TestCase
             return $this->companyLookup(ApiKeyStatus::OK, $storeId)->get('lookup-1');
         }
 
-        return $this->orderIntent(ApiKeyStatus::OK, $storeId)->place('{"gross_amount":"10.00"}');
+        return $this->orderIntent(ApiKeyStatus::OK, $storeId)->place('{"buyer":{}}');
     }
 }
