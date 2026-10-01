@@ -40,7 +40,8 @@ class TaxCodeResolverTest extends TestCase
 {
     private const EXPORT = 'ES_IVA_EXPORT';
     private const INTRA = 'ES_IVA_INTRA_COMMUNITY';
-    private const REVERSE = 'ES_IVA_REVERSE_CHARGE';
+    private const SERVICES = 'ES_IVA_INTRA_COMMUNITY_SERVICES';
+    private const NON_EU = 'ES_IVA_NON_EU_SERVICES';
     private const ART20 = 'ES_IVA_EXEMPT_ART20';
 
     /** @var bool whether the composers get a resolver; false composes as before TWO-24877 */
@@ -55,7 +56,7 @@ class TaxCodeResolverTest extends TestCase
      * @dataProvider createCases
      * @param array $products [product type, tax percent] per line
      * @param array|null $shipping [delivery country, postcode], null for no delivery address
-     * @param string $billing buyer (billing) country
+     * @param string $billing buyer (billing) country, optionally followed by a space and the billing postcode
      * @param array $expected tax_code per line, null for none; the shipping line last when there is one
      * @param bool $withShipping whether the order charges shipping at 0%
      */
@@ -97,18 +98,26 @@ class TaxCodeResolverTest extends TestCase
             ['ES', [], $goods, ['ES', '28001'], 'ES', [null], 'domestic goods'],
             ['ES', [], $goods, ['ES', '07001'], 'ES', [null], 'goods to the Balearics'],
             ['ES', [], $goods, ['ES', '28001'], 'FR', [null], 'goods delivered in Spain to a French buyer'],
-            ['ES', [], $service, null, 'DE', [self::REVERSE], 'service to a buyer in another EU state'],
-            ['ES', [], [['downloadable', 0.0]], null, 'FR', [self::REVERSE], 'download to a buyer in another EU state'],
-            ['ES', [], [['bundle', 0.0, true]], null, 'FR', [self::REVERSE], 'a bundle with nothing to ship is a service'],
+            ['ES', [], $service, null, 'DE', [self::SERVICES], 'service to a buyer in another EU state'],
+            ['ES', [], [['downloadable', 0.0]], null, 'FR', [self::SERVICES], 'download to a buyer in another EU state'],
+            ['ES', [], [['bundle', 0.0, true]], null, 'FR', [self::SERVICES], 'a bundle with nothing to ship is a service'],
             ['ES', [], [['bundle', 0.0, false]], ['FR', '75001'], 'FR', [self::INTRA], 'a bundle that ships is goods'],
-            ['ES', [], [['configurable', 0.0, true]], ['ES', '28001'], 'DE', [self::REVERSE], 'a configurable with a virtual child is a service'],
+            ['ES', [], [['configurable', 0.0, true]], ['ES', '28001'], 'DE', [self::SERVICES], 'a configurable with a virtual child is a service'],
             ['ES', ['7' => self::ART20], [['configurable', 0.0, true]], ['US', '10001'], 'US', [self::ART20], 'a configurable maps by its child\'s class'],
             ['ES', [], $service, null, 'ES', [null], 'service to a Spanish buyer'],
-            ['ES', [], $service, null, 'NO', [null], 'service to a buyer outside the EU'],
+            ['ES', [], $service, null, 'NO', [self::NON_EU], 'service to a buyer outside the EU'],
+            ['ES', [], $service, ['ES', '28001'], 'US', [self::NON_EU], 'service to a buyer outside the EU, delivered in Spain'],
+            ['ES', [], $service, null, 'ES 35001', [self::NON_EU], 'service to a buyer billed in Las Palmas'],
+            ['ES', [], $service, null, 'ES 38001', [self::NON_EU], 'service to a buyer billed in Tenerife'],
+            ['ES', [], $service, null, 'ES 51001', [self::NON_EU], 'service to a buyer billed in Ceuta'],
+            ['ES', [], $service, null, 'ES 52001', [self::NON_EU], 'service to a buyer billed in Melilla'],
+            ['ES', [], $service, ['ES', '35001'], 'ES 28001', [null], 'service delivered to the Canaries for a mainland buyer'],
+            ['ES', [], $goods, ['ES', '28001'], 'ES 35001', [null], 'goods delivered in mainland Spain for a buyer billed in the Canaries'],
             ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT, self::EXPORT], 'shipping follows goods', true],
-            ['ES', [], $service, ['US', '10001'], 'DE', [self::REVERSE, self::REVERSE], 'shipping follows services', true],
-            ['ES', [], $mixed, ['ES', '28001'], 'DE', [self::REVERSE, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
-            ['ES', [], $mixed, ['US', '10001'], 'US', [null, self::EXPORT, self::EXPORT], 'a mixed order: no export code on the service', true],
+            ['ES', [], $service, ['US', '10001'], 'DE', [self::SERVICES, self::SERVICES], 'shipping follows services', true],
+            ['ES', [], $service, ['US', '10001'], 'NO', [self::NON_EU, self::NON_EU], 'shipping follows non-EU services', true],
+            ['ES', [], $mixed, ['ES', '28001'], 'DE', [self::SERVICES, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
+            ['ES', [], $mixed, ['US', '10001'], 'US', [self::NON_EU, self::EXPORT, self::EXPORT], 'a mixed order: the service is a non-EU service, not an export', true],
             ['ES', ['5' => self::ART20], $goods, ['US', '10001'], 'US', [self::ART20], 'the mapping beats the derivation'],
             ['ES', ['5' => self::ART20], $goods, ['ES', '28001'], 'ES', [self::ART20], 'the mapping covers a line nothing derives'],
             ['ES', ['7' => self::ART20], $mixed, ['US', '10001'], 'US', [self::ART20, self::EXPORT, self::EXPORT], 'a mapped service in a mixed order', true],
@@ -286,7 +295,7 @@ class TaxCodeResolverTest extends TestCase
         $lines = $service->getLineItemsOrder($order);
         $lines[0]['details']['barcodes'][0]['value'] = 'CHANGED';
 
-        $this->assertSame([self::REVERSE, self::INTRA], $this->codes($service->applyTaxCodes($lines, $order, true)));
+        $this->assertSame([self::SERVICES, self::INTRA], $this->codes($service->applyTaxCodes($lines, $order, true)));
     }
 
     /**
@@ -349,9 +358,9 @@ class TaxCodeResolverTest extends TestCase
     public static function unrecordedPayloads(): array
     {
         return [
-            ['capture', [self::ART20, self::REVERSE, null]],
-            ['shipment', [self::ART20, self::REVERSE, null]],
-            ['refund', [self::ART20, self::REVERSE, null, null]],
+            ['capture', [self::ART20, self::SERVICES, null]],
+            ['shipment', [self::ART20, self::SERVICES, null]],
+            ['refund', [self::ART20, self::SERVICES, null, null]],
         ];
     }
 
@@ -513,7 +522,7 @@ class TaxCodeResolverTest extends TestCase
      *
      * @param array $products [product type, tax percent, is virtual] per item, 100.00 net each, quantity 2
      * @param array|null $shipping [country, postcode] of the delivery address; null for none
-     * @param string $billing billing country
+     * @param string $billing billing country, optionally followed by a space and the billing postcode
      * @param bool $withShipping whether the order charges 10.00 shipping at 0%
      * @param float $fee an untaxed charge in the grand total that no line itemizes
      */
@@ -584,7 +593,8 @@ class TaxCodeResolverTest extends TestCase
             $grand += 100.00 + $tax;
             $taxTotal += $tax;
         }
-        $order->billing = new UnderscoreDataObject(['country_id' => $billing, 'postcode' => '00000']);
+        [$billingCountry, $billingPostcode] = array_pad(explode(' ', $billing, 2), 2, '00000');
+        $order->billing = new UnderscoreDataObject(['country_id' => $billingCountry, 'postcode' => $billingPostcode]);
         $order->shipping = $shipping
             ? new UnderscoreDataObject(['country_id' => $shipping[0], 'postcode' => $shipping[1]])
             : null;
