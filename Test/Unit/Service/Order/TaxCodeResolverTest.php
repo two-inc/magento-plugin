@@ -115,6 +115,7 @@ class TaxCodeResolverTest extends TestCase
             ['ES', [], $goods, ['ES', '28001'], 'ES 35001', [null], 'goods delivered in mainland Spain for a buyer billed in the Canaries'],
             ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT, self::EXPORT], 'shipping follows goods', true],
             ['ES', [], $service, ['US', '10001'], 'DE', [self::SERVICES, self::SERVICES], 'shipping follows services', true],
+            ['ES', [], $service, ['US', '10001'], 'NO', [self::NON_EU, self::NON_EU], 'shipping follows non-EU services', true],
             ['ES', [], $mixed, ['ES', '28001'], 'DE', [self::SERVICES, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
             ['ES', [], $mixed, ['US', '10001'], 'US', [self::NON_EU, self::EXPORT, self::EXPORT], 'a mixed order: the service is a non-EU service, not an export', true],
             ['ES', ['5' => self::ART20], $goods, ['US', '10001'], 'US', [self::ART20], 'the mapping beats the derivation'],
