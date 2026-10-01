@@ -10,6 +10,7 @@ namespace Two\Gateway\Test\Unit\Service\Api;
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Backend\TaxCodeMap;
 use Two\Gateway\Service\Api\Adapter;
@@ -45,9 +46,29 @@ class TaxCodesTest extends TestCase
             ['code' => 'ES_IVA_EXPORT', 'name' => 'Exportación', 'rate' => '0'],
         ];
         $cache->expects($this->once())->method('save')
-            ->with(json_encode($expected), 'two_gateway_tax_codes_ES_3', ['TWO_GATEWAY'], 86400);
+            ->with(json_encode($expected), 'two_gateway_tax_codes_ES_3_sandbox', ['TWO_GATEWAY'], 86400);
 
         $this->assertSame($expected, $this->service($adapter, $cache)->getSelectable('es', 3));
+    }
+
+    public function testSandboxAndProductionAreCachedApart(): void
+    {
+        $adapter = $this->createMock(Adapter::class);
+        $adapter->method('execute')->willReturn(self::RESPONSE);
+        $keys = [];
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(static function ($key) use (&$keys) {
+            $keys[] = $key;
+            return false;
+        });
+        foreach (['sandbox', 'production'] as $mode) {
+            $config = $this->createMock(ConfigRepository::class);
+            $config->method('getMode')->willReturn($mode);
+            (new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class), $config))
+                ->getSelectable('ES', 1);
+        }
+
+        $this->assertSame(['two_gateway_tax_codes_ES_1_sandbox', 'two_gateway_tax_codes_ES_1_production'], $keys);
     }
 
     public function testACachedListIsServedWithoutACall(): void
@@ -108,6 +129,9 @@ class TaxCodesTest extends TestCase
 
     private function service(Adapter $adapter, CacheInterface $cache): TaxCodes
     {
-        return new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class));
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getMode')->willReturn('sandbox');
+
+        return new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class), $config);
     }
 }

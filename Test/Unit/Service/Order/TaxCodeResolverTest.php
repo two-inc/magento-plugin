@@ -31,18 +31,27 @@ use Two\Gateway\Test\Stubs\UnderscoreDataObject;
 /**
  * TWO-24877: the tax_code each composed 0% line carries, through the real
  * composers. Product tax class 5 is the goods class, 7 the services class and
- * 9 the shipping tax class.
+ * 9 the shipping tax class unless a case says otherwise.
+ *
+ * Create is composed on a placement-shaped order: neither the order nor its
+ * items have an id yet, only the quote item ids conversion copied over.
  */
 class TaxCodeResolverTest extends TestCase
 {
     private const EXPORT = 'ES_IVA_EXPORT';
     private const INTRA = 'ES_IVA_INTRA_COMMUNITY';
     private const REVERSE = 'ES_IVA_REVERSE_CHARGE';
+    private const ART20 = 'ES_IVA_EXEMPT_ART20';
 
     /** @var bool whether the composers get a resolver; false composes as before TWO-24877 */
     private $withResolver = true;
 
+    /** @var int|null the store's shipping tax class as the repository reports it (null = None) */
+    private $shippingClass = 9;
+
     /**
+     * Create, then an edit of the order once saved, carry the resolved code.
+     *
      * @dataProvider createCases
      * @param array $products [product type, tax percent] per line
      * @param array|null $shipping [delivery country, postcode], null for no delivery address
@@ -61,16 +70,20 @@ class TaxCodeResolverTest extends TestCase
         bool $withShipping = false
     ): void {
         $order = $this->order($products, $shipping, $billing, $withShipping);
-        foreach ([[], ['isEdit' => true, 'placedTerms' => null]] as $additionalData) {
-            $payload = $this->composer(ComposeOrder::class, $merchant, $map)->execute($order, 'ref', $additionalData);
-            $this->assertSame($expected, $this->codes($payload['line_items']), $description);
-        }
+        $create = $this->composer(ComposeOrder::class, $merchant, $map)->execute($order, 'ref', []);
+        $this->assertSame($expected, $this->codes($create['line_items']), "$description: create");
+
+        $this->save($order);
+        $edit = $this->composer(ComposeOrder::class, $merchant, $map)
+            ->execute($order, 'ref', ['isEdit' => true, 'placedTerms' => null]);
+        $this->assertSame($expected, $this->codes($edit['line_items']), "$description: edit");
     }
 
     public static function createCases(): array
     {
         $goods = [['simple', 0.0]];
         $service = [['virtual', 0.0]];
+        $mixed = [['virtual', 0.0], ['simple', 0.0]];
         return [
             ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT], 'goods delivered outside the EU'],
             ['ES', [], $goods, ['US', '10001'], 'ES', [self::EXPORT], 'goods delivered outside the EU to a Spanish buyer'],
@@ -86,39 +99,84 @@ class TaxCodeResolverTest extends TestCase
             ['ES', [], $goods, ['ES', '28001'], 'FR', [null], 'goods delivered in Spain to a French buyer'],
             ['ES', [], $service, null, 'DE', [self::REVERSE], 'service to a buyer in another EU state'],
             ['ES', [], [['downloadable', 0.0]], null, 'FR', [self::REVERSE], 'download to a buyer in another EU state'],
+            ['ES', [], [['bundle', 0.0, true]], null, 'FR', [self::REVERSE], 'a bundle with nothing to ship is a service'],
+            ['ES', [], [['bundle', 0.0, false]], ['FR', '75001'], 'FR', [self::INTRA], 'a bundle that ships is goods'],
             ['ES', [], $service, null, 'ES', [null], 'service to a Spanish buyer'],
             ['ES', [], $service, null, 'NO', [null], 'service to a buyer outside the EU'],
             ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT, self::EXPORT], 'shipping follows goods', true],
             ['ES', [], $service, ['US', '10001'], 'DE', [self::REVERSE, self::REVERSE], 'shipping follows services', true],
-            ['ES', [], [['virtual', 0.0], ['simple', 0.0]], ['ES', '28001'], 'DE', [self::REVERSE, null, null], 'shipping in a mixed order follows the goods', true],
-            ['ES', ['5' => 'ES_IVA_EXEMPT_ART20'], $goods, ['US', '10001'], 'US', ['ES_IVA_EXEMPT_ART20'], 'the mapping beats the derivation'],
-            ['ES', ['5' => 'ES_IVA_EXEMPT_ART20'], $goods, ['ES', '28001'], 'ES', ['ES_IVA_EXEMPT_ART20'], 'the mapping covers a line nothing derives'],
+            ['ES', [], $mixed, ['ES', '28001'], 'DE', [self::REVERSE, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
+            ['ES', [], $mixed, ['US', '10001'], 'US', [null, self::EXPORT, self::EXPORT], 'a mixed order: no export code on the service', true],
+            ['ES', ['5' => self::ART20], $goods, ['US', '10001'], 'US', [self::ART20], 'the mapping beats the derivation'],
+            ['ES', ['5' => self::ART20], $goods, ['ES', '28001'], 'ES', [self::ART20], 'the mapping covers a line nothing derives'],
+            ['ES', ['7' => self::ART20], $mixed, ['US', '10001'], 'US', [self::ART20, self::EXPORT, self::EXPORT], 'a mapped service in a mixed order', true],
             ['ES', ['9' => 'ES_IVA_EXEMPT_ART22'], $goods, ['US', '10001'], 'US', [self::EXPORT, 'ES_IVA_EXEMPT_ART22'], 'the shipping tax class maps the shipping line', true],
             ['NO', [], $goods, ['US', '10001'], 'US', [null], 'a non-Spanish merchant with no mapping'],
             ['DE', ['5' => 'DE_ZERO'], $goods, ['DE', '10115'], 'DE', ['DE_ZERO'], 'a non-Spanish merchant with a mapping'],
-            ['ES', ['5' => 'ES_IVA_EXEMPT_ART20'], [['simple', 21.0]], ['US', '10001'], 'US', [null], 'a mapped line at 21%'],
+            ['ES', ['5' => self::ART20], [['simple', 21.0]], ['US', '10001'], 'US', [null], 'a mapped line at 21%'],
             ['ES', [], [['simple', 21.0], ['simple', 0.0]], ['US', '10001'], 'US', [null, self::EXPORT], 'only the 0% line of two'],
         ];
     }
 
     /**
-     * Fulfil (partial capture and partial shipment) and refund carry the same code as the create.
-     *
-     * @dataProvider laterPayloadCases
+     * Core's shipping class None is class 0, which the repository reports as null.
      */
-    public function testLaterPayloadsCarryTheCode(string $payload, array $expected, string $description): void
+    public function testShippingOnClassNoneTakesTheNoneRowsMapping(): void
     {
-        $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US', true);
+        $this->shippingClass = null;
+        $order = $this->order([['simple', 21.0]], ['ES', '28001'], 'ES', true);
 
-        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES')), $description);
+        $create = $this->composer(ComposeOrder::class, 'ES', ['0' => 'ES_IVA_EXEMPT_ART22'])->execute($order, 'ref', []);
+
+        $this->assertSame([null, 'ES_IVA_EXEMPT_ART22'], $this->codes($create['line_items']));
     }
 
-    public static function laterPayloadCases(): array
+    /**
+     * Capture, shipment and refund send the codes placement recorded, whatever
+     * has changed since; only a line placement never sent resolves afresh.
+     *
+     * @dataProvider laterPayloads
+     */
+    public function testLaterPayloadsSendTheCodesRecordedAtPlacement(string $payload, array $expected): void
+    {
+        $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['US', '10001'], 'US', true);
+        $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20])->execute($order, 'ref', []);
+        $this->save($order);
+        $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
+        $order->billing = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
+
+        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', [])), $payload);
+    }
+
+    public static function laterPayloads(): array
     {
         return [
-            ['capture', [self::EXPORT, self::EXPORT], 'partial capture, with shipping'],
-            ['shipment', [self::EXPORT, self::EXPORT], 'partial shipment, with shipping on the first'],
-            ['refund', [self::EXPORT, self::EXPORT, self::EXPORT], 'refund of a line, the adjustment and shipping'],
+            ['capture', [self::EXPORT, self::ART20, self::EXPORT]],
+            ['shipment', [self::EXPORT, self::ART20, self::EXPORT]],
+            // The adjustment was never placed, so it resolves against the edited Madrid address.
+            ['refund', [self::EXPORT, self::ART20, null, self::EXPORT]],
+        ];
+    }
+
+    /**
+     * An order placed before codes were recorded resolves every line as at placement.
+     *
+     * @dataProvider unrecordedPayloads
+     */
+    public function testAnOrderWithNoRecordResolvesAsAtPlacement(string $payload, array $expected): void
+    {
+        $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['ES', '28001'], 'DE', true);
+        $this->save($order);
+
+        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', ['5' => self::ART20])), $payload);
+    }
+
+    public static function unrecordedPayloads(): array
+    {
+        return [
+            ['capture', [self::ART20, self::REVERSE, null]],
+            ['shipment', [self::ART20, self::REVERSE, null]],
+            ['refund', [self::ART20, self::REVERSE, null, null]],
         ];
     }
 
@@ -129,14 +187,18 @@ class TaxCodeResolverTest extends TestCase
      */
     public function testPayloadIsByteIdenticalToBefore(string $merchant, float $percent, string $description): void
     {
-        $order = $this->order([['simple', $percent]], ['US', '10001'], 'US', true);
         foreach (['create', 'capture', 'shipment', 'refund'] as $payload) {
-            $this->withResolver = true;
-            $with = json_encode($this->{$payload}($order, $merchant));
-            $this->withResolver = false;
-            $without = json_encode($this->{$payload}($order, $merchant));
+            $sent = [];
+            foreach ([true, false] as $withResolver) {
+                $this->withResolver = $withResolver;
+                $order = $this->order([['simple', $percent]], ['US', '10001'], 'US', true);
+                if ($payload !== 'create') {
+                    $this->save($order);
+                }
+                $sent[] = json_encode($this->{$payload}($order, $merchant, []));
+            }
 
-            $this->assertSame($without, $with, "$description: $payload");
+            $this->assertSame($sent[1], $sent[0], "$description: $payload");
         }
     }
 
@@ -150,17 +212,19 @@ class TaxCodeResolverTest extends TestCase
 
     public function testASpanishMerchantsNonZeroLinesAreByteIdentical(): void
     {
-        $order = $this->order([['simple', 21.0], ['virtual', 10.0]], ['US', '10001'], 'DE');
-        $order->setShippingAmount(10.00);
-        $order->setShippingTaxAmount(2.10);
-        $order->setData('two_shipping_tax_rate_source', OrderService::SHIPPING_RATE_DECLARED);
-        $order->setData('two_shipping_tax_rate', 21.0);
+        $sent = [];
+        foreach ([true, false] as $withResolver) {
+            $this->withResolver = $withResolver;
+            $order = $this->order([['simple', 21.0], ['virtual', 10.0]], ['US', '10001'], 'DE', true);
+            $order->setShippingTaxAmount(2.10);
+            $order->setData('two_shipping_tax_rate_source', OrderService::SHIPPING_RATE_DECLARED);
+            $order->setData('two_shipping_tax_rate', 21.0);
+            $order->setGrandTotal((float)$order->getGrandTotal() + 2.10);
+            $order->setTaxAmount((float)$order->getTaxAmount() + 2.10);
+            $sent[] = json_encode($this->create($order, 'ES', []));
+        }
 
-        $this->withResolver = true;
-        $with = json_encode($this->create($order, 'ES'));
-        $this->withResolver = false;
-
-        $this->assertSame(json_encode($this->create($order, 'ES')), $with);
+        $this->assertSame($sent[1], $sent[0]);
     }
 
     /**
@@ -175,27 +239,33 @@ class TaxCodeResolverTest extends TestCase
         $this->assertSame($lines, $resolver->apply($lines, $order));
     }
 
-    private function create(Order $order, string $merchant): array
+    private function create(Order $order, string $merchant, array $map): array
     {
-        return $this->composer(ComposeOrder::class, $merchant, [])->execute($order, 'ref', []);
+        return $this->composer(ComposeOrder::class, $merchant, $map)->execute($order, 'ref', []);
     }
 
-    private function capture(Order $order, string $merchant): array
+    private function capture(Order $order, string $merchant, array $map): array
     {
         $invoice = new Invoice();
         $invoice->setOrder($order);
-        $invoice->setAllItems([$this->item(['order_item_id' => 1, 'qty' => 1, 'qty_ordered' => 2, 'row_total' => 50.00, 'tax_amount' => 0.0, 'name' => 'Item 1', 'sku' => 'SKU1'])]);
+        $items = [];
+        foreach ($order->itemsById as $id => $item) {
+            $items[] = $this->item(['order_item_id' => $id, 'qty' => 1, 'qty_ordered' => 2, 'row_total' => 50.00,
+                'tax_amount' => $item->getTaxAmount() / 2, 'name' => "Item $id", 'sku' => "SKU$id"]);
+        }
+        $invoice->setAllItems($items);
         $invoice->setShippingAmount(10.00);
         $invoice->setShippingTaxAmount(0.0);
         $invoice->setShippingInclTax(10.00);
-        $invoice->setGrandTotal(60.00);
-        $invoice->setTaxAmount(0.0);
+        $tax = array_sum(array_map(static fn ($item) => $item->getTaxAmount(), $items));
+        $invoice->setGrandTotal(50.00 * count($items) + 10.00 + $tax);
+        $invoice->setTaxAmount($tax);
         $invoice->setDiscountAmount(0.0);
 
-        return $this->composer(ComposeCapture::class, $merchant, [])->execute($invoice)['line_items'];
+        return $this->composer(ComposeCapture::class, $merchant, $map)->execute($invoice)['line_items'];
     }
 
-    private function shipment(Order $order, string $merchant): array
+    private function shipment(Order $order, string $merchant, array $map): array
     {
         $shipment = new class extends Shipment {
             /** @var array */
@@ -211,24 +281,33 @@ class TaxCodeResolverTest extends TestCase
                 return 5;
             }
         };
-        $shipment->items = [$this->item(['order_item_id' => 1, 'qty' => 1, 'name' => 'Item 1', 'sku' => 'SKU1'])];
+        foreach (array_keys($order->itemsById) as $id) {
+            $shipment->items[] = $this->item(['order_item_id' => $id, 'qty' => 1, 'name' => "Item $id", 'sku' => "SKU$id"]);
+        }
 
-        return $this->composer(ComposeShipment::class, $merchant, [], $order)->execute($shipment, $order)['line_items'];
+        return $this->composer(ComposeShipment::class, $merchant, $map, $order)->execute($shipment, $order)['line_items'];
     }
 
-    private function refund(Order $order, string $merchant): array
+    private function refund(Order $order, string $merchant, array $map): array
     {
         $creditmemo = new Creditmemo();
-        $creditmemo->setItems([$this->item(['order_item_id' => 1, 'qty' => 1, 'row_total' => 50.00, 'name' => 'Item 1', 'sku' => 'SKU1'])]);
+        $items = [];
+        $tax = 0.0;
+        foreach ($order->itemsById as $id => $item) {
+            $items[] = $this->item(['order_item_id' => $id, 'qty' => 1, 'row_total' => 50.00, 'name' => "Item $id", 'sku' => "SKU$id"]);
+            $tax += $item->getTaxAmount() / 2;
+        }
+        $creditmemo->setItems($items);
         $creditmemo->setAdjustmentPositive(5.00);
         $creditmemo->setShippingAmount(10.00);
         $creditmemo->setShippingInclTax(10.00);
         $creditmemo->setShippingTaxAmount(0.0);
-        $creditmemo->setGrandTotal(65.00);
-        $creditmemo->setTaxAmount(0.0);
+        $creditmemo->setGrandTotal(50.00 * count($items) + 15.00 + $tax);
+        $creditmemo->setTaxAmount($tax);
         $creditmemo->setOrder($order);
 
-        return $this->composer(ComposeRefund::class, $merchant, [], $order)->execute($creditmemo, 65.00, $order)['line_items'];
+        return $this->composer(ComposeRefund::class, $merchant, $map, $order)
+            ->execute($creditmemo, (float)$creditmemo->getGrandTotal(), $order)['line_items'];
     }
 
     private function codes(array $lines): array
@@ -237,7 +316,21 @@ class TaxCodeResolverTest extends TestCase
     }
 
     /**
-     * @param array $products [product type, tax percent] per item, 50.00 net each, quantity 2
+     * The order as saved: it and its items now have ids.
+     */
+    private function save(Order $order): void
+    {
+        $order->setData('id', 7);
+        foreach ($order->itemsById as $id => $item) {
+            $item->data['id'] = $id;
+            $item->data['item_id'] = $id;
+        }
+    }
+
+    /**
+     * A placement-shaped order: no ids yet, items keyed by their future id.
+     *
+     * @param array $products [product type, tax percent, is virtual] per item, 100.00 net each, quantity 2
      * @param array|null $shipping [country, postcode] of the delivery address; null for none
      * @param string $billing billing country
      * @param bool $withShipping whether the order charges 10.00 shipping at 0%
@@ -254,7 +347,12 @@ class TaxCodeResolverTest extends TestCase
 
             public function getItemById($id)
             {
-                return $this->itemsById[$id] ?? null;
+                foreach ($this->itemsById as $item) {
+                    if ($item->getId() !== null && (string)$item->getId() === (string)$id) {
+                        return $item;
+                    }
+                }
+                return null;
             }
 
             public function getAllVisibleItems()
@@ -274,16 +372,17 @@ class TaxCodeResolverTest extends TestCase
         };
         $grand = 0.0;
         $taxTotal = 0.0;
-        foreach (array_values($products) as $i => [$type, $percent]) {
+        foreach (array_values($products) as $i => $product) {
+            [$type, $percent] = $product;
             $id = $i + 1;
             $tax = round(100.00 * $percent / 100, 2);
             $order->itemsById[$id] = $this->item([
-                'id' => $id,
-                'item_id' => $id,
+                'quote_item_id' => 100 + $id,
                 'name' => "Item $id",
                 'sku' => "SKU$id",
                 'product_type' => $type,
-                'product' => new DataObject(['tax_class_id' => $type === 'simple' ? '5' : '7']),
+                'is_virtual' => $product[2] ?? in_array($type, ['virtual', 'downloadable'], true),
+                'product' => new DataObject(['tax_class_id' => in_array($type, ['virtual', 'downloadable'], true) ? '7' : '5']),
                 'qty_ordered' => 2,
                 'row_total' => 100.00,
                 'tax_amount' => $tax,
@@ -326,7 +425,7 @@ class TaxCodeResolverTest extends TestCase
     {
         return new class ($data) extends Order\Item implements \Magento\Sales\Api\Data\OrderItemInterface {
             /** @var array */
-            private $data;
+            public $data;
 
             public function __construct(array $data)
             {
@@ -345,7 +444,7 @@ class TaxCodeResolverTest extends TestCase
     {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getTaxCodeMap')->willReturn($map);
-        $config->method('getShippingTaxClassId')->willReturn(9);
+        $config->method('getShippingTaxClassId')->willReturn($this->shippingClass);
         $config->method('getSurchargeTaxClassId')->willReturn(null);
         $config->method('isTaxSubtotalsEnabled')->willReturn(true);
         $config->method('getWeightUnit')->willReturn('kg');
