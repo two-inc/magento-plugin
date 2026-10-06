@@ -1,7 +1,8 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, authoriseStore } from './fixtures';
 import {
     addToCart,
     adminLogin,
+    adminLogout,
     availableMethods,
     editShippingMethod,
     fillCheckout,
@@ -144,12 +145,14 @@ test.describe('minimum order value gate', () => {
         test.setTimeout(180_000);
         if (!pending) return;
         const context = await browser.newContext();
+        await authoriseStore(context);
         const page = await context.newPage();
         try {
             await adminLogin(page);
             await writeMinimumConfig(page, pending);
             pending = null;
         } finally {
+            await adminLogout(page);
             await context.close();
         }
     });
@@ -190,6 +193,7 @@ test.describe('minimum order value gate', () => {
         // Admin runs in its own context so the buyer page keeps its session and
         // is never reloaded — the whole point is the in-page recalc.
         const adminContext = await browser.newContext();
+        await authoriseStore(adminContext);
         const adminPage = await adminContext.newPage();
         await adminLogin(adminPage);
         const original = await readMinimumConfig(adminPage);
@@ -211,14 +215,17 @@ test.describe('minimum order value gate', () => {
             // `not.toContain` alone also passes on the empty list the payment
             // service shows mid-repopulation.
             await expect
-                .poll(async () => {
-                    const methods = await availableMethods(page);
+                .poll(
+                    async () => {
+                        const methods = await availableMethods(page);
 
-                    return {
-                        offered: methods.includes('two_payment'),
-                        populated: methods.includes(control as string)
-                    };
-                }, { timeout: 25_000 })
+                        return {
+                            offered: methods.includes('two_payment'),
+                            populated: methods.includes(control as string)
+                        };
+                    },
+                    { timeout: 25_000 }
+                )
                 .toEqual({ offered: false, populated: true });
             // …and back, so the gate re-opens as well as closes.
             await editShippingMethod(page);
@@ -231,9 +238,13 @@ test.describe('minimum order value gate', () => {
             // Restore exactly as found — including putting a field back on its
             // default (Use Default) rather than filling an empty string into a
             // now-disabled input, which is what timed the teardown out before.
-            await writeMinimumConfig(adminPage, original);
-            pending = null;
-            await adminContext.close();
+            try {
+                await writeMinimumConfig(adminPage, original);
+                pending = null;
+            } finally {
+                await adminLogout(adminPage);
+                await adminContext.close();
+            }
         }
     });
 });
