@@ -227,6 +227,17 @@ class ConfigProviderApiKeyGateTest extends TestCase
         );
     }
 
+    /** Order intent is composed server-side (TWO-26092), so the page gets only what the browser still reads. */
+    public function testTheIntentConfigCarriesOnlyWhatTheBrowserReads(): void
+    {
+        $config = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE), null)->getConfig();
+
+        $this->assertSame(
+            ['extensionPlatformName', 'extensionDBVersion', 'merchant'],
+            array_keys($config['payment']['two_payment']['orderIntentConfig'])
+        );
+    }
+
     /** With both sources resolvable the verdict wins, and only on a success has it one. */
     public function testTheVerdictsOwnMerchantWinsOverTheRecord(): void
     {

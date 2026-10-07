@@ -16,9 +16,16 @@ class Calculation
      * @param mixed $billingAddress
      * @param mixed $customerTaxClass
      * @param mixed $storeId
+     * @param mixed $customerId
      * @return \Magento\Framework\DataObject
      */
-    public function getRateRequest($shippingAddress = null, $billingAddress = null, $customerTaxClass = null, $storeId = null)
+    public function getRateRequest(
+        $shippingAddress = null,
+        $billingAddress = null,
+        $customerTaxClass = null,
+        $storeId = null,
+        $customerId = null
+    )
     {
         return new \Magento\Framework\DataObject();
     }

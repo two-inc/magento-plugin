@@ -115,8 +115,6 @@ class HideFieldsUnlessConfiguredTest extends TestCase
 
     public static function visibilityProvider(): array
     {
-        $rate = self::field('two_order_management/order_management/default_shipping_tax_rate', 'payment/two_payment/default_shipping_tax_rate');
-        $rateRow = 'payment/two_payment/default_shipping_tax_rate@default:';
         $type = self::field('two_payment/payment_terms/payment_terms_type', 'payment/two_payment/payment_terms_type');
         $typeRow = 'payment/two_payment/payment_terms_type@default:';
         $brandType = self::field('acme_payment/payment_terms/payment_terms_type', 'payment/acme_payment/payment_terms_type');
@@ -125,12 +123,8 @@ class HideFieldsUnlessConfiguredTest extends TestCase
         $customRow = 'payment/two_payment/payment_terms_duration_days@default:';
 
         return [
-            [$rate, false, [$rateRow => '21.5'], false, 'already hidden natively — passed through'],
+            [$type, false, [$typeRow => 'end_of_month'], false, 'already hidden natively — passed through'],
             [self::field('two_version/logging/debug', 'payment/two_payment/debug'), true, [], true, 'unregistered field — passed through'],
-            [$rate, true, [], false, 'shipping rate unset — hidden'],
-            [$rate, true, [$rateRow => '21.5'], true, 'shipping rate stored — shown'],
-            [$rate, true, [$rateRow => '0.00'], true, 'stored 0% is a declaration — shown'],
-            [$rate, true, [$rateRow => 'abc'], false, 'junk is not a declaration — hidden'],
             [$type, true, [], false, 'terms type unset — hidden'],
             [$type, true, [$typeRow => 'standard'], false, 'terms type standard — hidden'],
             [$type, true, [$typeRow => 'end_of_month'], true, 'terms type end of month — shown'],
@@ -141,11 +135,11 @@ class HideFieldsUnlessConfiguredTest extends TestCase
             [$custom, true, [$customRow => ''], false, 'deprecated custom days stored empty — hidden'],
             [$custom, true, [$customRow => '37'], true, 'deprecated custom days carrying a legacy term — shown'],
             [
-                self::field('acme_order_management/order_management/default_shipping_tax_rate', 'payment/acme_payment/default_shipping_tax_rate'),
+                self::field('acme_payment/payment_terms/payment_terms_duration_days', 'payment/acme_payment/payment_terms_duration_days'),
                 true,
-                ['payment/acme_payment/default_shipping_tax_rate@default:' => '0'],
+                ['payment/acme_payment/payment_terms_duration_days@default:' => '37'],
                 true,
-                'brand shipping rate stored — shown',
+                'brand custom days stored — shown',
             ],
             [
                 self::field('foo_payment/payment_terms/payment_terms_type', 'payment/foo_payment/payment_terms_type'),

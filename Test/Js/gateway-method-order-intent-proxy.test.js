@@ -71,7 +71,6 @@ function loadRenderer() {
         getTelephone: function () { return '+4712345678'; },
         _brandConfig: {
             orderIntentConfig: {
-                weightUnit: 'kg',
                 extensionPlatformName: 'magento2',
                 extensionDBVersion: '1.0.0',
                 merchant: { id: 'm-1', short_name: 'acme' }
@@ -90,7 +89,7 @@ describe('the order-intent check goes through the plugin, not straight to the AP
 
         expect(requests).toHaveLength(1);
         expect(requests[0].options.url).toBe(HARNESS_BASE_URL + 'rest/V1/two/order-intent');
-        expect(JSON.parse(JSON.parse(requests[0].options.data).payload).gross_amount).toBe('124.00');
+        expect(JSON.parse(JSON.parse(requests[0].options.data).payload).buyer.company).toBeDefined();
     });
 
     // The merchant is resolved server-side and whatever the browser sent would be

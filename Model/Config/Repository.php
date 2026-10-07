@@ -20,6 +20,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
+use Two\Gateway\Model\Config\Backend\TaxCodeMap as TaxCodeMapBackend;
 use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
@@ -296,24 +297,27 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getDefaultShippingTaxRate(?int $storeId = null): ?float
+    public function getShippingTaxClassId(?int $storeId = null): ?int
     {
-        return StoredRate::normalise($this->getConfig($this->path('default_shipping_tax_rate'), $storeId));
+        // Same int cast as core's Tax\Model\Config::getShippingTaxClass().
+        $classId = (int)$this->getConfig(self::XML_PATH_SHIPPING_TAX_CLASS, $storeId);
+        return $classId > 0 ? $classId : null;
     }
 
     /**
      * @inheritDoc
      */
-    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int
+    public function isShippingTaxFallbackEnabled(?int $storeId = null): bool
     {
-        $configured = $this->getConfig($this->path('default_shipping_tax_class'), $storeId);
-        // Unselected ('' / unset) or non-numeric never int-casts to 0 —
-        // class id 0 is a real selection ("None"), same convention as
-        // getSurchargeTaxClassId().
-        if ($configured === null || $configured === '' || !is_numeric($configured)) {
-            return null;
-        }
-        return (int)$configured;
+        return $this->isSetFlag($this->path('enable_shipping_tax_fallback'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getTaxCodeMap(?int $storeId = null): array
+    {
+        return TaxCodeMapBackend::normalise($this->getConfig($this->path('tax_code_map'), $storeId));
     }
 
     /**

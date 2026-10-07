@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <!-- CI fixture only (TWO-26092): a real subscriber, inert until a test arms it. -->
+    <type name="Two\Gateway\Api\OrderPostprocessingInterface">
+        <plugin name="two_order_postprocessing_fixture"
+                type="Two\OrderPostprocessingFixture\Plugin\Subscriber"/>
+    </type>
+</config>

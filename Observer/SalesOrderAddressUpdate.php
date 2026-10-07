@@ -10,10 +10,14 @@ namespace Two\Gateway\Observer;
 use Exception;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeOrder;
+use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
@@ -23,6 +27,19 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class SalesOrderAddressUpdate implements ObserverInterface
 {
+    /** The order states and statuses in which the API accepts an edit; it refuses any other. */
+    private const EDITABLE_STATES = ['UNVERIFIED', 'VERIFIED', 'CONFIRMED'];
+    private const EDITABLE_STATUSES = ['APPROVED', 'REJECTED', 'DECLINED'];
+
+    /** States and status meaning all or part of the order has been invoiced. */
+    private const INVOICED_STATES = [
+        'FULFILLING', 'FULFILMENT_NEEDS_MANUAL_RESOLUTION', 'FULFILLED', 'DELIVERED', 'REFUNDED',
+    ];
+    private const PARTIAL_STATUS = 'PARTIAL';
+
+    /** Keeps an address save from hanging on the lookup when the API is unreachable; a timeout sends the edit. */
+    private const LOOKUP_TIMEOUT_SECONDS = 10;
+
     /**
      * @var ConfigRepository
      */
@@ -56,13 +73,21 @@ class SalesOrderAddressUpdate implements ObserverInterface
     /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var ManagerInterface */
+    private $messageManager;
+
+    /** @var OrderPostprocessor */
+    private $orderPostprocessor;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         OrderRepositoryInterface $orderRepository,
         ComposeOrder $compositeOrder,
         Adapter $apiAdapter,
-        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry
+        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
+        ManagerInterface $messageManager,
+        OrderPostprocessor $orderPostprocessor
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -70,6 +95,8 @@ class SalesOrderAddressUpdate implements ObserverInterface
         $this->compositeOrder = $compositeOrder;
         $this->apiAdapter = $apiAdapter;
         $this->overlayRegistry = $overlayRegistry;
+        $this->messageManager = $messageManager;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -86,7 +113,22 @@ class SalesOrderAddressUpdate implements ObserverInterface
             && $order->getTwoOrderId()
         ) {
             try {
+                $refusal = $this->editRefusal($order);
+                if ($refusal !== null) {
+                    // The API would refuse this edit, so say why plainly instead of sending it.
+                    $order->addStatusToHistory($order->getStatus(), $refusal);
+                    $this->messageManager->addNoticeMessage($refusal);
+                    $order->save();
+                    return $this;
+                }
                 $additionalInformation = $order->getPayment()->getAdditionalInformation();
+                // Orders placed before terms were stored have none; the edit then omits terms so Two keeps the agreed ones.
+                $placedTerms = is_array($additionalInformation['terms'] ?? null) ? $additionalInformation['terms'] : null;
+                if ($placedTerms !== null && (int)($placedTerms['duration_days'] ?? 0) <= 0) {
+                    throw new LocalizedException(
+                        __('Order edit was not sent: the order\'s stored payment term is not usable.')
+                    );
+                }
                 // Department and Project are optional at checkout, and the
                 // stored payload now leaves the keys out entirely when the
                 // buyer skipped them (TWO-25386) — so they must be coalesced
@@ -101,6 +143,8 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         'companyId' => $additionalInformation['buyer']['company']['organization_number'],
                         'department' => $additionalInformation['buyer_department'] ?? '',
                         'project' => $additionalInformation['buyer_project'] ?? '',
+                        'isEdit' => true,
+                        'placedTerms' => $placedTerms,
                     ]
                 );
                 // TWO-25386: merchant_reference, merchant_additional_info and
@@ -122,7 +166,11 @@ class SalesOrderAddressUpdate implements ObserverInterface
                 // different field and is composed as usual, above.
                 $response = $this->apiAdapter->execute(
                     '/v1/order/' . $order->getTwoOrderId(),
-                    $payload,
+                    $this->orderPostprocessor->process(
+                        Postprocessing::REQUEST_ORDER_UPDATE,
+                        $payload,
+                        ['trigger' => 'admin_edit', 'endpoint' => '/v1/order/{id}', 'order' => $order]
+                    ),
                     'PUT',
                     (int)$order->getStoreId()
                 );
@@ -132,6 +180,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         $order->getStatus(),
                         $error
                     );
+                    $this->messageManager->addWarningMessage((string)$error);
                 } else {
                     $comment = __('Order edit request was accepted by %1', $this->brandRegistry->getProductName());
                     $order->addStatusToHistory($order->getStatus(), $comment->render());
@@ -141,10 +190,67 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     $order->getStatus(),
                     $e->getMessage()
                 );
+                // The admin's address save still succeeds, so say the edit did not reach Two.
+                $this->messageManager->addWarningMessage($e->getMessage());
             }
 
             $order->save();
         }
         return $this;
+    }
+
+    /**
+     * Why the API would refuse an edit to this order, or null when it would accept one.
+     *
+     * Reads the order's live state and status and applies the same rule as
+     * the API's edit handler: only the editable states and statuses above are
+     * accepted. Local flags cannot stand in for this, because the stored
+     * completion marker is set by a partial fulfilment as well as a full one.
+     * After a partial fulfilment the order the admin edits has the PARTIAL
+     * status, and once every part is fulfilled its state becomes FULFILLED.
+     * A failed lookup returns null, so the edit is sent and any refusal is
+     * reported as before.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return string|null
+     */
+    private function editRefusal($order): ?string
+    {
+        try {
+            $response = $this->apiAdapter->execute(
+                '/v1/order/' . $order->getTwoOrderId(),
+                [],
+                'GET',
+                (int)$order->getStoreId(),
+                null,
+                null,
+                self::LOOKUP_TIMEOUT_SECONDS
+            );
+        } catch (Exception $e) {
+            return null;
+        }
+        if ($order->getPayment()->getMethodInstance()->getErrorFromResponse($response)) {
+            return null;
+        }
+        $state = $response['state'] ?? null;
+        $status = $response['status'] ?? null;
+        $refusedState = is_string($state) && !in_array($state, self::EDITABLE_STATES, true);
+        $refusedStatus = is_string($status) && !in_array($status, self::EDITABLE_STATUSES, true);
+        if (!$refusedState && !$refusedStatus) {
+            return null;
+        }
+        $productName = $this->brandRegistry->getProductName();
+        if (in_array($state, self::INVOICED_STATES, true) || $status === self::PARTIAL_STATUS) {
+            return __(
+                '%1 has already invoiced all or part of this order, so this change was not sent to %1.',
+                $productName
+            )->render();
+        }
+
+        return __(
+            '%1 no longer accepts changes to this order (%2), so this change was not sent to %1.',
+            $productName,
+            $refusedState ? $state : $status
+        )->render();
     }
 }

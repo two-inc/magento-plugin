@@ -1041,8 +1041,8 @@ dependency that way and relying on DI to fill it in gets you a silent
 `bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
 (value null) instead of `"_i_"` (instance); that is the check.
 
-`Service\Order::$orderTaxManagement` and `Service\Order::$feeLineProviderPool`
-are both declared optional for constructor BC and both named explicitly in
+`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool` and
+`Service\Order::$taxCodeResolver` are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 
@@ -1064,20 +1064,91 @@ has no entity id and the `sales_order_tax_item` rows the management interface
 reads do not exist yet. That interface stays the source for the post-save
 consumers (capture, refund).
 
-Nothing declared and no shipping tax charged is 0% — a store whose shipping
-is untaxed records no tax row at all, and 0% is a statement rather than a
-guess. Nothing declared but tax charged consults the "Default Shipping Tax
-Rate" admin field, and with that unset the order is refused rather than
-given an assumed rate.
+Nothing declared is "no rate provided" (TWO-26117), whatever the line's tax.
+The shipping tax fallback decides what happens then. It has no admin field,
+so a merchant only gets it after talking to us:
+
+```
+bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
+```
+
+(`payment/<brand code>/...` on an overlay; drop the scope flags for the whole
+install.) It is populated only when enabled AND Magento core's own shipping tax
+class (`tax/classes/shipping_tax_class`, store scope) is set. Blank, the line
+goes at 0% with its tax as charged, unchecked, and the API validates it: the
+plugin never refuses over shipping tax. Populated, the rate resolves through
+that class and the tax rules engine, with the arguments core's quote-time tax
+calculator uses, including the tax class of the customer group the order was
+placed under (TWO-26073), and the line's tax must reconcile with it within
+0.02 or the request is refused. A declared rate, 0% included, is always sent
+as is and never checked by the plugin. A refund relays the rate without the
+check. The plugin has no shipping tax setting of its own.
+
+Magento 2.4.7 core records a 0% shipping rate on the quote only when shipping
+prices exclude tax (`getAppliedTaxes()` skips 0% on the tax-inclusive path),
+and `ConvertQuoteTaxToOrderTax` never saves a 0% row, so after placement the
+tax rows cannot tell a declared 0% from no rate. Placement therefore records
+the case on `sales_order`: `two_shipping_tax_rate_source` (`declared`/`none`)
+and `two_shipping_tax_rate` (percent; the declared rate, or for `none` the
+fallback's resolved rate, NULL when the fallback was blank). Every later
+request reads that record and never the current configuration; a `none` with a
+rate is re-checked against it (except on refund). Both NULL is an order placed
+before the record existed, which resolves live as at placement.
 
 `validateTaxReconciliation()` closes the same loop at composition time: a
-line whose declared tax does not follow from its own declared rate and net
-declines the checkout with a generic buyer notice. It never corrects the
+line other than shipping whose declared tax does not follow from its own
+declared rate and net declines the checkout with a generic buyer notice. It never corrects the
 numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
 the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
 fraction-of-net term, and a discounted line may reconcile against
 `net + discount` as well as `net`, because "Before Discount" tax calculation
 taxes the undiscounted base.
+
+## A 0% line carries a tax code, resolved in the builder
+
+`Service\Order\TaxCodeResolver` adds `tax_code` to every composed line whose
+`tax_rate` is 0 (TWO-24877). Each `Compose*::execute()` that sends lines calls
+`Service\Order::applyTaxCodes()` before returning, so the code is on the
+payload before the postprocessing hook runs and a subscriber can override it.
+Order intent is left alone: the API does not check codes there.
+
+The order is: the merchant's mapping (`tax_code_map`, product tax class id to
+code; the shipping line keys on core's shipping tax class, the surcharge on its
+own), then, for a merchant whose record says `country_code` ES, the derivation
+table in the README, then nothing. **The plugin never refuses over a missing
+code**: the API does. Do not add a guard that declines a Spanish 0% line with
+no code; the line is sent and Two decides.
+
+Two rules hold the invariants and should not be loosened:
+
+-   A non-zero line, and every line of a non-Spanish merchant with no mapping,
+    is composed byte for byte as before. `TaxCodeResolverTest` pins that by
+    composing each payload with and without the resolver.
+-   The merchant's country is the merchant record's, never the store's
+    configured country: the API rejects a code whose country differs from the
+    Two merchant's.
+
+Placement stores what each 0% line resolved to, "no code" included, in
+`sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, then
+`shipping`, `surcharge`, and one shared `fee` key for every other `OTHER` or
+`BUYER_FEE` line), the same pattern as the shipping rate record. Fee lines
+share a key because they all resolve alike (no class, the order's goods or
+service type) and because a fee can change id after placement: a provider that
+itemizes only a saved order leaves the create with an "Other charges" residual
+and the edit with its own line. The refund `adjustment` line is deliberately
+not recorded and keeps resolving live until its split is decided. Edit,
+capture, shipment and refund read the record and never resolve those lines
+again; a line it does not cover, or an order placed before it existed,
+resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
+items, so a fee provider's numeric id is never taken for one, and a product
+line no item matches takes goods or service from its own type. At placement
+the items have no id, so `ComposeOrder` matches its product lines to the
+items behind them on SKU, the name only breaking a tie, never by position
+(`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
+shift classes. The dropdown list comes from
+`Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
+when it cannot be read, the admin field carries the saved mapping as hidden
+inputs so a section save keeps it.
 
 ## An unitemized fee is reconciled per entity, and refundable
 
@@ -1127,7 +1198,7 @@ from the order columns, where `ComposeOrder::execute()` still falls back to
 the checkout session. It also loads no products, which a totals collector
 re-run on every credit-memo render cannot afford, and it avoids
 `getShippingLineOrder()`, because resolving the shipping tax rate queries the
-tax engine and throws when none is declared.
+tax engine and can refuse the line (TWO-26117).
 
 **The fee's VAT is not already on the credit memo.** Core's
 `Creditmemo\Total\Tax` builds the tax up from item `tax_invoiced` plus
