@@ -128,8 +128,11 @@ class TaxCodeMap extends Field
     {
         $options = ['' => (string)__('(none)')];
         foreach ($codes as $entry) {
-            $rate = is_numeric($entry['rate']) ? ' (' . (float)$entry['rate'] * 100 . '%)' : '';
-            $options[$entry['code']] = trim($entry['code'] . ' ' . $entry['name']) . $rate;
+            $name = trim($entry['name']);
+            // A rated display name already ends in its rate, "(21%)"; only an unrated one gets it appended.
+            $rated = preg_match('/\([^()]*%\)$/', $name) === 1;
+            $rate = !$rated && is_numeric($entry['rate']) ? ' (' . (float)$entry['rate'] * 100 . '%)' : '';
+            $options[$entry['code']] = trim($entry['code'] . ' ' . $name) . $rate;
         }
         if ($selected !== '' && !isset($options[$selected])) {
             $options[$selected] = $selected;

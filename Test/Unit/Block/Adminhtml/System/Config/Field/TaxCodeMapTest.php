@@ -44,6 +44,35 @@ class TaxCodeMapTest extends TestCase
         $this->assertStringContainsString('ES_IVA_STANDARD IVA general (21%)', $html);
     }
 
+    /**
+     * TWO-26244: a rated display name already ends in its rate, so the label carries the rate once.
+     *
+     * @dataProvider labels
+     */
+    public function testTheLabelShowsTheRateOnce(string $name, string $rate, string $label, string $description): void
+    {
+        $html = $this->render([['code' => 'C', 'name' => $name, 'rate' => $rate]], null, '{}');
+
+        $this->assertStringContainsString('<option value="C">' . $label . '</option>', $html, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string, 3: string}>
+     */
+    public static function labels(): array
+    {
+        return [
+            'rated' => ['IVA General (21%)', '0.21', 'C IVA General (21%)', 'a rated name is not given the rate again'],
+            'trailing space' => ['IVA Reducido (10%)  ', '0.1', 'C IVA Reducido (10%)', 'trailing space does not hide the rate'],
+            'spaced rate' => ['IVA Superreducido (4 %)', '0.04', 'C IVA Superreducido (4 %)', 'a spaced rate counts as a rate'],
+            'unrated' => ['Exento', '0', 'C Exento (0%)', 'an unrated name gets the rate'],
+            'bracket without %' => ['Inversión del sujeto pasivo (art. 84)', '0', 'C Inversión del sujeto pasivo (art. 84) (0%)', 'a bracket without % is not a rate'],
+            'rate mid-name' => ['IVA (21%) general', '0.21', 'C IVA (21%) general (21%)', 'a rate mid-name is not the trailing rate'],
+            'no name' => ['', '0.21', 'C (21%)', 'no name still shows the rate'],
+            'no rate' => ['Exento', '', 'C Exento', 'no rate appends nothing'],
+        ];
+    }
+
     public function testASavedCodeTheListNoLongerHasStaysSelectable(): void
     {
         $html = $this->render(self::CODES, 2, '{"2":"ES_IVA_RETIRED"}');
