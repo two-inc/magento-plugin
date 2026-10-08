@@ -25,6 +25,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // rather than left showing a stale "checking"/live verdict.
         var savedMessage = $message.text();
         var savedIconClass = $icon.attr('class');
+        var $merchant = $panel.find('.two-api-key-verify__merchant');
+        var $merchantId = $merchant.find('.two-api-key-verify__merchant-id');
+        var $shortName = $merchant.find('.two-api-key-verify__merchant-short-name');
+        var savedMerchantId = $merchantId.text();
+        var savedShortName = $shortName.text();
+        var savedMerchantHidden = $merchant.prop('hidden');
         var timer = null;
         var latest = 0;
         var pending = null;
@@ -33,6 +39,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             if (!status) {
                 $message.text(savedMessage);
                 $icon.attr('class', savedIconClass);
+                $merchantId.text(savedMerchantId);
+                $shortName.text(savedShortName);
+                $merchant.prop('hidden', savedMerchantHidden);
                 return;
             }
             $message.text(message);
@@ -75,6 +84,16 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     return;
                 }
                 render(String(response.status), String(response.message || ''));
+                // Show the merchant the candidate resolves to straight away
+                // (nothing is saved until the section save). A key Two
+                // rejected clears it; a check that judged nothing leaves it.
+                if (response.verified && response.merchant_id) {
+                    $merchantId.text(String(response.merchant_id));
+                    $shortName.text(response.merchant_short_name ? ' \u00b7 ' + response.merchant_short_name : '');
+                    $merchant.prop('hidden', false);
+                } else if (response.definitive) {
+                    $merchant.prop('hidden', true);
+                }
             }).fail(function () {
                 if (sequence === latest) {
                     render('', '');

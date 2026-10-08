@@ -21,7 +21,8 @@ use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
  *
  * Verifies a CANDIDATE key that has not been saved, so an admin learns the
  * key is wrong before the section save rather than after it. The candidate
- * is never echoed back and never cached.
+ * is never echoed back and never cached. On success the response carries the
+ * merchant id and short name the key resolves to, for display only.
  */
 class VerifyApiKey extends Action
 {
@@ -79,10 +80,22 @@ class VerifyApiKey extends Action
         $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, null, $scope);
         $described = $this->statusMessage->describe($status);
 
-        return $result->setData([
+        $data = [
             'verified' => $status['status'] === ApiKeyStatus::OK,
             'status' => $described['status'],
             'message' => (string)$described['message'],
-        ]);
+            // Only a key Two actually rejected should clear the merchant
+            // details on screen; an outage or timeout judged nothing about it.
+            'definitive' => $status['status'] === ApiKeyStatus::INVALID_KEY
+                || $status['status'] === ApiKeyStatus::NOT_CONFIGURED,
+        ];
+        // The merchant the candidate resolves to, so the settings page can show
+        // it straight away. Nothing is saved here; the section save does that.
+        if (isset($described['merchant_id'])) {
+            $data['merchant_id'] = $described['merchant_id'];
+            $data['merchant_short_name'] = $described['merchant_short_name'] ?? '';
+        }
+
+        return $result->setData($data);
     }
 }
