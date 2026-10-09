@@ -744,16 +744,18 @@ exactly one store region code, then a value equal to exactly one store region
 name (`RegionDirectory::namesForCountry()`: the default name and the store
 locale's name), both case-insensitively and the name ignoring accents
 (TWO-26266). A value two regions share selects neither: the US military "AE"
-code, and on a store carrying core's recoded Spanish rows the names Madrid,
-Asturias, Cantabria and Valencia, each both a province and a community. Checked
-over core 2.4.9 and develop region data: every region's own code and name
-resolves to itself or, for those shared ones, to nothing, no code equals another
-region's name, and every ISO-code result is unchanged. A French region name such
-as "ILE DE FRANCE" names no row in core's French list, which holds departments,
-so it still resolves to nothing. Anything else resolves to nothing and the
-address is relayed as before; do not add a guess or a fuzzy match, because a
-wrong region is worse than none. Both checkouts never append a region they
-selected to the city; one that resolved to nothing is appended as before.
+code, and on a store carrying core's recoded Spanish rows the name Cantabria,
+both a province (ES-S) and a community (ES-CB); the recoding renames the other
+communities ("Madrid, Comunidad de"), so their provinces keep a name of their
+own. Checked over core 2.4.9 and develop region data, with core's renames
+applied: every region's own code and name resolves to itself or, for those
+shared ones, to nothing, no code equals another region's name, and every
+ISO-code result is unchanged. A French region name such as "ILE DE FRANCE" names
+no row in core's French list, which holds departments, so it still resolves to
+nothing. Anything else resolves to nothing and the address is relayed as before;
+do not add a guess or a fuzzy match, because a wrong region is worse than none.
+Both checkouts never append a region they selected to the city; one that
+resolved to nothing is appended as before.
 
 ## What focus landing on the checkout does to an open signup popup
 

@@ -44,14 +44,19 @@ class IsoRegionResolverTest extends TestCase
     ];
 
     private const RECODED_NAMES = [
-        // The province and the community it gives its name to.
-        'ES' => [161 => ['Madrid'], 171 => ['Barcelona'], 990 => ['Madrid'], 991 => ['Baleares']],
+        // The recoding renames the community row ("Madrid, Comunidad de") and
+        // leaves Cantabria's, so only Cantabria's province and community share
+        // a name.
+        'ES' => [
+            161 => ['Madrid, Comunidad de'], 171 => ['Barcelona'], 990 => ['Madrid'],
+            991 => ['Illes Balears [Islas Baleares]'], 992 => ['Cantabria'], 993 => ['Cantabria'],
+        ],
     ];
 
     private const RECODED_REGIONS = [
         // The recoding turns "Madrid" into the community's ES-MD and adds a
         // separate ES-M province row; Baleares becomes ES-IB with no ES-PM row.
-        'ES' => [161 => 'ES-MD', 171 => 'ES-B', 990 => 'ES-M', 991 => 'ES-IB'],
+        'ES' => [161 => 'ES-MD', 171 => 'ES-B', 990 => 'ES-M', 991 => 'ES-IB', 992 => 'ES-CB', 993 => 'ES-S'],
         'DE' => [81 => 'BY'],
     ];
 
@@ -99,7 +104,8 @@ class IsoRegionResolverTest extends TestCase
             'name only whole' => [$core, 'US', 'Armed Forces', null, 'part of a name matches nothing'],
             'no fuzzy' => [$core, 'FR', 'ILE DE FRANCE', null, 'a region the store does not list matches nothing'],
             'foreign name' => [$core, 'IT', 'Madrid', null, "another country's region name matches nothing"],
-            'shared name' => [$recoded, 'ES', 'Madrid', null, 'a name two regions share selects neither', self::RECODED_NAMES],
+            'renamed community' => [$recoded, 'ES', 'Madrid', [990, 'ES-M'], 'the province keeps the name core takes off its community', self::RECODED_NAMES],
+            'shared name' => [$recoded, 'ES', 'Cantabria', null, 'a name two regions share selects neither', self::RECODED_NAMES],
             'foreign bare iso' => [$core, 'IT', 'ES-M', null, "another country's code still matches nothing"],
             'no regions' => [$core, 'NL', 'NL-NH', null, 'a country with no regions matches nothing'],
         ];
