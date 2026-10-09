@@ -837,6 +837,19 @@ define([
     }
 
     /**
+     * Is `region` an ISO 3166-2 subdivision code of `country` ("ES-M" for
+     * "es")? A code for some other country is not, and stays free text.
+     *
+     * @param {string} region trimmed region text
+     * @param {string} country the form's own country code, any case
+     * @returns {boolean}
+     */
+    function isOwnSubdivisionCode(region, country) {
+        const match = /^([A-Z]{2})-[A-Z0-9]{1,3}$/i.exec(region);
+        return !!match && !!country && match[1].toLowerCase() === country.toLowerCase();
+    }
+
+    /**
      * Does this response mean "the search backend could not answer
      * properly"? The API answers HTTP 200 with near-empty results when its
      * upstream provider timed out, and flags that with `degraded: true`.
@@ -1292,7 +1305,8 @@ define([
          *     regions;
          *  3. failing both, appended to the city with a comma ("Ashford, Kent")
          *     — a lossy home, but a visible and correctable one, where dropping
-         *     the region silently is neither.
+         *     the region silently is neither. An ISO 3166-2 code for the
+         *     form's own country is the exception: it is not appended.
          *
          * Which control is in play is resolveRegionField()'s call (shared with
          * the country-switch revert above), not CSS visibility — core keeps both
@@ -1331,6 +1345,12 @@ define([
                     : true;
                 if (handle.$field.length && isVisible) return { region: region };
             }
+
+            // An ISO 3166-2 code for the form's own country ("ES-M" on a
+            // Spanish address) is no use to anyone reading the city, so it is
+            // not appended (TWO-26258). The required region select is left
+            // for the buyer, and Magento's own validation prompts them.
+            if (isOwnSubdivisionCode(region, currentAddressFormCountry($root))) return {};
 
             const $city = scopedFind($root, 'input[name="city"]');
             if (!$city.length) return {};
