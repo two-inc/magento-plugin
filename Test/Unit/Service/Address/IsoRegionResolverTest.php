@@ -29,7 +29,7 @@ class IsoRegionResolverTest extends TestCase
         'EE' => [340 => 'EE-44'],
         'IS' => [350 => 'IS-01'],
         'CR' => [360 => 'CR-AL'],
-        'IN' => [370 => 'TG'],
+        'IN' => [370 => 'TG', 371 => 'DN', 372 => 'DD'],
         'LV' => [380 => 'Ādažu novads'],
     ];
 
@@ -61,6 +61,7 @@ class IsoRegionResolverTest extends TestCase
             'ee-45' => [$core, 'EE', 'EE-45', [340, 'EE-44'], 'an Estonian code core numbered differently'],
             'is-1' => [$core, 'IS', 'IS-1', [350, 'IS-01'], 'an Icelandic code core zero-pads'],
             'cr-a' => [$core, 'CR', 'CR-A', [360, 'CR-AL'], 'a Costa Rican province resolves through the table'],
+            'in-dh' => [$core, 'IN', 'IN-DH', null, 'a merged territory is not either older half'],
             'in-ts' => [$core, 'IN', 'IN-TS', [370, 'TG'], 'an Indian state core codes by its older code'],
             'lv-011' => [$core, 'LV', 'LV-011', [380, 'Ādažu novads'], 'a Latvian municipality core codes by name'],
             'pl-14' => [$core, 'PL', 'PL-14', [900, 'PL-14'], 'a store coding regions as full ISO codes matches whole'],
@@ -105,12 +106,12 @@ class IsoRegionResolverTest extends TestCase
 
     public function testAFailedRegionReadIsLoggedAndMatchesNothing(): void
     {
-        $factory = new class extends CollectionFactory {
-            public function create()
-            {
-                throw new \RuntimeException('directory unavailable');
-            }
-        };
+        // The bootstrap may stub the factory without its generated create().
+        $builder = $this->getMockBuilder(CollectionFactory::class)->disableOriginalConstructor();
+        $factory = method_exists(CollectionFactory::class, 'create')
+            ? $builder->onlyMethods(['create'])->getMock()
+            : $builder->addMethods(['create'])->getMock();
+        $factory->method('create')->willThrowException(new \RuntimeException('directory unavailable'));
         $log = $this->createMock(LogRepository::class);
         $log->expects($this->once())->method('addErrorLog');
 

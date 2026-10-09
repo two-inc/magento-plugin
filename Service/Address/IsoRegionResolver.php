@@ -85,7 +85,9 @@ class IsoRegionResolver
         ],
         // 01-09 already meet core's "1"-"9" as numbers; Paris is the one left.
         'FR' => ['75C' => '75'],
-        'IN' => ['CG' => 'CT', 'DH' => 'DN', 'OD' => 'OR', 'TS' => 'TG', 'UK' => 'UT'],
+        // Not DH: it is the merged Dadra and Nagar Haveli and Daman and Diu,
+        // which core's older "DN" (Dadra and Nagar Haveli alone) would misstate.
+        'IN' => ['CG' => 'CT', 'OD' => 'OR', 'TS' => 'TG', 'UK' => 'UT'],
         'IS' => [
             '1' => 'IS-01', '2' => 'IS-02', '3' => 'IS-03', '4' => 'IS-04',
             '5' => 'IS-05', '6' => 'IS-06', '7' => 'IS-07', '8' => 'IS-08',

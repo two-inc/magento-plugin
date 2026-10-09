@@ -27,10 +27,10 @@ class RegionDirectory
     }
 
     /**
-     * @param string $countryId ISO 3166-1 alpha-2
      * A failed read is logged and answers no regions, so the lookup it serves
      * is still relayed, with its addresses as answered.
      *
+     * @param string $countryId ISO 3166-1 alpha-2
      * @return array<int, string> region id => region code; empty for a country with no regions
      */
     public function forCountry(string $countryId): array

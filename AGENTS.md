@@ -731,7 +731,9 @@ then the whole code, then its suffix (numeric suffixes as numbers, for France).
 Released core codes that are neither (all of ES, DE, AT and FI; some of FR,
 EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing in
 core's own `UpdateRegionCodesFor<Country>V1` patches that those rules miss,
-plus the ES-IB code those patches give the Balearic province. A core region
+plus the ES-IB code those patches give the Balearic province. IN-DH is left
+out: it is a merged territory, and core's older "DN" is only half of it, so a
+match would select the wrong region for the other half. A core region
 the patches leave alone has no current ISO code (abolished Italian, Indian and
 Latvian units, US military and Pacific codes). Anything else resolves to
 nothing and the address is relayed as before; do not add a guess.
