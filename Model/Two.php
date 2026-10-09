@@ -508,10 +508,12 @@ class Two extends AbstractMethod
     /**
      * Get error from response
      *
-     * With $atOrderCreate, a SCHEMA_ERROR or ORDER_INVALID refusal shows the
-     * buyer a generic notice rather than the API's error message, which
-     * speaks to the integration, not the buyer (TWO-26259). The merchant
-     * finds the reason in the error log.
+     * With $atOrderCreate, any refusal at status 400 or above shows the buyer
+     * the field validation messages if there are any, else the same-company
+     * message, else a generic notice; a call that got no HTTP response shows
+     * the general error. The API's own error message and trace id speak to
+     * the integration, not the buyer (TWO-26259), and the merchant finds them
+     * in the error log. Same order as the WooCommerce plugin.
      *
      * @param array $response
      * @param bool $atOrderCreate whether the buyer sees this at place order
@@ -535,30 +537,32 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
-        $isClientError = isset($response['http_status']) && $response['http_status'] == 400;
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        $isClientError = $status === 400;
+        $sameCompany = __('The buyer and the seller are the same company.');
+
+        $validation = $this->getValidationMessage($response);
+
+        if ($atOrderCreate && $status !== null && $status >= 400) {
+            if ($validation !== null) {
+                return $validation;
+            }
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return $sameCompany;
+            }
+            return __(
+                'Invoice purchase with %1 is not available for this order.',
+                $this->brandRegistry->getProductName()
+            );
+        }
+        if ($atOrderCreate && $status === null && isset($response['error_code'])) {
+            // No HTTP response at all: the transport error is not for the buyer.
+            return $generalError;
+        }
 
         // Validation errors — user-facing, no trace ID
-        if ($isClientError && isset($response['error_json']) && is_array($response['error_json'])) {
-            $errs = [];
-            foreach ($response['error_json'] as $err) {
-                $fieldName = isset($err['loc'])
-                    ? $this->getFieldNameFromLoc(json_encode($err['loc']))
-                    : null;
-                $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
-
-                if ($fieldName && $msg) {
-                    $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
-                } elseif ($fieldName) {
-                    $errs[] = __('%1 is not valid.', $fieldName);
-                } elseif ($msg) {
-                    $errs[] = $msg;
-                }
-            }
-            if (count($errs) > 0) {
-                // Wrap as a Phrase without re-running translation: each
-                // entry in $errs is already __()-translated.
-                return __('%1', join(' ', $errs));
-            }
+        if ($isClientError && $validation !== null) {
+            return $validation;
         }
 
         if (isset($response['error_code'])) {
@@ -567,15 +571,9 @@ class Two extends AbstractMethod
 
             // User errors — no trace ID
             if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
-                $reason = __('The buyer and the seller are the same company.');
+                $reason = $sameCompany;
             }
             if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
-                if ($atOrderCreate && $errorCode !== 'SAME_BUYER_SELLER_ERROR') {
-                    return __(
-                        'Invoice purchase with %1 is not available for this order.',
-                        $this->brandRegistry->getProductName()
-                    );
-                }
                 return $reason instanceof Phrase ? $reason : __($reason);
             }
 
@@ -591,7 +589,6 @@ class Two extends AbstractMethod
         // A non-2xx status with no error_code (a 405 or a gateway's HTML
         // error page) is still a failure. The adapter sets http_status on any
         // status other than 200/201/202 (TWO-26150).
-        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
         if ($status !== null && ($status < 200 || $status >= 300)) {
             $reason = $response['error_message'] ?? null;
             $message = __(
@@ -602,6 +599,40 @@ class Two extends AbstractMethod
             return $this->_getMessageWithTrace($message, $traceID);
         }
 
+        return null;
+    }
+
+    /**
+     * The buyer-facing field messages in a response's error_json, if any.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    private function getValidationMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $errs = [];
+        foreach ($response['error_json'] as $err) {
+            $fieldName = isset($err['loc'])
+                ? $this->getFieldNameFromLoc(json_encode($err['loc']))
+                : null;
+            $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+
+            if ($fieldName && $msg) {
+                $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
+            } elseif ($fieldName) {
+                $errs[] = __('%1 is not valid.', $fieldName);
+            } elseif ($msg) {
+                $errs[] = $msg;
+            }
+        }
+        if (count($errs) > 0) {
+            // Wrap as a Phrase without re-running translation: each
+            // entry in $errs is already __()-translated.
+            return __('%1', join(' ', $errs));
+        }
         return null;
     }
 
