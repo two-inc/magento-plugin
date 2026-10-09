@@ -728,12 +728,13 @@ the city (TWO-26258).
 The match is against the live directory rows, so a merchant's edited region
 list is respected. Only a code for the address's own country is considered,
 then the whole code, then its suffix (numeric suffixes as numbers, for France).
-That covers every released core country whose codes are ISO suffixes or full
-ISO codes. ES, DE, AT and FI ship non-ISO codes and resolve through a table
-taken from core's own `UpdateRegionCodesFor<Country>V1` patches. It also
-lists the community code those patches give five Spanish provinces that are
-communities on their own. Anything else resolves to nothing and the address
-is relayed as before; do not add a guess.
+Released core codes that are neither (all of ES, DE, AT and FI; some of FR,
+EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing
+core's own `UpdateRegionCodesFor<Country>V1` patches make, plus the ES-IB code
+those patches give the Balearic province. A core region those patches leave
+alone has no current ISO code (abolished Italian, Indian and Latvian units,
+US military and Pacific codes). Anything else resolves to nothing and the address is relayed
+as before; do not add a guess.
 
 ## What focus landing on the checkout does to an open signup popup
 

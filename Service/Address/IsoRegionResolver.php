@@ -23,13 +23,13 @@ class IsoRegionResolver
     private const ISO_CODE = '/^([A-Z]{2})-([A-Z0-9]{1,3})$/';
 
     /**
-     * ISO suffix => the core region code(s) for it, for countries whose
-     * released core codes are not ISO suffixes. Taken from Magento's own
-     * UpdateRegionCodesFor<Country>V1 data patches, which recode these
-     * countries to ISO in a later release; a store already on those codes is
-     * matched before this table is reached. Where that later recoding gave a
-     * Spanish province its autonomous community's code instead, that code is
-     * listed beside the earlier one.
+     * ISO suffix => the core region code(s) for it, wherever a released core
+     * code is neither the ISO code nor its suffix. Taken from Magento's own
+     * UpdateRegionCodesFor<Country>V1 data patches, which recode these regions
+     * to ISO in a later release; a store already on those codes is matched
+     * before this table is reached. That recoding gives the Balearic Islands
+     * province its autonomous community's code and adds no row for the
+     * province, so that code is listed beside the earlier one.
      *
      * @var array<string, array<string, string|string[]>>
      */
@@ -37,6 +37,10 @@ class IsoRegionResolver
         'AT' => [
             '1' => 'BL', '2' => 'KN', '3' => 'NO', '4' => 'OO', '5' => 'SB',
             '6' => 'ST', '7' => 'TI', '8' => 'VB', '9' => 'WI',
+        ],
+        'CO' => ['HUI' => 'CO-HUL'],
+        'CR' => [
+            'A' => 'CR-AL', 'C' => 'CR-CA', 'G' => 'CR-GU', 'H' => 'CR-HE', 'L' => 'CR-LI', 'P' => 'CR-PU',
         ],
         'DE' => [
             'BB' => 'BRG', 'BE' => 'BER', 'BW' => 'BAW', 'BY' => 'BAY',
@@ -55,15 +59,20 @@ class IsoRegionResolver
             'CU' => 'Cuenca', 'GC' => 'Las Palmas', 'GI' => 'Girona',
             'GR' => 'Granada', 'GU' => 'Guadalajara', 'H' => 'Huelva',
             'HU' => 'Huesca', 'J' => 'Jaen', 'L' => 'Lleida', 'LE' => 'Leon',
-            'LO' => 'La Rioja', 'LU' => 'Lugo', 'M' => ['Madrid', 'ES-MD'],
+            'LO' => 'La Rioja', 'LU' => 'Lugo', 'M' => 'Madrid',
             'MA' => 'Malaga', 'ML' => 'Melilla', 'MU' => 'Murcia',
-            'NA' => 'Navarra', 'O' => ['Asturias', 'ES-AS'], 'OR' => 'Ourense',
+            'NA' => 'Navarra', 'O' => 'Asturias', 'OR' => 'Ourense',
             'P' => 'Palencia', 'PM' => ['Baleares', 'ES-IB'], 'PO' => 'Pontevedra',
-            'S' => ['Cantabria', 'ES-CB'], 'SA' => 'Salamanca', 'SE' => 'Sevilla',
+            'S' => 'Cantabria', 'SA' => 'Salamanca', 'SE' => 'Sevilla',
             'SG' => 'Segovia', 'SO' => 'Soria', 'SS' => 'Guipuzcoa',
             'T' => 'Tarragona', 'TE' => 'Teruel', 'TF' => 'Santa Cruz de Tenerife',
-            'TO' => 'Toledo', 'V' => ['Valencia', 'ES-VC'], 'VA' => 'Valladolid',
+            'TO' => 'Toledo', 'V' => 'Valencia', 'VA' => 'Valladolid',
             'VI' => 'Alava', 'Z' => 'Zaragoza', 'ZA' => 'Zamora',
+        ],
+        'EE' => [
+            '45' => 'EE-44', '50' => 'EE-49', '52' => 'EE-51', '56' => 'EE-57', '60' => 'EE-59',
+            '64' => 'EE-65', '68' => 'EE-67', '71' => 'EE-70', '79' => 'EE-78', '81' => 'EE-82',
+            '87' => 'EE-86',
         ],
         'FI' => [
             '01' => 'Ahvenanmaa', '02' => 'Etelä-Karjala', '03' => 'Etelä-Pohjanmaa',
@@ -73,6 +82,24 @@ class IsoRegionResolver
             '13' => 'Pohjois-Karjala', '14' => 'Pohjois-Pohjanmaa', '15' => 'Pohjois-Savo',
             '16' => 'Päijät-Häme', '17' => 'Satakunta', '18' => 'Uusimaa',
             '19' => 'Varsinais-Suomi',
+        ],
+        // 01-09 already meet core's "1"-"9" as numbers; Paris is the one left.
+        'FR' => ['75C' => '75'],
+        'IN' => ['CG' => 'CT', 'DH' => 'DN', 'OD' => 'OR', 'TS' => 'TG', 'UK' => 'UT'],
+        'IS' => [
+            '1' => 'IS-01', '2' => 'IS-02', '3' => 'IS-03', '4' => 'IS-04',
+            '5' => 'IS-05', '6' => 'IS-06', '7' => 'IS-07', '8' => 'IS-08',
+        ],
+        'LV' => [
+            '002' => 'LV-AI', '007' => 'LV-AL', '011' => 'Ādažu novads', '015' => 'LV-BL',
+            '016' => 'LV-BU', '022' => 'LV-CE', '026' => 'LV-DO', '033' => 'LV-GU',
+            '041' => 'LV-JL', '042' => 'LV-JK', '047' => 'LV-KR', '050' => 'LV-KU',
+            '052' => 'Ķekavas novads', '054' => 'LV-LM', '056' => 'Līvānu novads', '058' => 'LV-LU',
+            '059' => 'LV-MA', '062' => 'Mārupes novads', '067' => 'LV-OG', '068' => 'Olaines novads',
+            '073' => 'LV-PR', '077' => 'LV-RE', '080' => 'Ropažu novads', '087' => 'Salaspils novads',
+            '088' => 'LV-SA', '089' => 'Saulkrastu novads', '091' => 'Siguldas novads',
+            '094' => 'Smiltenes novads', '097' => 'LV-TA', '099' => 'LV-TU', '101' => 'LV-VK',
+            '102' => 'Varakļānu novads', '106' => 'LV-VE', '113' => 'LV-VM',
         ],
     ];
 
