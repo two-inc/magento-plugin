@@ -111,9 +111,10 @@ class CompanyLookup implements CompanyLookupInterface
     }
 
     /**
-     * TWO-26263: each address whose ISO 3166-2 region resolves to one of the
-     * store's own regions gains `region_id` and `region_code`, so a checkout
-     * can select it. `region` itself is relayed as answered.
+     * TWO-26263, TWO-26266: each address whose region (an ISO 3166-2 code, a bare
+     * store code or a region name) resolves to one of the store's own regions
+     * gains `region_id` and `region_code`, so a checkout can select it.
+     * `region` itself is relayed as answered.
      *
      * @param array{status: int, body: mixed} $result from Adapter::executeWithStatus()
      * @return array{status: int, body: mixed}

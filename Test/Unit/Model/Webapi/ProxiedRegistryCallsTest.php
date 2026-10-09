@@ -408,6 +408,8 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->stageUpstream(200, (string)json_encode(['name' => 'Example SL', 'addresses' => [
             ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES'],
             ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+            // TWO-26266: a bare code resolves too.
+            ['city' => 'ROMA', 'region' => 'RM', 'country' => 'IT'],
         ]]));
 
         $relayed = json_decode($this->companyLookup(ApiKeyStatus::OK, null, [], [
@@ -418,6 +420,7 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertSame([
             ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES', 'region_id' => 161, 'region_code' => 'Madrid'],
             ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+            ['city' => 'ROMA', 'region' => 'RM', 'country' => 'IT', 'region_id' => 500, 'region_code' => 'RM'],
         ], $relayed['body']['addresses']);
     }
 
