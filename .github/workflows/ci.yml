@@ -279,14 +279,10 @@ jobs:
       # TWO-26276: with no subscriber, the hook's default handler owns the
       # shop-match checks and refuses exactly as the builder did; the
       # internal-consistency check runs after the hook. Detection is checked
-      # in every area, from the interceptor's own plugin list.
+      # and the requests are run in every area, from the interceptor's own plugin list.
       - name: Shop-match probe, no subscriber
         run: |
-          for area in adminhtml webapi_rest; do
-            docker exec magento-project-community-edition \
-              php /data/extensions/magento-plugin/Test/Integration/shop-match-probe.php none "$area" detect
-          done
-          for area in frontend crontab; do
+          for area in frontend crontab adminhtml webapi_rest; do
             docker exec magento-project-community-edition \
               php /data/extensions/magento-plugin/Test/Integration/shop-match-probe.php none "$area"
           done
@@ -310,11 +306,7 @@ jobs:
       # fixture's crontab di.xml disables it there, so the default is back.
       - name: Shop-match probe, with the fixture subscriber
         run: |
-          for area in adminhtml webapi_rest; do
-            docker exec magento-project-community-edition \
-              php /data/extensions/magento-plugin/Test/Integration/shop-match-probe.php fixture "$area" detect
-          done
-          for area in frontend crontab; do
+          for area in frontend crontab adminhtml webapi_rest; do
             docker exec magento-project-community-edition \
               php /data/extensions/magento-plugin/Test/Integration/shop-match-probe.php fixture "$area"
           done

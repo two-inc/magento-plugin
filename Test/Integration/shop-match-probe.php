@@ -9,6 +9,7 @@
  *
  * Usage, from the Magento root, once per area:
  *   php <plugin>/Test/Integration/shop-match-probe.php <none|fixture> <area> [detect]
+ * CI runs every area in full; "detect" is for a quick local check.
  *
  * "none" runs before Two_OrderPostprocessingFixture is enabled, "fixture"
  * after. The fixture disables its plugin in crontab, so there the default
@@ -30,6 +31,7 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
 use Two\Gateway\Exception\ShopMatchRefusedException;
+use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeIntent;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\OrderPostprocessor;
@@ -115,6 +117,8 @@ $request = static function (string $type, float $shippingTax, bool $mistaxed = f
             $invoice->setOrder($order);
             $invoice->setShippingAmount($order->getShippingAmount());
             $invoice->setShippingTaxAmount($shippingTax);
+            $invoice->setGrandTotal((float)$order->getShippingAmount() + $shippingTax);
+            $invoice->setTaxAmount($shippingTax);
             return [['partial' => $block], ['order' => $order, 'invoice' => $invoice]];
         default:
             return [$block + ['currency' => 'EUR'], ['order' => $order]];
@@ -175,6 +179,22 @@ foreach ($types as $type) {
             $refusedWith($send($type, $payload, $context, 'opt_in'), $refusal, true),
             "$type: a subscriber calling the opt-in checks gets the refusal back"
         );
+    }
+
+    if ($type === Hook::REQUEST_CAPTURE) {
+        // The capture builder itself, on a shipping-only invoice: it composes the line, the handler judges it.
+        [, $context] = $request($type, 0.00);
+        try {
+            $payload = ['partial' => $objectManager->get(ComposeCapture::class)->execute($context['invoice'])];
+            $result = $send($type, $payload, $context, null);
+            $check(
+                $subscriber === null ? $refusedWith($result, $refusal, true) : $result === $payload,
+                "$type: the capture builder leaves the fallback mismatch to the hook, which "
+                    . ($subscriber === null ? 'refuses it' : 'sends it')
+            );
+        } catch (\Throwable $e) {
+            $check(false, "$type: the capture builder composed the invoice (" . get_class($e) . ': ' . $e->getMessage() . ')');
+        }
     }
 
     // The internal-consistency check: create and update only, as always.
