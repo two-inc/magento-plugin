@@ -85,6 +85,18 @@
     <preference for="Two\Gateway\Api\OrderPostprocessingTotalsInterface"
                 type="Two\Gateway\Service\Order\PostprocessingTotals"/>
     <!--
+        TWO-26276: the plugin's own handler on the hook runs the shop-match
+        checks, and stands down when any other handler is registered. The name
+        is PostprocessingSubscribers::DEFAULT_HANDLER; a subscriber opts back
+        in through the interface below.
+    -->
+    <type name="Two\Gateway\Api\OrderPostprocessingInterface">
+        <plugin name="two_gateway_shop_match_checks"
+                type="Two\Gateway\Plugin\OrderPostprocessing\ShopMatchDefaultHandler"/>
+    </type>
+    <preference for="Two\Gateway\Api\OrderPostprocessingShopMatchInterface"
+                type="Two\Gateway\Service\Order\ShopMatchChecks"/>
+    <!--
         Brand binding. Routes BrandRegistryInterface through
         DescriptorBackedBrandRegistry → ActiveBrandResolver →
         brand.xml-sourced Descriptor. Every consumer (admin blocks,

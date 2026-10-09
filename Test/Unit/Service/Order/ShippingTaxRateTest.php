@@ -477,6 +477,55 @@ class ShippingTaxRateTest extends TestCase
     }
 
     /**
+     * TWO-26276: the builders compose the line without the reconcile, and the
+     * postprocessing default handler runs it after the hook through
+     * assertShippingTaxFallback(): on the same row it refuses exactly where
+     * getTaxRateShipping() does, after the build recorded the case, as at
+     * placement.
+     *
+     * @param float|string $expected
+     * @dataProvider behaviourTable
+     */
+    public function testTheReconcileMovesAfterTheBuildUnchanged(
+        string $control,
+        ?float $declaredPercent,
+        float $shipping,
+        float $discount,
+        float $tax,
+        $expected,
+        string $case,
+        int $storeId = 1,
+        string $service = Order::class
+    ): void {
+        [$classByStore, $fallbackByStore] = self::CONTROLS[$control];
+        $orderService = $this->orderService($declaredPercent, $classByStore, $fallbackByStore, $service);
+        // Saved, the rate is read from the order's tax rows; unsaved, as at placement, from its own applied taxes.
+        $placementTaxes = $declaredPercent === null ? [] : [['type' => 'shipping', 'applied_taxes' => [['percent' => $declaredPercent]]]];
+        foreach (['saved' => [7, null], 'unsaved' => [null, $placementTaxes]] as $state => [$id, $appliedTaxes]) {
+            $entity = $this->entity([
+                'id' => $id,
+                'item_applied_taxes' => $appliedTaxes,
+                'shipping_amount' => $shipping,
+                'shipping_discount_amount' => $discount,
+                'shipping_tax_amount' => $tax,
+                'shipping_address' => new DataObject(['country_id' => 'NO']),
+                'store_id' => $storeId,
+            ]);
+
+            $built = $orderService->getTaxRateShipping($entity, false);
+            try {
+                $orderService->assertShippingTaxFallback($entity);
+                $actual = $built;
+            } catch (LocalizedException $e) {
+                $this->assertInstanceOf(\Two\Gateway\Exception\ShopMatchRefusedException::class, $e, "$case ($state)");
+                $actual = $e->getMessage();
+            }
+
+            $this->assertSame($expected, $actual, "$case ($state)");
+        }
+    }
+
+    /**
      * Placement records which case of the table applied, and the fallback's
      * rate, on the order it composes.
      *

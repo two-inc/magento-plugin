@@ -97,7 +97,25 @@ class OrderPostprocessingSendSitesTest extends TestCase
         ];
     }
 
-    private function orderIntent(): void
+    /**
+     * The intent hands the hook the unsaved order its lines were composed
+     * from, for the shop-match checks (TWO-26276).
+     */
+    public function testTheIntentCarriesTheOrderItsLinesWereComposedFrom(): void
+    {
+        $order = $this->createMock(Order::class);
+
+        try {
+            $this->orderIntent($order);
+        } catch (StopAtSend $stop) {
+            // Stopped at the send.
+        }
+
+        $this->assertCount(1, $this->fired);
+        $this->assertSame($order, $this->fired[0][2]['intent_order'] ?? null);
+    }
+
+    private function orderIntent(?Order $order = null): void
     {
         $status = $this->createMock(ApiKeyStatus::class);
         $status->method('isDefinitiveFailure')->willReturn(false);
@@ -108,7 +126,14 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $session = new CheckoutSession();
         $session->setData('quote', $this->createMock(Quote::class));
         $composeIntent = $this->createMock(ComposeIntent::class);
-        $composeIntent->method('execute')->willReturn(['buyer' => []]);
+        if ($order !== null) {
+            $composeIntent->method('toOrder')->willReturn($order);
+            $composeIntent->expects($this->once())->method('execute')
+                ->with($this->anything(), [], $this->identicalTo($order))
+                ->willReturn(['buyer' => []]);
+        } else {
+            $composeIntent->method('execute')->willReturn(['buyer' => []]);
+        }
 
         (new OrderIntent(
             $this->adapter(),

@@ -13,11 +13,16 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
 use Two\Gateway\Model\OrderPostprocessing;
 use Two\Gateway\Service\Order as OrderService;
+use Two\Gateway\Plugin\OrderPostprocessing\ShopMatchDefaultHandler;
+use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Service\Order\PostprocessingSubscribers;
+use Two\Gateway\Service\Order\ShopMatchChecks;
 
 /**
- * A real OrderPostprocessor; by default with no subscriber, the hook's own binding.
+ * A real OrderPostprocessor; by default with no subscriber, the hook's own binding. hookChain()
+ * adds the plugin's default handler and any subscribers, as etc/di.xml and a merchant's module do.
  */
 trait PostprocessorFactory
 {
@@ -55,5 +60,42 @@ trait PostprocessorFactory
             new HistoryFactory(),
             $historyRepository ?? $this->createMock(OrderStatusHistoryRepositoryInterface::class)
         );
+    }
+
+    /**
+     * The hook as the interceptor runs it: the plugin's default handler first, then each subscriber.
+     *
+     * @param LogRepository $log
+     * @param array<string, object> $subscribers plugin name => after plugin
+     * @return HookChain
+     */
+    private function hookChain(LogRepository $log, array $subscribers = []): HookChain
+    {
+        $chain = new HookChain();
+        $chain->add(PostprocessingSubscribers::DEFAULT_HANDLER, new ShopMatchDefaultHandler(
+            $this->shopMatchChecks($log),
+            new PostprocessingSubscribers($chain->pluginList()),
+            $log
+        ));
+        foreach ($subscribers as $name => $subscriber) {
+            $chain->add($name, $subscriber);
+        }
+
+        return $chain;
+    }
+
+    /**
+     * The real shop-match checks, over real composers that log to $log.
+     */
+    private function shopMatchChecks(LogRepository $log): ShopMatchChecks
+    {
+        $composers = [];
+        foreach ([ComposeOrder::class, ComposeCapture::class] as $class) {
+            $composer = $this->getMockBuilder($class)->disableOriginalConstructor()->onlyMethods([])->getMock();
+            (new \ReflectionProperty(OrderService::class, 'logRepository'))->setValue($composer, $log);
+            $composers[] = $composer;
+        }
+
+        return new ShopMatchChecks(...$composers);
     }
 }
