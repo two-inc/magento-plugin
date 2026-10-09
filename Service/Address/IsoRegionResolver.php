@@ -16,7 +16,14 @@ namespace Two\Gateway\Service\Address;
  * case-insensitively, against the store's region codes: first as the whole
  * code, then by its suffix, numeric suffixes compared as numbers so "FR-01"
  * meets a store that codes Ain as "1". Countries whose released core codes
- * are not ISO suffixes fall back to a table. Anything else matches nothing.
+ * are not ISO suffixes fall back to a table.
+ *
+ * A registry that answers in some other form ("RM" for Roma, a region's name)
+ * is matched after that, still within the address's own country only
+ * (TWO-26266): a value equal to exactly one store region code, then a value
+ * equal to exactly one store region's name, both case-insensitively and the
+ * name ignoring accents. A value two regions share selects neither, because a
+ * wrong region is worse than none. Anything else matches nothing.
  */
 class IsoRegionResolver
 {
@@ -118,28 +125,35 @@ class IsoRegionResolver
     public function resolve(string $countryId, $region): ?array
     {
         $countryId = strtoupper(trim($countryId));
-        if (!is_string($region)
-            || preg_match(self::ISO_CODE, strtoupper(trim($region)), $parts) !== 1
-            || $parts[1] !== $countryId
-        ) {
+        $value = is_string($region) ? trim($region) : '';
+        if ($countryId === '' || $value === '') {
             return null;
         }
-        [$code, , $suffix] = $parts;
-
         $regions = $this->regionDirectory->forCountry($countryId);
-        $wanted = array_map(
-            'mb_strtoupper',
-            array_merge([$code, $suffix], (array)(self::LEGACY_CODES[$countryId][$suffix] ?? []))
-        );
-        foreach ($wanted as $candidate) {
-            foreach ($regions as $regionId => $regionCode) {
-                if ($this->sameCode($candidate, mb_strtoupper($regionCode))) {
-                    return ['region_id' => $regionId, 'region_code' => $regionCode];
-                }
+        if (preg_match(self::ISO_CODE, strtoupper($value), $parts) === 1) {
+            // Another country's subdivision is not this address's region.
+            if ($parts[1] !== $countryId) {
+                return null;
+            }
+            $match = $this->byIsoCode($regions, $countryId, $parts[0], $parts[2]);
+            if ($match !== null) {
+                return $match;
             }
         }
 
-        return null;
+        $code = mb_strtoupper($value);
+        $name = $this->foldName($value);
+        $regionId = $this->onlyRegion(
+            $regions,
+            static fn(string $regionCode) => mb_strtoupper($regionCode) === $code
+        ) ?? $this->onlyRegion(
+            $this->regionDirectory->namesForCountry($countryId),
+            fn(array $names) => in_array($name, array_map([$this, 'foldName'], $names), true)
+        );
+
+        return $regionId === null || !isset($regions[$regionId])
+            ? null
+            : ['region_id' => $regionId, 'region_code' => $regions[$regionId]];
     }
 
     /**
@@ -157,6 +171,56 @@ class IsoRegionResolver
         $match = $this->resolve($address['country'], $address['region'] ?? null);
 
         return $match === null ? $address : $address + $match;
+    }
+
+    /**
+     * @param array<int, string> $regions region id => code
+     * @return array{region_id: int, region_code: string}|null
+     */
+    private function byIsoCode(array $regions, string $countryId, string $code, string $suffix): ?array
+    {
+        $wanted = array_map(
+            'mb_strtoupper',
+            array_merge([$code, $suffix], (array)(self::LEGACY_CODES[$countryId][$suffix] ?? []))
+        );
+        foreach ($wanted as $candidate) {
+            foreach ($regions as $regionId => $regionCode) {
+                if ($this->sameCode($candidate, mb_strtoupper($regionCode))) {
+                    return ['region_id' => $regionId, 'region_code' => $regionCode];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The one region whose entry satisfies $matches, or null for none or several.
+     *
+     * @param array<int, mixed> $entries region id => what is compared
+     */
+    private function onlyRegion(array $entries, callable $matches): ?int
+    {
+        $found = array_keys(array_filter($entries, $matches));
+
+        return count($found) === 1 ? (int)$found[0] : null;
+    }
+
+    /**
+     * Upper case with combining accents removed, so "Île" meets "ILE". Left
+     * accented where the intl extension is missing, which only misses a match.
+     */
+    private function foldName(string $name): string
+    {
+        $name = trim($name);
+        if (class_exists(\Normalizer::class)) {
+            $decomposed = \Normalizer::normalize($name, \Normalizer::FORM_D);
+            if (is_string($decomposed)) {
+                $name = (string)preg_replace('/\p{Mn}+/u', '', $decomposed);
+            }
+        }
+
+        return mb_strtoupper($name);
     }
 
     private function sameCode(string $wanted, string $regionCode): bool

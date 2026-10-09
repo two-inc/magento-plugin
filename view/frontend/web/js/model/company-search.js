@@ -1345,9 +1345,10 @@ define([
             const handle = resolveRegionField($root);
             if (handle.select) {
                 // The store's own region id, when the module's relay resolved
-                // the registry's ISO 3166-2 code to one (TWO-26263). Taken only
-                // where this select offers it: the form may be showing another
-                // country's regions.
+                // the registry's region to one (TWO-26263, TWO-26266). Taken
+                // only where this select offers it: the form may be showing
+                // another country's regions. A region taken here is never
+                // appended to the city.
                 const storeRegionId = hasValue(address.region_id) ? String(address.region_id) : '';
                 if (storeRegionId && hasRegionOption(handle.select, storeRegionId)) {
                     return { region_id: storeRegionId };

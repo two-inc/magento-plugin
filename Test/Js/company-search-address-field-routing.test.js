@@ -506,7 +506,12 @@ describe("the relay's store region id is preferred over matching the region text
         [{ region: 'US-NY', region_id: 43 }, { region_id: '43', city: 'Albany' }, 'a numeric id is matched as text'],
         [{ region: 'California', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'the id wins over a text match'],
         [{ region: 'US-NY', region_id: '99' }, { region_id: '', city: 'Albany' }, 'an id the select lacks falls back'],
-        [{ region: 'US-NY' }, { region_id: '', city: 'Albany' }, 'no id: the text routing is unchanged']
+        [{ region: 'US-NY' }, { region_id: '', city: 'Albany' }, 'no id: the text routing is unchanged'],
+        // TWO-26266: the relay also resolves a bare code or a name. A region it
+        // resolved and the select took is never appended to the city; one it
+        // could not resolve is appended exactly as before.
+        [{ region: 'NY', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'a resolved bare code is selected, not appended'],
+        [{ region: 'ZZ' }, { region_id: '', city: 'Albany, ZZ' }, 'an unresolved bare code is appended as before']
     ])('%p -> %p (%s)', (payload, expected, why) => {
         const { apply, field } = load('select', 'US');
 

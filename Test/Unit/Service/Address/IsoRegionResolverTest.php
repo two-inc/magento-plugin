@@ -13,14 +13,15 @@ use Two\Gateway\Service\Address\RegionDirectory;
 /**
  * TWO-26263. Region rows are excerpts of Magento's released core directory
  * data, ids invented; the "recoded" rows are the codes core's later
- * UpdateRegionCodesFor<Country>V1 patches give the same regions.
+ * UpdateRegionCodesFor<Country>V1 patches give the same regions. TWO-26266
+ * adds their names, for registries that answer a bare code or a name.
  */
 class IsoRegionResolverTest extends TestCase
 {
     private const STORE_REGIONS = [
         'ES' => [161 => 'Madrid', 139 => "A Coru\u{0441}a", 171 => 'Barcelona'],
         'IT' => [500 => 'RM', 501 => 'MI'],
-        'US' => [12 => 'CA', 43 => 'NY'],
+        'US' => [12 => 'CA', 43 => 'NY', 60 => 'AE', 61 => 'AE'],
         'DE' => [81 => 'BAY', 82 => 'BER'],
         'FR' => [182 => '1', 256 => '75'],
         'PL' => [900 => 'PL-14'],
@@ -33,15 +34,34 @@ class IsoRegionResolverTest extends TestCase
         'LV' => [380 => 'Ādažu novads'],
     ];
 
+    private const STORE_NAMES = [
+        // Core's default names; 500 also carries a store-locale name.
+        'ES' => [161 => ['Madrid'], 139 => ['A Coruña'], 171 => ['Barcelona']],
+        'IT' => [500 => ['Roma', 'Rome'], 501 => ['Milano']],
+        'US' => [12 => ['California'], 43 => ['New York'], 60 => ['Armed Forces Europe'], 61 => ['Armed Forces Africa']],
+        'FR' => [182 => ['Ain'], 256 => ['Paris']],
+        'FI' => [339 => ['Uusimaa']],
+    ];
+
+    private const RECODED_NAMES = [
+        // The recoding renames the community row ("Madrid, Comunidad de") and
+        // leaves Cantabria's, so only Cantabria's province and community share
+        // a name.
+        'ES' => [
+            161 => ['Madrid, Comunidad de'], 171 => ['Barcelona'], 990 => ['Madrid'],
+            991 => ['Illes Balears [Islas Baleares]'], 992 => ['Cantabria'], 993 => ['Cantabria'],
+        ],
+    ];
+
     private const RECODED_REGIONS = [
         // The recoding turns "Madrid" into the community's ES-MD and adds a
         // separate ES-M province row; Baleares becomes ES-IB with no ES-PM row.
-        'ES' => [161 => 'ES-MD', 171 => 'ES-B', 990 => 'ES-M', 991 => 'ES-IB'],
+        'ES' => [161 => 'ES-MD', 171 => 'ES-B', 990 => 'ES-M', 991 => 'ES-IB', 992 => 'ES-CB', 993 => 'ES-S'],
         'DE' => [81 => 'BY'],
     ];
 
     /**
-     * @return array<string, array{array<string, array<int, string>>, string, mixed, ?array, string}>
+     * @return array<string, array<int, mixed>>
      */
     public static function cases(): array
     {
@@ -74,7 +94,19 @@ class IsoRegionResolverTest extends TestCase
             'unknown' => [$core, 'ES', 'ES-XX', null, 'an unknown suffix matches nothing'],
             'empty' => [$core, 'ES', '', null, 'an empty region matches nothing'],
             'null' => [$core, 'ES', null, null, 'an absent region matches nothing'],
-            'free text' => [$core, 'ES', 'Madrid', null, 'a region name is not a code'],
+            'bare code' => [$core, 'IT', 'RM', [500, 'RM'], 'a bare province code matches the store code (TWO-26266)'],
+            'bare code lower' => [$core, 'IT', ' rm ', [500, 'RM'], 'a bare code is matched case-insensitively'],
+            'shared code' => [$core, 'US', 'AE', null, 'a code two regions share selects neither'],
+            'code is a name' => [$core, 'ES', 'MADRID', [161, 'Madrid'], "a store coding regions by name matches the code"],
+            'name' => [$core, 'IT', 'ROMA', [500, 'RM'], 'a region name matches the default name'],
+            'locale name' => [$core, 'IT', 'rome', [500, 'RM'], "a region name matches the store locale's name"],
+            'accents' => [$core, 'ES', 'A CORUNA', [139, "A Coru\u{0441}a"], 'a name is matched ignoring accents'],
+            'name only whole' => [$core, 'US', 'Armed Forces', null, 'part of a name matches nothing'],
+            'no fuzzy' => [$core, 'FR', 'ILE DE FRANCE', null, 'a region the store does not list matches nothing'],
+            'foreign name' => [$core, 'IT', 'Madrid', null, "another country's region name matches nothing"],
+            'renamed community' => [$recoded, 'ES', 'Madrid', [990, 'ES-M'], 'the province keeps the name core takes off its community', self::RECODED_NAMES],
+            'shared name' => [$recoded, 'ES', 'Cantabria', null, 'a name two regions share selects neither', self::RECODED_NAMES],
+            'foreign bare iso' => [$core, 'IT', 'ES-M', null, "another country's code still matches nothing"],
             'no regions' => [$core, 'NL', 'NL-NH', null, 'a country with no regions matches nothing'],
         ];
     }
@@ -83,6 +115,7 @@ class IsoRegionResolverTest extends TestCase
      * @param array<string, array<int, string>> $storeRegions
      * @param mixed $region
      * @param array{int, string}|null $expected
+     * @param array<string, array<int, string[]>> $storeNames
      */
     #[DataProvider('cases')]
     public function testResolvesTheStoreRegionForAnIsoCode(
@@ -90,11 +123,15 @@ class IsoRegionResolverTest extends TestCase
         string $country,
         $region,
         ?array $expected,
-        string $description
+        string $description,
+        array $storeNames = self::STORE_NAMES
     ): void {
         $directory = $this->createMock(RegionDirectory::class);
         $directory->method('forCountry')->willReturnCallback(
             static fn(string $countryId) => $storeRegions[$countryId] ?? []
+        );
+        $directory->method('namesForCountry')->willReturnCallback(
+            static fn(string $countryId) => $storeNames[strtoupper($countryId)] ?? []
         );
 
         $this->assertSame(
@@ -116,6 +153,58 @@ class IsoRegionResolverTest extends TestCase
         $log->expects($this->once())->method('addErrorLog');
 
         $this->assertNull((new IsoRegionResolver(new RegionDirectory($factory, $log)))->resolve('ES', 'ES-M'));
+    }
+
+    public function testTheDirectoryReadsEachRegionsDefaultAndLocaleNamesOnce(): void
+    {
+        $region = static fn(int $id, string $code, string $default, ?string $name) => new class ($id, $code, $default, $name) {
+            public function __construct(
+                private readonly int $id,
+                private readonly string $code,
+                private readonly string $default,
+                private readonly ?string $name
+            ) {
+            }
+            public function getRegionId(): int
+            {
+                return $this->id;
+            }
+            public function getCode(): string
+            {
+                return $this->code;
+            }
+            public function getDefaultName(): string
+            {
+                return $this->default;
+            }
+            public function getName(): ?string
+            {
+                return $this->name;
+            }
+        };
+        $collection = new class ([$region(500, 'RM', 'Roma', 'Rome'), $region(501, 'MI', 'Milano', null)])
+            implements \IteratorAggregate {
+            public function __construct(private readonly array $rows)
+            {
+            }
+            public function addCountryFilter(string $countryId): self
+            {
+                return $this;
+            }
+            public function getIterator(): \ArrayIterator
+            {
+                return new \ArrayIterator($this->rows);
+            }
+        };
+        $builder = $this->getMockBuilder(CollectionFactory::class)->disableOriginalConstructor();
+        $factory = method_exists(CollectionFactory::class, 'create')
+            ? $builder->onlyMethods(['create'])->getMock()
+            : $builder->addMethods(['create'])->getMock();
+        $factory->expects($this->once())->method('create')->willReturn($collection);
+        $directory = new RegionDirectory($factory, $this->createMock(LogRepository::class));
+
+        $this->assertSame([500 => 'RM', 501 => 'MI'], $directory->forCountry('IT'));
+        $this->assertSame([500 => ['Roma', 'Rome'], 501 => ['Milano']], $directory->namesForCountry('IT'));
     }
 
     public function testEnrichLeavesAnAddressWithNoCountryAlone(): void

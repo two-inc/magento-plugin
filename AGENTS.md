@@ -717,7 +717,7 @@ control.
 ## The company relay resolves an ISO 3166-2 region to the store's own
 
 The company lookup answers an address region as an ISO 3166-2 code ("ES-M",
-"IT-RM"), which no region select is labelled with. `CompanyLookup::get()` passes
+"IT-RM") for some countries, which no region select is labelled with. `CompanyLookup::get()` passes
 each address through `Service\Address\IsoRegionResolver`, which adds
 `region_id` and `region_code` from the store's own region rows when the code
 resolves, and leaves `region` exactly as answered (TWO-26263). Both checkouts
@@ -735,8 +735,27 @@ plus the ES-IB code those patches give the Balearic province. IN-DH is left
 out: it is a merged territory, and core's older "DN" is only half of it, so a
 match would select the wrong region for the other half. A core region
 the patches leave alone has no current ISO code (abolished Italian, Indian and
-Latvian units, US military and Pacific codes). Anything else resolves to
-nothing and the address is relayed as before; do not add a guess.
+Latvian units, US military and Pacific codes).
+
+Registries outside Spain do not all answer ISO codes: Italy's answers a bare
+province code ("RM") and France's a region name. After the ISO rules, and still
+within the address's own country only, the resolver takes a value equal to
+exactly one store region code, then a value equal to exactly one store region
+name (`RegionDirectory::namesForCountry()`: the default name and the store
+locale's name), both case-insensitively and the name ignoring accents
+(TWO-26266). A value two regions share selects neither: the US military "AE"
+code, and on a store carrying core's recoded Spanish rows the name Cantabria,
+both a province (ES-S) and a community (ES-CB); the recoding renames the other
+communities ("Madrid, Comunidad de"), so their provinces keep a name of their
+own. Checked over core 2.4.9 and develop region data, with core's renames
+applied: every region's own code and name resolves to itself or, for those
+shared ones, to nothing, no code equals another region's name, and every
+ISO-code result is unchanged. A French region name such as "ILE DE FRANCE" names
+no row in core's French list, which holds departments, so it still resolves to
+nothing. Anything else resolves to nothing and the address is relayed as before;
+do not add a guess or a fuzzy match, because a wrong region is worse than none.
+Both checkouts never append a region they selected to the city; one that
+resolved to nothing is appended as before.
 
 ## What focus landing on the checkout does to an open signup popup
 
