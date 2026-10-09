@@ -15,6 +15,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Webapi\CompanyLookup;
 use Two\Gateway\Model\Webapi\OrderIntent;
+use Two\Gateway\Service\Address\IsoRegionResolver;
+use Two\Gateway\Service\Address\RegionDirectory;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
@@ -155,13 +157,21 @@ class ProxiedRegistryCallsTest extends TestCase
         return $postprocessor;
     }
 
+    /**
+     * @param array<string, array<int, string>> $storeRegions country => region id => code
+     */
     private function companyLookup(
         string $status = ApiKeyStatus::OK,
         ?int $storeId = null,
-        ?array $merchantRecord = []
+        ?array $merchantRecord = [],
+        array $storeRegions = []
     ): CompanyLookup {
         $recordProvider = $this->createMock(RecordProvider::class);
         $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
+        $regionDirectory = $this->createMock(RegionDirectory::class);
+        $regionDirectory->method('forCountry')->willReturnCallback(
+            static fn(string $country) => $storeRegions[$country] ?? []
+        );
 
         return new CompanyLookup(
             $this->adapter(),
@@ -169,7 +179,8 @@ class ProxiedRegistryCallsTest extends TestCase
             new SettingsProvider($recordProvider),
             $this->rateLimiter(),
             $this->logRepository(),
-            $this->checkoutSession($storeId)
+            $this->checkoutSession($storeId),
+            new IsoRegionResolver($regionDirectory)
         );
     }
 
@@ -388,6 +399,26 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertSame('acme ltd', $query['q']);
         $this->assertSame('50', $query['limit']);
         $this->assertSame('0', $query['offset']);
+    }
+
+    public function testCompanyDetailAddsTheStoreRegionBesideTheIsoCodeItRelays(): void
+    {
+        // TWO-26263: the region is relayed as answered; a resolved one gains the
+        // store's own id and code beside it, an unresolved one gains nothing.
+        $this->stageUpstream(200, (string)json_encode(['name' => 'Example SL', 'addresses' => [
+            ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES'],
+            ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+        ]]));
+
+        $relayed = json_decode($this->companyLookup(ApiKeyStatus::OK, null, [], [
+            'ES' => [161 => 'Madrid'],
+            'IT' => [500 => 'RM'],
+        ])->get('lookup-1'), true);
+
+        $this->assertSame([
+            ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES', 'region_id' => 161, 'region_code' => 'Madrid'],
+            ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+        ], $relayed['body']['addresses']);
     }
 
     public function testCompanyDetailEncodesTheLookupIdIntoThePath(): void
