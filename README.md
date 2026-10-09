@@ -365,9 +365,11 @@ public function afterProcess(OrderPostprocessingInterface $subject, array $resul
 }
 ```
 
-A shop-match refusal reaches the buyer as a generic notice on order intent,
-create and update, and the admin as the reason on a capture, and is logged
-with `ShippingTaxFallbackMismatch`.
+A shop-match refusal is logged with `ShippingTaxFallbackMismatch`. On order
+intent and create the buyer sees a generic notice. On update, an admin address
+edit, the update is not sent to Two: the address still saves, and the admin sees
+that same generic notice as a warning and in the order's history. On a capture
+the admin sees the reason, and the invoice or shipment is blocked.
 
 A subscriber that throws, returns something other than an array, or returns a
 payload that cannot be JSON-encoded has a bug. That request is refused and
