@@ -473,6 +473,13 @@ check a v1 subscriber could already pass, or firing on fewer requests is never
 done. A genuinely incompatible change would arrive as a new interface, with this
 one still firing alongside it.
 
+One documented exception, from the release that carries TWO-26276: the line tax
+reconcile, an internal-consistency check, also runs on what a subscriber
+returns. On order create and update, a line other than shipping whose tax does
+not follow from its own declared rate and net (gross = net + tax at that rate,
+within the tolerance above) is now refused locally before it is sent, where
+4.0.0 sent a subscriber's lines unchecked. `contract_version` stays `1`.
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
