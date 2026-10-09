@@ -341,7 +341,7 @@ class Two extends AbstractMethod
             'POST',
             (int)$order->getStoreId()
         );
-        $error = $this->getErrorFromResponse($response);
+        $error = $this->getErrorFromResponse($response, true);
         if ($error) {
             $this->logOrderCreateRefusal($order, $response);
             throw new LocalizedException($error);
@@ -484,8 +484,8 @@ class Two extends AbstractMethod
      * Record why the order create was refused, for the merchant (TWO-26259).
      *
      * The buyer sees only what getErrorFromResponse() chose to show, which for
-     * a client error is the error message alone. The error details are the
-     * part that says what to fix, so they go to the merchant's error log
+     * a refused order is a generic notice. The error message and details are
+     * the part that says what to fix, so they go to the merchant's error log
      * whatever the buyer was shown.
      *
      * @param Order $order
@@ -508,11 +508,17 @@ class Two extends AbstractMethod
     /**
      * Get error from response
      *
-     * @param $response
+     * With $atOrderCreate, a SCHEMA_ERROR or ORDER_INVALID refusal shows the
+     * buyer a generic notice rather than the API's error message, which
+     * speaks to the integration, not the buyer (TWO-26259). The merchant
+     * finds the reason in the error log.
+     *
+     * @param array $response
+     * @param bool $atOrderCreate whether the buyer sees this at place order
      *
      * @return Phrase|null
      */
-    public function getErrorFromResponse(array $response): ?Phrase
+    public function getErrorFromResponse(array $response, bool $atOrderCreate = false): ?Phrase
     {
         $tryAgainLater = __('Please try again later.');
         $generalError = __(
@@ -564,6 +570,12 @@ class Two extends AbstractMethod
                 $reason = __('The buyer and the seller are the same company.');
             }
             if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
+                if ($atOrderCreate && $errorCode !== 'SAME_BUYER_SELLER_ERROR') {
+                    return __(
+                        'Invoice purchase with %1 is not available for this order.',
+                        $this->brandRegistry->getProductName()
+                    );
+                }
                 return $reason instanceof Phrase ? $reason : __($reason);
             }
 

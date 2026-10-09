@@ -166,43 +166,56 @@ class TwoErrorHandlingTest extends TestCase
 
     // ── User errors (400 + error_code) ──────────────────────────────────
 
-    public function testUserErrorSchemaError(): void
+    /**
+     * A user error carries no trace ID. At order create (TWO-26259) the buyer
+     * sees the generic notice for SCHEMA_ERROR and ORDER_INVALID; the
+     * same-company message stays, as it tells the buyer what to change.
+     *
+     * @return array<string, array{0: string, 1: string, 2: bool, 3: string}>
+     */
+    public static function userErrorCases(): array
+    {
+        $generic = 'Invoice purchase with Two is not available for this order.';
+        $sameCompany = 'The buyer and the seller are the same company.';
+        return [
+            // [error_code, error_message, atOrderCreate, expected message]
+            'SCHEMA_ERROR elsewhere shows the API message' => ['SCHEMA_ERROR', 'Missing field', false, 'Missing field'],
+            'ORDER_INVALID elsewhere shows the API message' => ['ORDER_INVALID', 'Invalid Order', false, 'Invalid Order'],
+            'SAME_BUYER_SELLER_ERROR elsewhere shows same company' => ['SAME_BUYER_SELLER_ERROR', 'api text', false, $sameCompany],
+            'SCHEMA_ERROR at create shows the generic notice' => ['SCHEMA_ERROR', 'Missing field', true, $generic],
+            'ORDER_INVALID at create shows the generic notice' => ['ORDER_INVALID', 'Invalid Order', true, $generic],
+            'SAME_BUYER_SELLER_ERROR at create shows same company' => ['SAME_BUYER_SELLER_ERROR', 'api text', true, $sameCompany],
+        ];
+    }
+
+    /**
+     * @dataProvider userErrorCases
+     */
+    public function testUserError(string $code, string $apiMessage, bool $atOrderCreate, string $expected): void
+    {
+        $response = [
+            'http_status' => 400,
+            'error_code' => $code,
+            'error_message' => $apiMessage,
+            'error_trace_id' => 'abc-123-trace',
+        ];
+        $rendered = $this->model->getErrorFromResponse($response, $atOrderCreate)->render();
+        $this->assertSame($expected, $rendered, $this->dataName());
+    }
+
+    public function testValidationErrorAtCreateStillNamesTheField(): void
     {
         $response = [
             'http_status' => 400,
             'error_code' => 'SCHEMA_ERROR',
-            'error_message' => 'Missing required field: company_id',
+            'error_message' => 'Invalid payload',
+            'error_json' => [
+                ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
+            ],
         ];
-        $result = $this->model->getErrorFromResponse($response);
-        $rendered = $result->render();
-        $this->assertStringContainsString('Missing required field', $rendered);
-        $this->assertStringNotContainsString('Trace ID', $rendered);
-    }
-
-    public function testUserErrorSameBuyerSeller(): void
-    {
-        $response = [
-            'http_status' => 400,
-            'error_code' => 'SAME_BUYER_SELLER_ERROR',
-            'error_message' => 'original api message',
-        ];
-        $result = $this->model->getErrorFromResponse($response);
-        $rendered = $result->render();
-        $this->assertStringContainsString('buyer and the seller are the same', $rendered);
-        $this->assertStringNotContainsString('Trace ID', $rendered);
-    }
-
-    public function testUserErrorOrderInvalid(): void
-    {
-        $response = [
-            'http_status' => 400,
-            'error_code' => 'ORDER_INVALID',
-            'error_message' => 'Order amount too low',
-        ];
-        $result = $this->model->getErrorFromResponse($response);
-        $rendered = $result->render();
-        $this->assertStringContainsString('Order amount too low', $rendered);
-        $this->assertStringNotContainsString('Trace ID', $rendered);
+        $rendered = $this->model->getErrorFromResponse($response, true)->render();
+        $this->assertStringNotContainsString('is not available', $rendered);
+        $this->assertStringContainsString('Invalid phone number', $rendered);
     }
 
     // ── System errors (non-400 + error_code) ────────────────────────────

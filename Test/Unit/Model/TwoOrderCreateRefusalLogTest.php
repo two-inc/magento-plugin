@@ -112,7 +112,8 @@ class TwoOrderCreateRefusalLogTest extends TestCase
      * authorize() needs the full framework to run, so pin the wiring from its
      * source, as the company-number guard's test does: the refusal is logged
      * with the create response, and before the buyer-facing exception is
-     * thrown, so a refusal can never skip the log.
+     * thrown, so a refusal can never skip the log. The buyer's message is
+     * asked for in order create mode, so it is the generic notice.
      */
     public function testAuthorizeLogsTheRefusalBeforeThrowing(): void
     {
@@ -124,12 +125,12 @@ class TwoOrderCreateRefusalLogTest extends TestCase
         ));
 
         $this->assertMatchesRegularExpression(
-            '/\$error = \$this->getErrorFromResponse\(\$response\);\s*'
+            '/\$error = \$this->getErrorFromResponse\(\$response, true\);\s*'
             . 'if \(\$error\) \{\s*'
             . '\$this->logOrderCreateRefusal\(\$order, \$response\);\s*'
             . 'throw new LocalizedException\(\$error\);/',
             $source,
-            'authorize() must log the create refusal, then throw the unchanged buyer message.'
+            'authorize() must ask for the order create message, log the refusal, then throw.'
         );
     }
 }
