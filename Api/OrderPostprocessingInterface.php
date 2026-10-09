@@ -13,9 +13,11 @@ namespace Two\Gateway\Api;
  *
  * Subscribe with an `after` plugin on process(). The default implementation
  * returns the payload unchanged; plugins chain by `sortOrder`, and the final
- * payload is sent as returned, for Two's API to validate. See the README
- * section "Stable extension contract: order postprocessing" for the full
- * contract.
+ * payload is sent as returned once it adds up, for Two's API to validate. The
+ * plugin's own handler runs the shop-match checks only while no other handler
+ * is registered (TWO-26276): see OrderPostprocessingShopMatchInterface. See
+ * the README section "Stable extension contract: order postprocessing" for the
+ * full contract.
  *
  * Fires on every order request: order_intent, order_create, order_update,
  * order_confirm, capture, refund and cancel. A subscriber must be a pure

@@ -35,6 +35,7 @@ use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order\TaxCodeResolver;
 
@@ -577,7 +578,8 @@ abstract class Order
      */
     public function getShippingLineOrder(OrderModel $order): array
     {
-        $taxRate = $this->getTaxRateShipping($order);
+        // The fallback reconcile runs after the postprocessing hook (TWO-26276).
+        $taxRate = $this->getTaxRateShipping($order, false);
 
         return [
             'order_item_id' => 'shipping',
@@ -686,20 +688,22 @@ abstract class Order
      * requests read that record and never the current configuration. An order
      * placed before it was recorded resolves as at placement.
      *
+     * The builders pass $reconcile false: the reconcile is a shop-match check,
+     * which the order postprocessing default handler runs after the hook
+     * through assertShippingTaxFallback() (TWO-26276).
+     *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
-     * @param bool $reconcile false for a refund, which relays its parent line's rate
+     * @param bool $reconcile false to skip the fallback reconcile: a builder, or a refund, which relays its
+     *                        parent line's rate
      * @return float
      * @throws LocalizedException when the fallback rate does not reconcile with the line's tax
      */
     public function getTaxRateShipping($entity, bool $reconcile = true): float
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
-        $recorded = method_exists($order, 'getData');
-        $source = $recorded ? $order->getData('two_shipping_tax_rate_source') : null;
-
-        if ($source === self::SHIPPING_RATE_DECLARED || $source === self::SHIPPING_RATE_NONE) {
-            $percent = $order->getData('two_shipping_tax_rate');
-            $rate = $percent === null ? null : (float)$percent / 100;
+        $order = $this->shippingTaxRateOrder($entity);
+        $recorded = $this->recordedShippingTaxRate($order);
+        if ($recorded !== null) {
+            [$source, $rate] = $recorded;
             if ($source === self::SHIPPING_RATE_NONE && $rate !== null && $reconcile) {
                 $this->assertShippingTaxReconciles($entity, $rate);
             }
@@ -707,7 +711,7 @@ abstract class Order
         }
 
         [$source, $rate] = $this->resolveShippingTaxRate($entity, $reconcile);
-        if ($recorded && !$order->getId()) {
+        if (method_exists($order, 'getData') && !$order->getId()) {
             $order->setData('two_shipping_tax_rate_source', $source);
             $order->setData('two_shipping_tax_rate', $rate === null ? null : round($rate * 100, 6));
         }
@@ -715,14 +719,66 @@ abstract class Order
     }
 
     /**
+     * The shipping tax fallback reconcile on its own, for the entity the
+     * shipping line was composed from: a shop-match check (TWO-26276). Reads
+     * the case the build recorded, so it checks exactly what the builder
+     * would have; refuses as getTaxRateShipping() does, and does nothing
+     * where the fallback did not supply the rate.
+     *
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
+     * @return void
+     * @throws ShopMatchRefusedException when the fallback rate does not reconcile with the line's tax
+     */
+    public function assertShippingTaxFallback($entity): void
+    {
+        $recorded = $this->recordedShippingTaxRate($this->shippingTaxRateOrder($entity));
+        if ($recorded === null) {
+            $this->resolveShippingTaxRate($entity, true, false);
+            return;
+        }
+        [$source, $rate] = $recorded;
+        if ($source === self::SHIPPING_RATE_NONE && $rate !== null) {
+            $this->assertShippingTaxReconciles($entity, $rate);
+        }
+    }
+
+    /**
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @return OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel the order carrying the record
+     */
+    private function shippingTaxRateOrder($entity)
+    {
+        return method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+    }
+
+    /**
+     * The case placement recorded, and its rate as a fraction; null when nothing was recorded.
+     *
+     * @param mixed $order
+     * @return array{0: string, 1: float|null}|null
+     */
+    private function recordedShippingTaxRate($order): ?array
+    {
+        $source = method_exists($order, 'getData') ? $order->getData('two_shipping_tax_rate_source') : null;
+        if ($source !== self::SHIPPING_RATE_DECLARED && $source !== self::SHIPPING_RATE_NONE) {
+            return null;
+        }
+        $percent = $order->getData('two_shipping_tax_rate');
+
+        return [$source, $percent === null ? null : (float)$percent / 100];
+    }
+
+    /**
      * The table as the current order data and configuration answer it: which
      * case applies, and the rate, null for no recorded rate and a blank fallback.
      *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @param bool $reconcile
+     * @param bool $log false to resolve again without a second debug line
      * @return array{0: string, 1: float|null}
      * @throws LocalizedException
      */
-    private function resolveShippingTaxRate($entity, bool $reconcile): array
+    private function resolveShippingTaxRate($entity, bool $reconcile, bool $log = true): array
     {
         $declaredPercent = $this->getDeclaredShippingTaxPercent($entity);
         if ($declaredPercent !== null) {
@@ -741,16 +797,18 @@ abstract class Order
         if ($reconcile) {
             $this->assertShippingTaxReconciles($entity, $rate);
         }
-        $this->logRepository->addDebugLog(
-            'ShippingTaxRateFallback',
-            sprintf(
-                'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
-                . 'Magento recorded no rate for the shipping line.',
-                $rate * 100,
-                $entity->getIncrementId(),
-                $taxClassId
-            )
-        );
+        if ($log) {
+            $this->logRepository->addDebugLog(
+                'ShippingTaxRateFallback',
+                sprintf(
+                    'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
+                    . 'Magento recorded no rate for the shipping line.',
+                    $rate * 100,
+                    $entity->getIncrementId(),
+                    $taxClassId
+                )
+            );
+        }
         return [self::SHIPPING_RATE_NONE, $rate];
     }
 
@@ -760,11 +818,11 @@ abstract class Order
      * An invoice books the order's shipping discount, as ComposeCapture does.
      *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
-     * @throws LocalizedException
+     * @throws ShopMatchRefusedException
      */
     private function assertShippingTaxReconciles($entity, float $rate): void
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+        $order = $this->shippingTaxRateOrder($entity);
         $tax = round($this->getTaxAmountShipping($entity), 2);
         $gross = $this->getUnitPriceShipping($entity);
         $net = $gross - $this->getDiscountAmountShipping($order);
@@ -786,7 +844,7 @@ abstract class Order
                 self::TAX_FORMULA_TOLERANCE
             )
         );
-        throw new LocalizedException($this->shippingTaxRefusal());
+        throw new ShopMatchRefusedException($this->shippingTaxRefusal());
     }
 
     /**
@@ -1002,7 +1060,9 @@ abstract class Order
 
     /**
      * Refuse any line whose declared tax does not reconcile with its own
-     * declared rate and net amount (TWO-25503).
+     * declared rate and net amount (TWO-25503). An internal-consistency check:
+     * OrderPostprocessor runs it on the payload the postprocessing hook
+     * returns, for order create and update (TWO-26276).
      *
      * The plugin never derives a rate from amounts and never corrects a
      * line's numbers, so an internally-inconsistent line has to stop the
@@ -1011,10 +1071,10 @@ abstract class Order
      * getOtherChargesLineItem()'s epsilon — see lineTaxTolerance() for what
      * widens it, and the "before discount" base below.
      *
-     * The shipping line is not checked here: getTaxRateShipping() checks it
-     * only when its rate came from the shipping tax fallback (TWO-26117).
+     * The shipping line is not checked here: assertShippingTaxFallback() checks
+     * it only when its rate came from the shipping tax fallback (TWO-26117).
      *
-     * @param array $lineItems Composed payload line items.
+     * @param array $lineItems Payload line items.
      * @return void
      * @throws LocalizedException when a line's tax does not reconcile
      */

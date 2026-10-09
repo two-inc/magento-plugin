@@ -276,6 +276,17 @@ jobs:
           echo "$st" | grep -qE '^ *two_gateway: 1$' \
             || { echo "::error::two_gateway cache type not enabled after setup:upgrade"; exit 1; }
 
+      # TWO-26276: with no subscriber, the hook's default handler owns the
+      # shop-match checks and refuses exactly as the builder did; the
+      # internal-consistency check runs after the hook. Detection is checked
+      # and the requests are run in every area, from the interceptor's own plugin list.
+      - name: Shop-match probe, no subscriber
+        run: |
+          for area in frontend crontab adminhtml webapi_rest; do
+            docker exec magento-project-community-edition \
+              php /data/extensions/magento-plugin/Test/Integration/shop-match-probe.php none "$area"
+          done
+
       # TWO-26092: a real subscriber module on the order postprocessing hook,
       # proving the interceptor wiring, that it fires for every request type,
       # and that what a subscriber returns is sent as returned. The probes
@@ -288,6 +299,17 @@ jobs:
             "php bin/magento module:enable Two_OrderPostprocessingFixture && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
           docker exec magento-project-community-edition \
             php /data/extensions/magento-plugin/Test/Integration/order-postprocessing-probe.php
+
+      # TWO-26276: with the fixture subscriber enabled, the default handler
+      # stands down and logs the delegation, a subscriber can opt back in, its
+      # edits are sent as returned unless the lines do not add up, and the
+      # fixture's crontab di.xml disables it there, so the default is back.
+      - name: Shop-match probe, with the fixture subscriber
+        run: |
+          for area in frontend crontab adminhtml webapi_rest; do
+            docker exec magento-project-community-edition \
+              php /data/extensions/magento-plugin/Test/Integration/shop-match-probe.php fixture "$area"
+          done
 
       # TWO-26092: order intent composed from real quotes (coupon, multi-rate,
       # tax-inclusive, guest, configurable, bundle) through core's own

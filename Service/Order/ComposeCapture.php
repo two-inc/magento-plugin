@@ -108,7 +108,8 @@ class ComposeCapture extends OrderService
 
         // Magento invoices shipping once, so it follows the invoice, not the order (TWO-26091).
         if ((float)$invoice->getShippingAmount() != 0) {
-            $taxRate = $this->getTaxRateShipping($invoice);
+            // The fallback reconcile runs after the postprocessing hook (TWO-26276).
+            $taxRate = $this->getTaxRateShipping($invoice, false);
             $unitPrice = $this->getUnitPriceShipping($invoice);
             $taxAmount = $this->getTaxAmountShipping($invoice);
             // Invoices lack a shipping-discount field; Magento books the order's on the first invoice with shipping.

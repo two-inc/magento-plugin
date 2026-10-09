@@ -1123,7 +1123,10 @@ plugin never refuses over shipping tax. Populated, the rate resolves through
 that class and the tax rules engine, with the arguments core's quote-time tax
 calculator uses, including the tax class of the customer group the order was
 placed under (TWO-26073), and the line's tax must reconcile with it within
-0.02 or the request is refused. A declared rate, 0% included, is always sent
+0.02 or the request is refused. That reconcile is a shop-match check
+(TWO-26276): the builders compose the line with `getTaxRateShipping($entity,
+false)`, and the postprocessing hook's default handler runs
+`assertShippingTaxFallback()` after the hook, unless a subscriber took it over. A declared rate, 0% included, is always sent
 as is and never checked by the plugin. A refund relays the rate without the
 check. The plugin has no shipping tax setting of its own.
 
@@ -1138,14 +1141,46 @@ request reads that record and never the current configuration; a `none` with a
 rate is re-checked against it (except on refund). Both NULL is an order placed
 before the record existed, which resolves live as at placement.
 
-`validateTaxReconciliation()` closes the same loop at composition time: a
-line other than shipping whose declared tax does not follow from its own
-declared rate and net declines the checkout with a generic buyer notice. It never corrects the
+`validateTaxReconciliation()` closes the same loop on order create and update:
+a line other than shipping whose declared tax does not follow from its own
+declared rate and net declines the checkout with a generic buyer notice. It is
+an internal-consistency check, so `OrderPostprocessor` runs it after the hook,
+on the payload about to be sent, subscriber or not (TWO-26276). It never corrects the
 numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
 the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
 fraction-of-net term, and a discounted line may reconcile against
 `net + discount` as well as `net`, because "Before Discount" tax calculation
 taxes the undiscounted base.
+
+## The postprocessing hook's checks: always, or the default handler's
+
+Two kinds, and they live in different places (TWO-26276):
+
+-   **Internal-consistency checks** ask whether the payload adds up by itself.
+    `OrderPostprocessor` runs them after the hook, on what is about to be sent,
+    with or without a subscriber, on the requests they always covered. Today
+    that is the line tax reconcile on create and update.
+-   **Shop-match checks** ask whether what the plugin built matches the shop.
+    `Service\Order\ShopMatchChecks` holds them (today the shipping tax
+    fallback reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface`
+    for a subscriber that opts back in. They run in the hook's default handler,
+    `Plugin\OrderPostprocessing\ShopMatchDefaultHandler`, a plugin named
+    `two_gateway_shop_match_checks`, which stands down and logs
+    `OrderPostprocessingShopMatchDelegated` when any other handler is
+    registered. Each applies to the line the plugin built while the result
+    carries it unchanged.
+
+`Service\Order\PostprocessingSubscribers` detects other handlers from the
+shared `PluginListInterface`, walking `getNext()` from `__self` through each
+around plugin as the generated interceptor does, for the interceptor's own
+type, so what it counts is exactly what runs in the request's area; a
+preference replacing `Model\OrderPostprocessing` counts too. Do not replace it
+with a read of the merged di.xml: that ignores area, `disabled` and module
+state. A shop-match refusal is a `ShopMatchRefusedException`, which
+`OrderPostprocessor` lets through its catch-all, so it never reads as
+`HOOK_FAILED`. Do not move a shop-match check back into a builder, where a
+subscriber cannot take it over, nor an internal-consistency check before the
+hook, where it would judge a payload that is not the one sent.
 
 ## A 0% line carries a tax code, resolved in the builder
 

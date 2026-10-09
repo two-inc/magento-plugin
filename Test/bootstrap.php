@@ -198,6 +198,11 @@ if (!class_exists(\Magento\Sales\Ui\Component\Listing\Column\Price::class, false
     require_once __DIR__ . '/Stubs/SalesUiColumn.php';
 }
 
+// Interception surface for the postprocessing subscriber detection (TWO-26276).
+if (!interface_exists(\Magento\Framework\Interception\PluginListInterface::class, false)) {
+    require_once __DIR__ . '/Stubs/Interception.php';
+}
+
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
 spl_autoload_register(function ($class) {

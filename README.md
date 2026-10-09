@@ -144,7 +144,7 @@ for Shipping is set. Enabled with no class set, it does nothing.
 | Shipping line | Fallback blank (the default) | Fallback populated |
 |---|---|---|
 | Magento recorded a rate, including an explicit 0% | Sent at the recorded rate. The plugin does not check it; the postprocessing hook runs, then Two's API validates it. | Same as blank. |
-| Magento recorded no rate, whatever the line's tax (0 included) | Sent as is: rate 0, tax as charged. The plugin does not check it; the hook runs, then Two's API validates it. | The rate comes from the Tax Class for Shipping, and the line's tax must reconcile with it within 0.02. If it does not, the request is refused; if it does, the line is sent at that rate and the hook runs. |
+| Magento recorded no rate, whatever the line's tax (0 included) | Sent as is: rate 0, tax as charged. The plugin does not check it; the hook runs, then Two's API validates it. | The rate comes from the Tax Class for Shipping, and the line's tax must reconcile with it within 0.02. The line is built at that rate and the hook runs; with no subscriber, a line that does not reconcile is then refused. |
 
 With the fallback blank, the plugin never refuses a request over shipping tax.
 
@@ -163,10 +163,11 @@ move an order already placed. An order placed before this record existed has
 both empty and resolves as it would at placement. A refund takes the order's
 shipping rate and does not re-check the tax it carries.
 
-The check runs while the plugin builds the request, before the postprocessing
-hook, and never on what a subscriber returns. **If your subscriber re-splits a
-shipping line that has no recorded rate, keep the fallback blank**: a populated
-fallback can refuse that line before your subscriber ever sees it.
+This reconcile is a shop-match check: it runs after the postprocessing hook,
+in the plugin's default handler, on order intent, create, update and capture.
+A subscriber on the hook takes it over, and it does not run unless the
+subscriber opts back in (see "Stable extension contract: order
+postprocessing").
 
 ## Tax codes on 0% lines
 
@@ -266,6 +267,7 @@ The default implementation returns the payload unchanged. Plugins chain by
 | `endpoint` | string | The API path, for example `/v1/order/{id}/refund` |
 | `quote` or `order` | object | The quote for `order_intent`, the order for everything else |
 | `invoice`, `shipment`, `creditmemo` | object | Present where the request has one |
+| `intent_order` | object | `order_intent` only: the unsaved order the plugin converted the quote into and built the lines from. Never saved |
 | `shipping_tax_rate` | float or null | The rate Magento's **Tax Class for Shipping** applies at the order's tax address, whether or not the shipping line was taxed. `0.21` means 21%. Null when no class is set |
 | `fallback_shipping_tax_rate` | float or null | The shipping tax fallback's rate, null unless the fallback is enabled for the store |
 | `contract_version` | int | `1` |
@@ -304,14 +306,70 @@ A few specifics:
 request is sent byte for byte as the plugin composed it, and is accepted or
 refused exactly as it was before this hook existed.
 
-**What you return is sent.** The payload goes out exactly as your subscriber
-returns it, and Two's API validates it as it validates any request. The plugin
-checks only what it builds itself: before the hook runs, order create and
-address update refuse a product or fee line the plugin composed whose tax does
-not follow from its rate, as they always have. The shipping line is checked
-only as the shipping tax fallback describes. If the API rejects your payload, its
+**What you return is sent.** The payload goes out as your subscriber returns
+it, once it passes the internal-consistency checks below, and Two's API
+validates it as it validates any request. If the API rejects your payload, its
 response is written to `var/log/two/debug.log` and its message is shown to the
 admin for an admin action, or to the buyer at checkout.
+
+**Checks.** The plugin checks a payload in two ways.
+
+- *Internal-consistency checks* ask whether the payload adds up by itself.
+  They always run, after the hook, on the payload about to be sent, whether or
+  not a subscriber is registered. They do not constrain what you declare, only
+  that it adds up: order create and update refuse a line other than shipping
+  whose tax does not follow from its own declared rate and net, with a generic
+  notice and `TaxReconciliationFailed` in the error log. The tolerance allows
+  for per-unit rounding and for tax on the undiscounted base.
+- *Shop-match checks* ask whether what the plugin built matches what the shop
+  worked out. There is one: a shipping line whose rate the shipping tax
+  fallback supplied must carry the tax Magento charged at that rate (see
+  "Shipping tax fallback"). It applies to the shipping line the plugin built,
+  on order intent, create, update and capture.
+
+**The default handler and when it stands down.** The plugin registers its own
+`after` plugin on this interface, `two_gateway_shop_match_checks`, which runs
+the shop-match checks. It runs them only when no other handler is registered on
+`process()`: any `before`, `around` or `after` plugin on the interface or on
+`Two\Gateway\Model\OrderPostprocessing`, or a preference that replaces that
+default implementation. Detection reads the same interception config the hook
+runs on, in the area of the request (storefront, admin, REST, cron), so a
+plugin that is disabled, belongs to a disabled module, or is declared for
+another area does not count. When the default handler stands down, it writes
+`OrderPostprocessingShopMatchDelegated` to the debug log for each request,
+naming the handlers.
+
+**With a subscriber, shop-match correctness is yours.** Whatever you change,
+nothing in the plugin compares your result with the shop's figures. For
+example, a subscriber that adds a line for a cost the shop adds to the cart
+total outside a carrier, split at its own rate, is sent as returned as long as
+its lines add up.
+
+**Opting back in.** To keep the plugin's shop-match checks on the payload you
+return, or on the parts you did not touch, inject
+`Two\Gateway\Api\OrderPostprocessingShopMatchInterface` and call
+`check($result, $payload, $context)` with the payload you are about to return
+and the `$payload` and `$context` your plugin received. Each check applies to
+the line the plugin built it for, and only while your result still carries that
+line unchanged: a line you edited, replaced or removed is yours. A failing check
+throws `Two\Gateway\Exception\ShopMatchRefusedException`, and the request is
+refused exactly as the default handler refuses it.
+
+```php
+public function afterProcess(OrderPostprocessingInterface $subject, array $result, array $payload, array $context): array
+{
+    $edited = $this->addHandlingLine($result);
+    $this->shopMatch->check($edited, $payload, $context);
+
+    return $edited;
+}
+```
+
+A shop-match refusal is logged with `ShippingTaxFallbackMismatch`. On order
+intent and create the buyer sees a generic notice. On update, an admin address
+edit, the update is not sent to Two: the address still saves, and the admin sees
+that same generic notice as a warning and in the order's history. On a capture
+the admin sees the reason, and the invoice or shipment is blocked.
 
 A subscriber that throws, returns something other than an array, or returns a
 payload that cannot be JSON-encoded has a bug. That request is refused and
@@ -344,8 +402,8 @@ comment history where there is an order.
 
 **Your code owns what it declares.** With a subscriber that changes amounts,
 the invoice Two issues can differ from what the shop charged. That is your
-decision, and nothing in the plugin compares your result with the shop's own
-totals.
+decision: only the internal-consistency checks, and the shop-match checks you
+opt back into, look at your result.
 
 **Requirements on a subscriber.**
 
@@ -353,7 +411,7 @@ totals.
 - Cheap: it runs on every approval check during checkout as well as on every
   order request.
 - Present: a disabled module simply means the shop's own figures are sent, and
-  the plugin cannot tell that from having no subscriber.
+  the plugin's default handler runs its shop-match checks again.
 
 **Example.** Treat untaxed shipping as VAT-inclusive at the shop's shipping tax
 rate. A 29.00 shipping line becomes net `round(29.00 / 1.21, 2)` = 23.97 and tax
@@ -416,6 +474,13 @@ Removing a key, changing a unit (rates stay decimal fractions), tightening a
 check a v1 subscriber could already pass, or firing on fewer requests is never
 done. A genuinely incompatible change would arrive as a new interface, with this
 one still firing alongside it.
+
+One documented exception, from the release that carries TWO-26276: the line tax
+reconcile, an internal-consistency check, also runs on what a subscriber
+returns. On order create and update, a line other than shipping whose tax does
+not follow from its own declared rate and net (gross = net + tax at that rate,
+within the tolerance above) is now refused locally before it is sent, where
+4.0.0 sent a subscriber's lines unchecked. `contract_version` stays `1`.
 
 ## Development
 
