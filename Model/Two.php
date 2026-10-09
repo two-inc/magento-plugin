@@ -343,6 +343,7 @@ class Two extends AbstractMethod
         );
         $error = $this->getErrorFromResponse($response);
         if ($error) {
+            $this->logOrderCreateRefusal($order, $response);
             throw new LocalizedException($error);
         }
 
@@ -477,6 +478,31 @@ class Two extends AbstractMethod
             return $message;
         }
         return __('%1 [Trace ID: %2]', $message, $traceID);
+    }
+
+    /**
+     * Record why the order create was refused, for the merchant (TWO-26259).
+     *
+     * The buyer sees only what getErrorFromResponse() chose to show, which for
+     * a client error is the error message alone. The error details are the
+     * part that says what to fix, so they go to the merchant's error log
+     * whatever the buyer was shown.
+     *
+     * @param Order $order
+     * @param array $response
+     * @return void
+     */
+    private function logOrderCreateRefusal(Order $order, array $response): void
+    {
+        $this->logRepository->addErrorLog(
+            'Order create refused',
+            [
+                'quote_id' => $order->getQuoteId(),
+                'error_code' => $response['error_code'] ?? null,
+                'error_message' => $response['error_message'] ?? null,
+                'error_details' => $response['error_details'] ?? null,
+            ]
+        );
     }
 
     /**
