@@ -207,6 +207,7 @@ class TwoErrorHandlingTest extends TestCase
                 ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
                 ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
             ]]), true, 'field required. ' . $phone],
+            'recognised field ending in a question mark keeps it' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Is this right?']]]), true, 'Phone Number: Is this right?'],
             'unrecognised field ending in a question mark keeps it' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [['loc' => ['x'], 'msg' => 'Is this right?']]]), false, 'Is this right?'],
             'no HTTP response at create shows the general error' => [['error_code' => 400, 'error_message' => 'Could not resolve host'], true, $general],
         ];

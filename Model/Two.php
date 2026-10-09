@@ -623,7 +623,10 @@ class Two extends AbstractMethod
             $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
 
             if ($fieldName && $msg) {
-                $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
+                $entry = (string)__('%1: %2.', $fieldName, rtrim($msg, '.'));
+                // A message already ending in ? or ! keeps its own mark,
+                // not the template's full stop.
+                $errs[] = preg_match('/[!?]$/', $msg) ? preg_replace('/\.$/', '', $entry) : $entry;
             } elseif ($fieldName) {
                 $errs[] = __('%1 is not valid.', $fieldName);
             } elseif ($msg) {
