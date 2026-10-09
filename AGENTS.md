@@ -714,6 +714,30 @@ tab stop back before the newly opened one takes its. A pointer press outside the
 open popover closes it too, with the company field counted as inside the
 control.
 
+## The company relay resolves an ISO 3166-2 region to the store's own
+
+The company lookup answers an address region as an ISO 3166-2 code ("ES-M",
+"IT-RM"), which no region select is labelled with. `CompanyLookup::get()` passes
+each address through `Service\Address\IsoRegionResolver`, which adds
+`region_id` and `region_code` from the store's own region rows when the code
+resolves, and leaves `region` exactly as answered (TWO-26263). Both checkouts
+select `region_id` when their select offers it, and otherwise fall back to
+matching the region text, where an unmatched own-country code is left out of
+the city (TWO-26258).
+
+The match is against the live directory rows, so a merchant's edited region
+list is respected. Only a code for the address's own country is considered,
+then the whole code, then its suffix (numeric suffixes as numbers, for France).
+Released core codes that are neither (all of ES, DE, AT and FI; some of FR,
+EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing in
+core's own `UpdateRegionCodesFor<Country>V1` patches that those rules miss,
+plus the ES-IB code those patches give the Balearic province. IN-DH is left
+out: it is a merged territory, and core's older "DN" is only half of it, so a
+match would select the wrong region for the other half. A core region
+the patches leave alone has no current ISO code (abolished Italian, Indian and
+Latvian units, US military and Pacific codes). Anything else resolves to
+nothing and the address is relayed as before; do not add a guess.
+
 ## What focus landing on the checkout does to an open signup popup
 
 Every `focusin` while the hosted sole-trader signup window is up is classified

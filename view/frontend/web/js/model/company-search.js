@@ -586,6 +586,21 @@ define([
     }
 
     /**
+     * Does the region `<select>` carry an option with this exact value?
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string} value a region id
+     * @returns {boolean}
+     */
+    function hasRegionOption(select, value) {
+        const options = (select && select.options) || [];
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value === value) return true;
+        }
+        return false;
+    }
+
+    /**
      * Write an address payload into one form via the shared field-routing
      * engine (resolveAddressValues()/resolveRegion(), both below).
      *
@@ -1299,7 +1314,8 @@ define([
          * allows (TWO-25461):
          *
          *  1. the region `<select>`, when the country has predefined regions AND
-         *     an option matches the region text (best-effort — see
+         *     either the payload's `region_id` is one of its options or an
+         *     option matches the region text (best-effort, see
          *     regionOptionValue());
          *  2. the free-text region input, for a country with no predefined
          *     regions;
@@ -1328,6 +1344,14 @@ define([
 
             const handle = resolveRegionField($root);
             if (handle.select) {
+                // The store's own region id, when the module's relay resolved
+                // the registry's ISO 3166-2 code to one (TWO-26263). Taken only
+                // where this select offers it: the form may be showing another
+                // country's regions.
+                const storeRegionId = hasValue(address.region_id) ? String(address.region_id) : '';
+                if (storeRegionId && hasRegionOption(handle.select, storeRegionId)) {
+                    return { region_id: storeRegionId };
+                }
                 const optionValue = regionOptionValue(handle.select, region);
                 // An unmatched region falls through to the city rather than
                 // guessing at a region id — a wrong id is a wrong address, and

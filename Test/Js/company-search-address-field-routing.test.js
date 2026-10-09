@@ -497,6 +497,29 @@ describe("an ISO 3166-2 code for the form's own country is not appended to the c
     });
 });
 
+describe("the relay's store region id is preferred over matching the region text", () => {
+    // TWO-26263: the module's company relay adds the store's own region id
+    // beside an ISO 3166-2 region it could resolve. The select takes it
+    // wherever it offers that id; otherwise the text routing above applies.
+    test.each([
+        [{ region: 'US-NY', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'id offered by the select'],
+        [{ region: 'US-NY', region_id: 43 }, { region_id: '43', city: 'Albany' }, 'a numeric id is matched as text'],
+        [{ region: 'California', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'the id wins over a text match'],
+        [{ region: 'US-NY', region_id: '99' }, { region_id: '', city: 'Albany' }, 'an id the select lacks falls back'],
+        [{ region: 'US-NY' }, { region_id: '', city: 'Albany' }, 'no id: the text routing is unchanged']
+    ])('%p -> %p (%s)', (payload, expected, why) => {
+        const { apply, field } = load('select', 'US');
+
+        apply(Object.assign({ city: 'Albany', postal_code: '12207', street: 'State St' }, payload));
+
+        Object.keys(expected).forEach(function (name) {
+            expect(`${why}: ${name}=${field(name).value}`).toBe(
+                `${why}: ${name}=${expected[name]}`
+            );
+        });
+    });
+});
+
 describe('every field the write can reach, the revert can take back', () => {
     test('line 2 and the region are reverted alongside the original three', () => {
         // The lists have to stay in step. A field the write reaches and the
