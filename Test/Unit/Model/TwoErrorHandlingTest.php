@@ -202,6 +202,12 @@ class TwoErrorHandlingTest extends TestCase
             'SAME_BUYER_SELLER_ERROR at create shows same company' => [$err(400, 'SAME_BUYER_SELLER_ERROR'), true, $sameCompany],
             '400 with error_json at create names the field' => [$err(400, 'SCHEMA_ERROR', $fieldJson), true, $phone],
             '422 with error_json at create names the field' => [$err(422, 'SCHEMA_ERROR', $fieldJson), true, $phone],
+            'unrecognised field and duplicates are punctuated and de-duplicated' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [
+                ['loc' => ['some', 'unknown'], 'msg' => 'field required'],
+                ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
+                ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
+            ]]), true, 'field required. ' . $phone],
+            'unrecognised field ending in a question mark keeps it' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [['loc' => ['x'], 'msg' => 'Is this right?']]]), false, 'Is this right?'],
             'no HTTP response at create shows the general error' => [['error_code' => 400, 'error_message' => 'Could not resolve host'], true, $general],
         ];
     }

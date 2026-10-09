@@ -24,32 +24,38 @@ class TwoOrderCreateRefusalLogTest extends TestCase
     public static function refusalCases(): array
     {
         return [
-            'ORDER_INVALID keeps its details' => [
+            'ORDER_INVALID keeps its details and trace id' => [
                 [
                     'http_status' => 400,
                     'error_code' => 'ORDER_INVALID',
                     'error_message' => 'Order is invalid',
                     'error_details' => 'line_items[0].tax_rate does not match',
+                    'error_trace_id' => 'trace-1',
                 ],
                 [
                     'quote_id' => 42,
                     'error_code' => 'ORDER_INVALID',
                     'error_message' => 'Order is invalid',
                     'error_details' => 'line_items[0].tax_rate does not match',
+                    'error_json' => null,
+                    'error_trace_id' => 'trace-1',
                 ],
             ],
-            'SCHEMA_ERROR keeps its details' => [
+            'SCHEMA_ERROR keeps its details and error_json' => [
                 [
                     'http_status' => 400,
                     'error_code' => 'SCHEMA_ERROR',
                     'error_message' => 'Invalid payload',
                     'error_details' => 'buyer.company.organization_number: field required',
+                    'error_json' => [['loc' => ['buyer', 'company', 'organization_number'], 'msg' => 'field required']],
                 ],
                 [
                     'quote_id' => 42,
                     'error_code' => 'SCHEMA_ERROR',
                     'error_message' => 'Invalid payload',
                     'error_details' => 'buyer.company.organization_number: field required',
+                    'error_json' => [['loc' => ['buyer', 'company', 'organization_number'], 'msg' => 'field required']],
+                    'error_trace_id' => null,
                 ],
             ],
             'SAME_BUYER_SELLER_ERROR keeps the original message' => [
@@ -64,6 +70,8 @@ class TwoOrderCreateRefusalLogTest extends TestCase
                     'error_code' => 'SAME_BUYER_SELLER_ERROR',
                     'error_message' => 'Buyer and seller are the same',
                     'error_details' => 'organization_number matches the merchant',
+                    'error_json' => null,
+                    'error_trace_id' => null,
                 ],
             ],
             'a refusal with no error fields still logs, as nulls' => [
@@ -73,6 +81,8 @@ class TwoOrderCreateRefusalLogTest extends TestCase
                     'error_code' => null,
                     'error_message' => null,
                     'error_details' => null,
+                    'error_json' => null,
+                    'error_trace_id' => null,
                 ],
             ],
         ];

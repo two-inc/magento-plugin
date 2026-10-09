@@ -501,6 +501,8 @@ class Two extends AbstractMethod
                 'error_code' => $response['error_code'] ?? null,
                 'error_message' => $response['error_message'] ?? null,
                 'error_details' => $response['error_details'] ?? null,
+                'error_json' => $response['error_json'] ?? null,
+                'error_trace_id' => $response['error_trace_id'] ?? null,
             ]
         );
     }
@@ -560,7 +562,7 @@ class Two extends AbstractMethod
             return $generalError;
         }
 
-        // Validation errors — user-facing, no trace ID
+        // Validation errors: user-facing, no trace ID
         if ($isClientError && $validation !== null) {
             return $validation;
         }
@@ -625,9 +627,10 @@ class Two extends AbstractMethod
             } elseif ($fieldName) {
                 $errs[] = __('%1 is not valid.', $fieldName);
             } elseif ($msg) {
-                $errs[] = $msg;
+                $errs[] = preg_match('/[.!?]$/', $msg) ? $msg : $msg . '.';
             }
         }
+        $errs = array_values(array_unique(array_map('strval', $errs)));
         if (count($errs) > 0) {
             // Wrap as a Phrase without re-running translation: each
             // entry in $errs is already __()-translated.
