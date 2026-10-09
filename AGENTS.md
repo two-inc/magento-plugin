@@ -729,12 +729,12 @@ The match is against the live directory rows, so a merchant's edited region
 list is respected. Only a code for the address's own country is considered,
 then the whole code, then its suffix (numeric suffixes as numbers, for France).
 Released core codes that are neither (all of ES, DE, AT and FI; some of FR,
-EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing
-core's own `UpdateRegionCodesFor<Country>V1` patches make, plus the ES-IB code
-those patches give the Balearic province. A core region those patches leave
-alone has no current ISO code (abolished Italian, Indian and Latvian units,
-US military and Pacific codes). Anything else resolves to nothing and the address is relayed
-as before; do not add a guess.
+EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing in
+core's own `UpdateRegionCodesFor<Country>V1` patches that those rules miss,
+plus the ES-IB code those patches give the Balearic province. A core region
+the patches leave alone has no current ISO code (abolished Italian, Indian and
+Latvian units, US military and Pacific codes). Anything else resolves to
+nothing and the address is relayed as before; do not add a guess.
 
 ## What focus landing on the checkout does to an open signup popup
 
