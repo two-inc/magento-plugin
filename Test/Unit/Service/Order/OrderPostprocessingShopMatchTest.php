@@ -209,6 +209,36 @@ class OrderPostprocessingShopMatchTest extends TestCase
     }
 
     /**
+     * A check that cannot see the order the line was built from fails closed:
+     * under the hook that is a subscriber-style failure, never a pass.
+     *
+     * @dataProvider missingSubjects
+     */
+    public function testAMissingSubjectFailsClosed(string $requestType, array $drop, string $description): void
+    {
+        $context = array_diff_key($this->context($requestType === Hook::REQUEST_ORDER_INTENT ? 'intent_order' : 'invoice'), array_flip($drop));
+
+        try {
+            $this->postprocessor(false)->process($requestType, $this->payload($requestType), $context);
+            $this->fail($description . ': nothing was refused');
+        } catch (LocalizedException $e) {
+            $this->assertNotInstanceOf(ShopMatchRefusedException::class, $e, $description);
+            $refused = array_values(array_filter($this->errorLog, static fn (array $entry): bool => $entry[0] === 'OrderPostprocessingRefused'));
+            $this->assertSame('TWO_ORDER_POSTPROCESSING_HOOK_FAILED', $refused[0][1]['code'] ?? null, $description);
+            $this->assertSame(\LogicException::class, $refused[0][1]['details']['exception'] ?? null, $description);
+        }
+    }
+
+    public static function missingSubjects(): array
+    {
+        return [
+            [Hook::REQUEST_ORDER_INTENT, ['intent_order'], 'intent without its converted order'],
+            [Hook::REQUEST_ORDER_CREATE, ['order', 'invoice'], 'create without its order'],
+            [Hook::REQUEST_CAPTURE, ['order', 'invoice'], 'capture without order or invoice'],
+        ];
+    }
+
+    /**
      * With both kinds failing and no subscriber, the shop-match refusal still
      * comes first, as it did when the builder raised it.
      */

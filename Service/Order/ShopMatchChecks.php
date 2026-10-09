@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
+use LogicException;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
@@ -43,6 +44,7 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface
 
     /**
      * @inheritDoc
+     * @throws LogicException when the context lacks the order or invoice the shipping line was built from
      */
     public function check(array $result, array $payload, array $context): void
     {
@@ -72,9 +74,14 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface
                 return;
         }
 
-        if ($entity instanceof Order || $entity instanceof Invoice) {
-            $service->assertShippingTaxFallback($entity);
+        if (!$entity instanceof Order && !$entity instanceof Invoice) {
+            // Fail closed: a check that cannot see the shop must not pass. Under the hook this is HOOK_FAILED.
+            throw new LogicException(sprintf(
+                'The %s context carries no order to check the shipping line against.',
+                $requestType
+            ));
         }
+        $service->assertShippingTaxFallback($entity);
     }
 
     /**

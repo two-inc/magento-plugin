@@ -363,7 +363,8 @@ class OrderPostprocessorTest extends TestCase
         // Placed with the shipping tax fallback blank: no shop-match check applies.
         $order->setData('two_shipping_tax_rate_source', 'none');
 
-        return ['trigger' => 'test', 'endpoint' => '/v1/order/{id}/refund', 'order' => $order];
+        // The order stands in as the converted quote an intent carries too.
+        return ['trigger' => 'test', 'endpoint' => '/v1/order/{id}/refund', 'order' => $order, 'intent_order' => $order];
     }
 
     /**
