@@ -1194,7 +1194,8 @@ and is never derived. Both intra-community codes also need a buyer VAT number
 whose prefix is an EU state other than the merchant's country (TWO-26153):
 `TaxCodeResolver::buyerVatNumber()` reads the billing address `vat_id`, then
 the order's `customer_taxvat`, and normalises it against the billing country
-(letters and digits only; no digit left is no number). A `vat_id` refused by
+(letters and digits only; no digit left is no number; a `GR` prefix is
+written as `EL`). A `vat_id` refused by
 Magento's VAT check (`vat_request_success` true and `vat_is_valid` set and
 false) gives no number at all and never falls back to `customer_taxvat`, which
 often holds the same number. Core stores a failed request as invalid too, and

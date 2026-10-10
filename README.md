@@ -227,7 +227,8 @@ A line's code comes from the first of these that gives one:
    and digits is removed and it is upper-cased, and a value with no digit
    (such as "n/a") is no number; a number that does not start with two
    letters gets the billing country in front (`EL` for Greece, `FR` for
-   Monaco). The prefix `EL` counts as Greece, and `MC` is not a VAT prefix.
+   Monaco). A `GR` prefix is written as `EL` (Greece's VAT prefix), which
+   counts as Greece, and `MC` is not a VAT prefix.
    Order create also sends it to Two as `buyer_vat_number`, for a
    merchant in Spain and a buyer outside Spain only: Two requires a Spanish
    buyer's VAT number to equal its organisation number, so it is never sent

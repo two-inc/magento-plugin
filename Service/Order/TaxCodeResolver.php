@@ -201,8 +201,9 @@ class TaxCodeResolver
     /**
      * A VAT number in the form the API takes: upper case, everything but
      * letters and digits removed (whitespace of every kind, dots, hyphens,
-     * slashes), and the address country added in front when it does not start
-     * with two letters (Greece's prefix is EL, Monaco's FR). '' when nothing is
+     * slashes), a GR prefix written as EL, and the address country added in
+     * front when it does not start with two letters (Greece's prefix is EL,
+     * Monaco's FR). '' when nothing is
      * left or what is left holds no digit, so a placeholder such as "n/a" is
      * no number.
      *
@@ -216,7 +217,8 @@ class TaxCodeResolver
             return '';
         }
         if (preg_match('/^[A-Z]{2}/', $vat)) {
-            return $vat;
+            // Greece's VAT prefix is EL; a GR-prefixed number is written as Two expects it.
+            return strncmp($vat, 'GR', 2) === 0 ? 'EL' . substr($vat, 2) : $vat;
         }
         $country = strtoupper(trim($country));
         $country = self::VAT_PREFIX_FOR_COUNTRY[$country] ?? $country;
