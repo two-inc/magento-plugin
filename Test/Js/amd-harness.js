@@ -109,6 +109,7 @@ function defaultMocks() {
             push: function () {},
             asArray: function () { return []; }
         },
+        'Magento_Checkout/js/model/payment/method-list': function () { return []; },
         'Magento_Checkout/js/model/full-screen-loader': {
             startLoader: function () {},
             stopLoader: function () {}
