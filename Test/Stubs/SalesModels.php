@@ -160,6 +160,9 @@ use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 if (!class_exists(Order::class, false)) {
     class Order extends AbstractSalesModelStub
     {
+        public const STATE_PENDING_PAYMENT = 'pending_payment';
+        public const STATE_PROCESSING = 'processing';
+
         /** @var iterable|false */
         private $creditmemos = false;
 

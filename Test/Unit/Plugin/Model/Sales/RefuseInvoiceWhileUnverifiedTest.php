@@ -33,20 +33,12 @@ class RefuseInvoiceWhileUnverifiedTest extends TestCase
             static fn (string $code): bool => in_array($code, ['two_payment', 'brand_payment'], true)
         );
 
-        $order = $this->getMockBuilder(Order::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['getState', 'getPayment'])
-            ->getMock();
-        $order->method('getState')->willReturn($state);
-        if ($method === null) {
-            $order->method('getPayment')->willReturn(null);
-        } else {
-            $payment = $this->getMockBuilder(Payment::class)
-                ->disableOriginalConstructor()
-                ->onlyMethods(['getMethod'])
-                ->getMock();
-            $payment->method('getMethod')->willReturn($method);
-            $order->method('getPayment')->willReturn($payment);
+        $order = new Order();
+        $order->setState($state);
+        if ($method !== null) {
+            $payment = new Payment();
+            $payment->setMethod($method);
+            $order->setPayment($payment);
         }
 
         $plugin = new RefuseInvoiceWhileUnverified($registry);
