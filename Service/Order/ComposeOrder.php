@@ -115,7 +115,7 @@ class ComposeOrder extends OrderService
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
             'buyer' => $this->getBuyer($order, $additionalData),
             'currency' => $order->getOrderCurrencyCode(),
-            'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($order)),
+            'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($order)),
             'gross_amount' => $this->roundAmt($grossTotal),
             'net_amount' => $this->roundAmt($netTotal),
             'tax_amount' => $this->roundAmt($taxTotal),

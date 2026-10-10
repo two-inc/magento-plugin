@@ -145,7 +145,6 @@ class SalesOrderAddressUpdateTermTest extends TestCase
                 'getAddress',
                 'getBuyer',
                 'getTaxSubtotals',
-                'getDiscountAmountItem',
                 'getFeeLines',
                 'getOtherChargesLineItem',
             ])
@@ -154,7 +153,6 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         $composeOrder->method('getAddress')->willReturn([]);
         $composeOrder->method('getBuyer')->willReturn([]);
         $composeOrder->method('getTaxSubtotals')->willReturn([]);
-        $composeOrder->method('getDiscountAmountItem')->willReturn(0.0);
         $composeOrder->method('getFeeLines')->willReturn([]);
         $composeOrder->method('getOtherChargesLineItem')->willReturn(null);
 
