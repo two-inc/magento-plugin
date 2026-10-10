@@ -15,6 +15,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Service\Payment\OrderService;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Exception\TwoRefusalException;
 
 /**
  * Cancel Payment Controller
@@ -72,7 +73,13 @@ class Cancel extends Action
             if ($order !== null) {
                 $this->orderService->failOrder($order, $exception->getMessage());
             }
-            $this->messageManager->addErrorMessage($exception->getMessage());
+            // The order comment keeps Two's full account for the merchant; the
+            // buyer is never shown the API's own text (TWO-26295).
+            $this->messageManager->addErrorMessage(
+                $exception instanceof TwoRefusalException
+                    ? $exception->getBuyerMessage()->render()
+                    : $exception->getMessage()
+            );
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
     }

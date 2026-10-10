@@ -261,6 +261,7 @@ define([
             this.initOrderIntentApprovedNotice(config);
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
+            this.orderIntentFieldErrors = config.orderIntentFieldErrors || null;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.termUnavailableMessage = config.termUnavailableMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
@@ -1513,23 +1514,48 @@ define([
                 return;
             }
 
-            // Every refusal from the API shows the general message
-            // (TWO-26295): its own text is written for an integrator or the
-            // merchant, and a buyer shown it has nothing to act on. The one
-            // exception is a refusal this module made itself before calling
-            // the API (PROXY_REFUSED), whose message is our own translated
-            // sentence.
-            let message = this.generalErrorMessage;
-            if (response && response.responseJSON
-                && response.responseJSON.error_code === 'PROXY_REFUSED'
-                && response.responseJSON.error_message) {
-                message = response.responseJSON.error_message;
+            // The API's own text never reaches the buyer (TWO-26295): it is
+            // written for an integrator or the merchant. A refusal naming a
+            // field the buyer can fix says which, in our own words; anything
+            // else shows the general message. A refusal this module made
+            // itself before calling the API (PROXY_REFUSED) keeps its own
+            // translated sentence.
+            const body = (response && response.responseJSON) || {};
+            let message = this.orderIntentFieldErrorMessage(body.error_json) || this.generalErrorMessage;
+            if (body.error_code === 'PROXY_REFUSED' && body.error_message) {
+                message = body.error_message;
             }
             if (message) {
                 // The tile's own bordered box, not the checkout message
                 // region (TWO-25326, 2026-08-05).
                 this.showOrderIntentErrorNotice(message);
             }
+        },
+        /**
+         * "<Field> is not valid." for each field a refusal's error_json names
+         * that the buyer can fix, or '' when it names none (TWO-26295).
+         * Chosen from the field path, never the message, with model-name
+         * segments a validator may insert (a capital first letter) dropped,
+         * exactly as order create does.
+         *
+         * @param {Array} errors the refusal's error_json
+         * @returns {string}
+         */
+        orderIntentFieldErrorMessage: function (errors) {
+            const copy = this.orderIntentFieldErrors;
+            if (!copy || !copy.labels || !copy.notValid || !Array.isArray(errors)) return '';
+            const messages = [];
+            errors.forEach(function (error) {
+                if (!error || !Array.isArray(error.loc)) return;
+                const path = error.loc.filter(function (segment) {
+                    return typeof segment === 'string' && segment !== '' && !/^[A-Z]/.test(segment);
+                }).join('.');
+                const label = Object.prototype.hasOwnProperty.call(copy.labels, path) ? copy.labels[path] : '';
+                if (!label) return;
+                const text = copy.notValid.replace('%1', label);
+                if (messages.indexOf(text) === -1) messages.push(text);
+            });
+            return messages.join(' ');
         },
         processTermsNotAcceptedErrorResponse: function (response) {
             this.showErrorMessage(this.termsNotAcceptedMessage);

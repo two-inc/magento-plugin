@@ -301,17 +301,32 @@ describe('gateway_method intent-approved notice', () => {
         expect(ctx.orderIntentErrorNotice()).toBe('Something went wrong.');
     });
 
+    const GENERAL = 'Something went wrong.';
+    const PHONE = ['buyer', 'representative', 'phone_number'];
+    const fieldError = (loc) => ({ loc: loc, msg: 'Value error, raw validator text' });
     test.each([
-        [{ error_code: 'SCHEMA_ERROR', error_message: 'invalid company number', error_details: 'number' }, 'a field failing validation'],
-        [{ error_code: 'JSON_MISSING_FIELD', error_details: 'a field is missing' }, 'a field missing'],
-        [{ error_code: 'ORDER_INVALID', error_message: 'Order is invalid', error_details: 'a field path' }, 'an order the API calls invalid'],
-        [{ error_code: 'MERCHANT_NOT_FOUND_ERROR', error_message: 'Merchant not found', error_details: 'detail' }, 'a shop configuration fault'],
-        [{ error_code: 'SOMETHING_NEW', error_message: 'unexpected', error_details: 'detail' }, 'a code the tile does not know']
-    ])('a refused request (%j) shows the general message, never the API text (%s)', (body, description) => {
-        // TWO-26295: the API's own wording is for an integrator; a buyer shown
-        // it has nothing to act on.
+        [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(PHONE)] }, 'Phone Number is not valid.', 'a field the buyer can fix'],
+        [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(['buyer', 'SomeSchema', 'company', 'organization_number'])] }, 'Company Number is not valid.', 'a field behind a model-name segment'],
+        [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(PHONE), fieldError(['billing_address', 'city']), fieldError(PHONE)] }, 'Phone Number is not valid. City is not valid.', 'two fields, one repeated'],
+        [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details', error_json: [fieldError(PHONE)] }, 'Phone Number is not valid.', 'ORDER_INVALID carrying a field path'],
+        [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(['buyer', 'unknown'])] }, GENERAL, 'a field we do not know'],
+        [{ error_code: 'JSON_MISSING_FIELD', error_details: 'raw details' }, GENERAL, 'a field missing, no path'],
+        [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'ORDER_INVALID naming nothing'],
+        [{ error_code: 'MERCHANT_NOT_FOUND_ERROR', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'a shop configuration fault'],
+        [{ error_code: 'SOMETHING_NEW', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'a code the tile does not know']
+    ])('a refused request (%j) shows "%s", never the API text (%s)', (body, expected, description) => {
+        // TWO-26295: the API's own wording is for an integrator; a field the
+        // buyer can fix is named in our own words, anything else is general.
         const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
-        ctx.generalErrorMessage = 'Something went wrong.';
+        ctx.generalErrorMessage = GENERAL;
+        ctx.orderIntentFieldErrors = {
+            labels: {
+                'buyer.representative.phone_number': 'Phone Number',
+                'buyer.company.organization_number': 'Company Number',
+                'billing_address.city': 'City'
+            },
+            notValid: '%1 is not valid.'
+        };
         const pushed = [];
         ctx.messageContainer.errorMessages = {
             push: function (msg) {
@@ -323,7 +338,8 @@ describe('gateway_method intent-approved notice', () => {
         ctx.processOrderIntentErrorResponse.call(ctx, { status: 400, responseJSON: body });
 
         expect([description, ctx.orderIntentErrorNotice(), pushed])
-            .toEqual([description, 'Something went wrong.', []]);
+            .toEqual([description, expected, []]);
+        expect(ctx.orderIntentErrorNotice()).not.toContain('raw');
     });
 
     test('a later error replaces the earlier one rather than stacking', () => {

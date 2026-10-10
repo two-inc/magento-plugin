@@ -25,6 +25,7 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
+use Two\Gateway\Exception\TwoRefusalException;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\OrderPostprocessor;
@@ -228,10 +229,7 @@ class OrderService
             'GET',
             (int)$order->getStoreId()
         );
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-        if ($error) {
-            throw new LocalizedException($error);
-        }
+        $this->throwIfRefused($order, $response);
 
         return $response;
     }
@@ -279,10 +277,7 @@ class OrderService
             );
         }
 
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($result['body']);
-        if ($error) {
-            throw new LocalizedException($error);
-        }
+        $this->throwIfRefused($order, $result['body']);
 
         return $result['body'];
     }
@@ -317,13 +312,29 @@ class OrderService
             (int)$order->getStoreId()
         );
         if ($response) {
-            $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-            if ($error) {
-                throw new LocalizedException($error);
-            }
+            $this->throwIfRefused($order, $response);
         }
 
         return true;
+    }
+
+    /**
+     * Refuse when Two did. The exception's message is the full account, for
+     * the merchant; its buyer message never carries the API's own text
+     * (TWO-26295).
+     *
+     * @param Order $order
+     * @param array $response
+     * @return void
+     * @throws TwoRefusalException
+     */
+    private function throwIfRefused(Order $order, array $response): void
+    {
+        $method = $order->getPayment()->getMethodInstance();
+        $error = $method->getErrorFromResponse($response);
+        if ($error) {
+            throw new TwoRefusalException($error, $method->getBuyerErrorFromResponse($response) ?? $error);
+        }
     }
 
     /**

@@ -886,13 +886,21 @@ back from a number-less billing capture to the shipping company while the
 quote's shipping and billing addresses are in different countries. Both fail
 open while a country is unknown.
 
-Every refusal the API gives the order intent shows the general error message,
-whatever its code, never the API's own text: that is written for an
-integrator or for the merchant, and a buyer shown it has nothing to act on. The
-one exception is `PROXY_REFUSED`, a refusal this module made before calling the
-API, whose message is our own translated sentence. Order create follows the
-same rule for field validation failures: the buyer gets the general error and
-the validator's text goes to the error log with the rest of the refusal.
+The API's own text never reaches the buyer: it is written for an integrator or
+for the merchant. A refusal whose `error_json` names a field the buyer can fix
+says which, in our own words ("Phone Number is not valid."), with the field
+chosen from its path and never from the message; `Two::getFieldErrorLabels()` is
+the one path-to-label map, and both the order intent tile (through the checkout
+config) and order create read it. A path drops any segment starting with a
+capital letter, which is where a validator inserts model names. A refusal that
+names nothing the buyer can fix shows a standard message: the general error, or
+at order create the "not available for this order" notice for a non-validation
+refusal. `PROXY_REFUSED`, a refusal this module made before calling the API,
+keeps its own translated sentence. The buyer's return to the shop follows the
+same rule: `OrderService` throws `Exception\TwoRefusalException`, whose message
+is Two's full account for the order comment and admin notice, and whose buyer
+message is what the confirm and cancel controllers show. The full detail always
+reaches the merchant through the error log or the order comment.
 
 ## The term chips are a radio group
 

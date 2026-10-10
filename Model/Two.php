@@ -510,10 +510,12 @@ class Two extends AbstractMethod
     /**
      * Get error from response
      *
-     * With $atOrderCreate, any refusal at status 400 or above shows the buyer
-     * the general error when the API reported field validation failures, else
-     * the same-company message, else a generic notice; a call that got no HTTP
-     * response shows the general error too. The API's own error message and trace id speak to
+     * With $atOrderCreate, any refusal at status 400 or above names the
+     * fields the buyer can fix ("Phone Number is not valid."), chosen from
+     * the structured field path and never from the API's wording; a
+     * validation failure naming no field we know shows the general error;
+     * else the same-company message, else a generic notice. A call that got
+     * no HTTP response shows the general error too. The API's own error message and trace id speak to
      * the integration, not the buyer (TWO-26259), and the merchant finds them
      * in the error log. Same order as the WooCommerce plugin.
      *
@@ -546,11 +548,14 @@ class Two extends AbstractMethod
         $validation = $this->getValidationMessage($response);
 
         if ($atOrderCreate && $status !== null && $status >= 400) {
+            // A field the buyer can fix is named, in our own words; the
+            // validator's text never reaches the buyer, and the merchant
+            // finds it in the error log (TWO-26295).
+            $fieldError = $this->getFieldErrorMessage($response);
+            if ($fieldError !== null) {
+                return $fieldError;
+            }
             if ($validation !== null) {
-                // The validator's text is written for an integrator (a field
-                // path, an identifier format), so the buyer gets the general
-                // message and the merchant finds the detail in the error log
-                // (TWO-26295).
                 return $generalError;
             }
             if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
@@ -609,6 +614,100 @@ class Two extends AbstractMethod
     }
 
     /**
+     * What a BUYER is shown for a refused request outside order create
+     * (TWO-26295): the fields they can fix, the same-company message, or the
+     * general error. Never the API's own text. Null when the response is not
+     * a refusal.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    public function getBuyerErrorFromResponse(array $response): ?Phrase
+    {
+        if ($this->getErrorFromResponse($response) === null) {
+            return null;
+        }
+        $fieldError = $this->getFieldErrorMessage($response);
+        if ($fieldError !== null) {
+            return $fieldError;
+        }
+        if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+            return __('The buyer and the seller are the same company.');
+        }
+        return __(
+            'Something went wrong with your request to %1. %2',
+            $this->brandRegistry->getProductName(),
+            __('Please try again later.')
+        );
+    }
+
+    /**
+     * "<Field> is not valid." for each field in a response's error_json whose
+     * path we recognise, or null when it names none (TWO-26295).
+     *
+     * Chosen from the path, never the message, so nothing the API wrote
+     * reaches the buyer.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    public function getFieldErrorMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $labels = [];
+        foreach ($response['error_json'] as $err) {
+            $label = is_array($err) && isset($err['loc']) && is_array($err['loc'])
+                ? $this->fieldLabelForLoc($err['loc'])
+                : null;
+            if ($label !== null) {
+                $labels[(string)$label] = (string)__('%1 is not valid.', $label);
+            }
+        }
+        if ($labels === []) {
+            return null;
+        }
+        // Each entry is already translated.
+        return __('%1', implode(' ', array_values($labels)));
+    }
+
+    /**
+     * Field path => buyer-facing label, for every field a buyer can fix. The
+     * path drops model-name segments a validator may insert (any segment
+     * starting with a capital letter), so the same field matches however the
+     * request was validated.
+     *
+     * @return array<string, Phrase>
+     */
+    public function getFieldErrorLabels(): array
+    {
+        return [
+            'buyer.representative.phone_number' => __('Phone Number'),
+            'buyer.company.organization_number' => __('Company Number'),
+            'buyer.representative.first_name' => __('First Name'),
+            'buyer.representative.last_name' => __('Last Name'),
+            'buyer.representative.email' => __('Email Address'),
+            'billing_address.street_address' => __('Street Address'),
+            'billing_address.city' => __('City'),
+            'billing_address.country' => __('Country'),
+            'billing_address.postal_code' => __('Zip/Postal Code'),
+        ];
+    }
+
+    /**
+     * @param array $loc a field path as the API reports it
+     * @return Phrase|null
+     */
+    private function fieldLabelForLoc(array $loc): ?Phrase
+    {
+        $segments = array_filter($loc, static function ($segment): bool {
+            return is_string($segment) && $segment !== '' && !preg_match('/^[A-Z]/', $segment);
+        });
+        return $this->getFieldErrorLabels()[implode('.', $segments)] ?? null;
+    }
+
+    /**
      * The buyer-facing field messages in a response's error_json, if any.
      *
      * @param array $response
@@ -654,22 +753,8 @@ class Two extends AbstractMethod
      */
     public function getFieldNameFromLoc(string $locStr): ?Phrase
     {
-        static $fieldNames = null;
-        if ($fieldNames === null) {
-            $fieldNames = [
-                '["buyer","representative","phone_number"]' => __('Phone Number'),
-                '["buyer","company","organization_number"]' => __('Company Number'),
-                '["buyer","representative","first_name"]' => __('First Name'),
-                '["buyer","representative","last_name"]' => __('Last Name'),
-                '["buyer","representative","email"]' => __('Email Address'),
-                '["billing_address","street_address"]' => __('Street Address'),
-                '["billing_address","city"]' => __('City'),
-                '["billing_address","country"]' => __('Country'),
-                '["billing_address","postal_code"]' => __('Zip/Postal Code'),
-            ];
-        }
-        $locStr = preg_replace('/\s+/', '', $locStr);
-        return $fieldNames[$locStr] ?? null;
+        $loc = json_decode($locStr, true);
+        return is_array($loc) ? $this->fieldLabelForLoc($loc) : null;
     }
 
     /**
