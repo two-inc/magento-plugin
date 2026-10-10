@@ -57,12 +57,6 @@ class TaxCodeResolver
     /** Spanish postcodes outside the EU VAT area: the Canaries (35, 38), Ceuta (51) and Melilla (52). */
     private const ES_OUTSIDE_VAT_AREA = ['35', '38', '51', '52'];
 
-    /**
-     * VAT prefixes that are not the country's ISO code: Greece's is EL, and a
-     * Monaco business holds a French number.
-     */
-    private const VAT_PREFIX_FOR_COUNTRY = ['GR' => 'EL', 'MC' => 'FR'];
-
     /** Greece's VAT prefix, which names GR. */
     private const VAT_PREFIX_GREECE = 'EL';
 
@@ -199,33 +193,19 @@ class TaxCodeResolver
     }
 
     /**
-     * A VAT number in the form the API takes: upper case, everything but
-     * letters and digits removed (whitespace of every kind, dots, hyphens,
-     * slashes), and the address country added in front when it does not start
-     * with two letters (Greece's prefix is EL, Monaco's FR). '' when nothing is
-     * left; any other value is taken as the number the buyer gave, so "n/a"
-     * is the number NA.
+     * A VAT number as the buyer entered it, trimmed of leading and trailing
+     * whitespace and nothing else: no case change, no characters removed, no
+     * prefix added. '' when nothing is left.
      *
      * @param string $raw as the shop holds it
-     * @param string $country the address country it belongs to, '' for none
      */
-    public static function normaliseVatNumber(string $raw, string $country): string
+    public static function normaliseVatNumber(string $raw): string
     {
-        $vat = (string)preg_replace('/[^A-Z0-9]+/', '', strtoupper($raw));
-        if ($vat === '') {
-            return '';
-        }
-        if (preg_match('/^[A-Z]{2}/', $vat)) {
-            return $vat;
-        }
-        $country = strtoupper(trim($country));
-        $country = self::VAT_PREFIX_FOR_COUNTRY[$country] ?? $country;
-
-        return preg_match('/^[A-Z]{2}$/', $country) ? $country . $vat : $vat;
+        return trim($raw);
     }
 
     /**
-     * The order's buyer VAT number, normalised against the billing country:
+     * The order's buyer VAT number, trimmed:
      * the billing address VAT id, then the customer's tax/VAT number. A
      * billing VAT id that a VAT check which got an answer marked invalid stops
      * there with no number: the customer's tax/VAT number is often the same
@@ -237,10 +217,9 @@ class TaxCodeResolver
     public static function buyerVatNumber(Order $order): string
     {
         $billing = $order->getBillingAddress();
-        $country = $billing ? (string)$billing->getCountryId() : '';
         if ($billing) {
             $raw = $billing->getVatId();
-            $vat = is_scalar($raw) ? self::normaliseVatNumber((string)$raw, $country) : '';
+            $vat = is_scalar($raw) ? self::normaliseVatNumber((string)$raw) : '';
             if ($vat !== '') {
                 $checked = $billing->getVatIsValid();
                 $refused = (bool)$billing->getVatRequestSuccess()
@@ -251,7 +230,7 @@ class TaxCodeResolver
         }
         $raw = $order->getCustomerTaxvat();
 
-        return is_scalar($raw) ? self::normaliseVatNumber((string)$raw, $country) : '';
+        return is_scalar($raw) ? self::normaliseVatNumber((string)$raw) : '';
     }
 
     /**
@@ -275,7 +254,8 @@ class TaxCodeResolver
 
     /**
      * Whether the VAT number's prefix names an EU state other than the
-     * merchant's country. The prefix EL is Greece; MC is no VAT prefix, since
+     * merchant's country, read as entered (a lower-case prefix names no
+     * country). The prefix EL is Greece; MC is no VAT prefix, since
      * Monaco is in the EU VAT area through France.
      */
     private static function vatIsFromAnotherEuState(string $vat, string $merchantCountry): bool
