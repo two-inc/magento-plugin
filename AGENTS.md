@@ -1218,9 +1218,12 @@ payload before the postprocessing hook runs and a subscriber can override it.
 Order intent is left alone: the API does not check codes there.
 
 The rows live in `tax_code_map` as JSON keyed `<product tax class>|exempt`,
-`<class>|rate:<tax rate code>` and `<class>|none` (`Model\Config\Backend\TaxCodeMap`;
-the form posts key and code pairs because a rate code can hold any
-character). The shipping line keys on core's shipping tax class, the
+`<class>|rate:<tax rate code>` and `<class>|none` (`Model\Config\Backend\TaxCodeMap`).
+The form posts the whole map as one hidden JSON field that
+`Two_Gateway/js/tax-code-map` rewrites from the dropdowns: a rate code can
+hold any character, and one field per row could pass `max_input_vars`, where
+PHP silently drops the rest and the save would delete rows. A post that is not
+a JSON object is refused, never stored as empty. The shipping line keys on core's shipping tax class, the
 surcharge on its own; lines with no class (`OTHER` fees, a flat-rate
 surcharge, the refund `adjustment`, an unmatched product line) have no key.
 For each 0% line the first match wins (TWO-26153; by design the plugin
@@ -1229,7 +1232,7 @@ line falls under):
 
 1. Exempt buyer: billing country and tax address both in the EU VAT area
    (`EU` plus GB with a BT postcode) and not the merchant record's country,
-   and `buyerVatNumber()` non-empty. The class's `exempt` row.
+   which must be known, and `buyerVatNumber()` non-empty. The class's `exempt` row.
 2. The class's rates at the tax address from core, via `Service\Order\ShopTaxRates`:
    `Calculation::getRateRequest()` with the order's addresses, the
    order-time customer group's tax class and the store, then
@@ -1288,8 +1291,9 @@ Placement stores what each 0% line resolved to, "no code" included, in
 share a key because they all resolve alike (no class, so step 4) and because
 a fee can change id after placement: a provider that itemizes only a saved
 order leaves the create with an "Other charges" residual and the edit with its
-own line. The refund `adjustment` line is not recorded; it takes step 4 over
-the recorded codes. Edit,
+own line. The record's `shared` key lists the codes steps 1 to 3 gave at
+placement (never derived ones); the refund `adjustment` line is not recorded
+and takes step 4 over that list, or derives as before when it is empty. Edit,
 capture, shipment and refund read the record and never resolve those lines
 again; a line it does not cover, or an order placed before it existed,
 resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
@@ -1300,9 +1304,9 @@ items behind them on SKU, the name only breaking a tie, never by position
 (`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
 shift classes. The dropdown list comes from
 `Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
-when it cannot be read, the admin field carries the saved rows as hidden
-pairs so a section save keeps them, and it does the same for saved rows it no
-longer shows (a rate deleted or raised above 0%).
+the hidden field starts as the saved map, so a save while that list cannot be
+read keeps it, and it carries saved rows the form no longer shows (a rate
+deleted or raised above 0%).
 
 ## An unitemized fee is reconciled per entity, and refundable
 

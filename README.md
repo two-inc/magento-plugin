@@ -293,7 +293,7 @@ and once for all other fee lines ("Other charges" and fee-provider lines),
 which share one code whatever their id. Order edit, capture, shipment and
 refund send those codes, so a later change to the addresses, your rows or a
 product's tax class does not move a placed order. The refund adjustment line
-takes the code the recorded lines share (step 4). These resolve afresh
+takes the code the lines coded by steps 1 to 3 shared at placement (step 4). These resolve afresh
 instead: a product line placement could not match to its item (its SKU was
 changed by another extension, or its item has no quote item), a fee line on
 an order that had none at placement, and every line of an order placed before
