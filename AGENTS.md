@@ -978,8 +978,13 @@ order while it is in a fulfil-on status tries again. If Two accepts but saving
 the order and invoice then fails, all of it rolls back, and the comment says
 instead that Two fulfilled the order but it could not be saved
 (`StatusFulfilmentNotSaved` at error). If that rollback itself fails, it is
-logged on its own (`StatusFulfilmentRollBackFailed` at error) and the comment
-still gives the reason the save failed.
+logged on its own line (`StatusFulfilmentRollBackFailed` at error), and the
+original reason the save failed is still reported in the log and the admin
+message. The order comment is written only if the connection still works: a
+rollback that fails because the connection was lost leaves the adapter inside
+the transaction, so the comment's save fails too and is logged as a
+`report_error`. The admin message is shown before the comment is saved, so a
+failed comment cannot suppress it.
 
 **Never twice.** The callback's own order save fires the observer again, and the
 marker it has just set stops it; two saves in one transaction register two

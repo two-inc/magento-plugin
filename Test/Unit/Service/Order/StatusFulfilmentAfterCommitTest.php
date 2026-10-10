@@ -347,15 +347,23 @@ class StatusFulfilmentAfterCommitTest extends TestCase
         $this->saveOrder($order);
 
         $notSaved = 'Two fulfilled the order, but the order could not be saved. Reason: Deadlock found';
-        $this->assertSame([$notSaved], $this->comments, 'the comment gives the save failure');
         $this->assertSame(
             [
-                ['StatusFulfilmentRollBackFailed', 'Connection lost'],
-                ['StatusFulfilmentNotSaved', 'Deadlock found'],
+                ['StatusFulfilmentRollBackFailed', 'message', 'Connection lost'],
+                ['StatusFulfilmentNotSaved', 'message', 'Deadlock found'],
+                ['StatusFulfilmentNotSaved', 'report_error', 'MySQL server has gone away'],
             ],
-            array_map(static fn (array $error): array => [$error[0], $error[1]['message']], $this->errors),
-            'the rollback failure is logged on its own, the save failure is reported'
+            array_map(
+                static fn (array $error): array => isset($error[1]['message'])
+                    ? [$error[0], 'message', $error[1]['message']]
+                    : [$error[0], 'report_error', $error[1]['report_error']],
+                $this->errors
+            ),
+            'the rollback failure is logged on its own, the save failure is reported, the comment fails on the lost connection'
         );
+        $this->assertSame([$notSaved], $this->adminMessages, 'the admin message still gives the save failure');
+        $this->assertSame([], $this->comments, 'no comment on the lost connection');
+        $this->assertSame(1, $this->resource->level, 'the failed rollback leaves the adapter in the transaction');
         $this->assertTrue(empty($this->saved['info']['marked_completed']), 'no marker');
     }
 

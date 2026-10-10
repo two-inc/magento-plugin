@@ -28,8 +28,15 @@ class FakeOrderResource extends OrderResource
     /** @var array rows committed */
     public $rows = [];
 
-    /** @var \Throwable|null what the outermost rollback throws, once it has rolled back */
+    /**
+     * @var \Throwable|null what the outermost rollback throws, as when the connection is lost. Core's
+     * Mysql::rollBack() fails in PDO before it decrements, so the level stays at 1, the commit callbacks
+     * stay (ExecuteCommitCallbacks::afterRollBack never runs) and every later write fails.
+     */
     public $outermostRollBackFails;
+
+    /** @var bool whether the connection is gone */
+    private $lost = false;
 
     /** @var array rows written inside the open transaction */
     private $pending = [];
@@ -39,6 +46,9 @@ class FakeOrderResource extends OrderResource
      */
     public function write($row): void
     {
+        if ($this->lost) {
+            throw new \RuntimeException('MySQL server has gone away');
+        }
         if ($this->level === 0) {
             $this->rows[] = $row;
             return;
@@ -94,12 +104,13 @@ class FakeOrderResource extends OrderResource
 
     public function rollBack(): self
     {
+        if ($this->level === 1 && $this->outermostRollBackFails !== null) {
+            $this->lost = true;
+            throw $this->outermostRollBackFails;
+        }
         $this->level--;
         $this->callbacks = [];
         $this->pending = [];
-        if ($this->level === 0 && $this->outermostRollBackFails !== null) {
-            throw $this->outermostRollBackFails;
-        }
         return $this;
     }
 }

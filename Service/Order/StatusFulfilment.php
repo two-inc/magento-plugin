@@ -384,13 +384,27 @@ class StatusFulfilment
             'exception' => get_class($e),
             'message' => $e->getMessage(),
         ]);
-        try {
-            if ($order !== null && $order->getEntityId()) {
-                $this->addStatusToOrderHistory($order, $message->render());
-            }
+        // The admin message needs no database, so it goes first and on its own:
+        // a lost connection that fails the comment cannot suppress it.
+        $this->reportStep($orderId, $logType, function () use ($message): void {
             if ($this->isAdmin()) {
                 $this->messageManager->addErrorMessage($message);
             }
+        });
+        $this->reportStep($orderId, $logType, function () use ($order, $message): void {
+            if ($order !== null && $order->getEntityId()) {
+                $this->addStatusToOrderHistory($order, $message->render());
+            }
+        });
+    }
+
+    /**
+     * Runs one way of reporting a failure, logging it if it fails in turn.
+     */
+    private function reportStep(int $orderId, string $logType, callable $step): void
+    {
+        try {
+            $step();
         } catch (Throwable $reportError) {
             $this->logRepository->addErrorLog($logType, [
                 'order_id' => $orderId,
