@@ -50,6 +50,8 @@ use Two\Gateway\Service\UrlCookie;
  */
 class OrderPostprocessingSendSitesTest extends TestCase
 {
+    use BuildsStatusFulfilment;
+
     /** @var array<int, array{0: string, 1: array, 2: array}> */
     private $fired = [];
 
@@ -245,17 +247,20 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
 
+        $order = $this->order();
+        $orderFactory = $this->getMockBuilder(\Magento\Sales\Model\OrderFactory::class)
+            ->addMethods(['create'])
+            ->getMock();
+        $orderFactory->method('create')->willReturn($order);
         (new SalesOrderSaveAfter(
-            $config,
-            $this->createMock(BrandRegistryInterface::class),
-            $this->adapter(),
-            $this->createMock(\Magento\Sales\Model\Order\Status\HistoryFactory::class),
-            $this->createMock(\Magento\Sales\Api\OrderStatusHistoryRepositoryInterface::class),
-            $this->createMock(\Magento\Sales\Model\Service\InvoiceService::class),
-            $this->createMock(\Magento\Framework\DB\TransactionFactory::class),
-            $this->overlay(),
-            $this->recorder()
-        ))->execute(new SendSiteObserver(new DataObject(['order' => $this->order()])));
+            $this->buildStatusFulfilment([
+                'configRepository' => $config,
+                'apiAdapter' => $this->adapter(),
+                'overlayRegistry' => $this->overlay(),
+                'orderPostprocessor' => $this->recorder(),
+                'orderFactory' => $orderFactory,
+            ])
+        ))->execute(new SendSiteObserver(new DataObject(['order' => $order])));
     }
 
     private function refund(): void
@@ -359,6 +364,13 @@ class OrderPostprocessingSendSitesTest extends TestCase
 
 class SendSiteOrder extends Order implements \Magento\Sales\Api\Data\OrderInterface
 {
+    /**
+     * The status fulfilment's fresh load: the order stands in for its own row.
+     */
+    public function load($id): self
+    {
+        return $this;
+    }
 }
 
 /**

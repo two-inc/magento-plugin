@@ -111,6 +111,32 @@ overlay's own tab only if it names
 Both settings are per store view, so you can trial them on one storefront
 before rolling them out.
 
+## Invoicing in Magento before the fulfilment trigger
+
+With the fulfilment trigger set to **On Invoice**, a Magento invoice captures
+online and fulfils the order with Two. With any other trigger, Two is told when
+that trigger happens, and a Magento invoice is recorded offline:
+
+- An order the buyer has not yet verified with Two (state `pending_payment`)
+  cannot be invoiced offline at all (TWO-26294).
+- A verified order can be. Magento records the invoice as paid without
+  contacting Two, and adds an order comment, visible to the merchant only,
+  saying Two was not notified and will be when the order ships (**On
+  Shipment**) or reaches one of the configured statuses (**On Completion**).
+  That fulfilment still happens: an invoice recorded in Magento does not stop
+  Two being told, and Two is never told twice. Anything refunded or cancelled
+  in Magento before then is left out of what Two is told to invoice
+  (TWO-26302). An invoice created through the REST API without an online
+  capture is treated the same way.
+- On a configured status, Two is told once the save has committed. Magento's
+  own refunds (the credit memo form and the REST refund routes) save the order
+  and its credit memo in one transaction, from 2.4.6 on, so the credit memo is
+  saved by then. A refund made by another extension's own code that saves
+  them without a transaction is not covered: Two may be told before that
+  credit memo exists. If Two cannot be told, the save still stands: the order
+  gets a comment saying why (and the admin an error message), and saving the
+  order again while it has that status retries.
+
 ## Upgrading to 4.0
 
 4.0 removes the plugin's own shipping tax settings: the **Default shipping tax
@@ -337,7 +363,11 @@ A few specifics:
 
 - A whole-order capture has no body and its `invoice` is null. That covers an
   invoice for everything still open and the fulfil-on status trigger (which
-  carries no `invoice` key at all).
+  carries no `invoice` key at all). The status trigger sends a `partial` body
+  instead when part of the order was refunded or cancelled in Magento first:
+  the order lines net of those quantities, shipping unless any of it was
+  refunded, and whatever of the surcharge, fee lines and other charges is not
+  yet refunded.
 - If Two answers a whole-order capture with `PARTIAL_ORDER_MISSING_DATA`, the
   plugin retries it as a partial capture of the latest invoice, so the hook
   fires twice for one capture: first with `[]`, then with the `partial` body.
@@ -421,7 +451,7 @@ logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED`:
 | `order_intent` | The approval check is refused and the buyer sees a generic notice |
 | `order_create` | Checkout is refused with a generic notice |
 | `order_update` | The update is not sent to Two. The address edit still saves in Magento, and the admin sees the error as a warning and in the order's history |
-| `capture` | The invoice, shipment or fulfil-on status change that triggered it is blocked with the error |
+| `capture` | The invoice or shipment that triggered it is blocked with the error. A fulfil-on status change still saves, and the order gets a comment with the error |
 | `refund` | The credit memo is refused with the error |
 | `order_confirm`, `cancel` | Never refused. These take no body, so a subscriber that throws or adds one is logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` or `TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED`, and the request is sent empty. Magento has already confirmed or cancelled the order by then, and a Two order left live could still be invoiced |
 

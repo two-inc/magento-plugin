@@ -27,6 +27,7 @@ use Magento\Sales\Model\Order\Creditmemo as CreditmemoModel;
 use Magento\Sales\Model\Order\Creditmemo\Item as CreditmemoItem;
 use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
+use Magento\Sales\Model\ResourceModel\Order\Creditmemo\CollectionFactory as CreditmemoCollectionFactory;
 use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
@@ -134,6 +135,11 @@ abstract class Order
     private $taxCodeResolver;
 
     /**
+     * @var CreditmemoCollectionFactory|null
+     */
+    protected $creditmemoCollectionFactory;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -151,6 +157,7 @@ abstract class Order
      * @param BrandRegistryInterface $brandRegistry
      * @param CustomerRepositoryInterface $customerRepository
      * @param TaxCodeResolver|null $taxCodeResolver
+     * @param CreditmemoCollectionFactory|null $creditmemoCollectionFactory
      */
     public function __construct(
         Image $imageHelper,
@@ -167,7 +174,8 @@ abstract class Order
         GroupRepositoryInterface $groupRepository,
         BrandRegistryInterface $brandRegistry,
         CustomerRepositoryInterface $customerRepository,
-        ?TaxCodeResolver $taxCodeResolver = null
+        ?TaxCodeResolver $taxCodeResolver = null,
+        ?CreditmemoCollectionFactory $creditmemoCollectionFactory = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -184,6 +192,7 @@ abstract class Order
         $this->brandRegistry = $brandRegistry;
         $this->customerRepository = $customerRepository;
         $this->taxCodeResolver = $taxCodeResolver;
+        $this->creditmemoCollectionFactory = $creditmemoCollectionFactory;
     }
 
     /**
@@ -1442,6 +1451,65 @@ abstract class Order
         }
 
         return $appliedTaxes;
+    }
+
+    /**
+     * The Two surcharge as a BUYER_FEE line, shared by every payload that
+     * carries it. Each amount is rounded on its own from the 6dp source and
+     * gross from the unrounded sum, so a refund or fulfilment line cannot
+     * differ from the order line by a cent at a half-cent boundary.
+     *
+     * @param float $net
+     * @param float $tax
+     * @param string $description
+     * @param float $taxRatePercent
+     * @return array
+     */
+    public function getSurchargeLine(float $net, float $tax, string $description, float $taxRatePercent): array
+    {
+        $description = $description ?: (string)__('Payment terms fee');
+
+        return [
+            'order_item_id' => 'surcharge',
+            'name' => $description,
+            'description' => $description,
+            'type' => 'BUYER_FEE',
+            'image_url' => '',
+            'product_page_url' => '',
+            'gross_amount' => $this->roundAmt($net + $tax),
+            'net_amount' => $this->roundAmt($net),
+            'tax_amount' => $this->roundAmt($tax),
+            'discount_amount' => '0.00',
+            'tax_rate' => $this->roundAmt($taxRatePercent / 100, 6),
+            'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
+            'unit_price' => $this->roundAmt($net, 6),
+            'quantity' => 1,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
+    /**
+     * The order's unitemized charge as a line, or null when the order's grand
+     * total is fully accounted for. Fee-provider lines are merged first, so a
+     * fee a provider itemizes is never counted twice.
+     *
+     * @param OrderModel $order
+     * @return array|null getOtherChargesLineItem() shape.
+     * @throws LocalizedException
+     */
+    public function getOtherChargesLineOrder(OrderModel $order): ?array
+    {
+        $lineItems = $this->getKnownLineAmountsOrder($order);
+        foreach ($this->getFeeLines($order) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        return $this->getOtherChargesLineItem(
+            $lineItems,
+            $order,
+            (float)$order->getGrandTotal(),
+            (float)$order->getTaxAmount()
+        );
     }
 
     /**

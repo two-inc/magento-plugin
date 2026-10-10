@@ -63,6 +63,7 @@
             <argument name="feeLineProviderPool" xsi:type="object">Two\Gateway\Service\Fee\FeeLineProviderPool</argument>
             <argument name="orderTaxManagement" xsi:type="object">Magento\Tax\Api\OrderTaxManagementInterface</argument>
             <argument name="taxCodeResolver" xsi:type="object">Two\Gateway\Service\Order\TaxCodeResolver</argument>
+            <argument name="creditmemoCollectionFactory" xsi:type="object">Magento\Sales\Model\ResourceModel\Order\Creditmemo\CollectionFactory</argument>
         </arguments>
     </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"
@@ -144,6 +145,12 @@
                 type="Two\Gateway\Plugin\Model\Sales\AfterPlaceOrder" sortOrder="10"/>
         <plugin name="two-refuse-invoice-while-unverified"
                 type="Two\Gateway\Plugin\Model\Sales\RefuseInvoiceWhileUnverified" sortOrder="20"/>
+    </type>
+    <!-- Every order save builds this; the proxy starts no session until a failure is reported. -->
+    <type name="Two\Gateway\Service\Order\StatusFulfilment">
+        <arguments>
+            <argument name="messageManager" xsi:type="object">Magento\Framework\Message\ManagerInterface\Proxy</argument>
+        </arguments>
     </type>
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
         <plugin name="two-order-surcharge-ext-attrs"

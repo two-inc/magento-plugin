@@ -909,6 +909,123 @@ database error, whose text is logged and never shown. A server error (5xx) is
 always generic, whatever field path it carries. The full detail always reaches
 the merchant through the error log or the order comment.
 
+## An offline invoice before the fulfilment trigger is commented, not refused
+
+With a fulfilment trigger other than `invoice`, `Two::canCapture()` is false, so
+the admin invoice form submits an offline capture and core records a Paid invoice
+without calling Two. An unverified order is refused that invoice outright
+(`Plugin\Model\Sales\RefuseInvoiceWhileUnverified`, TWO-26294). A verified one
+is allowed, and `Observer\InvoiceRegisteredOffline` adds one merchant-only order
+comment on `sales_order_invoice_register`, which core dispatches once per invoice
+(TWO-26302). Online captures and other payment methods get nothing.
+
+**The plugin's own fulfilment invoices are flagged.** The shipment and
+status-change flows also register offline invoices, after Two has been told, and
+set `InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER` on the invoice first. A
+new code path that registers an invoice after fulfilling with Two must set it
+too, or the merchant is told Two was not notified when it was.
+
+**The status-change fulfilment is gated on the fulfilment marker, not on an
+invoice.** `SalesOrderSaveAfter` used to return early on `hasInvoices()`, which
+made a merchant's offline invoice suppress the fulfilment for good. It now
+returns early only once the payment carries `marked_completed`, which every
+successful fulfilment sets (its own, the shipment observer's and
+`Two::capture()`) and which the order save persists with the payment. A
+fulfilment sets it, with the completion comment, only when Two's response
+carries the fulfilled order's id; Two returns that id on every accepted full or
+partial fulfilment, so a response without it marks nothing. A merchant
+invoice for everything leaves a zero-total invoice, which is not created; a
+partial one leaves the rest for the plugin's invoice. `FulfilmentInvoiceTest`
+saves the order twice per case, in two requests, and pins one fulfil.
+
+**The fulfilment waits for the commit.** Core's refund routes save the order and
+the credit memo one after the other, so `sales_order_save_after` can fire with
+the memo not yet saved: the REST routes (`RefundOrderInterface`,
+`RefundInvoiceInterface`) save the order first. So `Observer\SalesOrderSaveAfter`
+only decides, and `Service\Order\StatusFulfilment` sends:
+
+-   **Synchronous, as before:** the gate (Two order, `complete` trigger, a
+    fulfil-on status, no marker) and the whole-order check, which still refuses
+    the merchant's save with its error.
+-   **Then deferred to the commit.** The observer registers a commit callback on
+    the sales connection, which core's `ExecuteCommitCallbacks` plugin on the
+    database adapter runs after the outermost commit and drops on a rollback.
+    The callback reloads the order through `OrderFactory` and the resource model
+    (the repository hands back the instance the save was working on),
+    re-checks it and fulfils it. Once Two accepts, the marker, the comment, the
+    plugin's invoice and the order with its invoiced totals are saved in one
+    transaction on the sales connection. With no transaction open it runs at
+    once; the order's own save always holds one when the event fires, so that
+    branch only serves a dispatch outside a save.
+
+**This relies on core running the refund saves inside one transaction.** From
+2.4.6, the module's minimum, it does on every core route: the REST routes run
+inside the order lock, whose executor wraps the order and memo saves in one
+transaction, and the admin credit memo (`CreditmemoService::refund()`) wraps both
+in an adapter transaction. A refund made by another extension's own code that
+saves the order and the memo without a transaction is not covered: the callback
+runs after the order's own commit, before the memo exists, so what that memo
+refunds of the fee-provider lines and the other charges is not netted out.
+
+**A failed fulfilment is commented, not thrown.** When it runs, the merchant's save
+or refund has already succeeded, and throwing would report a failed refund that in
+fact went through. The order gets the comment "Failed to fulfil order with Two.
+Reason: ...", the wording a failed refund uses; an admin request also gets it as an
+error message (REST and other callers get nothing extra); and
+`StatusFulfilmentFailed` is logged at error. That covers a refusal by Two and one by
+the postprocessing hook alike. The marker stays unset, so the next save of the
+order while it is in a fulfil-on status tries again. If Two accepts but saving
+the order and invoice then fails, all of it rolls back, and the comment says
+instead that Two fulfilled the order but it could not be saved
+(`StatusFulfilmentNotSaved` at error). If that rollback itself fails, it is
+logged on its own line (`StatusFulfilmentRollBackFailed` at error), and the
+original reason the save failed is still reported in the log and the admin
+message. The order comment is written only if the connection still works: a
+rollback that fails because the connection was lost leaves the adapter inside
+the transaction, so the comment's save fails too and is logged as a
+`report_error`. The admin message is shown before the comment is saved, so a
+failed comment cannot suppress it.
+
+**Never twice.** The callback's own order save fires the observer again, and the
+marker it has just set stops it; two saves in one transaction register two
+callbacks, and the second finds the marker. `Service\Order\FulfilmentAttempts`
+records each order sent in the request, refused or not, which stops a copy of
+the order loaded before the marker was set from fulfilling again when it is
+saved later in the same request. The payment resource is version-controlled, so
+an unmodified stale payment is not written and the saved marker survives; the
+record matters when that copy's payment was changed, since its save then writes
+the payment back without the marker, and after a refusal or timeout, when there
+is no marker at all. The request's own order instance (and the one in the
+repository registry and in `sales_order_save_commit_after`) is stale once the
+callback has run: a later modifying save of it in the same request would write
+the pre-fulfilment totals back over the callback's. No core route does this.
+
+**Refunds before that fulfilment are netted out.** Once the merchant can invoice
+first, they can also credit-memo first. The whole-order check counts refunded and
+cancelled quantity as not waiting to ship, and when anything was refunded or
+cancelled the fulfilment is sent as a `partial` body built by
+`ComposeShipment::executeNetOfRefunds()`: each line prorated to its net quantity,
+shipping only while none of it was refunded. It is the only fulfilment the order
+gets, so unlike a shipment's partial it also carries the charges no item owns,
+each less what the credit memos refunded of it: the surcharge (its amount less
+`two_surcharge_refunded`), each fee-provider line (less that provider's lines on
+the saved memos) and the other-charges residual (less the memos'
+`two_other_charges_amount`). The memos come from a fresh credit memo query, not
+`Order::getCreditmemosCollection()`: the order caches that collection once
+loaded, and the memo whose refund moved the order into the fulfil-on status can
+be missing from it. A cancelled memo refunded nothing and counts for nothing.
+Tax shrinks in proportion, so each line keeps its declared rate, and a charge
+with nothing refunded goes in exactly as the order line. With nothing left, nothing is sent. The Two remainder of such a partial
+fulfilment stays open, as it does after a partial shipment the merchant never
+completes.
+
+**An offline invoice is also one with no capture case** where the method cannot
+capture online: the REST invoice route names no capture case.
+
+**The comment names the trigger.** On shipment, or on reaching one of the
+configured fulfil-on statuses by their labels. With no status configured the
+complete trigger never fulfils, so no comment is added there.
+
 ## The term chips are a radio group
 
 The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,
@@ -1118,8 +1235,9 @@ dependency that way and relying on DI to fill it in gets you a silent
 `bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
 (value null) instead of `"_i_"` (instance); that is the check.
 
-`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool` and
-`Service\Order::$taxCodeResolver` are all declared optional for constructor BC and all named explicitly in
+`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool`,
+`Service\Order::$taxCodeResolver` and `Service\Order::$creditmemoCollectionFactory`
+are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 

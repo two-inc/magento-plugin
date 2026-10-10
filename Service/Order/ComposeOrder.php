@@ -249,26 +249,7 @@ class ComposeOrder extends OrderService
         }
 
         if ($surchargeAmount > 0) {
-            $description = $description ?: (string)__('Payment terms fee');
-            $taxRate = $taxRatePercent / 100;
-
-            $lineItems[] = [
-                'order_item_id' => 'surcharge',
-                'name' => $description,
-                'description' => $description,
-                'type' => 'BUYER_FEE',
-                'image_url' => '',
-                'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
-                'net_amount' => $this->roundAmt($surchargeAmount),
-                'tax_amount' => $this->roundAmt($surchargeTax),
-                'discount_amount' => '0.00',
-                'tax_rate' => $this->roundAmt($taxRate, 6),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
-                'unit_price' => $this->roundAmt($surchargeAmount, 6),
-                'quantity' => 1,
-                'quantity_unit' => 'sc',
-            ];
+            $lineItems[] = $this->getSurchargeLine($surchargeAmount, $surchargeTax, $description, $taxRatePercent);
         }
 
         // Reconcile any known third-party fee (via a registered

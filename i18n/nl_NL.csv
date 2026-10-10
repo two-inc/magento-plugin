@@ -437,3 +437,7 @@
 "HTTP status %1","HTTP-status %1"
 "%1 has already invoiced all or part of this order, so this change was not sent to %1.","%1 heeft deze bestelling al geheel of gedeeltelijk gefactureerd, dus deze wijziging is niet naar %1 verzonden."
 "%1 no longer accepts changes to this order (%2), so this change was not sent to %1.","%1 accepteert geen wijzigingen meer voor deze bestelling (%2), dus deze wijziging is niet naar %1 verzonden."
+"This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when it is shipped.","Deze factuur is alleen in Magento geregistreerd en %1 is niet op de hoogte gebracht. De bestelling wordt bij %1 uitgevoerd wanneer deze wordt verzonden."
+"This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when its status changes to %2.","Deze factuur is alleen in Magento geregistreerd en %1 is niet op de hoogte gebracht. De bestelling wordt bij %1 uitgevoerd wanneer de status verandert in %2."
+"Failed to fulfil order with %1. Reason: %2","Het is niet gelukt om de bestelling bij %1 uit te voeren. Reden: %2"
+"%1 fulfilled the order, but the order could not be saved. Reason: %2","%1 heeft de bestelling uitgevoerd, maar de bestelling kon niet worden opgeslagen. Reden: %2"
