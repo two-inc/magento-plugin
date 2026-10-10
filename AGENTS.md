@@ -899,8 +899,15 @@ refusal. `PROXY_REFUSED`, a refusal this module made before calling the API,
 keeps its own translated sentence. The buyer's return to the shop follows the
 same rule: `OrderService` throws `Exception\TwoRefusalException`, whose message
 is Two's full account for the order comment and admin notice, and whose buyer
-message is what the confirm and cancel controllers show. The full detail always
-reaches the merchant through the error log or the order comment.
+message is what the return pages show. All three return controllers (confirm,
+cancel, failed verification) hand any exception to
+`OrderService::failBuyerReturn()`, which restores the cart and fails the order
+(each step guarded, so neither can keep the buyer from a message) and answers
+the refusal's buyer message, this module's own translated sentence for a plain
+`LocalizedException`, or the general message for anything else, such as a
+database error, whose text is logged and never shown. A server error (5xx) is
+always generic, whatever field path it carries. The full detail always reaches
+the merchant through the error log or the order comment.
 
 ## The term chips are a radio group
 

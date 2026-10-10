@@ -248,6 +248,7 @@ class TwoErrorHandlingTest extends TestCase
             'ORDER_INVALID naming nothing' => [$refusal(400, 'ORDER_INVALID'), $generic, $general],
             'a refusal with an unknown code' => [$refusal(400, 'SOMETHING_NEW'), $generic, $general],
             'a server error' => [$refusal(500, 'INTERNAL_ERROR'), $generic, $general],
+            'a server error carrying a field path' => [$refusal(502, 'BAD_GATEWAY', [$phone]), $generic, $general],
             'the same company' => [$refusal(400, 'SAME_BUYER_SELLER_ERROR'), $sameCompany, $sameCompany],
         ];
     }

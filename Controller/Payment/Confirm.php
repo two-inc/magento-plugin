@@ -18,7 +18,6 @@ use Magento\Sales\Model\Order\Email\Sender\OrderSender;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Payment\OrderService;
-use Two\Gateway\Exception\TwoRefusalException;
 
 /**
  * Payment confirm controller
@@ -117,17 +116,9 @@ class Confirm extends Action
                 throw new LocalizedException($message);
             }
         } catch (Exception $exception) {
-            $this->orderService->restoreQuote();
-            if ($order !== null) {
-                $this->orderService->failOrder($order, $exception->getMessage());
-            }
-            // The order comment keeps Two's full account for the merchant; the
-            // buyer is never shown the API's own text (TWO-26295).
-            $this->messageManager->addErrorMessage(
-                $exception instanceof TwoRefusalException
-                    ? $exception->getBuyerMessage()->render()
-                    : $exception->getMessage()
-            );
+            // The order comment keeps the full account for the merchant; the
+            // buyer sees only a message meant for them (TWO-26295).
+            $this->messageManager->addErrorMessage($this->orderService->failBuyerReturn($order, $exception));
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
     }

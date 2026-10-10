@@ -512,7 +512,8 @@ class Two extends AbstractMethod
      *
      * With $atOrderCreate, any refusal at status 400 or above names the
      * fields the buyer can fix ("Phone Number is not valid."), chosen from
-     * the structured field path and never from the API's wording; a
+     * the structured field path and never from the API's wording, unless the
+     * status is a server error (5xx), which is always generic; a
      * validation failure naming no field we know shows the general error;
      * else the same-company message, else a generic notice. A call that got
      * no HTTP response shows the general error too. The API's own error message and trace id speak to
@@ -551,11 +552,12 @@ class Two extends AbstractMethod
             // A field the buyer can fix is named, in our own words; the
             // validator's text never reaches the buyer, and the merchant
             // finds it in the error log (TWO-26295).
-            $fieldError = $this->getFieldErrorMessage($response);
+            // A server error is generic whatever it carries.
+            $fieldError = $status < 500 ? $this->getFieldErrorMessage($response) : null;
             if ($fieldError !== null) {
                 return $fieldError;
             }
-            if ($validation !== null) {
+            if ($validation !== null && $status < 500) {
                 return $generalError;
             }
             if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
@@ -627,12 +629,16 @@ class Two extends AbstractMethod
         if ($this->getErrorFromResponse($response) === null) {
             return null;
         }
-        $fieldError = $this->getFieldErrorMessage($response);
-        if ($fieldError !== null) {
-            return $fieldError;
-        }
-        if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
-            return __('The buyer and the seller are the same company.');
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        // A server error is generic whatever it carries.
+        if ($status === null || $status < 500) {
+            $fieldError = $this->getFieldErrorMessage($response);
+            if ($fieldError !== null) {
+                return $fieldError;
+            }
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return __('The buyer and the seller are the same company.');
+            }
         }
         return __(
             'Something went wrong with your request to %1. %2',
