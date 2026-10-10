@@ -909,6 +909,28 @@ database error, whose text is logged and never shown. A server error (5xx) is
 always generic, whatever field path it carries. The full detail always reaches
 the merchant through the error log or the order comment.
 
+## An offline invoice before the fulfilment trigger is commented, not refused
+
+With a fulfilment trigger other than `invoice`, `Two::canCapture()` is false, so
+the admin invoice form submits an offline capture and core records a Paid invoice
+without calling Two. An unverified order is refused that invoice outright
+(`Plugin\Model\Sales\RefuseInvoiceWhileUnverified`, TWO-26294). A verified one
+is allowed, and `Observer\InvoiceRegisteredOffline` adds one merchant-only order
+comment on `sales_order_invoice_register`, which core dispatches once per invoice
+(TWO-26302). Online captures and other payment methods get nothing.
+
+**The plugin's own fulfilment invoices are flagged.** The shipment and
+status-change flows also register offline invoices, after Two has been told, and
+set `InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER` on the invoice first. A
+new code path that registers an invoice after fulfilling with Two must set it
+too, or the merchant is told Two was not notified when it was.
+
+**Only the shipment trigger is commented.** The comment promises fulfilment at the
+trigger, and with `complete` that promise does not hold: the status-change flow
+skips any order that already has an invoice, so after a manual offline invoice
+Two is never told. Do not extend the comment to `complete` without settling that
+first.
+
 ## The term chips are a radio group
 
 The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,

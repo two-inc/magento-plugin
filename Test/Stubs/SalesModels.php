@@ -91,6 +91,10 @@ use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 if (!class_exists(Invoice::class, false)) {
     class Invoice extends AbstractSalesModelStub
     {
+        public const CAPTURE_ONLINE = 'online';
+        public const CAPTURE_OFFLINE = 'offline';
+        public const NOT_CAPTURE = 'not_capture';
+
         private $order;
 
         public function setOrder($order): self

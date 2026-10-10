@@ -24,6 +24,9 @@
     <event name="sales_model_service_quote_submit_before">
         <observer name="two_quote_to_order_surcharge" instance="Two\Gateway\Observer\QuoteToOrderSurcharge"/>
     </event>
+    <event name="sales_order_invoice_register">
+        <observer name="two_invoice_registered_offline" instance="Two\Gateway\Observer\InvoiceRegisteredOffline"/>
+    </event>
     <event name="sales_order_invoice_save_after">
         <observer name="two_invoice_surcharge_running_total" instance="Two\Gateway\Observer\InvoiceSurchargeRunningTotal"/>
     </event>

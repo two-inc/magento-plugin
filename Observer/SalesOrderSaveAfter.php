@@ -158,6 +158,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         $invoice = $this->invoiceService->prepareInvoice($order);
         if ($invoice->getGrandTotal() > 0) {
             $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+            $invoice->setData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER, true);
             $invoice->register();
             $invoice->pay();
             $invoice->setTransactionId(

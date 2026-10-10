@@ -111,6 +111,19 @@ overlay's own tab only if it names
 Both settings are per store view, so you can trial them on one storefront
 before rolling them out.
 
+## Invoicing in Magento before the fulfilment trigger
+
+With the fulfilment trigger set to **On Invoice**, a Magento invoice captures
+online and fulfils the order with Two. With any other trigger, Two is told when
+that trigger happens, and a Magento invoice is recorded offline:
+
+- An order the buyer has not yet verified with Two (state `pending_payment`)
+  cannot be invoiced offline at all (TWO-26294).
+- A verified order can be. Magento records the invoice as paid without
+  contacting Two, and with **On Shipment** it adds an order comment, visible
+  to the merchant only, saying Two was not notified and will be when the
+  order ships (TWO-26302).
+
 ## Upgrading to 4.0
 
 4.0 removes the plugin's own shipping tax settings: the **Default shipping tax

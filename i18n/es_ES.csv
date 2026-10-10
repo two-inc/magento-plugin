@@ -433,3 +433,4 @@
 "HTTP status %1","Estado HTTP %1"
 "%1 has already invoiced all or part of this order, so this change was not sent to %1.","%1 ya ha facturado todo o parte de este pedido, por lo que este cambio no se envió a %1."
 "%1 no longer accepts changes to this order (%2), so this change was not sent to %1.","%1 ya no acepta cambios en este pedido (%2), por lo que este cambio no se envió a %1."
+"This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when it is shipped.","Esta factura se ha registrado solo en Magento y no se ha notificado a %1. El pedido se completará con %1 cuando se envíe."
