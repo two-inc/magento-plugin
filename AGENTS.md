@@ -1290,8 +1290,9 @@ a fee can change id after placement: a provider that itemizes only a saved
 order leaves the create with an "Other charges" residual and the edit with its
 own line. The record's `shared` key lists the codes steps 1 to 3 gave at
 placement; the refund `adjustment` line is not recorded and takes step 4 over
-that list, so no code when it is absent (a record written before the key
-existed has none). Edit, capture, shipment and refund read the record and
+that list. A record written before the key existed shares the codes its
+recorded lines carry instead, other than `fee`'s; with none, or disagreeing
+ones, no code. Edit, capture, shipment and refund read the record and
 never resolve those lines
 again; a line it does not cover, or an order placed before it existed,
 resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order

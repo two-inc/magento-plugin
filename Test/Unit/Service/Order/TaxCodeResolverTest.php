@@ -209,16 +209,33 @@ class TaxCodeResolverTest extends TestCase
 
     /**
      * A record written before it listed the shared codes gives a line with no
-     * class no code, even when the recorded lines all carry one.
+     * class the one code its recorded lines carry (the fee line aside), and
+     * no code when they disagree or carry none.
+     *
+     * @dataProvider recordWithNoSharedKeyCases
      */
-    public function testARecordWithNoSharedKeyGivesTheAdjustmentNoCode(): void
+    public function testARecordWithNoSharedKeySharesItsRecordedCodes(string $record, ?string $expected, string $description): void
     {
-        $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US');
+        $order = $this->order([['simple', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
         $this->save($order);
-        $order->setData(TaxCodeResolver::STORED_CODES, '{"item:101":"' . self::EXPORT . '"}');
+        $order->setData(TaxCodeResolver::STORED_CODES, $record);
 
-        // The item, then the adjustment, then shipping (class 9, unmapped).
-        $this->assertSame([self::EXPORT, null, null], $this->codes($this->refund($order, 'ES', ['5' => self::EXPORT])));
+        // Two items, then the adjustment, then shipping (class 9, unmapped).
+        $codes = $this->codes($this->refund($order, 'ES', []));
+        $this->assertSame($expected, $codes[2], $description);
+    }
+
+    public static function recordWithNoSharedKeyCases(): array
+    {
+        $export = self::EXPORT;
+        $art20 = self::ART20;
+        return [
+            ["{\"item:101\":\"$export\",\"item:102\":\"$export\"}", self::EXPORT, 'recorded codes that agree are shared'],
+            ["{\"item:101\":\"$export\",\"item:102\":null}", self::EXPORT, 'a line recorded with no code does not make them disagree'],
+            ["{\"item:101\":\"$export\",\"item:102\":\"$art20\"}", null, 'recorded codes that disagree give no code'],
+            ["{\"item:101\":null,\"item:102\":null,\"fee\":\"$art20\"}", null, 'no recorded code (the fee line aside) gives no code'],
+            ['{}', null, 'an empty record gives no code'],
+        ];
     }
 
     /**

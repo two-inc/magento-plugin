@@ -45,9 +45,8 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * never moves a placed order. A line the record does not cover (an order placed
  * before it existed, or a line placement never sent, such as a refund
  * adjustment) is resolved as at placement, step 4 sharing the codes steps 1
- * to 3 gave at placement (SHARED_KEY). A record with no SHARED_KEY (none of
- * its lines was coded by steps 1 to 3, or it was written before the key
- * existed) gives such a line no code.
+ * to 3 gave at placement (SHARED_KEY). A record written before that key
+ * existed shares the codes its recorded lines carry, the `fee` line aside.
  *
  * Lines at any other rate are left exactly as composed.
  */
@@ -131,7 +130,7 @@ class TaxCodeResolver
         $record = [];
         // Step 4's pool: the codes steps 1 to 3 gave, here and at placement.
         $shared = [];
-        foreach ((array)($stored[self::SHARED_KEY] ?? []) as $code) {
+        foreach ($this->recordedShared($stored) as $code) {
             if (is_string($code)) {
                 $shared[$code] = true;
             }
@@ -247,6 +246,27 @@ class TaxCodeResolver
         $decoded = is_string($stored) && $stored !== '' ? json_decode($stored, true) : null;
 
         return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Step 4's pool from a later request's record: its SHARED_KEY list, or, in
+     * a record written before that key existed, every code its lines carry
+     * other than the fee line's, which step 4 gave itself.
+     *
+     * @param array<string, mixed>|null $stored
+     * @return array
+     */
+    private function recordedShared(?array $stored): array
+    {
+        if ($stored === null) {
+            return [];
+        }
+        if (array_key_exists(self::SHARED_KEY, $stored)) {
+            return (array)$stored[self::SHARED_KEY];
+        }
+        unset($stored[self::FEE_KEY]);
+
+        return array_values($stored);
     }
 
     /**
