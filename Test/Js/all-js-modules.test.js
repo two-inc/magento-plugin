@@ -28,6 +28,7 @@ const JS_FILES = [
     'view/adminhtml/web/js/refresh-merchant-record.js',
     'view/adminhtml/web/js/payment-terms-config.js',
     'view/adminhtml/web/js/surcharge-grid.js',
+    'view/adminhtml/web/js/tax-code-map.js',
     'view/frontend/requirejs-config.js',
     'view/frontend/web/js/action/set-shipping-information-mixin.js',
     'view/frontend/web/js/model/brand-config.js',

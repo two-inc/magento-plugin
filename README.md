@@ -178,81 +178,126 @@ capture, shipment and refund lines, while it builds the request and before the
 postprocessing hook, so a subscriber can still change it. Lines at any other
 rate are sent exactly as before.
 
-A line's code comes from the first of these that gives one:
+How your shop levies tax is your decision: the plugin reads which of your rows
+a line falls under and sends the code you chose for it. **Order management >
+Tax codes for 0% lines** lists each product tax class (including **None**)
+with these rows, each with a dropdown of Two's tax codes for your country
+(fetched from Two and cached for a day, every row defaulting to (none)):
 
-1. **Your mapping.** **Order management > Tax codes for 0% lines** has one row
-   per product tax class (including **None**), each with a dropdown of Two's
-   tax codes for your country, fetched from Two and cached for a day. A
-   product line uses its product's tax class (a configurable product, its
-   child's). The shipping line uses Magento's **Tax Class for Shipping**
-   (marked "(shipping)" in the list; with that set to **None**, map the
-   **None** row), and the payment terms fee its own surcharge tax class. Every row defaults to
-   (none). Codes that need an exemption reason the plugin has no way to supply
-   are not offered; set those, with their reason, in the postprocessing hook.
-2. **Derivation, for merchants in Spain only.** Physical products are goods;
-   virtual and downloadable products are services, and so is any item Magento
-   marks virtual, such as a bundle, gift card or configurable product with
-   nothing to ship. Shipping and other fee
-   lines count as goods when the order has a physical product, and as services
-   when it has none. Goods follow the delivery address (the billing address
-   when there is none). Services follow the buyer company's country, which is
-   the billing country the plugin sends. The Canary Islands, Ceuta and Melilla
-   (Spanish postcodes starting 35, 38, 51 or 52) count as outside the EU: the
-   delivery postcode decides for goods, the billing postcode for services.
-   Both intra-community codes also need the buyer's VAT number, with a prefix
-   naming an EU state other than your own country (see below); without one
-   the line gets no code.
+- **Buyer in another EU country with a VAT number.**
+- **One row per 0% tax rate** the class's tax rules use, labelled with the
+  rate's code, country and postcode, for example `ES-CANARIAS-0 (ES, 35*)`.
+  Rates above 0% are not listed, since they never give a 0% line.
+- **No rule for the address.**
 
-   | Line | Where | Code |
-   |---|---|---|
-   | Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
-   | Goods | Delivered to the Canary Islands, Ceuta or Melilla | `ES_IVA_EXPORT` |
-   | Goods | Delivered to another EU state, buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY` |
-   | Goods | Delivered to another EU state for a buyer with no such VAT number | none |
-   | Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
-   | Service | Buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
-   | Service | Buyer in an EU state other than Spain with no such VAT number | none |
-   | Service | Buyer outside the EU, or billed in the Canary Islands, Ceuta or Melilla | `ES_IVA_NON_EU_SERVICES` |
-   | Service | Buyer in mainland Spain or the Balearics | none |
+A product line uses its product's tax class (a configurable product, its
+child's). The shipping line uses Magento's **Tax Class for Shipping** (marked
+"(shipping)"; with that set to **None**, use the **None** rows), and the
+payment terms fee its own surcharge tax class. Codes that need an exemption
+reason the plugin has no way to supply are not offered; set those, with their
+reason, in the postprocessing hook.
 
-   Monaco counts as part of the EU (through France). Two only sells to
-   verified businesses, so every buyer counts as a business.
+For each 0% line the first of these that matches decides:
 
-   **The buyer's VAT number** (TWO-26153) is the order billing address's VAT
-   number, and otherwise the customer's Tax/VAT number. When Magento's VAT
-   check got an answer that marked the billing address's number invalid, the
-   order has no buyer VAT number at all: the customer's Tax/VAT number is not
-   used in its place, since it often holds the same number. A check that
-   could not reach the VAT service keeps the number. The number is used
-   exactly as entered, trimmed of leading and trailing spaces, and a value
-   with nothing left is no number. Nothing is corrected or added: a number
-   entered without its upper-case country prefix names no country, so it
-   gets no intra-community code. The prefix `EL` counts as Greece, and `MC`
-   is not a VAT prefix.
-   Order create also sends it to Two as `buyer_vat_number`, for a
-   merchant in Spain and a buyer outside Spain only: Two requires a Spanish
-   buyer's VAT number to equal its organisation number, so it is never sent
-   for one. Later requests leave it out, so Two keeps the number placement
-   sent.
-3. **Otherwise no code is sent.**
+1. **Exempt buyer.** The billing country and the address Magento taxes the
+   line on (**Tax Calculation Based On**, normally the delivery address) are
+   both in the EU VAT area and not your Two account's country, and the
+   buyer's VAT number (below) is filled in. The line takes its class's
+   **Buyer in another EU country** row. The EU VAT area is the 27 member
+   states, Monaco, and Northern Ireland (GB with a postcode starting BT). An
+   export, taxed on an address outside it, skips this step.
+2. **Your 0% rate.** The tax rate your rules applied to the line's class at
+   that address is 0%: the line takes that rate's row. If the rate is above
+   0% (taxes switched off another way), the line gets no code.
+3. **No rule.** No tax rule matched the address for the class: the line takes
+   its class's **No rule for the address** row.
+4. **No tax class.** "Other charges" and fee-provider lines, a flat-rate
+   payment terms fee, the refund adjustment line, and a product line the
+   plugin could not match to its item take the one code the order's 0% lines
+   coded by steps 1 to 3 share. If those lines carry different codes, or
+   none, the line gets no code.
+5. **Otherwise no code is sent.**
+
+A row you leave at (none) sends no code: it never falls through to a later
+step. Goods versus services is yours to express through classes: give a
+services class's rows the services codes. Northern Ireland is in the EU VAT
+area for goods only, so if you sell services into Northern Ireland, do not
+set an intra-community services code on a services class's **Buyer in
+another EU country** row.
+
+**The buyer's VAT number** (TWO-26153) is the order billing address's VAT
+number, and otherwise the customer's Tax/VAT number. When Magento's VAT
+check got an answer that marked the billing address's number invalid, the
+order has no buyer VAT number at all: the customer's Tax/VAT number is not
+used in its place, since it often holds the same number. A check that
+could not reach the VAT service keeps the number. The number is used
+exactly as entered, trimmed of leading and trailing spaces, and a value
+with nothing left is no number. Nothing is corrected or added, and for
+step 1 any value counts. For derivation (below), a number entered without
+its upper-case country prefix names no country, so it gets no
+intra-community code; the prefix `EL` counts as Greece, and `MC` is not a
+VAT prefix.
+Order create also sends it to Two as `buyer_vat_number`, for a
+merchant in Spain and a buyer outside Spain only: Two requires a Spanish
+buyer's VAT number to equal its organisation number, so it is never sent
+for one. Later requests leave it out, so Two keeps the number placement
+sent.
+
+**Derivation, for merchants in Spain, until it is retired.** A line whose
+product tax class has no row set at all (or, for a line with no class, whose
+order has no line coded by steps 1 to 3) still gets the code the plugin used
+to work out itself. Physical products are goods;
+virtual and downloadable products are services, and so is any item Magento
+marks virtual, such as a bundle, gift card or configurable product with
+nothing to ship. Shipping and other fee
+lines count as goods when the order has a physical product, and as services
+when it has none. Goods follow the delivery address (the billing address
+when there is none). Services follow the buyer company's country, which is
+the billing country the plugin sends. The Canary Islands, Ceuta and Melilla
+(Spanish postcodes starting 35, 38, 51 or 52) count as outside the EU: the
+delivery postcode decides for goods, the billing postcode for services.
+Both intra-community codes also need the buyer's VAT number, with a prefix
+naming an EU state other than your own country (see above); without one
+the line gets no code.
+
+| Line | Where | Code |
+|---|---|---|
+| Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
+| Goods | Delivered to the Canary Islands, Ceuta or Melilla | `ES_IVA_EXPORT` |
+| Goods | Delivered to another EU state, buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY` |
+| Goods | Delivered to another EU state for a buyer with no such VAT number | none |
+| Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
+| Service | Buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
+| Service | Buyer in an EU state other than Spain with no such VAT number | none |
+| Service | Buyer outside the EU, or billed in the Canary Islands, Ceuta or Melilla | `ES_IVA_NON_EU_SERVICES` |
+| Service | Buyer in mainland Spain or the Balearics | none |
+
+Monaco counts as part of the EU (through France). Two only sells to
+verified businesses, so every buyer counts as a business.
+
+**Upgrading from one code per tax class.** The upgrade copies each class's
+old code to that class's **Buyer in another EU country** row, its **No rule
+for the address** row and the row of every 0% rate its rules use at that
+moment, so every line the old setting covered keeps its code. Rates you add
+later start at (none).
 
 **The plugin never refuses; the API does.** A 0% line with no code is sent
-as is, and Two's API decides. For a Spanish merchant it refuses such a line, so
-map the tax classes that produce 0% lines nothing above covers (for example
-domestic exempt sales, or services to buyers in mainland Spain), and make
-sure EU buyers outside Spain give their VAT number at checkout. A non-Spanish
-merchant with no mapping sends exactly what it sent before.
+as is, and Two's API decides. For a Spanish merchant it refuses such a line,
+so set a code on every row your 0% lines fall under, and make sure EU buyers
+outside Spain give their VAT number at checkout. A non-Spanish merchant with
+no row set sends exactly what it sent before.
 
 Placement records each line's code, or that it had none, on the order
 (`two_tax_codes`): per product line, for shipping, for the payment terms fee,
 and once for all other fee lines ("Other charges" and fee-provider lines),
 which share one code whatever their id. Order edit, capture, shipment and
-refund send those codes, so a later change to the addresses, the mapping or a
-product's tax class does not move a placed order. These resolve afresh
-instead: the refund adjustment line, a product line placement could not match
-to its item (its SKU was changed by another extension, or its item has no
-quote item), a fee line on an order that had none at placement, and every
-line of an order placed before this record existed.
+refund send those codes, so a later change to the addresses, your rows or a
+product's tax class does not move a placed order. The refund adjustment line
+takes the code the lines coded by steps 1 to 3 shared at placement (step 4). These resolve afresh
+instead: a product line placement could not match to its item (its SKU was
+changed by another extension, or its item has no quote item), a fee line on
+an order that had none at placement, and every line of an order placed before
+this record existed.
 
 ## Stable extension contract: order postprocessing
 
