@@ -91,7 +91,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
             ['captureShipment', Hook::REQUEST_CAPTURE, 'shipment', '/v1/order/{id}/fulfillments', 'capture on a shipment'],
             ['captureStatus', Hook::REQUEST_CAPTURE, 'status_change', '/v1/order/{id}/fulfillments', 'capture on a fulfil-on-complete status'],
             ['refund', Hook::REQUEST_REFUND, 'credit_memo', '/v1/order/{id}/refund', 'refund on a credit memo'],
-            ['cancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from the payment method'],
+            ['void', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from an admin Void'],
             ['orderCancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel when the Magento order is cancelled'],
             ['buyerCancel', Hook::REQUEST_CANCEL, 'buyer_cancel', '/v1/order/{id}/cancel', 'cancel when the buyer abandons Two\'s checkout'],
         ];
@@ -268,9 +268,9 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $this->two(['composeRefund' => $composeRefund])->refund($payment, 0.0);
     }
 
-    private function cancel(): void
+    private function void(): void
     {
-        $this->two([])->cancel(new SendSitePayment($this->order()));
+        $this->two([])->void(new SendSitePayment($this->order()));
     }
 
     private function two(array $collaborators): Two

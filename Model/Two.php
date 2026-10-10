@@ -682,17 +682,39 @@ class Two extends AbstractMethod
     }
 
     /**
+     * An admin Void: tells Two the order is cancelled.
+     *
      * @inheritDoc
      */
     public function void(InfoInterface $payment)
     {
-        return $this->cancel($payment);
+        return $this->cancelUpstream($payment);
     }
 
     /**
+     * Makes no call to Two (TWO-26298).
+     *
+     * Core reaches this only from Order::cancel(), which then dispatches
+     * `order_cancel_after`, and Observer\SalesOrderCancelAfter sends the
+     * cancel from there. Sending it here as well cancelled the Two order
+     * twice for every admin cancel. The observer is the one kept because it
+     * also runs when core treats the cancel as offline, and because it
+     * refuses the Magento cancel when Two does, keeping the two in step.
+     *
      * @inheritDoc
      */
     public function cancel(InfoInterface $payment)
+    {
+        return $this;
+    }
+
+    /**
+     * POST the Two order's cancel and record the outcome on the order.
+     *
+     * @param InfoInterface $payment
+     * @return $this
+     */
+    private function cancelUpstream(InfoInterface $payment)
     {
         /** @var Order $order */
         $order = $payment->getOrder();
