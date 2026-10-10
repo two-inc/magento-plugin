@@ -203,6 +203,10 @@ if (!interface_exists(\Magento\Framework\Interception\PluginListInterface::class
     require_once __DIR__ . '/Stubs/Interception.php';
 }
 
+// Storefront action base for the payment return controllers (TWO-26295);
+// per-symbol guard lives inside the stub file.
+require_once __DIR__ . '/Stubs/FrontendAction.php';
+
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
 spl_autoload_register(function ($class) {

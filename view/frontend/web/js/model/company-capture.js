@@ -552,6 +552,13 @@ define([
         billing: billingIdentity,
         resolved: resolvedIdentity,
         billingIsDistinct: billingIsDistinct,
+        // Fails open while either address has no country yet.
+        shippingCountryIsBillingCountry: function () {
+            const shipping = (quote.shippingAddress() || {}).countryId;
+            const billing = (quote.billingAddress() || {}).countryId;
+            if (!shipping || !billing) return true;
+            return String(shipping).toLowerCase() === String(billing).toLowerCase();
+        },
         watchBillingToggle: function (onChange) {
             // The checkbox itself, not a form re-render: core toggles the
             // billing form's visibility without necessarily rebuilding it.

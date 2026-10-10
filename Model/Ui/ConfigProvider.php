@@ -319,6 +319,13 @@ class ConfigProvider implements ConfigProviderInterface
                         $this->brandRegistry->getProductName(),
                         $tryAgainLater
                     ),
+                    // TWO-26295: a refused intent that names a field the buyer
+                    // can fix says which, in our own words, chosen by the
+                    // field path. One map, shared with order create.
+                    'orderIntentFieldErrors' => [
+                        'labels' => array_map('strval', $this->two->getFieldErrorLabels()),
+                        'notValid' => (string)__('%1 is not valid.'),
+                    ],
                     // TWO-25326: the Two method stays selectable with a
                     // manual (name-only, no organisation number) capture —
                     // it is blocked at submit instead, matching the WC/PS/
