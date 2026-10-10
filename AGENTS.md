@@ -1217,10 +1217,40 @@ subscriber cannot take it over.
 payload before the postprocessing hook runs and a subscriber can override it.
 Order intent is left alone: the API does not check codes there.
 
-The order is: the merchant's mapping (`tax_code_map`, product tax class id to
-code; the shipping line keys on core's shipping tax class, the surcharge on its
-own), then, for a merchant whose record says `country_code` ES, the derivation
-table in the README (`TaxCodeResolver::derive()`), then nothing. Goods take
+The rows live in `tax_code_map` as JSON keyed `<product tax class>|exempt`,
+`<class>|rate:<tax rate code>` and `<class>|none` (`Model\Config\Backend\TaxCodeMap`;
+the form posts key and code pairs because a rate code can hold any
+character). The shipping line keys on core's shipping tax class, the
+surcharge on its own; lines with no class (`OTHER` fees, a flat-rate
+surcharge, the refund `adjustment`, an unmatched product line) have no key.
+For each 0% line the first match wins (TWO-26153; by design the plugin
+never decides how the merchant levies tax, it reads which of their rows the
+line falls under):
+
+1. Exempt buyer: billing country and tax address both in the EU VAT area
+   (`EU` plus GB with a BT postcode) and not the merchant record's country,
+   and `buyerVatNumber()` non-empty. The class's `exempt` row.
+2. The class's rates at the tax address from core, via `Service\Order\ShopTaxRates`:
+   `Calculation::getRateRequest()` with the order's addresses, the
+   order-time customer group's tax class and the store, then
+   `getAppliedRates()` per product class. Core drops 0% rates from applied
+   taxes (`AbstractCalculator::getAppliedTaxes()`), so the order holds no
+   record of them, but `getAppliedRates()` keeps them with their `code`. All
+   0%: the first rate's `rate:<code>` row. Any rate above 0%: no code.
+3. No rate: the class's `none` row.
+4. No class: the single code the payload's step 1 to 3 lines (and, on a later
+   payload, the recorded lines other than `fee`) share; none if they disagree.
+
+A matched row left on (none) never falls through. The tax address is the
+rate request's (core's `tax/calculation/based_on`), the same address core
+taxed the line on. `ZeroTaxRates` lists each class's 0% rates for the admin
+rows and for the `FanOutTaxCodeMap` data patch, which copies each old
+`class => code` entry to that class's `exempt`, `none` and existing rate rows.
+
+Derivation (`TaxCodeResolver::derive()`) stays as a transitional last step
+for a merchant whose record says `country_code` ES, only for a line whose
+class has no row mapped at all, or a classless line when no line was coded by
+steps 1 to 3. It is the table in the README. Goods take
 the delivery address, services the billing country and postcode, so a Spanish
 buyer billed in the Canaries, Ceuta or Melilla is outside the EU for services
 (TWO-26151). `ES_IVA_REVERSE_CHARGE` is Spanish domestic reverse charge only
@@ -1244,7 +1274,7 @@ a Spanish 0% line with no code; the line is sent and Two decides.
 
 Two rules hold the invariants and should not be loosened:
 
--   A non-zero line, and every line of a non-Spanish merchant with no mapping,
+-   A non-zero line, and every line of a non-Spanish merchant with no row set,
     is composed byte for byte as before. `TaxCodeResolverTest` pins that by
     composing each payload with and without the resolver.
 -   The merchant's country is the merchant record's, never the store's
@@ -1255,11 +1285,11 @@ Placement stores what each 0% line resolved to, "no code" included, in
 `sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, then
 `shipping`, `surcharge`, and one shared `fee` key for every other `OTHER` or
 `BUYER_FEE` line), the same pattern as the shipping rate record. Fee lines
-share a key because they all resolve alike (no class, the order's goods or
-service type) and because a fee can change id after placement: a provider that
-itemizes only a saved order leaves the create with an "Other charges" residual
-and the edit with its own line. The refund `adjustment` line is deliberately
-not recorded and keeps resolving live until its split is decided. Edit,
+share a key because they all resolve alike (no class, so step 4) and because
+a fee can change id after placement: a provider that itemizes only a saved
+order leaves the create with an "Other charges" residual and the edit with its
+own line. The refund `adjustment` line is not recorded; it takes step 4 over
+the recorded codes. Edit,
 capture, shipment and refund read the record and never resolve those lines
 again; a line it does not cover, or an order placed before it existed,
 resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
@@ -1270,8 +1300,9 @@ items behind them on SKU, the name only breaking a tie, never by position
 (`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
 shift classes. The dropdown list comes from
 `Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
-when it cannot be read, the admin field carries the saved mapping as hidden
-inputs so a section save keeps it.
+when it cannot be read, the admin field carries the saved rows as hidden
+pairs so a section save keeps them, and it does the same for saved rows it no
+longer shows (a rate deleted or raised above 0%).
 
 ## An unitemized fee is reconciled per entity, and refundable
 
