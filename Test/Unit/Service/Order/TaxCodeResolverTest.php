@@ -245,13 +245,15 @@ class TaxCodeResolverTest extends TestCase
             ['123456789', '', '123456789', 'no address country leaves it unprefixed'],
             [' .- ', 'DE', '', 'nothing left is no number'],
             ["de\u{00A0}123\t456\n789", 'DE', 'DE123456789', 'strips no-break spaces, tabs and newlines'],
+            ['n/a', 'DE', '', 'a placeholder with no digit is no number'],
+            ['DE/123456789', 'DE', 'DE123456789', 'strips a slash'],
         ];
     }
 
     /**
-     * The buyer VAT number comes from the billing address VAT id, unless a VAT
-     * check that got an answer marked it invalid, then the order's customer
-     * tax/VAT number.
+     * The buyer VAT number comes from the billing address VAT id, then the
+     * order's customer tax/VAT number; an address VAT id that a VAT check which
+     * got an answer marked invalid is no number at all.
      *
      * @dataProvider vatSourceCases
      * @param mixed $vatIsValid the billing address VAT check result
@@ -281,7 +283,9 @@ class TaxCodeResolverTest extends TestCase
             [null, null, null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
             [' ', null, null, 'DE222222222', 'DE222222222', 'a blank address VAT id is none'],
             ['DE111111111', 1, 1, 'DE222222222', 'DE111111111', 'a VAT check that passed keeps the address VAT id'],
-            ['DE111111111', '0', '1', 'DE222222222', 'DE222222222', 'a VAT check that answered invalid drops the address VAT id'],
+            ['DE111111111', '0', '1', 'DE222222222', '', 'a refused address VAT id is no number, not the customer VAT number'],
+            ['DE111111111', 0, 1, 'DE111111111', '', 'a refused address VAT id is not sent again as the customer VAT number'],
+            [null, 0, 1, 'DE222222222', 'DE222222222', 'with no address VAT id a refusal leaves the customer VAT number'],
             ['DE111111111', 0, 1, null, '', 'answered invalid and no customer VAT number is no number'],
             ['DE111111111', 0, 0, 'DE222222222', 'DE111111111', 'a VAT check request that failed keeps the address VAT id'],
             ['DE111111111', 0, null, null, 'DE111111111', 'invalid with no request result keeps the address VAT id'],

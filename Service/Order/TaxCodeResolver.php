@@ -199,18 +199,23 @@ class TaxCodeResolver
     }
 
     /**
-     * A VAT number in the form the API takes: whitespace (no-break spaces and
-     * tabs included), dots and hyphens removed, upper case, and the address
-     * country added in front when it does not start with two letters
-     * (Greece's prefix is EL, Monaco's FR). '' when nothing is left.
+     * A VAT number in the form the API takes: upper case, everything but
+     * letters and digits removed (whitespace of every kind, dots, hyphens,
+     * slashes), and the address country added in front when it does not start
+     * with two letters (Greece's prefix is EL, Monaco's FR). '' when nothing is
+     * left or what is left holds no digit, so a placeholder such as "n/a" is
+     * no number.
      *
      * @param string $raw as the shop holds it
      * @param string $country the address country it belongs to, '' for none
      */
     public static function normaliseVatNumber(string $raw, string $country): string
     {
-        $vat = strtoupper((string)preg_replace('/[\s\x{00A0}.\-]+/u', '', $raw));
-        if ($vat === '' || preg_match('/^[A-Z]{2}/', $vat)) {
+        $vat = (string)preg_replace('/[^A-Z0-9]+/', '', strtoupper($raw));
+        if (!preg_match('/\d/', $vat)) {
+            return '';
+        }
+        if (preg_match('/^[A-Z]{2}/', $vat)) {
             return $vat;
         }
         $country = strtoupper(trim($country));
@@ -221,31 +226,32 @@ class TaxCodeResolver
 
     /**
      * The order's buyer VAT number, normalised against the billing country:
-     * the billing address VAT id, unless a VAT check that got an answer marked
-     * it invalid, then the customer's tax/VAT number. A check whose request
-     * failed (the VAT service down or unreachable) also stores the number as
-     * invalid, so that alone never drops it. '' when the order holds neither.
+     * the billing address VAT id, then the customer's tax/VAT number. A
+     * billing VAT id that a VAT check which got an answer marked invalid stops
+     * there with no number: the customer's tax/VAT number is often the same
+     * number, so falling back to it would send the refused one. A check whose
+     * request failed (the VAT service down or unreachable) also stores the
+     * number as invalid, so that alone never drops it. '' when the order holds
+     * neither.
      */
     public static function buyerVatNumber(Order $order): string
     {
         $billing = $order->getBillingAddress();
         $country = $billing ? (string)$billing->getCountryId() : '';
-        $candidates = [];
         if ($billing) {
-            $checked = $billing->getVatIsValid();
-            $refused = (bool)$billing->getVatRequestSuccess()
-                && $checked !== null && $checked !== '' && !(bool)$checked;
-            $candidates[] = $refused ? null : $billing->getVatId();
-        }
-        $candidates[] = $order->getCustomerTaxvat();
-        foreach ($candidates as $raw) {
+            $raw = $billing->getVatId();
             $vat = is_scalar($raw) ? self::normaliseVatNumber((string)$raw, $country) : '';
             if ($vat !== '') {
-                return $vat;
+                $checked = $billing->getVatIsValid();
+                $refused = (bool)$billing->getVatRequestSuccess()
+                    && $checked !== null && $checked !== '' && !(bool)$checked;
+
+                return $refused ? '' : $vat;
             }
         }
+        $raw = $order->getCustomerTaxvat();
 
-        return '';
+        return is_scalar($raw) ? self::normaliseVatNumber((string)$raw, $country) : '';
     }
 
     /**

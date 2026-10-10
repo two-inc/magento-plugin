@@ -1192,17 +1192,20 @@ buyer billed in the Canaries, Ceuta or Melilla is outside the EU for services
 (TWO-26151). `ES_IVA_REVERSE_CHARGE` is Spanish domestic reverse charge only
 and is never derived. Both intra-community codes also need a buyer VAT number
 whose prefix is an EU state other than the merchant's country (TWO-26153):
-`TaxCodeResolver::buyerVatNumber()` reads the billing address `vat_id` (unless
-`vat_request_success` is true and `vat_is_valid` set and false: core stores a
-failed request as invalid too, and that must not drop the number), then the order's `customer_taxvat`, and
-normalises it against the billing country. Without one the line gets no code,
+`TaxCodeResolver::buyerVatNumber()` reads the billing address `vat_id`, then
+the order's `customer_taxvat`, and normalises it against the billing country
+(letters and digits only; no digit left is no number). A `vat_id` refused by
+Magento's VAT check (`vat_request_success` true and `vat_is_valid` set and
+false) gives no number at all and never falls back to `customer_taxvat`, which
+often holds the same number. Core stores a failed request as invalid too, and
+that alone must not drop the number. Without a number the line gets no code,
 never the export or non-EU services code. The same number goes on order
 create only as `buyer_vat_number` (`vatNumberToSend()`), for an ES merchant
 and a non-ES buyer: the API requires an ES buyer's VAT number to equal its
 organisation number, an edit that omits the key keeps the stored value, and
-every other merchant's payload stays byte-identical. **The plugin never refuses over a missing
-code**: the API does. Do not add a guard that declines a Spanish 0% line with
-no code; the line is sent and Two decides.
+every other merchant's payload stays byte-identical. **The plugin never
+refuses over a missing code**: the API does. Do not add a guard that declines
+a Spanish 0% line with no code; the line is sent and Two decides.
 
 Two rules hold the invariants and should not be loosened:
 
