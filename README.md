@@ -405,6 +405,24 @@ the invoice Two issues can differ from what the shop charged. That is your
 decision: only the internal-consistency checks, and the shop-match checks you
 opt back into, look at your result.
 
+**The buyer surcharge is priced before the hook.** The plugin's fee
+calculations operate on the order as Magento built it, before any subscriber
+runs. The payment terms surcharge is worked out by the plugin's totals
+collector on the quote's grand total as collected before the surcharge: items,
+shipping, discounts, tax, and any other total collected earlier. It is stored
+on the order and sent as its own line from there; a capture or refund sends the
+invoice's or credit memo's share of that stored fee, and a credit memo's share
+can be one the admin entered. The plugin does not re-price the surcharge on the
+payload your subscriber returns, so a subscriber that adds a line or changes
+gross, net or tax does not change it. Itemising a cost that was already in that
+grand total, such as a charge the shop adds to the cart total outside a
+carrier, does not change the fee either: it was already charged on that cost.
+Any fee consequence of the amounts your subscriber declares is yours to handle
+in that subscriber. With a percentage surcharge, for example, no surcharge is
+charged on a line your subscriber adds for an amount that was not in that grand
+total; if you want it charged, change the surcharge line in your subscriber,
+together with the totals it affects.
+
 **Requirements on a subscriber.**
 
 - Deterministic: the same inputs give the same output.
