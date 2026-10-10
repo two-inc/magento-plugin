@@ -7,9 +7,9 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model;
 
+use Magento\Payment\Model\InfoInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Magento\Sales\Model\Order\Payment;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Two;
@@ -41,20 +41,23 @@ class TwoCancelTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Brand');
 
-        $order = $this->getMockBuilder(Order::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['getStoreId', 'getStatus', 'addStatusToHistory'])
-            ->addMethods(['getTwoOrderId'])
-            ->getMock();
-        $order->method('getTwoOrderId')->willReturn('two-order-id');
-        $order->method('getStoreId')->willReturn(1);
-        $order->method('getStatus')->willReturn('canceled');
+        $order = new Order();
+        $order->setTwoOrderId('two-order-id');
+        $order->setStoreId(1);
+        $order->setStatus('canceled');
+        $payment = new class ($order) implements InfoInterface {
+            private $order;
 
-        $payment = $this->getMockBuilder(Payment::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods(['getOrder'])
-            ->getMock();
-        $payment->method('getOrder')->willReturn($order);
+            public function __construct(Order $order)
+            {
+                $this->order = $order;
+            }
+
+            public function getOrder(): Order
+            {
+                return $this->order;
+            }
+        };
 
         $reflection = new \ReflectionClass(Two::class);
         $model = $reflection->newInstanceWithoutConstructor();
