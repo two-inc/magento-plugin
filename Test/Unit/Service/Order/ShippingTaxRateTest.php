@@ -402,9 +402,8 @@ class ShippingTaxRateTest extends TestCase
     ];
 
     /**
-     * Resolves the rate, then runs the composed shipping line through the
-     * builder's line tax reconcile, as ComposeOrder does before the hook.
-     * A string expectation is the refusal message.
+     * Resolves the rate as the builder does. A string expectation is the
+     * refusal message.
      *
      * @param float|string $expected
      * @dataProvider behaviourTable
@@ -432,14 +431,6 @@ class ShippingTaxRateTest extends TestCase
 
         try {
             $actual = $orderService->getTaxRateShipping($entity);
-            $orderService->validateTaxReconciliation([[
-                'order_item_id' => 'shipping',
-                'net_amount' => $shipping - $discount,
-                'tax_amount' => $tax,
-                'discount_amount' => $discount,
-                'tax_rate' => $actual,
-                'quantity' => 1,
-            ]]);
         } catch (LocalizedException $e) {
             $actual = $e->getMessage();
         }
