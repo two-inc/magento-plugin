@@ -875,6 +875,21 @@ state, so a buyer held for a stale total is never told they were declined, and
 a declined buyer is never told their term is still applying. A third condition
 added later needs its own region for the same reason.
 
+## An order intent is never sent for a company from another country
+
+An organisation number belongs to its own country's registry, and the intent
+and the order go out under the billing country, so the API refuses any other
+pairing (TWO-26295). Two guards, one per route a company can arrive by:
+`applyCompanyData()` refuses a stored company whose country stamp differs from
+the shipping panel's country (TWO-24867), and the source resolver never falls
+back from a number-less billing capture to the shipping company while the
+quote's shipping and billing addresses are in different countries. Both fail
+open while a country is unknown.
+
+A refused intent request shows the general error message, never the API's own
+text: that is written for an integrator, and a buyer shown it has nothing to
+act on.
+
 ## The term chips are a radio group
 
 The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,

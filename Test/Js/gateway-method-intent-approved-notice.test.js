@@ -301,7 +301,13 @@ describe('gateway_method intent-approved notice', () => {
         expect(ctx.orderIntentErrorNotice()).toBe('Something went wrong.');
     });
 
-    test('a SCHEMA_ERROR keeps its per-field errors in the message region and leaves the box empty', () => {
+    test.each([
+        [{ error_code: 'SCHEMA_ERROR', error_message: 'invalid company number', error_details: 'number' }, 'a field failing validation'],
+        [{ error_code: 'JSON_MISSING_FIELD', error_details: 'a field is missing' }, 'a field missing'],
+        [{ error_code: 'SOMETHING_NEW', error_message: 'unexpected', error_details: 'detail' }, 'a code the tile does not know']
+    ])('a refused request (%j) shows the general message, never the API text (%s)', (body, description) => {
+        // TWO-26295: the API's own wording is for an integrator; a buyer shown
+        // it has nothing to act on.
         const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.generalErrorMessage = 'Something went wrong.';
         const pushed = [];
@@ -312,17 +318,10 @@ describe('gateway_method intent-approved notice', () => {
             remove: function () {}
         };
 
-        ctx.processOrderIntentErrorResponse.call(ctx, {
-            responseJSON: {
-                error_code: 'SCHEMA_ERROR',
-                error_json: [{ msg: 'company_name is required' }]
-            }
-        });
+        ctx.processOrderIntentErrorResponse.call(ctx, { status: 400, responseJSON: body });
 
-        // Several field-level errors at once belong with the fields, not in a
-        // box that states one outcome.
-        expect(pushed).toEqual(['company_name is required']);
-        expect(ctx.orderIntentErrorNotice()).toBe('');
+        expect([description, ctx.orderIntentErrorNotice(), pushed])
+            .toEqual([description, 'Something went wrong.', []]);
     });
 
     test('a later error replaces the earlier one rather than stacking', () => {
@@ -332,12 +331,12 @@ describe('gateway_method intent-approved notice', () => {
 
         ctx.processOrderIntentErrorResponse.call(ctx, {
             responseJSON: {
-                error_code: 'JSON_MISSING_FIELD',
-                error_details: 'billing_address is missing'
+                error_code: 'ORDER_INVALID',
+                error_message: 'Order is invalid'
             }
         });
 
-        expect(ctx.orderIntentErrorNotice()).toBe('billing_address is missing');
+        expect(ctx.orderIntentErrorNotice()).toBe('Order is invalid');
     });
 
     test('an approval clears a previous error box', () => {

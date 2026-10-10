@@ -22,24 +22,25 @@ function loadIdentityFactory() {
 }
 
 /**
- * @param {object} [options] `{ billingIsDistinct }` — defaults to a fixed
- *        answer the test flips via the returned `setBillingDistinct()`
+ * @param {object} [options] extra resolver options, merged over the
+ *        defaults; `billingIsDistinct` is a fixed answer the test flips via
+ *        the returned `setBillingDistinct()`
  * @returns {object} `{ Resolver, shipping, billing, resolved, resolver,
  *          setBillingDistinct }`
  */
-function build() {
+function build(options) {
     const createIdentity = loadIdentityFactory();
     const Resolver = loadAmdModule(RESOLVER, {}, { document: document, window: window });
     const shipping = createIdentity();
     const billing = createIdentity();
     const resolved = createIdentity();
     let distinct = false;
-    const resolver = new Resolver({
+    const resolver = new Resolver(Object.assign({
         shipping: shipping,
         billing: billing,
         resolved: resolved,
         billingIsDistinct: function () { return distinct; }
-    });
+    }, options || {}));
     return {
         shipping: shipping,
         billing: billing,
@@ -119,6 +120,24 @@ describe('billing distinct — billing wins if it has a number, else shipping', 
 
         expect(resolved.companyName()).toBe('Sole Trader Name');
         expect(resolved.companyId()).toBe('ST-1');
+    });
+
+    test.each([
+        [undefined, true, 'Shipping Co', '111', 'a host that does not say keeps the fallback'],
+        [true, true, 'Shipping Co', '111', 'shipping in the billing country falls back'],
+        [false, true, '', '', 'shipping in another country never stands in (TWO-26295)'],
+        [false, false, 'Shipping Co', '111', 'the country is not asked while billing is shipping']
+    ])('same country=%p, billing distinct=%p resolves to "%s" %s (%s)', (sameCountry, distinct, name, id, description) => {
+        const options = sameCountry === undefined
+            ? {}
+            : { shippingCountryIsBillingCountry: function () { return sameCountry; } };
+        const { shipping, resolver, resolved, setBillingDistinct } = build(options);
+        setBillingDistinct(distinct);
+        shipping.write({ companyName: 'Shipping Co', companyId: '111' }, { authoritative: true });
+        resolver.connect();
+
+        expect([description, resolved.companyName(), resolved.companyId()])
+            .toEqual([description, name, id]);
     });
 
     test('billing distinct but empty AND shipping empty resolves to empty on both halves', () => {

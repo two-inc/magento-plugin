@@ -1513,39 +1513,16 @@ define([
                 return;
             }
 
-            // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
-            // this to '' once it has pushed the field-level errors into
-            // messageContainer itself. A `const` here made every
-            // SCHEMA_ERROR response throw
-            // "TypeError: Assignment to constant variable" the instant it
-            // arrived — silently, since this runs inside a jQuery Deferred
-            // `.fail()` handler with nothing upstream to surface a thrown
-            // error to the buyer. That is very likely why a manual-entry
-            // buyer saw no message at all before the TWO-25326 client-side
-            // gate was added: this path was the one meant to show it, and
-            // it was broken.
-            let message = this.generalErrorMessage,
-                self = this;
+            // A request the API refused as malformed (a field failing
+            // validation, a field missing) falls through to the general
+            // message (TWO-26295): its own text is written for an integrator,
+            // and a buyer shown it has nothing to act on.
+            let message = this.generalErrorMessage;
             if (response && response.responseJSON) {
                 const errorCode = response.responseJSON.error_code,
                     errorMessage = response.responseJSON.error_message,
                     errorDetails = response.responseJSON.error_details;
                 switch (errorCode) {
-                    case 'SCHEMA_ERROR':
-                        const errors = response.responseJSON.error_json;
-                        if (errors) {
-                            message = '';
-                            self.messageContainer.clear();
-                            _.each(errors, function (error) {
-                                self.messageContainer.errorMessages.push(error.msg);
-                            });
-                        }
-                        break;
-                    case 'JSON_MISSING_FIELD':
-                        if (errorDetails) {
-                            message = errorDetails;
-                        }
-                        break;
                     case 'PROXY_REFUSED':
                         message = errorMessage;
                         break;
@@ -1560,11 +1537,7 @@ define([
             }
             if (message) {
                 // The tile's own bordered box, not the checkout message
-                // region (TWO-25326, 2026-08-05). SCHEMA_ERROR is the one
-                // exception and it opts itself out by blanking `message`
-                // above: those are per-FIELD validation errors, several at a
-                // time, which belong with the fields and not in a box that
-                // states one outcome.
+                // region (TWO-25326, 2026-08-05).
                 this.showOrderIntentErrorNotice(message);
             }
         },
