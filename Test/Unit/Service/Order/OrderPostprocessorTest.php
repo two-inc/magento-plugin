@@ -23,8 +23,8 @@ require_once __DIR__ . '/../../../Integration/OrderPostprocessingFixture/Plugin/
 
 /**
  * The postprocessing hook (TWO-26092), driven through the CI fixture
- * subscriber: what it returns is sent, after the internal-consistency checks
- * (TWO-26276), and otherwise only a subscriber bug refuses.
+ * subscriber: what it returns is sent, and only a subscriber bug refuses.
+ * Whether the payload adds up is for Two's API to validate (TWO-26284).
  */
 class OrderPostprocessorTest extends TestCase
 {
@@ -194,79 +194,63 @@ class OrderPostprocessorTest extends TestCase
     }
 
     /**
-     * The line tax reconcile is an internal-consistency check (TWO-26276): it
-     * runs after the hook, on what is about to be sent, with or without a
-     * subscriber, on the requests it always ran on. The refusal is as before.
+     * The plugin no longer reconciles a line's tax with its rate on any request
+     * (TWO-26284): a line whose tax does not follow its rate and net is sent,
+     * composed or returned by a subscriber, and Two's API validates it.
      *
      * @dataProvider mistaxedCases
      */
-    public function testTheLineTaxReconcileRefusesWhatIsAboutToBeSent(
+    public function testAMistaxedLineIsSentForTheApiToValidate(
         string $requestType,
+        string $payload,
         bool $subscriber,
         ?string $mode,
         bool $composedMistaxed,
         string $description
     ): void {
         Subscriber::$mode = $mode;
-        $payload = self::orderPayload();
+        $composed = self::payload($payload);
         if ($composedMistaxed) {
-            $payload['line_items'][0]['tax_amount'] = '25.00';
-            $payload['line_items'][0]['gross_amount'] = '125.00';
+            $composed['line_items'][0]['tax_amount'] = '25.00';
+            $composed['line_items'][0]['gross_amount'] = '125.00';
         }
 
-        try {
-            $this->postprocessor(false, 2, $subscriber)->process($requestType, $payload, $this->context());
-            $this->fail($description . ': nothing was refused');
-        } catch (LocalizedException $e) {
-            $this->assertSame('This order could not be placed. Please contact the merchant.', $e->getMessage(), $description);
-            $this->assertSame(['TaxReconciliationFailed'], array_column($this->errorLog, 0), $description);
-            $this->assertCount($subscriber ? 1 : 0, Subscriber::$calls, $description . ': the hook ran first');
+        $sent = $this->postprocessor(false, 2, $subscriber)->process($requestType, $composed, $this->context());
+
+        $this->assertSame([], $this->errorLog, $description . ': nothing was refused');
+        $this->assertCount($subscriber ? 1 : 0, Subscriber::$calls, $description . ': the hook ran');
+        if ($mode === Subscriber::MODE_LINES_DO_NOT_ADD_UP) {
+            $block = $sent['partial'] ?? $sent;
+            $this->assertNotSame($composed, $sent, $description . ': the subscriber edit is sent');
+            $this->assertSame(
+                number_format((float)($composed['partial'] ?? $composed)['line_items'][0]['tax_amount'] + 5.00, 2, '.', ''),
+                $block['line_items'][0]['tax_amount'],
+                $description . ': the subscriber\'s inconsistent tax is what goes out'
+            );
+        } elseif ($mode === null) {
+            $this->assertSame(json_encode($composed), json_encode($sent), $description . ': sent as composed');
         }
     }
 
     public static function mistaxedCases(): array
     {
         return [
-            [Hook::REQUEST_ORDER_CREATE, false, null, true, 'create, no subscriber, a mistaxed composed line'],
-            [Hook::REQUEST_ORDER_UPDATE, false, null, true, 'update, no subscriber, a mistaxed composed line'],
-            [Hook::REQUEST_ORDER_CREATE, true, null, true, 'create, a subscriber that passes a mistaxed composed line on'],
-            [Hook::REQUEST_ORDER_CREATE, true, Subscriber::MODE_RESPLIT, true, 'create, a subscriber that re-splits shipping and leaves the mistaxed line'],
-            [Hook::REQUEST_ORDER_CREATE, true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'create, a subscriber whose lines do not add up'],
-            [Hook::REQUEST_ORDER_UPDATE, true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'update, a subscriber whose lines do not add up'],
-        ];
-    }
-
-    /**
-     * Intent, capture and refund never ran the line tax reconcile, and still do not.
-     *
-     * @dataProvider uncheckedCases
-     */
-    public function testRequestsTheReconcileNeverCoveredStillSendWhatTheyAreGiven(
-        string $requestType,
-        string $payload,
-        string $description
-    ): void {
-        Subscriber::$mode = Subscriber::MODE_LINES_DO_NOT_ADD_UP;
-
-        $sent = $this->postprocessor()->process($requestType, self::payload($payload), $this->context());
-
-        $this->assertNotSame(self::payload($payload), $sent, $description . ': the subscriber edit is sent');
-        $this->assertSame([], $this->errorLog, $description);
-    }
-
-    public static function uncheckedCases(): array
-    {
-        return [
-            [Hook::REQUEST_ORDER_INTENT, 'intent', 'order intent'],
-            [Hook::REQUEST_CAPTURE, 'partial capture', 'partial capture'],
-            [Hook::REQUEST_REFUND, 'refund', 'refund'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', false, null, true, 'create, no subscriber, a mistaxed composed line'],
+            [Hook::REQUEST_ORDER_UPDATE, 'order', false, null, true, 'update, no subscriber, a mistaxed composed line'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', true, null, true, 'create, a subscriber that passes a mistaxed composed line on'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', true, Subscriber::MODE_RESPLIT, true, 'create, a subscriber that re-splits shipping and leaves the mistaxed line'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'create, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_ORDER_UPDATE, 'order', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'update, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_ORDER_INTENT, 'intent', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'intent, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_CAPTURE, 'partial capture', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'partial capture, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_REFUND, 'refund', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'refund, a subscriber whose lines do not add up'],
         ];
     }
 
     /**
      * TWO-26117: a shipping line with no rate recorded and the control blank
-     * goes at 0% with its tax as charged. The builder reconcile leaves it to
-     * the API, so it reaches the hook.
+     * goes at 0% with its tax as charged and is left to the API, so it
+     * reaches the hook.
      *
      * @dataProvider builderGatedRequests
      */

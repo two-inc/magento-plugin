@@ -197,24 +197,17 @@ foreach ($types as $type) {
         }
     }
 
-    // The internal-consistency check: create and update only, as always.
-    $gated = in_array($type, [Hook::REQUEST_ORDER_CREATE, Hook::REQUEST_ORDER_UPDATE], true);
+    // No line tax reconcile on any request: Two's API validates it (TWO-26284).
     [$payload, $context] = $request($type, 6.09, true);
     $result = $send($type, $payload, $context, null);
-    $check(
-        $gated ? $refusedWith($result, BUYER_REFUSAL, false) : $result === $payload,
-        "$type: a composed line whose tax does not follow its rate is " . ($gated ? 'refused' : 'sent, as before')
-    );
+    $check($result === $payload, "$type: a composed line whose tax does not follow its rate is sent as composed");
 
     if ($subscriber === null) {
         continue;
     }
     [$payload, $context] = $request($type, 6.09);
     $result = $send($type, $payload, $context, 'lines_do_not_add_up');
-    $check(
-        $gated ? $refusedWith($result, BUYER_REFUSAL, false) : is_array($result) && $result !== $payload,
-        "$type: a subscriber's lines that do not add up are " . ($gated ? 'refused locally' : 'sent, as before')
-    );
+    $check(is_array($result) && $result !== $payload, "$type: a subscriber's lines that do not add up are sent as returned");
 
     // A cost the shop adds to the total outside any carrier, itemised at 21% by the subscriber.
     [$payload, $context] = $request($type, 6.09, false, 12.10);

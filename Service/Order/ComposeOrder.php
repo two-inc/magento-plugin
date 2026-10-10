@@ -209,8 +209,7 @@ class ComposeOrder extends OrderService
 
     /**
      * The order's lines as the create request sends them, shared with order
-     * intent so both carry the same lines (TWO-26092). The line tax gate runs
-     * on them in OrderPostprocessor, before the hook.
+     * intent so both carry the same lines (TWO-26092).
      *
      * @param Order $order
      * @return array

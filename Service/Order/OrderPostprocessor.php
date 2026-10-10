@@ -19,9 +19,9 @@ use Two\Gateway\Exception\ShopMatchRefusedException;
 
 /**
  * Every order request passes through here just before it is sent (TWO-26092). A subscriber's
- * result is sent as returned, after the internal-consistency checks (TWO-26276): those ask only
- * whether the payload adds up, never whether it matches the shop. The shop-match checks belong to
- * the hook's default handler, which stands down for a subscriber. Two's API validates the rest.
+ * result is sent as returned; only a fault in the subscriber's code refuses it. Whether the payload
+ * adds up is for Two's API to validate (TWO-26284). The shop-match checks belong to the hook's
+ * default handler, which stands down for a subscriber (TWO-26276).
  */
 class OrderPostprocessor
 {
@@ -35,9 +35,6 @@ class OrderPostprocessor
 
     /** Requests whose refusal reaches the buyer rather than the merchant. */
     private const BUYER_FACING = [Hook::REQUEST_ORDER_INTENT, Hook::REQUEST_ORDER_CREATE];
-
-    /** Composed by ComposeOrder, which ran the line tax gate before the hook existed; it runs after it now. */
-    private const LINE_TAX_GATED = [Hook::REQUEST_ORDER_CREATE, Hook::REQUEST_ORDER_UPDATE];
 
     /**
      * @var ComposeOrder
@@ -93,9 +90,8 @@ class OrderPostprocessor
      * @param array $context trigger, endpoint and the platform objects
      *                       (quote or order, invoice, shipment, creditmemo).
      * @return array
-     * @throws LocalizedException when a shop-match check refuses, the hook throws or returns what
-     *                            cannot be sent on a request with a body, or the lines to send fail the
-     *                            tax reconcile
+     * @throws LocalizedException when a shop-match check refuses, or the hook throws or returns what
+     *                            cannot be sent on a request with a body
      */
     public function process(string $requestType, array $payload, array $context): array
     {
@@ -120,33 +116,15 @@ class OrderPostprocessor
         $diff = $this->diff($payload, $result);
         if ($diff === []) {
             // Byte for byte as composed, even if a subscriber only reordered keys.
-            $this->checkConsistency($requestType, $payload);
             return $payload;
         }
         if (json_encode($result) === false) {
             // The adapter would send an empty body: a bug in the subscriber, not a declaration.
             throw $this->refusal(self::HOOK_FAILED, $context, ['json_error' => json_last_error_msg()]);
         }
-        $this->checkConsistency($requestType, $result);
         $this->recordChange($context, $diff);
 
         return $result;
-    }
-
-    /**
-     * The internal-consistency checks, on what is about to be sent, with or without a subscriber.
-     *
-     * @param string $requestType
-     * @param array $payload
-     * @return void
-     * @throws LocalizedException
-     */
-    private function checkConsistency(string $requestType, array $payload): void
-    {
-        if (in_array($requestType, self::LINE_TAX_GATED, true)) {
-            $lines = $payload['line_items'] ?? [];
-            $this->orderService->validateTaxReconciliation(is_array($lines) ? $lines : []);
-        }
     }
 
     /**

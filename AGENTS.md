@@ -1141,25 +1141,19 @@ request reads that record and never the current configuration; a `none` with a
 rate is re-checked against it (except on refund). Both NULL is an order placed
 before the record existed, which resolves live as at placement.
 
-`validateTaxReconciliation()` closes the same loop on order create and update:
-a line other than shipping whose declared tax does not follow from its own
-declared rate and net declines the checkout with a generic buyer notice. It is
-an internal-consistency check, so `OrderPostprocessor` runs it after the hook,
-on the payload about to be sent, subscriber or not (TWO-26276). It never corrects the
-numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
-the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
-fraction-of-net term, and a discounted line may reconcile against
-`net + discount` as well as `net`, because "Before Discount" tax calculation
-taxes the undiscounted base.
+The plugin does not reconcile a line other than shipping against its own
+declared rate and net, on any request, with or without a subscriber: whether a
+payload adds up is for Two's API to validate (TWO-26284). Do not add such a check
+back after the hook; only a shop-match check, which compares with shop data the
+API cannot see, belongs there.
 
-## The postprocessing hook's checks: always, or the default handler's
+## The postprocessing hook's checks: the default handler's
 
-Two kinds, and they live in different places (TWO-26276):
+After the hook, `OrderPostprocessor` refuses only a subscriber code fault
+(it throws, returns a non-array, or returns a payload that cannot be
+JSON-encoded) and lets a shop-match refusal through. Whether the payload adds
+up is left to Two's API (TWO-26284).
 
--   **Internal-consistency checks** ask whether the payload adds up by itself.
-    `OrderPostprocessor` runs them after the hook, on what is about to be sent,
-    with or without a subscriber, on the requests they always covered. Today
-    that is the line tax reconcile on create and update.
 -   **Shop-match checks** ask whether what the plugin built matches the shop.
     `Service\Order\ShopMatchChecks` holds them (today the shipping tax
     fallback reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface`
@@ -1179,8 +1173,7 @@ with a read of the merged di.xml: that ignores area, `disabled` and module
 state. A shop-match refusal is a `ShopMatchRefusedException`, which
 `OrderPostprocessor` lets through its catch-all, so it never reads as
 `HOOK_FAILED`. Do not move a shop-match check back into a builder, where a
-subscriber cannot take it over, nor an internal-consistency check before the
-hook, where it would judge a payload that is not the one sent.
+subscriber cannot take it over.
 
 ## A 0% line carries a tax code, resolved in the builder
 

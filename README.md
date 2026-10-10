@@ -303,29 +303,23 @@ A few specifics:
   stock, numbering, writing records) will run then too.
 
 **Unchanged means unchanged.** When no subscriber changes the payload, every
-request is sent byte for byte as the plugin composed it, and is accepted or
-refused exactly as it was before this hook existed.
+request is sent byte for byte as the plugin composed it. The plugin refuses it
+only on a failed shop-match check.
 
 **What you return is sent.** The payload goes out as your subscriber returns
-it, once it passes the internal-consistency checks below, and Two's API
-validates it as it validates any request. If the API rejects your payload, its
+it, and Two's API validates it as it validates any request, including whether
+its lines and totals add up. If the API rejects your payload, its
 response is written to `var/log/two/debug.log` and its message is shown to the
 admin for an admin action, or to the buyer at checkout.
 
-**Checks.** The plugin checks a payload in two ways.
-
-- *Internal-consistency checks* ask whether the payload adds up by itself.
-  They always run, after the hook, on the payload about to be sent, whether or
-  not a subscriber is registered. They do not constrain what you declare, only
-  that it adds up: order create and update refuse a line other than shipping
-  whose tax does not follow from its own declared rate and net, with a generic
-  notice and `TaxReconciliationFailed` in the error log. The tolerance allows
-  for per-unit rounding and for tax on the undiscounted base.
-- *Shop-match checks* ask whether what the plugin built matches what the shop
-  worked out. There is one: a shipping line whose rate the shipping tax
-  fallback supplied must carry the tax Magento charged at that rate (see
-  "Shipping tax fallback"). It applies to the shipping line the plugin built,
-  on order intent, create, update and capture.
+**Checks.** After the hook the plugin refuses a request only for a fault in
+your subscriber's code (it throws, returns something other than an array, or
+returns a payload that cannot be JSON-encoded) or for a failed shop-match
+check. A *shop-match check* asks whether what the plugin built matches what
+the shop worked out, which Two's API cannot see. There is one: a shipping line
+whose rate the shipping tax fallback supplied must carry the tax Magento
+charged at that rate (see "Shipping tax fallback"). It applies to the shipping
+line the plugin built, on order intent, create, update and capture.
 
 **The default handler and when it stands down.** The plugin registers its own
 `after` plugin on this interface, `two_gateway_shop_match_checks`, which runs
@@ -402,8 +396,8 @@ comment history where there is an order.
 
 **Your code owns what it declares.** With a subscriber that changes amounts,
 the invoice Two issues can differ from what the shop charged. That is your
-decision: only the internal-consistency checks, and the shop-match checks you
-opt back into, look at your result.
+decision: only the shop-match checks you opt back into look at your result,
+before Two's API validates it.
 
 **The buyer surcharge is priced before the hook.** The plugin's fee
 calculations operate on the order as Magento built it, before any subscriber
@@ -492,13 +486,6 @@ Removing a key, changing a unit (rates stay decimal fractions), tightening a
 check a v1 subscriber could already pass, or firing on fewer requests is never
 done. A genuinely incompatible change would arrive as a new interface, with this
 one still firing alongside it.
-
-One documented exception, from the release that carries TWO-26276: the line tax
-reconcile, an internal-consistency check, also runs on what a subscriber
-returns. On order create and update, a line other than shipping whose tax does
-not follow from its own declared rate and net (gross = net + tax at that rate,
-within the tolerance above) is now refused locally before it is sent, where
-4.0.0 sent a subscriber's lines unchecked. `contract_version` stays `1`.
 
 ## Development
 

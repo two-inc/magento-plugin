@@ -277,8 +277,8 @@ jobs:
             || { echo "::error::two_gateway cache type not enabled after setup:upgrade"; exit 1; }
 
       # TWO-26276: with no subscriber, the hook's default handler owns the
-      # shop-match checks and refuses exactly as the builder did; the
-      # internal-consistency check runs after the hook. Detection is checked
+      # shop-match checks and refuses exactly as the builder did; a line whose
+      # tax does not follow its rate is sent (TWO-26284). Detection is checked
       # and the requests are run in every area, from the interceptor's own plugin list.
       - name: Shop-match probe, no subscriber
         run: |
@@ -302,8 +302,8 @@ jobs:
 
       # TWO-26276: with the fixture subscriber enabled, the default handler
       # stands down and logs the delegation, a subscriber can opt back in, its
-      # edits are sent as returned unless the lines do not add up, and the
-      # fixture's crontab di.xml disables it there, so the default is back.
+      # edits are sent as returned, and the fixture's crontab di.xml disables
+      # it there, so the default is back.
       - name: Shop-match probe, with the fixture subscriber
         run: |
           for area in frontend crontab adminhtml webapi_rest; do
