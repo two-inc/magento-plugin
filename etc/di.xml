@@ -142,6 +142,8 @@
     <type name="Magento\Sales\Model\Order">
         <plugin name="two-after-place-order"
                 type="Two\Gateway\Plugin\Model\Sales\AfterPlaceOrder" sortOrder="10"/>
+        <plugin name="two-refuse-invoice-while-unverified"
+                type="Two\Gateway\Plugin\Model\Sales\RefuseInvoiceWhileUnverified" sortOrder="20"/>
     </type>
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
         <plugin name="two-order-surcharge-ext-attrs"
