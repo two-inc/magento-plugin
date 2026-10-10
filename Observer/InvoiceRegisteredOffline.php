@@ -26,7 +26,8 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * merchant-only order comment saying so.
  *
  * Listens on sales_order_invoice_register, which core dispatches once per
- * invoice from Invoice::register() (a second register() throws). The
+ * invoice, from Invoice::register() for the admin form (a second register()
+ * throws) and from the REST invoice route's pay operation. The
  * plugin's own fulfilment flows also register offline invoices, after the
  * provider has been told, and flag them with FULFILLED_WITH_PROVIDER so no
  * comment is added for those.
@@ -68,15 +69,21 @@ class InvoiceRegisteredOffline implements ObserverInterface
     public function execute(Observer $observer): void
     {
         $invoice = $observer->getEvent()->getInvoice();
-        if (!$invoice
-            || $invoice->getRequestedCaptureCase() !== Invoice::CAPTURE_OFFLINE
-            || $invoice->getData(self::FULFILLED_WITH_PROVIDER)
-        ) {
+        if (!$invoice || $invoice->getData(self::FULFILLED_WITH_PROVIDER)) {
             return;
         }
         $order = $invoice->getOrder();
         $payment = $order ? $order->getPayment() : null;
         if (!$payment || !$this->overlayRegistry->isTwoStackMethod((string)$payment->getMethod())) {
+            return;
+        }
+        // The admin form names the offline capture. The REST invoice route
+        // names no capture case at all and records the invoice without Two
+        // whenever the method cannot capture online.
+        $captureCase = $invoice->getRequestedCaptureCase();
+        $offline = $captureCase === Invoice::CAPTURE_OFFLINE
+            || (empty($captureCase) && !$payment->canCapture());
+        if (!$offline) {
             return;
         }
 

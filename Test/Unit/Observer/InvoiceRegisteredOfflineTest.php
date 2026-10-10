@@ -28,13 +28,16 @@ class InvoiceRegisteredOfflineTest extends TestCase
         . ' The order will be fulfilled with Brand when it is shipped.';
     private const STATUS = 'This invoice was recorded in Magento only and Brand was not notified.'
         . ' The order will be fulfilled with Brand when its status changes to Complete, closed.';
+    private const ONE_STATUS = 'This invoice was recorded in Magento only and Brand was not notified.'
+        . ' The order will be fulfilled with Brand when its status changes to Complete.';
 
     /**
      * @dataProvider cases
      */
     public function testComment(
         string $method,
-        string $captureCase,
+        ?string $captureCase,
+        bool $canCapture,
         string $trigger,
         bool $ownFulfilment,
         array $statuses,
@@ -70,7 +73,19 @@ class InvoiceRegisteredOfflineTest extends TestCase
                 return $history;
             }
         };
-        $payment = new Payment();
+        $payment = new class ($canCapture) extends Payment {
+            private $canCapture;
+
+            public function __construct(bool $canCapture)
+            {
+                $this->canCapture = $canCapture;
+            }
+
+            public function canCapture(): bool
+            {
+                return $this->canCapture;
+            }
+        };
         $payment->setMethod($method);
         $order->setPayment($payment);
 
@@ -115,15 +130,18 @@ class InvoiceRegisteredOfflineTest extends TestCase
         $shipped = self::SHIPPED;
 
         return [
-            ['two_payment', $offline, 'shipment', false, $st, $shipped, 'offline with the shipment trigger gives a comment'],
-            ['brand_payment', $offline, 'shipment', false, $st, $shipped, 'same on a brand overlay method'],
-            ['two_payment', $offline, 'complete', false, $st, self::STATUS, 'the complete trigger names the statuses'],
-            ['two_payment', $offline, 'complete', false, [''], null, 'the complete trigger with no status gives none'],
-            ['two_payment', $online, 'shipment', false, $st, null, 'online capture gives none'],
-            ['two_payment', $none, 'shipment', false, $st, null, 'no capture gives none'],
-            ['checkmo', $offline, 'shipment', false, $st, null, 'a non-Two method gives none'],
-            ['two_payment', $offline, 'invoice', false, $st, null, 'the invoice trigger gives none'],
-            ['two_payment', $offline, 'shipment', true, $st, null, 'the plugin\'s own fulfilment invoice gives none'],
+            ['two_payment', $offline, false, 'shipment', false, $st, $shipped, 'offline with the shipment trigger gives a comment'],
+            ['brand_payment', $offline, false, 'shipment', false, $st, $shipped, 'same on a brand overlay method'],
+            ['two_payment', null, false, 'shipment', false, $st, $shipped, 'a REST invoice with no capture case gives a comment'],
+            ['two_payment', null, true, 'shipment', false, $st, null, 'no capture case where the method captures online gives none'],
+            ['two_payment', $offline, false, 'complete', false, $st, self::STATUS, 'the complete trigger names the statuses'],
+            ['two_payment', $offline, false, 'complete', false, ['', 'complete'], self::ONE_STATUS, 'an empty status code is skipped'],
+            ['two_payment', $offline, false, 'complete', false, [''], null, 'the complete trigger with no status gives none'],
+            ['two_payment', $online, true, 'shipment', false, $st, null, 'online capture gives none'],
+            ['two_payment', $none, false, 'shipment', false, $st, null, 'no capture gives none'],
+            ['checkmo', $offline, false, 'shipment', false, $st, null, 'a non-Two method gives none'],
+            ['two_payment', $offline, true, 'invoice', false, $st, null, 'the invoice trigger gives none'],
+            ['two_payment', $offline, false, 'shipment', true, $st, null, 'the plugin\'s own fulfilment invoice gives none'],
         ];
     }
 }
