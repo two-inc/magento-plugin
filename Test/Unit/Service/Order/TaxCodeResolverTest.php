@@ -135,7 +135,7 @@ class TaxCodeResolverTest extends TestCase
 
     /**
      * TWO-26153: the case table shared by the three plugins, rows 1 to 17
-     * (row 18, the upgrade's fan-out, is in MigrateTaxCodeMapTest). Merchant
+     * (row 18, the upgrade's fan-out, is in FanOutTaxCodeMapTest). Merchant
      * country ES. Rows are keyed `<class>|exempt`, `<class>|rate:<rate code>`
      * and `<class>|none`; $rates is what the shop's rules match for each
      * class at the tax address (none for a buyer whose customer group the
@@ -193,8 +193,76 @@ class TaxCodeResolverTest extends TestCase
             'row 15' => [$goods, $de, $de, 'DE123', [], $exempt, [self::INTRA, self::INTRA], "step 4: shared code of the order's coded 0% lines", 12.50],
             'row 16' => [$mixed, $de, $de, 'DE123', [], $exempt + ['7|exempt' => self::SERVICES], [self::INTRA, self::SERVICES, null], 'step 4: disagreeing codes give no code', 12.50],
             'row 17' => [$goods, $de, $de, null, [], $exempt, [null, null], 'step 4 with nothing to share', 12.50],
+            'billing at home' => [$goods, $es, $de, 'DE123', [], $exportOutside, [self::EXPORT], "step 1 needs the billing country abroad too: a merchant-country buyer delivered abroad is not exempt"],
+            'billing outside the EU' => [$goods, ['US', '10001'], $de, 'DE123', [], $exportOutside, [self::EXPORT], 'step 1 needs the billing country in the EU VAT area'],
+            'two 0% rates' => [$goods, $es, ['ES', '35001'], null, [5 => [['code' => 'ES-CANARIAS-0', 'percent' => 0.0], ['code' => 'ES-OTHER-0', 'percent' => 0.0]]], ['5|rate:ES-CANARIAS-0' => self::EXPORT, '5|rate:ES-OTHER-0' => self::INTRA], [self::EXPORT], "two 0% rates match: the first in core's order wins"],
+            '0% beside 21%' => [$goods, $es, ['ES', '35001'], null, [5 => [['code' => 'ES-CANARIAS-0', 'percent' => 0.0], ['code' => 'ES-21', 'percent' => 21.0]]], ['5|rate:ES-CANARIAS-0' => self::EXPORT], [null], 'a 0% rate beside one above 0% gives no code'],
             'rate above 0%' => [$goods, $es, $es, null, [5 => [['code' => 'ES-21', 'percent' => 21.0]]], ['5|none' => self::EXPORT], [null], 'a 0% line whose matched rate is not 0% gets no code'],
         ];
+    }
+
+    /**
+     * TWO-26153: on a later request, step 4 shares only the codes steps 1 to 3
+     * gave at placement, never derived ones, the same as at placement.
+     *
+     * @dataProvider adjustmentCases
+     */
+    public function testARefundAdjustmentSharesOnlyTheCodesStepsOneToThreeGave(
+        array $map,
+        array $products,
+        string $billing,
+        ?string $expected,
+        string $description
+    ): void {
+        $order = $this->order($products, ['US', '10001'], $billing);
+        $this->create($order, 'ES', $map);
+        $this->save($order);
+
+        $adjustment = array_values(array_filter(
+            $this->refund($order, 'ES', $map),
+            static fn (array $line) => ($line['order_item_id'] ?? null) === 'adjustment'
+        ));
+        $this->assertSame($expected, $adjustment[0]['tax_code'] ?? null, $description);
+    }
+
+    public static function adjustmentCases(): array
+    {
+        $mixed = [['simple', 0.0], ['virtual', 0.0]];
+        return [
+            [[], $mixed, 'US', self::EXPORT, 'nothing mapped: the derived goods and services codes are not shared, so it derives as before'],
+            [['5|none' => self::EXPORT], [['simple', 0.0]], 'US', self::EXPORT, 'a mapped code recorded at placement is shared'],
+            [['5|none' => self::EXPORT], $mixed, 'US', self::EXPORT, 'a derived services code beside it does not make the codes disagree'],
+        ];
+    }
+
+    /**
+     * With the merchant's country unknown, no buyer can be told apart from a
+     * domestic one, so step 1 never fires.
+     */
+    public function testStepOneNeedsTheMerchantsCountry(): void
+    {
+        $order = $this->order([['simple', 0.0]], ['DE', '10115'], 'DE 10115 DE123');
+
+        $create = $this->create($order, '', ['5|exempt' => self::INTRA]);
+        $this->assertSame([null], $this->codes($create['line_items']));
+    }
+
+    /**
+     * A shop with no row set never looks up its tax: nothing would read it.
+     */
+    public function testAShopWithNoRowSetNeverLooksUpItsTax(): void
+    {
+        $shop = $this->createMock(ShopTaxRates::class);
+        $shop->expects($this->never())->method('taxAddress');
+        $shop->expects($this->never())->method('rates');
+        $order = $this->order([['simple', 0.0]], ['DE', '10115'], 'DE 10115 DE123', true);
+        $lines = [
+            ['order_item_id' => 'x', 'type' => 'PHYSICAL', 'tax_rate' => '0.00'],
+            ['order_item_id' => 'shipping', 'type' => 'SHIPPING_FEE', 'tax_rate' => '0.00'],
+        ];
+
+        (new TaxCodeResolver($this->config([]), $this->records('ES'), $shop))
+            ->apply($lines, $order, ['0' => $order->itemsById[1]]);
     }
 
     /**
@@ -437,8 +505,8 @@ class TaxCodeResolverTest extends TestCase
         return [
             ['capture', [self::EXPORT, self::ART20, self::EXPORT]],
             ['shipment', [self::EXPORT, self::ART20, self::EXPORT]],
-            // The adjustment was never placed, so it resolves against the edited Madrid address.
-            ['refund', [self::EXPORT, self::ART20, null, self::EXPORT]],
+            // The adjustment was never placed: it takes the one code steps 1 to 3 gave at placement (step 4).
+            ['refund', [self::EXPORT, self::ART20, self::ART20, self::EXPORT]],
             ['edit', [self::EXPORT, self::ART20, self::EXPORT]],
         ];
     }
@@ -491,8 +559,9 @@ class TaxCodeResolverTest extends TestCase
         return [
             ['capture', [self::EXPORT, self::EXPORT, self::EXPORT]],
             ['edit', [self::EXPORT, self::EXPORT, self::EXPORT]],
-            // The adjustment stays out of the record and takes the code the recorded lines share (step 4).
-            ['refund', [self::EXPORT, self::EXPORT, self::EXPORT, self::EXPORT]],
+            // Nothing was mapped, so step 4 has no code to share: the adjustment derives against
+            // the edited Madrid address, as before.
+            ['refund', [self::EXPORT, null, self::EXPORT, self::EXPORT]],
         ];
     }
 
@@ -539,7 +608,7 @@ class TaxCodeResolverTest extends TestCase
 
         $this->assertSame([self::ART20, self::EXPORT], $this->codes($create['line_items']));
         $this->assertSame(
-            ['item:101' => self::ART20, 'item:102' => self::EXPORT],
+            ['item:101' => self::ART20, 'item:102' => self::EXPORT, 'shared' => [self::ART20]],
             json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true)
         );
     }

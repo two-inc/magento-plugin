@@ -20,7 +20,8 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  *
  * 1. Exempt buyer: the billing country and the tax address (the address core
  *    taxes on, normally delivery) are both in the EU VAT area and not the
- *    merchant's country, and the buyer VAT number is not empty. The line's
+ *    merchant's country (which must be known), and the buyer VAT number is
+ *    not empty. The line's
  *    product tax class's exempt row. A tax address outside the EU VAT area
  *    (an export) skips this step.
  * 2. The shop's 0% rate that matched the tax address for the class: that
@@ -45,7 +46,8 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * than resolving again, so a changed address, mapping or product tax class
  * never moves a placed order. A line the record does not cover (an order placed
  * before it existed, or a line placement never sent, such as a refund
- * adjustment) is resolved as at placement, step 4 sharing the recorded codes.
+ * adjustment) is resolved as at placement, step 4 sharing the codes steps 1
+ * to 3 gave at placement (SHARED_KEY).
  *
  * Lines at any other rate are left exactly as composed.
  */
@@ -78,6 +80,13 @@ class TaxCodeResolver
 
     /** The record key every fee line of type OTHER shares. */
     private const FEE_KEY = 'fee';
+
+    /**
+     * The record key listing the codes steps 1 to 3 gave at placement, which a
+     * later request's lines with no class share (step 4). Derived codes are
+     * left out, as at placement; absent when there were none.
+     */
+    private const SHARED_KEY = 'shared';
 
     /** Greece's VAT prefix, which names GR. */
     private const VAT_PREFIX_GREECE = 'EL';
@@ -134,10 +143,10 @@ class TaxCodeResolver
         $stored = $placing ? null : self::decodeStored($order->getData(self::STORED_CODES));
         $context = null;
         $record = [];
-        // Step 4's pool: codes steps 1 to 3 gave, and the codes recorded for lines with a class.
+        // Step 4's pool: the codes steps 1 to 3 gave, here and at placement (never derived ones).
         $shared = [];
-        foreach ($stored ?? [] as $storeKey => $code) {
-            if ($storeKey !== self::FEE_KEY && is_string($code)) {
+        foreach ((array)($stored[self::SHARED_KEY] ?? []) as $code) {
+            if (is_string($code)) {
                 $shared[$code] = true;
             }
         }
@@ -184,6 +193,9 @@ class TaxCodeResolver
             }
         }
 
+        if ($placing && $shared !== []) {
+            $record[self::SHARED_KEY] = array_keys($shared);
+        }
         if ($placing) {
             $order->setData(self::STORED_CODES, (string)json_encode($record, JSON_FORCE_OBJECT));
         }
@@ -401,7 +413,7 @@ class TaxCodeResolver
             'has_goods' => $hasGoods,
             'buyer_vat' => $buyerVat,
             // With no row set nothing reads it, so the shop's tax is not looked up.
-            'exempt' => $map !== [] && $buyerVat !== ''
+            'exempt' => $map !== [] && $buyerVat !== '' && $merchantCountry !== ''
                 && self::inEuVatAreaAbroad($buyerCountry, $buyerPostcode, $merchantCountry)
                 && $this->taxAddressAbroad($order, $merchantCountry),
         ];
