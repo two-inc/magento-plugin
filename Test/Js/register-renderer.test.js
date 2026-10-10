@@ -28,8 +28,15 @@ function setup(state) {
     const list = {
         name: LIST_NAME,
         configDefaultGroup: { name: 'methodGroup' },
+        // Like core: builds only from renderer-list entries already pushed,
+        // and registers the renderer later (after its module loads), so a
+        // created renderer is not yet visible in the registry.
         createRenderer: function (method) {
-            created.push(method.method);
+            pushed.forEach(function (r) {
+                if (r.type === method.method) {
+                    created.push(method.method);
+                }
+            });
         }
     };
     if (state.list === 'no-create') {
@@ -63,7 +70,9 @@ function setup(state) {
         }
     });
 
-    registerRenderer('two_payment', COMPONENT);
+    for (let i = 0; i < (state.calls || 1); i++) {
+        registerRenderer('two_payment', COMPONENT);
+    }
 
     return { pushed: pushed, created: created };
 }
@@ -97,6 +106,11 @@ describe('registerRenderer (TWO-26297)', () => {
             'quote with shipping, list still empty: the later add creates it'
         ],
         [
+            { list: true, group: true, methods: ['two_payment'], calls: 2 },
+            ['two_payment'],
+            'a second call before the renderer registers: never a second one'
+        ],
+        [
             { list: 'no-create', group: true, methods: ['two_payment'] },
             [],
             'a list without createRenderer is left alone'
@@ -104,7 +118,9 @@ describe('registerRenderer (TWO-26297)', () => {
     ])('%j creates %j: %s', (state, expected, description) => {
         const result = setup(state);
 
-        expect(result.pushed).toEqual([{ type: 'two_payment', component: COMPONENT }]);
+        expect(result.pushed).toEqual(
+            Array(state.calls || 1).fill({ type: 'two_payment', component: COMPONENT })
+        );
         expect({ created: result.created, description }).toEqual({
             created: expected,
             description

@@ -42,6 +42,11 @@ define([
 
     var PAYMENT_LIST = 'index = payments-list';
 
+    // Types this module has already asked the list to create. Core registers a
+    // renderer only once its component module has loaded, so the registry
+    // check alone would let a second call in that window create a second one.
+    var backfilled = {};
+
     /**
      * @param {String} type      payment method code
      * @param {String} component renderer component path
@@ -69,7 +74,13 @@ define([
         }
 
         (methodList() || []).forEach(function (method) {
-            if (method && method.method === type && !registry.get(list.name + '.' + type)) {
+            if (
+                method &&
+                method.method === type &&
+                !backfilled[type] &&
+                !registry.get(list.name + '.' + type)
+            ) {
+                backfilled[type] = true;
                 list.createRenderer(method);
             }
         });
