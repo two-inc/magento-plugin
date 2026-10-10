@@ -9,21 +9,33 @@ namespace Two\Gateway\Service\Order;
 
 use Magento\Sales\Model\Order;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Config\Backend\TaxCodeMap as TaxCodeMapBackend;
 use Two\Gateway\Service\Merchant\RecordProvider;
 
 /**
  * Adds a Two `tax_code` to every line composed at a 0% tax rate (TWO-24877,
- * TWO-26151).
+ * TWO-26153), from the merchant's rows in "Tax codes for 0% lines". The
+ * merchant decides how their shop levies tax; the plugin only reads which of
+ * their rows a line falls under. For each 0% line the first match wins:
  *
- * 1. The merchant's mapping of the line's tax class, when there is one.
- * 2. Otherwise, for a Spanish merchant only, a code derived from the order:
- *    goods by where they are delivered, services by where the buyer company
- *    is. Shipping and fee lines are goods when the order has a physical
- *    product and services when it has none. Both intra-community codes also
- *    need a buyer VAT number whose prefix is an EU state other than the
- *    merchant's country (TWO-26153); without one the line gets no code.
- * 3. Otherwise no code. The plugin never refuses an order over a missing code:
+ * 1. Exempt buyer: the billing country and the tax address (the address core
+ *    taxes on, normally delivery) are both in the EU VAT area and not the
+ *    merchant's country, and the buyer VAT number is not empty. The line's
+ *    product tax class's exempt row. A tax address outside the EU VAT area
+ *    (an export) skips this step.
+ * 2. The shop's 0% rate that matched the tax address for the class: that
+ *    rate's row. A line whose class matches a rate above 0% gets no code.
+ * 3. No rate matched: the class's no-rule row.
+ * 4. A line with no class (fee lines of type OTHER, a flat-rate payment terms
+ *    fee, the refund adjustment, a product line no item matched) takes the one
+ *    code the order's lines coded by steps 1 to 3 share; none if they disagree.
+ * 5. Otherwise no code. The plugin never refuses an order over a missing code:
  *    Two's API validates what is sent.
+ *
+ * A matched row left on (none) gives no code; it never falls through to a
+ * later step. Until derivation is removed, a Spanish merchant's line whose
+ * class has no row mapped at all (or, for a line with no class, whose order
+ * has no line coded by steps 1 to 3) still takes the code derive() works out.
  *
  * Placement records what each line resolved to, "no code" included, on the
  * order (STORED_CODES): product lines by quote item id, then shipping, the
@@ -33,10 +45,9 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * than resolving again, so a changed address, mapping or product tax class
  * never moves a placed order. A line the record does not cover (an order placed
  * before it existed, or a line placement never sent, such as a refund
- * adjustment) is resolved as at placement.
+ * adjustment) is resolved as at placement, step 4 sharing the recorded codes.
  *
- * Lines at any other rate are left exactly as composed, and so is every line of
- * a non-Spanish merchant with no mapping.
+ * Lines at any other rate are left exactly as composed.
  */
 class TaxCodeResolver
 {
@@ -48,7 +59,11 @@ class TaxCodeResolver
     /** sales_order column: JSON of line key => code or null, written at placement. */
     public const STORED_CODES = 'two_tax_codes';
 
-    /** The 27 member states, plus Monaco, which is inside the EU VAT area through France. */
+    /**
+     * The 27 member states, plus Monaco, which is inside the EU VAT area
+     * through France. With Northern Ireland (NI_COUNTRY, NI_POSTCODE_PREFIX)
+     * this is the EU VAT area of step 1.
+     */
     private const EU = [
         'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'IE', 'IT',
         'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'HU', 'MC',
@@ -56,6 +71,13 @@ class TaxCodeResolver
 
     /** Spanish postcodes outside the EU VAT area: the Canaries (35, 38), Ceuta (51) and Melilla (52). */
     private const ES_OUTSIDE_VAT_AREA = ['35', '38', '51', '52'];
+
+    /** Northern Ireland, which shops hold as GB with a BT postcode, is in the EU VAT area for goods. */
+    private const NI_COUNTRY = 'GB';
+    private const NI_POSTCODE_PREFIX = 'BT';
+
+    /** The record key every fee line of type OTHER shares. */
+    private const FEE_KEY = 'fee';
 
     /** Greece's VAT prefix, which names GR. */
     private const VAT_PREFIX_GREECE = 'EL';
@@ -85,10 +107,19 @@ class TaxCodeResolver
      */
     private $recordProvider;
 
-    public function __construct(ConfigRepository $configRepository, RecordProvider $recordProvider)
-    {
+    /**
+     * @var ShopTaxRates
+     */
+    private $shopTaxRates;
+
+    public function __construct(
+        ConfigRepository $configRepository,
+        RecordProvider $recordProvider,
+        ShopTaxRates $shopTaxRates
+    ) {
         $this->configRepository = $configRepository;
         $this->recordProvider = $recordProvider;
+        $this->shopTaxRates = $shopTaxRates;
     }
 
     /**
@@ -103,6 +134,14 @@ class TaxCodeResolver
         $stored = $placing ? null : self::decodeStored($order->getData(self::STORED_CODES));
         $context = null;
         $record = [];
+        // Step 4's pool: codes steps 1 to 3 gave, and the codes recorded for lines with a class.
+        $shared = [];
+        foreach ($stored ?? [] as $storeKey => $code) {
+            if ($storeKey !== self::FEE_KEY && is_string($code)) {
+                $shared[$code] = true;
+            }
+        }
+        $keyless = [];
 
         foreach ($lineItems as $key => $line) {
             if (!is_array($line) || !isset($line['tax_rate']) || (float)$line['tax_rate'] != 0.0
@@ -121,13 +160,27 @@ class TaxCodeResolver
                 $code = $stored[$storeKey];
             } else {
                 $context = $context ?? $this->context($order);
-                $code = $this->resolve($line, $item ?: null, $context);
+                [$classId, $isService] = $this->lineClass($line, $item ?: null, $context);
+                if ($classId === null) {
+                    $keyless[$key] = [$storeKey, $isService];
+                    continue;
+                }
+                $code = $this->resolve($order, $classId, $isService, $context, $shared);
             }
+            $lineItems[$key] = $this->code($lineItems[$key], $code);
             if ($placing && $storeKey !== null) {
                 $record[$storeKey] = $code;
             }
-            if ($code !== null) {
-                $lineItems[$key]['tax_code'] = $code;
+        }
+
+        foreach ($keyless as $key => [$storeKey, $isService]) {
+            $code = count($shared) === 1 ? (string)key($shared) : null;
+            if ($shared === [] && $context['derive']) {
+                $code = $this->derived($isService, $context);
+            }
+            $lineItems[$key] = $this->code($lineItems[$key], $code);
+            if ($placing && $storeKey !== null) {
+                $record[$storeKey] = $code;
             }
         }
 
@@ -314,7 +367,7 @@ class TaxCodeResolver
             return null;
         }
 
-        return 'fee';
+        return self::FEE_KEY;
     }
 
     /**
@@ -331,57 +384,141 @@ class TaxCodeResolver
         }
 
         $merchantCountry = $this->merchantCountry($storeId);
+        $buyerCountry = $billing ? strtoupper(trim((string)$billing->getCountryId())) : '';
+        $buyerPostcode = $billing ? (string)$billing->getPostcode() : '';
+        $buyerVat = self::buyerVatNumber($order);
+        $map = $this->configRepository->getTaxCodeMap($storeId);
 
         return [
             'store_id' => $storeId,
-            'map' => $this->configRepository->getTaxCodeMap($storeId),
+            'map' => $map,
             'merchant_country' => $merchantCountry,
             'derive' => $merchantCountry === 'ES',
             'dest_country' => $destination ? (string)$destination->getCountryId() : '',
             'dest_postcode' => $destination ? (string)$destination->getPostcode() : '',
-            'buyer_country' => $billing ? (string)$billing->getCountryId() : '',
-            'buyer_postcode' => $billing ? (string)$billing->getPostcode() : '',
+            'buyer_country' => $buyerCountry,
+            'buyer_postcode' => $buyerPostcode,
             'has_goods' => $hasGoods,
-            'buyer_vat' => self::buyerVatNumber($order),
+            'buyer_vat' => $buyerVat,
+            // With no row set nothing reads it, so the shop's tax is not looked up.
+            'exempt' => $map !== [] && $buyerVat !== ''
+                && self::inEuVatAreaAbroad($buyerCountry, $buyerPostcode, $merchantCountry)
+                && $this->taxAddressAbroad($order, $merchantCountry),
         ];
     }
 
-    private function resolve(array $line, $item, array $context): ?string
+    private function taxAddressAbroad(Order $order, string $merchantCountry): bool
+    {
+        $taxAddress = $this->shopTaxRates->taxAddress($order);
+
+        return self::inEuVatAreaAbroad($taxAddress['country'], $taxAddress['postcode'], $merchantCountry);
+    }
+
+    /**
+     * In the EU VAT area (the 27 member states, Monaco, and Northern Ireland
+     * as GB with a BT postcode) and not the merchant's country.
+     */
+    private static function inEuVatAreaAbroad(string $country, string $postcode, string $merchantCountry): bool
+    {
+        $country = strtoupper(trim($country));
+        $inArea = in_array($country, self::EU, true) || ($country === self::NI_COUNTRY
+            && strpos(strtoupper(trim($postcode)), self::NI_POSTCODE_PREFIX) === 0);
+
+        return $inArea && $country !== $merchantCountry;
+    }
+
+    /**
+     * The line's product tax class, null for a line with none, and whether
+     * derivation counts it as a service.
+     *
+     * @return array{0: int|null, 1: bool}
+     */
+    private function lineClass(array $line, $item, array $context): array
     {
         if ($item !== null) {
-            [$classId, $isService] = [$this->productTaxClassId($item), self::isService($item)];
-        } elseif (($line['type'] ?? '') === 'SHIPPING_FEE') {
+            return [$this->productTaxClassId($item), self::isService($item)];
+        }
+        if (($line['type'] ?? '') === 'SHIPPING_FEE') {
             // Core's None is class 0, which the repository reports as null.
-            [$classId, $isService] = [
-                $this->configRepository->getShippingTaxClassId($context['store_id']) ?? 0,
-                !$context['has_goods'],
-            ];
-        } elseif (($line['order_item_id'] ?? null) === 'surcharge') {
-            [$classId, $isService] = [
-                $this->configRepository->getSurchargeTaxClassId($context['store_id']),
-                !$context['has_goods'],
-            ];
-        } elseif (in_array($line['type'] ?? '', self::PRODUCT_LINE_TYPES, true)) {
+            return [$this->configRepository->getShippingTaxClassId($context['store_id']) ?? 0, !$context['has_goods']];
+        }
+        if (($line['order_item_id'] ?? null) === 'surcharge') {
+            return [$this->configRepository->getSurchargeTaxClassId($context['store_id']), !$context['has_goods']];
+        }
+        if (in_array($line['type'] ?? '', self::PRODUCT_LINE_TYPES, true)) {
             // A product line no item matched: its own type still says goods or service.
-            [$classId, $isService] = [null, $line['type'] === 'DIGITAL'];
-        } else {
-            [$classId, $isService] = [null, !$context['has_goods']];
+            return [null, $line['type'] === 'DIGITAL'];
         }
 
-        $code = $classId !== null ? ($context['map'][(string)$classId] ?? null) : null;
-        if ($code === null && $context['derive']) {
-            $code = self::derive(
-                $isService,
-                $context['dest_country'],
-                $context['dest_postcode'],
-                $context['buyer_country'],
-                $context['buyer_postcode'],
-                $context['merchant_country'],
-                $context['buyer_vat']
-            );
+        return [null, !$context['has_goods']];
+    }
+
+    /**
+     * Steps 1 to 3 for a line with a product tax class, adding a code they
+     * give to step 4's pool. Derivation only for a class with no row mapped.
+     *
+     * @param array<string, true> $shared step 4's pool
+     */
+    private function resolve(Order $order, int $classId, bool $isService, array $context, array &$shared): ?string
+    {
+        $row = $context['map'] !== [] ? $this->matchedRow($order, $classId, $context) : null;
+        $code = $row !== null ? ($context['map'][$row] ?? null) : null;
+        if ($code !== null) {
+            $shared[$code] = true;
+            return $code;
+        }
+        $prefix = $classId . '|';
+        foreach (array_keys($context['map']) as $mapped) {
+            if (strpos((string)$mapped, $prefix) === 0) {
+                return null;
+            }
         }
 
-        return $code;
+        return $context['derive'] ? $this->derived($isService, $context) : null;
+    }
+
+    /**
+     * The key of the row the line falls under, or null when the shop's rate
+     * for it is not 0%.
+     */
+    private function matchedRow(Order $order, int $classId, array $context): ?string
+    {
+        if ($context['exempt']) {
+            return TaxCodeMapBackend::exemptKey($classId);
+        }
+        $rates = $classId > 0 ? $this->shopTaxRates->rates($order, $classId) : [];
+        if ($rates === []) {
+            return TaxCodeMapBackend::noRuleKey($classId);
+        }
+        foreach ($rates as $rate) {
+            if ($rate['percent'] != 0.0) {
+                return null;
+            }
+        }
+
+        return TaxCodeMapBackend::rateKey($classId, $rates[0]['code']);
+    }
+
+    private function derived(bool $isService, array $context): ?string
+    {
+        return self::derive(
+            $isService,
+            $context['dest_country'],
+            $context['dest_postcode'],
+            $context['buyer_country'],
+            $context['buyer_postcode'],
+            $context['merchant_country'],
+            $context['buyer_vat']
+        );
+    }
+
+    private function code(array $line, ?string $code): array
+    {
+        if ($code !== null) {
+            $line['tax_code'] = $code;
+        }
+
+        return $line;
     }
 
     /**
