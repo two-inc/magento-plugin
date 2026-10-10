@@ -50,6 +50,8 @@ use Two\Gateway\Service\UrlCookie;
  */
 class OrderPostprocessingSendSitesTest extends TestCase
 {
+    use BuildsStatusFulfilment;
+
     /** @var array<int, array{0: string, 1: array, 2: array}> */
     private $fired = [];
 
@@ -245,17 +247,16 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
 
+        $deferral = new \Two\Gateway\Service\Order\FulfilmentDeferral();
         (new SalesOrderSaveAfter(
-            $config,
-            $this->createMock(BrandRegistryInterface::class),
-            $this->adapter(),
-            $this->createMock(\Magento\Sales\Model\Order\Status\HistoryFactory::class),
-            $this->createMock(\Magento\Sales\Api\OrderStatusHistoryRepositoryInterface::class),
-            $this->createMock(\Magento\Sales\Model\Service\InvoiceService::class),
-            $this->createMock(\Magento\Framework\DB\TransactionFactory::class),
-            $this->overlay(),
-            $this->recorder(),
-            $this->createMock(ComposeShipment::class)
+            $this->buildStatusFulfilment([
+                'configRepository' => $config,
+                'apiAdapter' => $this->adapter(),
+                'overlayRegistry' => $this->overlay(),
+                'orderPostprocessor' => $this->recorder(),
+                'deferral' => $deferral,
+            ]),
+            $deferral
         ))->execute(new SendSiteObserver(new DataObject(['order' => $this->order()])));
     }
 

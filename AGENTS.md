@@ -930,10 +930,63 @@ invoice.** `SalesOrderSaveAfter` used to return early on `hasInvoices()`, which
 made a merchant's offline invoice suppress the fulfilment for good. It now
 returns early only once the payment carries `marked_completed`, which every
 successful fulfilment sets (its own, the shipment observer's and
-`Two::capture()`) and which the order save persists with the payment, after the
-observer runs. A merchant invoice for everything leaves a zero-total invoice,
-which is not created; a partial one leaves the rest for the plugin's invoice.
-`FulfilmentInvoiceTest` saves the order twice per case and pins one fulfil.
+`Two::capture()`) and which the order save persists with the payment. A merchant
+invoice for everything leaves a zero-total invoice, which is not created; a
+partial one leaves the rest for the plugin's invoice. `FulfilmentInvoiceTest`
+saves the order twice per case, in two requests, and pins one fulfil.
+
+**The fulfilment waits until the save is complete.** Core's refund entry points
+save the order and the credit memo one after the other, so `sales_order_save_after`
+can fire with the memo not yet saved: the REST routes (`RefundOrderInterface`,
+`RefundInvoiceInterface`) save the order first, inside the order lock's
+transaction, and the admin credit memo (`CreditmemoManagementInterface::refund()`)
+saves the memo, then the order, inside one adapter transaction. So
+`Observer\SalesOrderSaveAfter` only decides, and `Service\Order\StatusFulfilment`
+sends:
+
+-   **Inside a refund call, deferred to its return.** The around-plugins in
+    `Plugin\Model\Sales\FulfilAfterRefund` (one per interface, registered
+    globally, so core's preferences inherit them in the admin and webapi areas)
+    count the call in `Service\Order\FulfilmentDeferral`, which is shared; the
+    observer queues the order id there. When the outermost call returns, each
+    queued order is reloaded through `OrderFactory` (the repository hands back
+    the instance the refund was working on), re-checked, fulfilled and saved. A
+    refund that throws fulfils nothing. A refund call made inside a transaction
+    someone else opened waits for that commit too, as below.
+-   **Outside a refund call, deferred to the commit.** The order is fulfilled the
+    same way from a commit callback on the sales connection, which core's
+    `ExecuteCommitCallbacks` plugin on the database adapter runs after the
+    outermost commit (the order's own save, or a transaction around it) and drops
+    on a rollback. The order's own save always holds a transaction when the event
+    fires, so every status change is in practice fulfilled after its commit; the
+    inline branch, for no open transaction, only serves a dispatch outside a save.
+    Since core's three routes each hold one transaction across both saves, the
+    commit alone would already wait for their memo; the refund plugins also
+    cover a refund call that saves without one.
+-   **Synchronous, as before:** the gate (Two order, `complete` trigger, a
+    fulfil-on status, no marker) and the whole-order check, which still refuses
+    the merchant's save with its error.
+
+**A failed fulfilment is commented, not thrown.** When it runs, the merchant's save
+or refund has already succeeded, and throwing would report a failed refund that in
+fact went through. The order gets the comment "Failed to fulfil order with Two.
+Reason: ...", the wording a failed refund uses; an admin request also gets it as an
+error message (REST and other callers get nothing extra); and
+`StatusFulfilmentFailed` is logged at error. That covers a refusal by Two and one by
+the postprocessing hook alike. The marker stays unset, so the next save of the
+order while it is in a fulfil-on status tries again.
+
+**Never twice.** The flush's own order save fires the observer again, and the
+marker it has just set stops it. `FulfilmentDeferral` also records each order sent
+in the request, which stops a copy of the order loaded before the marker was set
+from fulfilling again when it is saved later in the same request. Two saves inside
+one refund queue the order once.
+
+**Refunds made by another extension's own code are not covered.** A credit memo
+saved without going through one of those three interfaces runs no plugin, so its
+order save counts as a status change outside a refund: deferred to the commit,
+which sees the memo only if that code saves the memo and the order in one
+transaction.
 
 **Refunds before that fulfilment are netted out.** Once the merchant can invoice
 first, they can also credit-memo first. The whole-order check counts refunded and

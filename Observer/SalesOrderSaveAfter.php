@@ -7,106 +7,36 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Observer;
 
-use Exception;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
-use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Sales\Api\Data\OrderInterface;
-use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Magento\Sales\Model\Order\Invoice;
-use Magento\Sales\Model\Order\Status\HistoryFactory;
-use Magento\Sales\Model\Service\InvoiceService;
-use Magento\Framework\DB\TransactionFactory;
-use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\Order\ComposeShipment;
-use Two\Gateway\Service\Order\OrderPostprocessor;
-use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
+use Two\Gateway\Service\Order\FulfilmentDeferral;
+use Two\Gateway\Service\Order\StatusFulfilment;
 
 /**
  * After Order Save Observer
- * Fulfill Two paymemt after order saved
+ *
+ * Fulfils a Two order with Two when it reaches a configured fulfil-on status.
+ * The whole-order check refuses the save here, as before; the fulfilment itself
+ * waits until the save is complete (TWO-26302):
+ * - inside a refund call, the order is queued and the refund plugins fulfil
+ *   it once the call returns, when the order and its credit memo are saved;
+ * - otherwise it runs after the outermost commit on the sales connection, or
+ *   at once when no transaction is open.
  */
 class SalesOrderSaveAfter implements ObserverInterface
 {
-    /**
-     * @var ConfigRepository
-     */
-    private $configRepository;
+    /** @var StatusFulfilment */
+    private $statusFulfilment;
 
-    /** @var BrandRegistryInterface */
-    private $brandRegistry;
+    /** @var FulfilmentDeferral */
+    private $deferral;
 
-    /**
-     * @var Adapter
-     */
-    private $apiAdapter;
-
-    /**
-     * @var HistoryFactory
-     */
-    private $historyFactory;
-
-    /**
-     * @var OrderStatusHistoryRepositoryInterface
-     */
-    private $orderStatusHistoryRepository;
-
-    /**
-     * @var InvoiceService
-     */
-    private $invoiceService;
-
-    /**
-     * @var TransactionFactory
-     */
-    private $transactionFactory;
-
-    /**
-     * SalesOrderSaveAfter constructor.
-     *
-     * @param ConfigRepository $configRepository
-     * @param Adapter $apiAdapter
-     * @param HistoryFactory $historyFactory
-     * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
-     * @param InvoiceService $invoiceService
-     * @param TransactionFactory $transactionFactory
-     */
-    /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
-    private $overlayRegistry;
-
-    /** @var OrderPostprocessor */
-    private $orderPostprocessor;
-
-    /** @var ComposeShipment */
-    private $composeShipment;
-
-    public function __construct(
-        ConfigRepository $configRepository,
-        BrandRegistryInterface $brandRegistry,
-        Adapter $apiAdapter,
-        HistoryFactory $historyFactory,
-        OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
-        InvoiceService $invoiceService,
-        TransactionFactory $transactionFactory,
-        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
-        OrderPostprocessor $orderPostprocessor,
-        ComposeShipment $composeShipment
-    ) {
-        $this->configRepository = $configRepository;
-        $this->brandRegistry = $brandRegistry;
-        $this->apiAdapter = $apiAdapter;
-        $this->historyFactory = $historyFactory;
-        $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
-        $this->invoiceService = $invoiceService;
-        $this->transactionFactory = $transactionFactory;
-        $this->overlayRegistry = $overlayRegistry;
-        $this->orderPostprocessor = $orderPostprocessor;
-        $this->composeShipment = $composeShipment;
+    public function __construct(StatusFulfilment $statusFulfilment, FulfilmentDeferral $deferral)
+    {
+        $this->statusFulfilment = $statusFulfilment;
+        $this->deferral = $deferral;
     }
 
     /**
@@ -116,169 +46,17 @@ class SalesOrderSaveAfter implements ObserverInterface
     public function execute(Observer $observer)
     {
         $order = $observer->getEvent()->getOrder();
-        if (!$order
-            || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
-            || !$order->getTwoOrderId()
-        ) {
-            return;
-        }
-        if ($this->configRepository->getFulfillTrigger() !== 'complete'
-            || !in_array($order->getStatus(), $this->configRepository->getFulfillOrderStatusList())
-        ) {
+        if (!$order instanceof Order || !$this->statusFulfilment->isDue($order)) {
             return;
         }
 
-        // Idempotency: every successful fulfilment marks the payment
-        // (parseFulfillResponse here, the shipment observer and
-        // Two::capture() alike), so later saves of the same order are no-ops.
-        // An invoice alone is no evidence: the merchant may have invoiced
-        // offline in Magento only, and Two must still be told (TWO-26302).
-        if (!empty(((array)$order->getPayment()->getAdditionalInformation())['marked_completed'])) {
+        $this->statusFulfilment->assertWholeOrderShipped($order);
+
+        if ($this->deferral->isInsideRefund()) {
+            $this->deferral->queue((int)$order->getEntityId());
             return;
         }
 
-        if (!$this->isWholeOrderShipped($order)) {
-            $error = __(
-                "%1 requires whole order to be shipped before it can be fulfilled.",
-                $this->brandRegistry->getProductName()
-            );
-            throw new LocalizedException($error);
-        }
-
-        // A merchant who invoiced in Magento can refund there before the order
-        // is fulfilled with Two. Two is then told only what is left to pay
-        // for, as a partial fulfilment; otherwise the whole order (TWO-26302).
-        $payload = $this->hasRefunds($order)
-            ? ['partial' => $this->composeShipment->executeNetOfRefunds($order)]
-            : [];
-        if (isset($payload['partial']) && empty($payload['partial']['line_items'])) {
-            // Everything was refunded: nothing is left to fulfil.
-            return;
-        }
-
-        $response = $this->apiAdapter->execute(
-            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-            $this->orderPostprocessor->process(
-                Postprocessing::REQUEST_CAPTURE,
-                $payload,
-                ['trigger' => 'status_change', 'endpoint' => '/v1/order/{id}/fulfillments', 'order' => $order]
-            ),
-            'POST',
-            (int)$order->getStoreId()
-        );
-
-        $this->parseFulfillResponse($response, $order);
-
-        // Two has invoiced the buyer; mirror with a Magento invoice. Use
-        // CAPTURE_OFFLINE so we do not route back through Two::capture()
-        // and re-post /fulfillments. Persist only the invoice — we are
-        // already inside sales_order_save_after, so the order object will
-        // continue through Magento's existing save lifecycle. Where the
-        // merchant already invoiced everything, the invoice totals zero and
-        // none is created.
-        $invoice = $this->invoiceService->prepareInvoice($order);
-        if ($invoice->getGrandTotal() > 0) {
-            $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
-            $invoice->setData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER, true);
-            $invoice->register();
-            $invoice->pay();
-            $invoice->setTransactionId(
-                $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
-            );
-            $this->transactionFactory->create()
-                ->addObject($invoice)
-                ->save();
-        }
-    }
-
-    /**
-     * @param OrderInterface $order
-     * @return bool
-     */
-    private function isWholeOrderShipped(OrderInterface $order): bool
-    {
-        foreach ($order->getAllVisibleItems() as $orderItem) {
-            /** @var Order\Item $orderItem */
-            // Refunded or cancelled quantity is not waiting to ship.
-            $toShip = $orderItem->getQtyOrdered() - $orderItem->getQtyRefunded() - $orderItem->getQtyCanceled();
-            if ($orderItem->getQtyShipped() < $toShip) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Whether anything on the order was refunded or cancelled in Magento.
-     *
-     * @param OrderInterface $order
-     * @return bool
-     */
-    private function hasRefunds(OrderInterface $order): bool
-    {
-        if ((float)$order->getShippingRefunded() > 0) {
-            return true;
-        }
-        foreach ($order->getAllVisibleItems() as $orderItem) {
-            if ((float)$orderItem->getQtyRefunded() > 0 || (float)$orderItem->getQtyCanceled() > 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param array $response
-     * @param Order $order
-     * @return void
-     * @throws Exception
-     */
-    private function parseFulfillResponse(array $response, Order $order): void
-    {
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-
-        if ($error) {
-            throw new LocalizedException($error);
-        }
-
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
-            return;
-        }
-        $additionalInformation = $order->getPayment()->getAdditionalInformation();
-        $additionalInformation['marked_completed'] = true;
-
-        $order->getPayment()->setAdditionalInformation($additionalInformation);
-
-        if (empty($response['remained_order'])) {
-            $comment = __(
-                '%1 order marked as completed.',
-                $this->brandRegistry->getProductName(),
-            );
-        } else {
-            $comment = __(
-                '%1 order marked as partially completed.',
-                $this->brandRegistry->getProductName(),
-            );
-        }
-
-        $this->addStatusToOrderHistory($order, $comment->render());
-    }
-
-    /**
-     * @param Order $order
-     * @param string $comment
-     * @throws Exception
-     */
-    private function addStatusToOrderHistory(Order $order, string $comment)
-    {
-        $history = $this->historyFactory->create();
-        $history->setParentId($order->getEntityId())
-            ->setComment($comment)
-            ->setEntityName('order')
-            ->setStatus($order->getStatus());
-        $this->orderStatusHistoryRepository->save($history);
+        $this->statusFulfilment->fulfilAfterCommit($order);
     }
 }

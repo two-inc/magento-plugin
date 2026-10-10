@@ -27,8 +27,10 @@ use Two\Gateway\Observer\SalesOrderShipmentAfter;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Invoice\UploadService;
 use Two\Gateway\Service\Order\ComposeShipment;
+use Two\Gateway\Service\Order\FulfilmentDeferral;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Test\Unit\Service\Order\BuildsStatusFulfilment;
 
 /**
  * TWO-26302: the fulfil-on status tells Two exactly once, whether or not the
@@ -37,6 +39,8 @@ use Two\Gateway\Service\Order\OrderPostprocessor;
  */
 class FulfilmentInvoiceTest extends TestCase
 {
+    use BuildsStatusFulfilment;
+
     /** @var int */
     private $fulfils = 0;
 
@@ -47,7 +51,7 @@ class FulfilmentInvoiceTest extends TestCase
     private $payloads = [];
 
     /**
-     * Each case saves the order in its fulfil-on status twice. Items are
+     * Each case saves the order in its fulfil-on status twice, in two requests. Items are
      * [ordered, shipped, refunded, canceled?]; the partial column lists the net
      * quantities sent, or null for a whole-order fulfilment.
      *
@@ -66,10 +70,10 @@ class FulfilmentInvoiceTest extends TestCase
     ): void {
         $order = $this->order($additionalInformation, $hasInvoices, $items);
         $order->setData('shipping_refunded', $shippingRefunded);
-        $observer = $this->statusObserver($leftToInvoice);
+        // Two saves in two requests, so only the persisted marker can stop the second.
         $event = new FulfilmentObserver(new DataObject(['order' => $order]));
-        $observer->execute($event);
-        $observer->execute($event);
+        $this->statusObserver($leftToInvoice)->execute($event);
+        $this->statusObserver($leftToInvoice)->execute($event);
 
         $this->assertSame($expectedFulfils, $this->fulfils, $description . ': fulfilments sent');
         foreach ($this->payloads as $payload) {
@@ -119,18 +123,22 @@ class FulfilmentInvoiceTest extends TestCase
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
+        // No transaction open, so the fulfilment runs inline on each save.
+        $deferral = new FulfilmentDeferral();
 
         return new SalesOrderSaveAfter(
-            $config,
-            $this->createMock(BrandRegistryInterface::class),
-            $this->adapter(),
-            $this->historyFactory(),
-            $this->createMock(OrderStatusHistoryRepositoryInterface::class),
-            $this->invoiceService($leftToInvoice),
-            $this->transactionFactory(),
-            $this->overlay(),
-            $this->passThrough(),
-            $this->composeShipment()
+            $this->buildStatusFulfilment([
+                'configRepository' => $config,
+                'apiAdapter' => $this->adapter(),
+                'historyFactory' => $this->historyFactory(),
+                'invoiceService' => $this->invoiceService($leftToInvoice),
+                'transactionFactory' => $this->transactionFactory(),
+                'overlayRegistry' => $this->overlay(),
+                'orderPostprocessor' => $this->passThrough(),
+                'composeShipment' => $this->composeShipment(),
+                'deferral' => $deferral,
+            ]),
+            $deferral
         );
     }
 

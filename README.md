@@ -128,6 +128,12 @@ that trigger happens, and a Magento invoice is recorded offline:
   in Magento before then is left out of what Two is told to invoice
   (TWO-26302). An invoice created through the REST API without an online
   capture is treated the same way.
+- On a configured status, Two is told once the order, and any credit memo
+  being created with it, has been saved. If Two cannot be told, the save
+  still stands: the order gets a comment saying why (and the admin an error
+  message), and saving the order again while it has that status retries. A
+  credit memo created by another extension's own code, rather than through
+  Magento's refund services, is not waited for.
 
 ## Upgrading to 4.0
 
@@ -423,7 +429,7 @@ logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED`:
 | `order_intent` | The approval check is refused and the buyer sees a generic notice |
 | `order_create` | Checkout is refused with a generic notice |
 | `order_update` | The update is not sent to Two. The address edit still saves in Magento, and the admin sees the error as a warning and in the order's history |
-| `capture` | The invoice, shipment or fulfil-on status change that triggered it is blocked with the error |
+| `capture` | The invoice or shipment that triggered it is blocked with the error. A fulfil-on status change still saves, and the order gets a comment with the error |
 | `refund` | The credit memo is refused with the error |
 | `order_confirm`, `cancel` | Never refused. These take no body, so a subscriber that throws or adds one is logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED` or `TWO_ORDER_POSTPROCESSING_BODY_NOT_ACCEPTED`, and the request is sent empty. Magento has already confirmed or cancelled the order by then, and a Two order left live could still be invoiced |
 
