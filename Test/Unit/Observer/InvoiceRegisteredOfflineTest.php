@@ -10,6 +10,7 @@ namespace Two\Gateway\Test\Unit\Observer;
 use Magento\Framework\Event;
 use Magento\Framework\Event\Observer;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Config as OrderConfig;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
 use PHPUnit\Framework\TestCase;
@@ -23,8 +24,10 @@ use Two\Gateway\Observer\InvoiceRegisteredOffline;
  */
 class InvoiceRegisteredOfflineTest extends TestCase
 {
-    private const COMMENT = 'This invoice was recorded in Magento only and Brand was not notified.'
+    private const SHIPPED = 'This invoice was recorded in Magento only and Brand was not notified.'
         . ' The order will be fulfilled with Brand when it is shipped.';
+    private const STATUS = 'This invoice was recorded in Magento only and Brand was not notified.'
+        . ' The order will be fulfilled with Brand when its status changes to Complete, closed.';
 
     /**
      * @dataProvider cases
@@ -34,11 +37,21 @@ class InvoiceRegisteredOfflineTest extends TestCase
         string $captureCase,
         string $trigger,
         bool $ownFulfilment,
-        bool $expectComment,
+        array $statuses,
+        ?string $expected,
         string $description
     ): void {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getFulfillTrigger')->willReturn($trigger);
+        $config->method('getFulfillOrderStatusList')->willReturn($statuses);
+        $orderConfig = $this->getMockBuilder(OrderConfig::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['getStatusLabel'])
+            ->getMock();
+        // A status with no label falls back to its code.
+        $orderConfig->method('getStatusLabel')->willReturnCallback(
+            static fn (string $code): ?string => $code === 'complete' ? 'Complete' : null
+        );
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Brand');
         $overlay = $this->createMock(BrandOverlayRegistryInterface::class);
@@ -79,15 +92,15 @@ class InvoiceRegisteredOfflineTest extends TestCase
             ->getMock();
         $observer->method('getEvent')->willReturn($event);
 
-        (new InvoiceRegisteredOffline($config, $brand, $overlay))->execute($observer);
+        (new InvoiceRegisteredOffline($config, $brand, $overlay, $orderConfig))->execute($observer);
 
-        if (!$expectComment) {
+        if ($expected === null) {
             $this->assertSame([], $order->comments, $description);
             return;
         }
         $this->assertCount(1, $order->comments, $description);
         [$comment, $status, $visibleOnFront, $history] = $order->comments[0];
-        $this->assertSame(self::COMMENT, $comment, $description);
+        $this->assertSame($expected, $comment, $description);
         $this->assertFalse($status, $description . ': keeps the order status');
         $this->assertFalse($visibleOnFront, $description . ': hidden from the customer');
         $this->assertFalse($history->getIsCustomerNotified(), $description . ': customer not notified');
@@ -97,16 +110,20 @@ class InvoiceRegisteredOfflineTest extends TestCase
     {
         $offline = Invoice::CAPTURE_OFFLINE;
         $online = Invoice::CAPTURE_ONLINE;
+        $none = Invoice::NOT_CAPTURE;
+        $st = ['complete', 'closed'];
+        $shipped = self::SHIPPED;
 
         return [
-            ['two_payment', $offline, 'shipment', false, true, 'offline with the shipment trigger gives a comment'],
-            ['brand_payment', $offline, 'shipment', false, true, 'same on a brand overlay method'],
-            ['two_payment', $online, 'shipment', false, false, 'online capture gives none'],
-            ['two_payment', Invoice::NOT_CAPTURE, 'shipment', false, false, 'no capture gives none'],
-            ['checkmo', $offline, 'shipment', false, false, 'a non-Two method gives none'],
-            ['two_payment', $offline, 'invoice', false, false, 'the invoice trigger gives none'],
-            ['two_payment', $offline, 'complete', false, false, 'the complete trigger gives none'],
-            ['two_payment', $offline, 'shipment', true, false, 'the plugin\'s own fulfilment invoice gives none'],
+            ['two_payment', $offline, 'shipment', false, $st, $shipped, 'offline with the shipment trigger gives a comment'],
+            ['brand_payment', $offline, 'shipment', false, $st, $shipped, 'same on a brand overlay method'],
+            ['two_payment', $offline, 'complete', false, $st, self::STATUS, 'the complete trigger names the statuses'],
+            ['two_payment', $offline, 'complete', false, [''], null, 'the complete trigger with no status gives none'],
+            ['two_payment', $online, 'shipment', false, $st, null, 'online capture gives none'],
+            ['two_payment', $none, 'shipment', false, $st, null, 'no capture gives none'],
+            ['checkmo', $offline, 'shipment', false, $st, null, 'a non-Two method gives none'],
+            ['two_payment', $offline, 'invoice', false, $st, null, 'the invoice trigger gives none'],
+            ['two_payment', $offline, 'shipment', true, $st, null, 'the plugin\'s own fulfilment invoice gives none'],
         ];
     }
 }

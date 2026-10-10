@@ -10,6 +10,7 @@ namespace Two\Gateway\Observer;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Phrase;
+use Magento\Sales\Model\Order\Config as OrderConfig;
 use Magento\Sales\Model\Order\Invoice;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
@@ -30,9 +31,10 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * provider has been told, and flag them with FULFILLED_WITH_PROVIDER so no
  * comment is added for those.
  *
- * Only the shipment trigger gets a comment for now: with the "complete"
- * trigger the status-change fulfilment skips orders that already have an
- * invoice, so a promise of later fulfilment would not hold there.
+ * The wording follows the trigger: on shipment, or on reaching one of the
+ * configured fulfil-on statuses, named by their labels. The status-change
+ * fulfilment still runs after an invoice recorded here, so both promises
+ * hold.
  */
 class InvoiceRegisteredOffline implements ObserverInterface
 {
@@ -48,14 +50,19 @@ class InvoiceRegisteredOffline implements ObserverInterface
     /** @var BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var OrderConfig */
+    private $orderConfig;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
-        BrandOverlayRegistryInterface $overlayRegistry
+        BrandOverlayRegistryInterface $overlayRegistry,
+        OrderConfig $orderConfig
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->overlayRegistry = $overlayRegistry;
+        $this->orderConfig = $orderConfig;
     }
 
     public function execute(Observer $observer): void
@@ -93,8 +100,33 @@ class InvoiceRegisteredOffline implements ObserverInterface
                     'This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when it is shipped.',
                     $productName
                 );
+            case 'complete':
+                // With no fulfil-on status configured nothing will fulfil
+                // the order, so there is nothing true to promise.
+                $statuses = $this->statusLabels();
+                return $statuses === '' ? null : __(
+                    'This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when its status changes to %2.',
+                    $productName,
+                    $statuses
+                );
             default:
                 return null;
         }
+    }
+
+    /**
+     * Labels of the configured fulfil-on statuses, falling back to the code.
+     */
+    private function statusLabels(): string
+    {
+        $labels = [];
+        foreach ($this->configRepository->getFulfillOrderStatusList() as $code) {
+            if ($code === '') {
+                continue;
+            }
+            $labels[] = (string)($this->orderConfig->getStatusLabel($code) ?: $code);
+        }
+
+        return implode(', ', $labels);
     }
 }

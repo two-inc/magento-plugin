@@ -925,11 +925,19 @@ set `InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER` on the invoice first. A
 new code path that registers an invoice after fulfilling with Two must set it
 too, or the merchant is told Two was not notified when it was.
 
-**Only the shipment trigger is commented.** The comment promises fulfilment at the
-trigger, and with `complete` that promise does not hold: the status-change flow
-skips any order that already has an invoice, so after a manual offline invoice
-Two is never told. Do not extend the comment to `complete` without settling that
-first.
+**The status-change fulfilment is gated on the fulfilment marker, not on an
+invoice.** `SalesOrderSaveAfter` used to return early on `hasInvoices()`, which
+made a merchant's offline invoice suppress the fulfilment for good. It now
+returns early only once the payment carries `marked_completed`, which every
+successful fulfilment sets (its own, the shipment observer's and
+`Two::capture()`) and which the order save persists with the payment, after the
+observer runs. A merchant invoice for everything leaves a zero-total invoice,
+which is not created; a partial one leaves the rest for the plugin's invoice.
+`FulfilmentInvoiceTest` saves the order twice per case and pins one fulfil.
+
+**The comment names the trigger.** On shipment, or on reaching one of the
+configured fulfil-on statuses by their labels. With no status configured the
+complete trigger never fulfils, so no comment is added there.
 
 ## The term chips are a radio group
 

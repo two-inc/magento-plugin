@@ -120,9 +120,11 @@ that trigger happens, and a Magento invoice is recorded offline:
 - An order the buyer has not yet verified with Two (state `pending_payment`)
   cannot be invoiced offline at all (TWO-26294).
 - A verified order can be. Magento records the invoice as paid without
-  contacting Two, and with **On Shipment** it adds an order comment, visible
-  to the merchant only, saying Two was not notified and will be when the
-  order ships (TWO-26302).
+  contacting Two, and adds an order comment, visible to the merchant only,
+  saying Two was not notified and will be when the order ships (**On
+  Shipment**) or reaches one of the configured statuses (**On Completion**).
+  That fulfilment still happens: an invoice recorded in Magento does not stop
+  Two being told, and Two is never told twice (TWO-26302).
 
 ## Upgrading to 4.0
 
