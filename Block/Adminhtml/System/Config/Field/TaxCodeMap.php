@@ -25,10 +25,12 @@ use Two\Gateway\Service\Order\ZeroTaxRates;
  * VAT number, one per 0% tax rate its tax rules use (labelled by the rate's
  * code, country and postcode), and one for an address no rule matches.
  *
- * Each row posts its key and code as a pair (see TaxCodeMapBackend). Saved
- * rows the form does not show (a rate since deleted or no longer 0%), and
- * every saved row when the code list cannot be read, are carried as hidden
- * pairs so a save of the section keeps them.
+ * The whole map posts as one hidden field of JSON, which
+ * Two_Gateway/js/tax-code-map rewrites from the dropdowns, so a shop with many
+ * rates never runs into PHP's max_input_vars. It starts as the saved map, so
+ * a save without the script, or while the code list cannot be read, keeps it.
+ * Saved rows the form does not show (a rate since deleted or no longer 0%)
+ * are carried in the field so a save keeps them.
  */
 class TaxCodeMap extends Field
 {
@@ -62,11 +64,6 @@ class TaxCodeMap extends Field
      */
     private $zeroTaxRates;
 
-    /**
-     * @var int the next row's index in the posted list
-     */
-    private $index = 0;
-
     public function __construct(
         Context $context,
         StoreManagerInterface $storeManager,
@@ -93,6 +90,7 @@ class TaxCodeMap extends Field
     {
         $saved = TaxCodeMapBackend::normalise($element->getValue());
         $name = (string)$element->getName();
+        $htmlId = (string)$element->getHtmlId();
         $storeId = $this->scopeStoreId();
         $record = $storeId !== null ? $this->recordProvider->getRecord($storeId) : null;
         $country = is_string($record['country_code'] ?? null) ? $record['country_code'] : '';
@@ -101,12 +99,13 @@ class TaxCodeMap extends Field
         if ($codes === null) {
             return '<p class="message message-warning">' . $this->escapeHtml(
                 __('The tax code list could not be loaded, so the saved choices are kept unchanged. Check the API key, then reload this page.')
-            ) . '</p>' . $this->hiddenPairs($name, $saved);
+            ) . '</p>' . $this->field($name, $htmlId, $saved, $saved);
         }
 
         // Core's None is class 0, which the repository reports as null.
         $shippingClassId = (int)($this->configRepository->getShippingTaxClassId($storeId) ?? 0);
         $zeroRates = $this->zeroTaxRates->byClass();
+        $carried = $saved;
         $rows = '';
         foreach ($this->taxClassSource->getAllOptions(true) as $class) {
             $classId = (int)$class['value'];
@@ -127,50 +126,52 @@ class TaxCodeMap extends Field
 
             $first = true;
             foreach ($classRows as $key => $rowLabel) {
-                $field = $this->escapeHtmlAttr($name) . '[' . $this->index++ . ']';
                 $rows .= sprintf(
-                    '<tr>%s<td>%s</td><td><input type="hidden" name="%s[key]" value="%s"/>'
-                    . '<select class="select admin__control-select" name="%s[code]">%s</select></td></tr>',
+                    '<tr>%s<td>%s</td><td><select class="select admin__control-select" data-key="%s">%s</select>'
+                    . '</td></tr>',
                     $first ? sprintf('<td rowspan="%d">%s</td>', count($classRows), $this->escapeHtml($label)) : '',
                     $this->escapeHtml($rowLabel),
-                    $field,
                     $this->escapeHtmlAttr((string)$key),
-                    $field,
                     $this->options($codes, $saved[$key] ?? '')
                 );
                 $first = false;
-                unset($saved[$key]);
+                unset($carried[$key]);
             }
         }
 
         return sprintf(
-            '<table class="admin__control-table"><thead><tr><th>%s</th><th>%s</th><th>%s</th></tr></thead>'
-            . '<tbody>%s</tbody></table>',
+            '<div id="%s_rows"><table class="admin__control-table"><thead><tr><th>%s</th><th>%s</th><th>%s</th>'
+            . '</tr></thead><tbody>%s</tbody></table></div>',
+            $htmlId,
             $this->escapeHtml(__('Tax class')),
             $this->escapeHtml(__('Line')),
             $this->escapeHtml(__('Tax code')),
             $rows
-        ) . $this->hiddenPairs($name, $saved);
+        ) . $this->field($name, $htmlId, $saved, $carried) . sprintf(
+            '<script type="text/x-magento-init">%s</script>',
+            (string)json_encode(
+                ['#' . $htmlId . '_rows' => ['Two_Gateway/js/tax-code-map' => ['input' => $htmlId]]],
+                JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES
+            )
+        );
     }
 
     /**
-     * @param array<string, string> $rows row key => code
+     * The one posted field: the saved map as JSON, plus the saved rows the
+     * form does not show, which the script keeps when it rewrites the field.
+     *
+     * @param array<string, string> $saved row key => code
+     * @param array<string, string> $carried row key => code
      */
-    private function hiddenPairs(string $name, array $rows): string
+    private function field(string $name, string $htmlId, array $saved, array $carried): string
     {
-        $html = '';
-        foreach ($rows as $key => $code) {
-            $field = $this->escapeHtmlAttr($name) . '[' . $this->index++ . ']';
-            $html .= sprintf(
-                '<input type="hidden" name="%s[key]" value="%s"/><input type="hidden" name="%s[code]" value="%s"/>',
-                $field,
-                $this->escapeHtmlAttr((string)$key),
-                $field,
-                $this->escapeHtmlAttr($code)
-            );
-        }
-
-        return $html;
+        return sprintf(
+            '<input type="hidden" id="%s" name="%s" value="%s" data-carried="%s"/>',
+            $htmlId,
+            $this->escapeHtmlAttr($name),
+            $this->escapeHtmlAttr((string)json_encode((object)$saved)),
+            $this->escapeHtmlAttr((string)json_encode((object)$carried))
+        );
     }
 
     /**

@@ -433,6 +433,7 @@
 "Buyer in another EU country with a VAT number","Kjøper i et annet EU-land med mva-nummer"
 "No rule for the address","Ingen avgiftsregel for adressen"
 "Line","Linje"
+"The tax codes for 0% lines could not be read, so nothing was saved. Reload the page and try again.","Avgiftskodene for linjer med 0 % kunne ikke leses, så ingenting ble lagret. Last inn siden på nytt og prøv igjen."
 "HTTP status %1","HTTP-status %1"
 "%1 has already invoiced all or part of this order, so this change was not sent to %1.","%1 har allerede fakturert hele eller deler av denne bestillingen, så endringen ble ikke sendt til %1."
 "%1 no longer accepts changes to this order (%2), so this change was not sent to %1.","%1 godtar ikke lenger endringer i denne bestillingen (%2), så endringen ble ikke sendt til %1."

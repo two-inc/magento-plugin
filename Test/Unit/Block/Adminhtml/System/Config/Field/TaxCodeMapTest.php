@@ -43,14 +43,23 @@ class TaxCodeMapTest extends TestCase
             $this->assertStringContainsString('<td>' . $label . '</td>', $html, $label);
         }
         $this->assertMatchesRegularExpression(
-            '~value="2\|rate:ES-CANARIAS-0"/><select[^>]*>.*?<option value="ES_IVA_EXPORT" selected="selected">~s',
+            '~data-key="2\|rate:ES-CANARIAS-0">.*?<option value="ES_IVA_EXPORT" selected="selected">~s',
             $html,
             'the rate row shows its saved code'
         );
         $this->assertStringContainsString('<option value="">(none)</option>', $html);
         $this->assertStringContainsString('ES_IVA_STANDARD IVA general (21%)', $html);
         $this->assertSame(6, substr_count($html, '<select'), 'two rows for None, four for Taxable Goods');
-        $this->assertStringContainsString('name="' . self::NAME . '[5][key]" value="2|none"', $html, 'rows post as indexed key and code pairs');
+        $this->assertSame(1, substr_count($html, 'name="'), 'the map posts as one field, whatever the number of rows');
+        $this->assertStringContainsString(
+            '<input type="hidden" id="tax_code_map" name="' . self::NAME . '" value="{"2|rate:ES-CANARIAS-0":"ES_IVA_EXPORT"}" data-carried="{}"/>',
+            $html,
+            'the field starts as the saved map, so a save without the script keeps it'
+        );
+        $this->assertStringContainsString(
+            '<script type="text/x-magento-init">{"#tax_code_map_rows":{"Two_Gateway/js/tax-code-map":{"input":"tax_code_map"}}}</script>',
+            $html
+        );
     }
 
     /**
@@ -90,21 +99,20 @@ class TaxCodeMapTest extends TestCase
         $this->assertStringContainsString('<option value="ES_IVA_RETIRED" selected="selected">ES_IVA_RETIRED</option>', $html);
     }
 
-    public function testAnUnreadableListKeepsTheSavedMappingAsHiddenInputs(): void
+    public function testAnUnreadableListKeepsTheSavedMappingInTheField(): void
     {
         $html = $this->render(null, 2, '{"2|none":"ES_IVA_EXPORT","0|exempt":"ES_IVA_EXEMPT_ART20"}');
 
         $this->assertStringContainsString('could not be loaded', $html);
         $this->assertStringNotContainsString('<select', $html);
-        $this->assertStringContainsString('<input type="hidden" name="' . self::NAME . '[0][key]" value="0|exempt"/><input type="hidden" name="' . self::NAME . '[0][code]" value="ES_IVA_EXEMPT_ART20"/>', $html);
-        $this->assertStringContainsString('<input type="hidden" name="' . self::NAME . '[1][key]" value="2|none"/><input type="hidden" name="' . self::NAME . '[1][code]" value="ES_IVA_EXPORT"/>', $html);
+        $this->assertStringContainsString('name="' . self::NAME . '" value="{"0|exempt":"ES_IVA_EXEMPT_ART20","2|none":"ES_IVA_EXPORT"}"', $html);
     }
 
-    public function testASavedRowTheFormNoLongerShowsIsKeptAsAHiddenPair(): void
+    public function testASavedRowTheFormNoLongerShowsIsCarried(): void
     {
-        $html = $this->render(self::CODES, null, '{"2|rate:ES-GONE-0":"ES_IVA_EXPORT"}');
+        $html = $this->render(self::CODES, null, '{"2|rate:ES-GONE-0":"ES_IVA_EXPORT","2|none":"ES_IVA_EXPORT"}');
 
-        $this->assertStringContainsString('<input type="hidden" name="' . self::NAME . '[6][key]" value="2|rate:ES-GONE-0"/><input type="hidden" name="' . self::NAME . '[6][code]" value="ES_IVA_EXPORT"/>', $html);
+        $this->assertStringContainsString('data-carried="{"2|rate:ES-GONE-0":"ES_IVA_EXPORT"}"', $html);
     }
 
     private function render(?array $codes, ?int $shippingClass, string $saved): string
@@ -149,6 +157,7 @@ class TaxCodeMapTest extends TestCase
         $block = new TaxCodeMap($context, $storeManager, $records, $taxCodes, $classes, $config, $zeroRates);
         $element = new AbstractElement();
         $element->setData('name', self::NAME);
+        $element->setData('html_id', 'tax_code_map');
         $element->setData('value', $saved);
         $method = new \ReflectionMethod($block, '_getElementHtml');
         $method->setAccessible(true);

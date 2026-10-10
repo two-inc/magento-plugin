@@ -122,9 +122,36 @@ class TaxCodesTest extends TestCase
             ['', [], 'nothing stored'],
             ['not json', [], 'junk'],
             ['{"5|none":"ES_IVA_EXPORT","2|exempt":"ES_IVA_INTRA_COMMUNITY"}', ['2|exempt' => 'ES_IVA_INTRA_COMMUNITY', '5|none' => 'ES_IVA_EXPORT'], 'stored JSON'],
-            [[['key' => '5|rate:ES CANARIAS [0]', 'code' => 'ES_IVA_EXPORT'], ['key' => '6|none', 'code' => ''], ['key' => '0|exempt', 'code' => 'ES_IVA_EXEMPT_ART20']], ['0|exempt' => 'ES_IVA_EXEMPT_ART20', '5|rate:ES CANARIAS [0]' => 'ES_IVA_EXPORT'], 'posted key and code pairs, (none) dropped, any rate code kept'],
+            ['{"5|rate:ES CANARIAS [0]":"ES_IVA_EXPORT","6|none":"","0|exempt":"ES_IVA_EXEMPT_ART20"}', ['0|exempt' => 'ES_IVA_EXEMPT_ART20', '5|rate:ES CANARIAS [0]' => 'ES_IVA_EXPORT'], 'posted JSON, (none) dropped, any rate code kept'],
             [['10|none' => 'ES_IVA_EXPORT', '9|none' => 'ES_IVA_EXPORT'], ['9|none' => 'ES_IVA_EXPORT', '10|none' => 'ES_IVA_EXPORT'], 'classes in numeric order'],
             [['5' => 'ES_IVA_EXPORT', 'x|none' => 'ES_IVA_EXPORT', '5|rate:' => 'ES_IVA_EXPORT', '5|other' => 'ES_IVA_EXPORT', '5|none' => 'es iva', '6|none' => ['ES_IVA_EXPORT']], [], 'the old class key, bad row keys and bad codes'],
+        ];
+    }
+
+    /**
+     * TWO-26153: a posted map that is not a JSON object is refused, never saved as an empty map.
+     *
+     * @dataProvider postedMaps
+     */
+    public function testSaveRefusesAnUnreadablePost(string $posted, ?string $stored, string $description): void
+    {
+        $config = $this->createMock(\Magento\Framework\App\Config\ScopeConfigInterface::class);
+        $value = new TaxCodeMap(null, null, $config, null, null, null, ['value' => $posted]);
+        if ($stored === null) {
+            $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        }
+        $value->beforeSave();
+        $this->assertSame($stored, $value->getValue(), $description);
+    }
+
+    public static function postedMaps(): array
+    {
+        return [
+            ['{"5|none":"ES_IVA_EXPORT"}', '{"5|none":"ES_IVA_EXPORT"}', 'a whole map is stored'],
+            ['{}', '', 'every row on (none) stores nothing'],
+            ['', '', 'an emptied field stores nothing'],
+            ['{"5|none":"ES_IVA_EXP', null, 'a cut-off post is refused'],
+            ['"5|none"', null, 'JSON that is not an object is refused'],
         ];
     }
 
