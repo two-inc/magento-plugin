@@ -43,8 +43,13 @@ class FulfilmentInvoiceTest extends TestCase
     /** @var Invoice[] */
     private $registered = [];
 
+    /** @var array[] */
+    private $payloads = [];
+
     /**
-     * Each case saves the order in its fulfil-on status twice.
+     * Each case saves the order in its fulfil-on status twice. Items are
+     * [ordered, shipped, refunded, canceled?]; the partial column lists the net
+     * quantities sent, or null for a whole-order fulfilment.
      *
      * @dataProvider statusCases
      */
@@ -52,31 +57,27 @@ class FulfilmentInvoiceTest extends TestCase
         array $additionalInformation,
         bool $hasInvoices,
         float $leftToInvoice,
+        array $items,
+        float $shippingRefunded,
         int $expectedFulfils,
+        ?array $expectedPartial,
         int $expectedInvoices,
         string $description
     ): void {
-        $config = $this->createMock(ConfigRepository::class);
-        $config->method('getFulfillTrigger')->willReturn('complete');
-        $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
-        $order = $this->order($additionalInformation, $hasInvoices);
-
-        $observer = new SalesOrderSaveAfter(
-            $config,
-            $this->createMock(BrandRegistryInterface::class),
-            $this->adapter(),
-            $this->historyFactory(),
-            $this->createMock(OrderStatusHistoryRepositoryInterface::class),
-            $this->invoiceService($leftToInvoice),
-            $this->transactionFactory(),
-            $this->overlay(),
-            $this->passThrough()
-        );
+        $order = $this->order($additionalInformation, $hasInvoices, $items);
+        $order->setData('shipping_refunded', $shippingRefunded);
+        $observer = $this->statusObserver($leftToInvoice);
         $event = new FulfilmentObserver(new DataObject(['order' => $order]));
         $observer->execute($event);
         $observer->execute($event);
 
         $this->assertSame($expectedFulfils, $this->fulfils, $description . ': fulfilments sent');
+        foreach ($this->payloads as $payload) {
+            $partial = isset($payload['partial'])
+                ? ['net' => $payload['partial']['net'], 'shipping' => $payload['partial']['shipping']]
+                : null;
+            $this->assertSame($expectedPartial, $partial, $description . ': fulfilment body');
+        }
         $this->assertCount($expectedInvoices, $this->registered, $description . ': invoices created');
         foreach ($this->registered as $invoice) {
             $this->assertTrue(
@@ -89,13 +90,71 @@ class FulfilmentInvoiceTest extends TestCase
     public static function statusCases(): array
     {
         $fulfilled = ['marked_completed' => true];
+        $one = [[1, 1, 0]];
+        $netA = ['net' => ['A' => 1.0], 'shipping' => true];
 
         return [
-            [[], false, 100.0, 1, 1, 'no invoice gives one fulfil and the plugin invoice'],
-            [[], true, 0.0, 1, 0, 'a manual offline invoice for everything still gives one fulfil'],
-            [[], true, 40.0, 1, 1, 'a partial manual invoice gives one fulfil and invoices the rest'],
-            [$fulfilled, true, 0.0, 0, 0, 'after the plugin\'s own fulfilment there is no second fulfil'],
+            [[], false, 100.0, $one, 0.0, 1, null, 1, 'no invoice gives one fulfil and the plugin invoice'],
+            [[], true, 0.0, $one, 0.0, 1, null, 0, 'a manual offline invoice for everything still gives one fulfil'],
+            [[], true, 40.0, $one, 0.0, 1, null, 1, 'a partial manual invoice gives one fulfil and invoices the rest'],
+            [$fulfilled, true, 0.0, $one, 0.0, 0, null, 0, 'after the plugin\'s own fulfilment there is no second fulfil'],
+            [[], true, 0.0, [[1, 1, 0], [1, 0, 1]], 0.0, 1, $netA, 0, 'an item refunded unshipped is netted out'],
+            [[], true, 0.0, [[2, 2, 1]], 0.0, 1, ['net' => ['A' => 1.0], 'shipping' => true], 0, 'a shipped item refunded in part is netted out'],
+            [[], true, 0.0, $one, 5.0, 1, ['net' => ['A' => 1.0], 'shipping' => false], 0, 'refunded shipping is left out'],
+            [[], true, 0.0, [[1, 0, 1]], 5.0, 0, null, 0, 'everything refunded sends nothing'],
+            [[], true, 0.0, [[2, 1, 0, 1]], 0.0, 1, $netA, 0, 'cancelled quantity is netted out like a refund'],
         ];
+    }
+
+    public function testAnUnshippedItemStillRefusesTheStatusChange(): void
+    {
+        $order = $this->order([], true, [[1, 1, 0], [1, 0, 0]]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->statusObserver(0.0)->execute(new FulfilmentObserver(new DataObject(['order' => $order])));
+    }
+
+    private function statusObserver(float $leftToInvoice): SalesOrderSaveAfter
+    {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getFulfillTrigger')->willReturn('complete');
+        $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
+
+        return new SalesOrderSaveAfter(
+            $config,
+            $this->createMock(BrandRegistryInterface::class),
+            $this->adapter(),
+            $this->historyFactory(),
+            $this->createMock(OrderStatusHistoryRepositoryInterface::class),
+            $this->invoiceService($leftToInvoice),
+            $this->transactionFactory(),
+            $this->overlay(),
+            $this->passThrough(),
+            $this->composeShipment()
+        );
+    }
+
+    /**
+     * Stands in for the composer: records the net quantity per item and
+     * whether shipping went in, which is what the observer decides.
+     */
+    private function composeShipment(): ComposeShipment
+    {
+        $compose = $this->createMock(ComposeShipment::class);
+        $compose->method('executeNetOfRefunds')->willReturnCallback(static function (Order $order): array {
+            $net = [];
+            foreach ($order->getAllVisibleItems() as $item) {
+                $qty = $item->getQtyOrdered() - $item->getQtyRefunded() - $item->getQtyCanceled();
+                if ($qty > 0) {
+                    $net[$item->getSku()] = (float)$qty;
+                }
+            }
+            $shipping = $order->getShippingAmount() > 0 && (float)$order->getShippingRefunded() <= 0;
+
+            return ['line_items' => $net || $shipping ? [1] : [], 'net' => $net, 'shipping' => $shipping];
+        });
+
+        return $compose;
     }
 
     public function testShipmentFulfilmentFlagsItsInvoice(): void
@@ -103,6 +162,7 @@ class FulfilmentInvoiceTest extends TestCase
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getFulfillTrigger')->willReturn('shipment');
         $order = $this->order([], false);
+        $order->setData('shipping_refunded', 0.0);
 
         (new SalesOrderShipmentAfter(
             $config,
@@ -125,14 +185,28 @@ class FulfilmentInvoiceTest extends TestCase
         $this->assertTrue((bool)$this->registered[0]->getData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER));
     }
 
-    private function order(array $additionalInformation, bool $hasInvoices): Order
+    private function order(array $additionalInformation, bool $hasInvoices, array $items = [[1, 1, 0]]): Order
     {
         $order = new class extends Order implements \Magento\Sales\Api\Data\OrderInterface {
             public function getAllVisibleItems(): array
             {
-                return [];
+                return $this->getData('visible_items');
             }
         };
+        $visible = [];
+        foreach ($items as $i => $quantities) {
+            [$ordered, $shipped, $refunded, $canceled] = $quantities + [3 => 0];
+            // The DataObject stub keys its magic getters in camelCase.
+            $visible[] = new DataObject([
+                'sku' => chr(65 + $i),
+                'qtyOrdered' => $ordered,
+                'qtyShipped' => $shipped,
+                'qtyRefunded' => $refunded,
+                'qtyCanceled' => $canceled,
+            ]);
+        }
+        $order->setData('visible_items', $visible);
+        $order->setData('shipping_amount', 5.0);
         $order->setData('entity_id', 7);
         $order->setData('store_id', 1);
         $order->setData('two_order_id', 'remote-order-id');
@@ -152,8 +226,9 @@ class FulfilmentInvoiceTest extends TestCase
     private function adapter(): Adapter
     {
         $adapter = $this->createMock(Adapter::class);
-        $adapter->method('execute')->willReturnCallback(function (): array {
+        $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = []): array {
             $this->fulfils++;
+            $this->payloads[] = $payload;
             return ['fulfilled_order' => ['id' => 'fulfilled-id']];
         });
 

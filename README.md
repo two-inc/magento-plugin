@@ -124,7 +124,10 @@ that trigger happens, and a Magento invoice is recorded offline:
   saying Two was not notified and will be when the order ships (**On
   Shipment**) or reaches one of the configured statuses (**On Completion**).
   That fulfilment still happens: an invoice recorded in Magento does not stop
-  Two being told, and Two is never told twice (TWO-26302).
+  Two being told, and Two is never told twice. Anything refunded or cancelled
+  in Magento before then is left out of what Two is told to invoice
+  (TWO-26302). An invoice created through the REST API without an online
+  capture is treated the same way.
 
 ## Upgrading to 4.0
 
@@ -332,7 +335,10 @@ A few specifics:
 
 - A whole-order capture has no body and its `invoice` is null. That covers an
   invoice for everything still open and the fulfil-on status trigger (which
-  carries no `invoice` key at all).
+  carries no `invoice` key at all). The status trigger sends a `partial` body
+  instead when part of the order was refunded or cancelled in Magento first:
+  the order lines net of those quantities, and shipping unless any of it was
+  refunded.
 - If Two answers a whole-order capture with `PARTIAL_ORDER_MISSING_DATA`, the
   plugin retries it as a partial capture of the latest invoice, so the hook
   fires twice for one capture: first with `[]`, then with the `partial` body.

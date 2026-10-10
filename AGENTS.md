@@ -935,6 +935,18 @@ observer runs. A merchant invoice for everything leaves a zero-total invoice,
 which is not created; a partial one leaves the rest for the plugin's invoice.
 `FulfilmentInvoiceTest` saves the order twice per case and pins one fulfil.
 
+**Refunds before that fulfilment are netted out.** Once the merchant can invoice
+first, they can also credit-memo first. The whole-order check counts refunded and
+cancelled quantity as not waiting to ship, and when anything was refunded or
+cancelled the fulfilment is sent as a `partial` body built by
+`ComposeShipment::executeNetOfRefunds()`: each line prorated to its net quantity,
+shipping only while none of it was refunded. With nothing left, nothing is sent.
+The Two remainder of such a partial fulfilment stays open, as it does after a
+partial shipment the merchant never completes.
+
+**An offline invoice is also one with no capture case** where the method cannot
+capture online: the REST invoice route names no capture case.
+
 **The comment names the trigger.** On shipment, or on reaching one of the
 configured fulfil-on statuses by their labels. With no status configured the
 complete trigger never fulfils, so no comment is added there.

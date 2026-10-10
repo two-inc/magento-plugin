@@ -23,6 +23,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Order\ComposeShipment;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 
@@ -81,6 +82,9 @@ class SalesOrderSaveAfter implements ObserverInterface
     /** @var OrderPostprocessor */
     private $orderPostprocessor;
 
+    /** @var ComposeShipment */
+    private $composeShipment;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -90,7 +94,8 @@ class SalesOrderSaveAfter implements ObserverInterface
         InvoiceService $invoiceService,
         TransactionFactory $transactionFactory,
         \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
-        OrderPostprocessor $orderPostprocessor
+        OrderPostprocessor $orderPostprocessor,
+        ComposeShipment $composeShipment
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -101,6 +106,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         $this->transactionFactory = $transactionFactory;
         $this->overlayRegistry = $overlayRegistry;
         $this->orderPostprocessor = $orderPostprocessor;
+        $this->composeShipment = $composeShipment;
     }
 
     /**
@@ -139,11 +145,22 @@ class SalesOrderSaveAfter implements ObserverInterface
             throw new LocalizedException($error);
         }
 
+        // A merchant who invoiced in Magento can refund there before the order
+        // is fulfilled with Two. Two is then told only what is left to pay
+        // for, as a partial fulfilment; otherwise the whole order (TWO-26302).
+        $payload = $this->hasRefunds($order)
+            ? ['partial' => $this->composeShipment->executeNetOfRefunds($order)]
+            : [];
+        if (isset($payload['partial']) && empty($payload['partial']['line_items'])) {
+            // Everything was refunded: nothing is left to fulfil.
+            return;
+        }
+
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_CAPTURE,
-                [],
+                $payload,
                 ['trigger' => 'status_change', 'endpoint' => '/v1/order/{id}/fulfillments', 'order' => $order]
             ),
             'POST',
@@ -182,12 +199,34 @@ class SalesOrderSaveAfter implements ObserverInterface
     {
         foreach ($order->getAllVisibleItems() as $orderItem) {
             /** @var Order\Item $orderItem */
-            if ($orderItem->getQtyShipped() < $orderItem->getQtyOrdered()) {
+            // Refunded or cancelled quantity is not waiting to ship.
+            $toShip = $orderItem->getQtyOrdered() - $orderItem->getQtyRefunded() - $orderItem->getQtyCanceled();
+            if ($orderItem->getQtyShipped() < $toShip) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * Whether anything on the order was refunded or cancelled in Magento.
+     *
+     * @param OrderInterface $order
+     * @return bool
+     */
+    private function hasRefunds(OrderInterface $order): bool
+    {
+        if ((float)$order->getShippingRefunded() > 0) {
+            return true;
+        }
+        foreach ($order->getAllVisibleItems() as $orderItem) {
+            if ((float)$orderItem->getQtyRefunded() > 0 || (float)$orderItem->getQtyCanceled() > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

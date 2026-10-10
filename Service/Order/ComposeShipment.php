@@ -31,7 +31,49 @@ class ComposeShipment extends OrderService
      */
     public function execute(Order\Shipment $shipment, Order $order): array
     {
-        $shipmentItems = $this->applyTaxCodes($this->getLineItemsShipment($order, $shipment), $order);
+        return $this->payload($this->getLineItemsShipment($order, $shipment), $order);
+    }
+
+    /**
+     * Compose a fulfilment of everything on the order not refunded or
+     * cancelled in Magento (TWO-26302): what the buyer is to pay for when the
+     * merchant refunded part of the order before it was fulfilled. Shipping
+     * goes in only while none of it was refunded.
+     *
+     * @param Order $order
+     * @return array
+     * @throws LocalizedException
+     * @throws NoSuchEntityException
+     */
+    public function executeNetOfRefunds(Order $order): array
+    {
+        $items = [];
+        foreach ($order->getAllVisibleItems() as $orderItem) {
+            $qty = (float)$orderItem->getQtyOrdered()
+                - (float)$orderItem->getQtyRefunded()
+                - (float)$orderItem->getQtyCanceled();
+            $line = $qty > 0
+                ? $this->composeLine($order, $orderItem, $orderItem->getItemId(), $qty, $orderItem->getName(), $orderItem->getSku())
+                : null;
+            if ($line !== null) {
+                $items[$orderItem->getItemId()] = $line;
+            }
+        }
+        if ($order->getShippingAmount() > 0 && (float)$order->getShippingRefunded() <= 0) {
+            $items['shipping'] = $this->getShippingLineOrder($order);
+        }
+
+        return $this->payload($items, $order);
+    }
+
+    /**
+     * @param array $lineItems
+     * @param Order $order
+     * @return array
+     */
+    private function payload(array $lineItems, Order $order): array
+    {
+        $shipmentItems = $this->applyTaxCodes($lineItems, $order);
 
         // Deliberately no getFeeLines()/getOtherChargesLineItem() call here,
         // unlike ComposeOrder/ComposeCapture/ComposeRefund: every total
@@ -59,43 +101,12 @@ class ComposeShipment extends OrderService
         $items = [];
         foreach ($shipment->getAllItems() as $item) {
             $orderItem = $this->getOrderItem((int)$item->getOrderItemId());
-            if (!$item->getQty() || !$product = $this->getProduct($order, $orderItem)) {
-                continue;
+            $line = $item->getQty()
+                ? $this->composeLine($order, $orderItem, $item->getOrderItemId(), $item->getQty(), $item->getName(), $item->getSku())
+                : null;
+            if ($line !== null) {
+                $items[$orderItem->getItemId()] = $line;
             }
-
-            // Part of the item line that is shipped.
-            $part = $item->getQty() / $orderItem->getQtyOrdered();
-
-            $grossAmount = $this->roundAmt($this->getGrossAmountItem($orderItem) * $part);
-            $netAmount = $this->roundAmt($this->getNetAmountItem($orderItem) * $part);
-            $taxAmount = $grossAmount - $netAmount;
-
-            $items[$orderItem->getItemId()] = [
-                'order_item_id' => $item->getOrderItemId(),
-                'name' => $item->getName(),
-                'description' => $item->getName(),
-                'gross_amount' => $grossAmount,
-                'net_amount' => $netAmount,
-                'tax_amount' => $taxAmount,
-                'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) * $part),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
-                'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100), 6),
-                'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6),
-                'quantity' => $item->getQty(),
-                'quantity_unit' => $this->configRepository->getWeightUnit((int)$order->getStoreId()),
-                'image_url' => $this->getProductImageUrl($product),
-                'product_page_url' => $product->getProductUrl(),
-                'type' => $orderItem->getIsVirtual() ? 'DIGITAL' : 'PHYSICAL',
-                'details' => [
-                    'barcodes' => [
-                        [
-                            'type' => 'SKU',
-                            'value' => $item->getSku(),
-                        ],
-                    ],
-                    'categories' => $this->getCategories($product->getCategoryIds()),
-                ],
-            ];
         }
 
         // Add shipping amount as orderLine on first shipment
@@ -105,5 +116,57 @@ class ComposeShipment extends OrderService
         }
 
         return $items;
+    }
+
+    /**
+     * One product line for $qty of the order item, prorated from the item.
+     *
+     * @param Order $order
+     * @param Order\Item $orderItem
+     * @param mixed $orderItemId
+     * @param mixed $qty
+     * @param mixed $name
+     * @param mixed $sku
+     * @return array|null Null when the product no longer loads.
+     */
+    private function composeLine(Order $order, Order\Item $orderItem, $orderItemId, $qty, $name, $sku): ?array
+    {
+        if (!$product = $this->getProduct($order, $orderItem)) {
+            return null;
+        }
+
+        // Part of the item line being fulfilled.
+        $part = $qty / $orderItem->getQtyOrdered();
+
+        $grossAmount = $this->roundAmt($this->getGrossAmountItem($orderItem) * $part);
+        $netAmount = $this->roundAmt($this->getNetAmountItem($orderItem) * $part);
+        $taxAmount = $grossAmount - $netAmount;
+
+        return [
+            'order_item_id' => $orderItemId,
+            'name' => $name,
+            'description' => $name,
+            'gross_amount' => $grossAmount,
+            'net_amount' => $netAmount,
+            'tax_amount' => $taxAmount,
+            'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) * $part),
+            'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
+            'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100), 6),
+            'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6),
+            'quantity' => $qty,
+            'quantity_unit' => $this->configRepository->getWeightUnit((int)$order->getStoreId()),
+            'image_url' => $this->getProductImageUrl($product),
+            'product_page_url' => $product->getProductUrl(),
+            'type' => $orderItem->getIsVirtual() ? 'DIGITAL' : 'PHYSICAL',
+            'details' => [
+                'barcodes' => [
+                    [
+                        'type' => 'SKU',
+                        'value' => $sku,
+                    ],
+                ],
+                'categories' => $this->getCategories($product->getCategoryIds()),
+            ],
+        ];
     }
 }

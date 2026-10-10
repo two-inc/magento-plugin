@@ -254,7 +254,8 @@ class OrderPostprocessingSendSitesTest extends TestCase
             $this->createMock(\Magento\Sales\Model\Service\InvoiceService::class),
             $this->createMock(\Magento\Framework\DB\TransactionFactory::class),
             $this->overlay(),
-            $this->recorder()
+            $this->recorder(),
+            $this->createMock(ComposeShipment::class)
         ))->execute(new SendSiteObserver(new DataObject(['order' => $this->order()])));
     }
 
