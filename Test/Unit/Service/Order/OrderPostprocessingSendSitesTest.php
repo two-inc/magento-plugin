@@ -50,6 +50,8 @@ use Two\Gateway\Service\UrlCookie;
  */
 class OrderPostprocessingSendSitesTest extends TestCase
 {
+    use BuildsStatusFulfilment;
+
     /** @var array<int, array{0: string, 1: array, 2: array}> */
     private $fired = [];
 
@@ -91,13 +93,31 @@ class OrderPostprocessingSendSitesTest extends TestCase
             ['captureShipment', Hook::REQUEST_CAPTURE, 'shipment', '/v1/order/{id}/fulfillments', 'capture on a shipment'],
             ['captureStatus', Hook::REQUEST_CAPTURE, 'status_change', '/v1/order/{id}/fulfillments', 'capture on a fulfil-on-complete status'],
             ['refund', Hook::REQUEST_REFUND, 'credit_memo', '/v1/order/{id}/refund', 'refund on a credit memo'],
-            ['cancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from the payment method'],
+            ['void', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from an admin Void'],
             ['orderCancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel when the Magento order is cancelled'],
             ['buyerCancel', Hook::REQUEST_CANCEL, 'buyer_cancel', '/v1/order/{id}/cancel', 'cancel when the buyer abandons Two\'s checkout'],
         ];
     }
 
-    private function orderIntent(): void
+    /**
+     * The intent hands the hook the unsaved order its lines were composed
+     * from, for the shop-match checks (TWO-26276).
+     */
+    public function testTheIntentCarriesTheOrderItsLinesWereComposedFrom(): void
+    {
+        $order = $this->createMock(Order::class);
+
+        try {
+            $this->orderIntent($order);
+        } catch (StopAtSend $stop) {
+            // Stopped at the send.
+        }
+
+        $this->assertCount(1, $this->fired);
+        $this->assertSame($order, $this->fired[0][2]['intent_order'] ?? null);
+    }
+
+    private function orderIntent(?Order $order = null): void
     {
         $status = $this->createMock(ApiKeyStatus::class);
         $status->method('isDefinitiveFailure')->willReturn(false);
@@ -108,7 +128,14 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $session = new CheckoutSession();
         $session->setData('quote', $this->createMock(Quote::class));
         $composeIntent = $this->createMock(ComposeIntent::class);
-        $composeIntent->method('execute')->willReturn(['buyer' => []]);
+        if ($order !== null) {
+            $composeIntent->method('toOrder')->willReturn($order);
+            $composeIntent->expects($this->once())->method('execute')
+                ->with($this->anything(), [], $this->identicalTo($order))
+                ->willReturn(['buyer' => []]);
+        } else {
+            $composeIntent->method('execute')->willReturn(['buyer' => []]);
+        }
 
         (new OrderIntent(
             $this->adapter(),
@@ -220,17 +247,20 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
 
+        $order = $this->order();
+        $orderFactory = $this->getMockBuilder(\Magento\Sales\Model\OrderFactory::class)
+            ->addMethods(['create'])
+            ->getMock();
+        $orderFactory->method('create')->willReturn($order);
         (new SalesOrderSaveAfter(
-            $config,
-            $this->createMock(BrandRegistryInterface::class),
-            $this->adapter(),
-            $this->createMock(\Magento\Sales\Model\Order\Status\HistoryFactory::class),
-            $this->createMock(\Magento\Sales\Api\OrderStatusHistoryRepositoryInterface::class),
-            $this->createMock(\Magento\Sales\Model\Service\InvoiceService::class),
-            $this->createMock(\Magento\Framework\DB\TransactionFactory::class),
-            $this->overlay(),
-            $this->recorder()
-        ))->execute(new SendSiteObserver(new DataObject(['order' => $this->order()])));
+            $this->buildStatusFulfilment([
+                'configRepository' => $config,
+                'apiAdapter' => $this->adapter(),
+                'overlayRegistry' => $this->overlay(),
+                'orderPostprocessor' => $this->recorder(),
+                'orderFactory' => $orderFactory,
+            ])
+        ))->execute(new SendSiteObserver(new DataObject(['order' => $order])));
     }
 
     private function refund(): void
@@ -243,9 +273,9 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $this->two(['composeRefund' => $composeRefund])->refund($payment, 0.0);
     }
 
-    private function cancel(): void
+    private function void(): void
     {
-        $this->two([])->cancel(new SendSitePayment($this->order()));
+        $this->two([])->void(new SendSitePayment($this->order()));
     }
 
     private function two(array $collaborators): Two
@@ -334,6 +364,13 @@ class OrderPostprocessingSendSitesTest extends TestCase
 
 class SendSiteOrder extends Order implements \Magento\Sales\Api\Data\OrderInterface
 {
+    /**
+     * The status fulfilment's fresh load: the order stands in for its own row.
+     */
+    public function load($id): self
+    {
+        return $this;
+    }
 }
 
 /**

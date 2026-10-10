@@ -586,6 +586,21 @@ define([
     }
 
     /**
+     * Does the region `<select>` carry an option with this exact value?
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string} value a region id
+     * @returns {boolean}
+     */
+    function hasRegionOption(select, value) {
+        const options = (select && select.options) || [];
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value === value) return true;
+        }
+        return false;
+    }
+
+    /**
      * Write an address payload into one form via the shared field-routing
      * engine (resolveAddressValues()/resolveRegion(), both below).
      *
@@ -834,6 +849,19 @@ define([
         if (!$root || !$root.length) return '';
         const selected = scopedField($root, COUNTRY_FIELD.selector).val();
         return typeof selected === 'string' ? selected.toLowerCase() : '';
+    }
+
+    /**
+     * Is `region` an ISO 3166-2 subdivision code of `country` ("ES-M" for
+     * "es")? A code for some other country is not, and stays free text.
+     *
+     * @param {string} region trimmed region text
+     * @param {string} country the form's own country code, any case
+     * @returns {boolean}
+     */
+    function isOwnSubdivisionCode(region, country) {
+        const match = /^([A-Z]{2})-[A-Z0-9]{1,3}$/i.exec(region);
+        return !!match && !!country && match[1].toLowerCase() === country.toLowerCase();
     }
 
     /**
@@ -1286,13 +1314,15 @@ define([
          * allows (TWO-25461):
          *
          *  1. the region `<select>`, when the country has predefined regions AND
-         *     an option matches the region text (best-effort — see
+         *     either the payload's `region_id` is one of its options or an
+         *     option matches the region text (best-effort, see
          *     regionOptionValue());
          *  2. the free-text region input, for a country with no predefined
          *     regions;
          *  3. failing both, appended to the city with a comma ("Ashford, Kent")
          *     — a lossy home, but a visible and correctable one, where dropping
-         *     the region silently is neither.
+         *     the region silently is neither. An ISO 3166-2 code for the
+         *     form's own country is the exception: it is not appended.
          *
          * Which control is in play is resolveRegionField()'s call (shared with
          * the country-switch revert above), not CSS visibility — core keeps both
@@ -1314,6 +1344,15 @@ define([
 
             const handle = resolveRegionField($root);
             if (handle.select) {
+                // The store's own region id, when the module's relay resolved
+                // the registry's region to one (TWO-26263, TWO-26266). Taken
+                // only where this select offers it: the form may be showing
+                // another country's regions. A region taken here is never
+                // appended to the city.
+                const storeRegionId = hasValue(address.region_id) ? String(address.region_id) : '';
+                if (storeRegionId && hasRegionOption(handle.select, storeRegionId)) {
+                    return { region_id: storeRegionId };
+                }
                 const optionValue = regionOptionValue(handle.select, region);
                 // An unmatched region falls through to the city rather than
                 // guessing at a region id — a wrong id is a wrong address, and
@@ -1331,6 +1370,12 @@ define([
                     : true;
                 if (handle.$field.length && isVisible) return { region: region };
             }
+
+            // An ISO 3166-2 code for the form's own country ("ES-M" on a
+            // Spanish address) is no use to anyone reading the city, so it is
+            // not appended (TWO-26258). The required region select is left
+            // for the buyer, and Magento's own validation prompts them.
+            if (isOwnSubdivisionCode(region, currentAddressFormCountry($root))) return {};
 
             const $city = scopedFind($root, 'input[name="city"]');
             if (!$city.length) return {};

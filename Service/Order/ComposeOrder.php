@@ -115,7 +115,7 @@ class ComposeOrder extends OrderService
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
             'buyer' => $this->getBuyer($order, $additionalData),
             'currency' => $order->getOrderCurrencyCode(),
-            'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($order)),
+            'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($order)),
             'gross_amount' => $this->roundAmt($grossTotal),
             'net_amount' => $this->roundAmt($netTotal),
             'tax_amount' => $this->roundAmt($taxTotal),
@@ -187,6 +187,12 @@ class ComposeOrder extends OrderService
         }
 
         if (!$isEdit) {
+            // Create only (TWO-26153): an edit that omits it keeps the number
+            // sent at placement, and a refund reads that stored number.
+            $buyerVatNumber = $this->getBuyerVatNumber($order);
+            if ($buyerVatNumber !== null) {
+                $payload['buyer_vat_number'] = $buyerVatNumber;
+            }
             // The edit-order schema has no available_terms.
             $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
         } elseif ($placedTerms === null) {
@@ -209,8 +215,7 @@ class ComposeOrder extends OrderService
 
     /**
      * The order's lines as the create request sends them, shared with order
-     * intent so both carry the same lines (TWO-26092). The line tax gate runs
-     * on them in OrderPostprocessor, before the hook.
+     * intent so both carry the same lines (TWO-26092).
      *
      * @param Order $order
      * @return array
@@ -244,26 +249,7 @@ class ComposeOrder extends OrderService
         }
 
         if ($surchargeAmount > 0) {
-            $description = $description ?: (string)__('Payment terms fee');
-            $taxRate = $taxRatePercent / 100;
-
-            $lineItems[] = [
-                'order_item_id' => 'surcharge',
-                'name' => $description,
-                'description' => $description,
-                'type' => 'BUYER_FEE',
-                'image_url' => '',
-                'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
-                'net_amount' => $this->roundAmt($surchargeAmount),
-                'tax_amount' => $this->roundAmt($surchargeTax),
-                'discount_amount' => '0.00',
-                'tax_rate' => $this->roundAmt($taxRate, 6),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
-                'unit_price' => $this->roundAmt($surchargeAmount, 6),
-                'quantity' => 1,
-                'quantity_unit' => 'sc',
-            ];
+            $lineItems[] = $this->getSurchargeLine($surchargeAmount, $surchargeTax, $description, $taxRatePercent);
         }
 
         // Reconcile any known third-party fee (via a registered

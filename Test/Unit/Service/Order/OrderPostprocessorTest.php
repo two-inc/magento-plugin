@@ -14,7 +14,6 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
-use Two\Gateway\Model\OrderPostprocessing;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\Order\PostprocessingTotals;
 use Two\Gateway\Test\Unit\Service\Order\Doubles\PostprocessorFactory;
@@ -25,6 +24,7 @@ require_once __DIR__ . '/../../../Integration/OrderPostprocessingFixture/Plugin/
 /**
  * The postprocessing hook (TWO-26092), driven through the CI fixture
  * subscriber: what it returns is sent, and only a subscriber bug refuses.
+ * Whether the payload adds up is for Two's API to validate (TWO-26284).
  */
 class OrderPostprocessorTest extends TestCase
 {
@@ -55,7 +55,7 @@ class OrderPostprocessorTest extends TestCase
     ): void {
         $composed = self::payload($payload);
 
-        $sent = $this->postprocessor()->process($requestType, $composed, $this->context());
+        $sent = $this->postprocessor(false, 2, false)->process($requestType, $composed, $this->context());
 
         $this->assertSame(json_encode($composed), json_encode($sent), $description);
         $this->assertSame([], $this->debugLog, $description);
@@ -99,10 +99,11 @@ class OrderPostprocessorTest extends TestCase
         }
         $this->assertCount(1, $this->comments, $description);
         $this->assertStringContainsString('/line_items/1/', $this->comments[0], $description);
-        $this->assertSame('OrderPostprocessingChanged', $this->debugLog[0][0], $description);
+        $changed = $this->debugEntries('OrderPostprocessingChanged');
+        $this->assertCount(1, $changed, $description);
         $this->assertStringContainsString(
             '/line_items/1/net_amount',
-            implode(' ', array_keys($this->debugLog[0][1]['diff'])),
+            implode(' ', array_keys($changed[0]['diff'])),
             $description . ': the debug log keys each change by its JSON pointer'
         );
     }
@@ -193,45 +194,63 @@ class OrderPostprocessorTest extends TestCase
     }
 
     /**
-     * The builders' line tax reconcile refuses a mistaxed line as it did
-     * before the hook existed, and before the hook runs, whatever a
-     * subscriber would have done with it.
+     * The plugin no longer reconciles a line's tax with its rate on any request
+     * (TWO-26284): a line whose tax does not follow its rate and net is sent,
+     * composed or returned by a subscriber, and Two's API validates it.
      *
      * @dataProvider mistaxedCases
      */
-    public function testTheBuilderTaxReconcileStillRefusesAMistaxedLine(
+    public function testAMistaxedLineIsSentForTheApiToValidate(
         string $requestType,
+        string $payload,
+        bool $subscriber,
         ?string $mode,
+        bool $composedMistaxed,
         string $description
     ): void {
         Subscriber::$mode = $mode;
-        $payload = self::orderPayload();
-        $payload['line_items'][0]['tax_amount'] = '25.00';
-        $payload['line_items'][0]['gross_amount'] = '125.00';
+        $composed = self::payload($payload);
+        if ($composedMistaxed) {
+            $composed['line_items'][0]['tax_amount'] = '25.00';
+            $composed['line_items'][0]['gross_amount'] = '125.00';
+        }
 
-        try {
-            $this->postprocessor()->process($requestType, $payload, $this->context());
-            $this->fail($description . ': nothing was refused');
-        } catch (LocalizedException $e) {
-            $this->assertSame('This order could not be placed. Please contact the merchant.', $e->getMessage(), $description);
-            $this->assertSame(['TaxReconciliationFailed'], array_column($this->errorLog, 0), $description);
-            $this->assertSame([], Subscriber::$calls, $description . ': the hook never ran');
+        $sent = $this->postprocessor(false, 2, $subscriber)->process($requestType, $composed, $this->context());
+
+        $this->assertSame([], $this->errorLog, $description . ': nothing was refused');
+        $this->assertCount($subscriber ? 1 : 0, Subscriber::$calls, $description . ': the hook ran');
+        if ($mode === Subscriber::MODE_LINES_DO_NOT_ADD_UP) {
+            $block = $sent['partial'] ?? $sent;
+            $this->assertNotSame($composed, $sent, $description . ': the subscriber edit is sent');
+            $this->assertSame(
+                number_format((float)($composed['partial'] ?? $composed)['line_items'][0]['tax_amount'] + 5.00, 2, '.', ''),
+                $block['line_items'][0]['tax_amount'],
+                $description . ': the subscriber\'s inconsistent tax is what goes out'
+            );
+        } elseif ($mode === null) {
+            $this->assertSame(json_encode($composed), json_encode($sent), $description . ': sent as composed');
         }
     }
 
     public static function mistaxedCases(): array
     {
         return [
-            [Hook::REQUEST_ORDER_CREATE, null, 'create, no subscriber'],
-            [Hook::REQUEST_ORDER_UPDATE, null, 'update, no subscriber'],
-            [Hook::REQUEST_ORDER_CREATE, Subscriber::MODE_RESPLIT, 'create, with a subscriber armed'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', false, null, true, 'create, no subscriber, a mistaxed composed line'],
+            [Hook::REQUEST_ORDER_UPDATE, 'order', false, null, true, 'update, no subscriber, a mistaxed composed line'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', true, null, true, 'create, a subscriber that passes a mistaxed composed line on'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', true, Subscriber::MODE_RESPLIT, true, 'create, a subscriber that re-splits shipping and leaves the mistaxed line'],
+            [Hook::REQUEST_ORDER_CREATE, 'order', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'create, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_ORDER_UPDATE, 'order', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'update, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_ORDER_INTENT, 'intent', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'intent, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_CAPTURE, 'partial capture', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'partial capture, a subscriber whose lines do not add up'],
+            [Hook::REQUEST_REFUND, 'refund', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'refund, a subscriber whose lines do not add up'],
         ];
     }
 
     /**
      * TWO-26117: a shipping line with no rate recorded and the control blank
-     * goes at 0% with its tax as charged. The builder reconcile leaves it to
-     * the API, so it reaches the hook.
+     * goes at 0% with its tax as charged and is left to the API, so it
+     * reaches the hook.
      *
      * @dataProvider builderGatedRequests
      */
@@ -325,11 +344,19 @@ class OrderPostprocessorTest extends TestCase
         $order = new Order();
         $order->setData('store_id', 1);
         $order->setData('entity_id', 7);
+        // Placed with the shipping tax fallback blank: no shop-match check applies.
+        $order->setData('two_shipping_tax_rate_source', 'none');
 
-        return ['trigger' => 'test', 'endpoint' => '/v1/order/{id}/refund', 'order' => $order];
+        // The order stands in as the converted quote an intent carries too.
+        return ['trigger' => 'test', 'endpoint' => '/v1/order/{id}/refund', 'order' => $order, 'intent_order' => $order];
     }
 
-    private function postprocessor(bool $fallback = false, ?int $taxClass = 2): OrderPostprocessor
+    /**
+     * @param bool $fallback
+     * @param int|null $taxClass
+     * @param bool $subscriber false for no subscriber at all: only the plugin's default handler
+     */
+    private function postprocessor(bool $fallback = false, ?int $taxClass = 2, bool $subscriber = true): OrderPostprocessor
     {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getShippingTaxClassId')->willReturn($taxClass);
@@ -343,24 +370,9 @@ class OrderPostprocessorTest extends TestCase
             $this->debugLog[] = [$type, $data];
         });
 
-        $plugin = new Subscriber(new PostprocessingTotals());
-        $hook = new class ($plugin) implements Hook {
-            /** @var Subscriber */
-            private $plugin;
-
-            public function __construct(Subscriber $plugin)
-            {
-                $this->plugin = $plugin;
-            }
-
-            // Stands in for the generated interceptor: the default, then the plugin, under the interface's type.
-            public function process(array $payload, array $context): array
-            {
-                $result = (new OrderPostprocessing())->process($payload, $context);
-
-                return $this->plugin->afterProcess($this, $result, $payload, $context);
-            }
-        };
+        $hook = $this->hookChain($log, $subscriber ? [
+            'two_order_postprocessing_fixture' => new Subscriber(new PostprocessingTotals(), $this->shopMatchChecks($log)),
+        ] : []);
 
         $comments = &$this->comments;
         $historyRepository = new class ($comments) implements OrderStatusHistoryRepositoryInterface {
@@ -380,6 +392,18 @@ class OrderPostprocessorTest extends TestCase
         };
 
         return $this->buildPostprocessor($hook, $config, $log, $historyRepository, 21.0);
+    }
+
+    /**
+     * @param string $type
+     * @return array<int, mixed> the data of each debug entry of that type
+     */
+    private function debugEntries(string $type): array
+    {
+        return array_values(array_map(
+            static fn (array $entry) => $entry[1],
+            array_filter($this->debugLog, static fn (array $entry): bool => $entry[0] === $type)
+        ));
     }
 
     /**

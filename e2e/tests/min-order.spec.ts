@@ -1,7 +1,8 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, authoriseStore } from './fixtures';
 import {
     addToCart,
     adminLogin,
+    adminLogout,
     availableMethods,
     editShippingMethod,
     fillCheckout,
@@ -17,7 +18,7 @@ import {
 // client-side and only reaches the quote the gate judges when the shipping step
 // is submitted. The minimum is pinned via the admin store config for the
 // duration of the test so the run never depends on how the shared test merchant
-// happens to be configured, and is always restored afterwards.
+// happens to be configured, and is always put back on Use Default afterwards.
 //
 // Admin-gated like the admin-config specs: skips without ADMIN_PASS.
 
@@ -32,12 +33,20 @@ const BASIS_INHERIT = '#two_checkout_fields_availability_merchant_minimum_order_
 interface MinimumConfig {
     amount: string;
     basis: string;
-    // Whether each field was inheriting the default (Use Default checked) —
-    // captured so teardown can restore it faithfully rather than typing an
-    // empty string into a disabled field.
+    // Whether each field inherits the default (Use Default checked).
     amountInherited: boolean;
     basisInherited: boolean;
 }
+
+// Teardown always restores Use Default, never a captured value: once a restore
+// failed, a captured "original" is the previous run's pin, and restoring it kept
+// the minimum stuck on the shared store (PLAT-2565).
+const DEFAULT_MINIMUM: MinimumConfig = {
+    amount: '',
+    basis: '',
+    amountInherited: true,
+    basisInherited: true
+};
 
 // Grand total of the current quote, in the quote currency (= store base currency
 // on the dev store, so it compares 1:1 against the merchant minimum).
@@ -64,19 +73,6 @@ async function expandAvailabilityGroup(page: Page) {
     }
     await page.locator('#two_checkout_fields_availability-head').click();
     await expect(page.locator(MIN_FIELD)).toBeVisible({ timeout: 10_000 });
-}
-
-async function readMinimumConfig(page: Page): Promise<MinimumConfig> {
-    await gotoConfigSection(page, 'two_checkout_fields');
-    await expandAvailabilityGroup(page);
-    // inputValue() reads a disabled input fine; isChecked() tells us whether
-    // the field was on its default so we can put it back exactly as found.
-    return {
-        amount: await page.locator(MIN_FIELD).inputValue(),
-        basis: await page.locator(BASIS_FIELD).inputValue(),
-        amountInherited: await page.locator(MIN_INHERIT).isChecked(),
-        basisInherited: await page.locator(BASIS_INHERIT).isChecked()
-    };
 }
 
 // Toggle a "Use Default" checkbox to the desired state. Playwright's
@@ -144,12 +140,14 @@ test.describe('minimum order value gate', () => {
         test.setTimeout(180_000);
         if (!pending) return;
         const context = await browser.newContext();
+        await authoriseStore(context);
         const page = await context.newPage();
         try {
             await adminLogin(page);
             await writeMinimumConfig(page, pending);
             pending = null;
         } finally {
+            await adminLogout(page);
             await context.close();
         }
     });
@@ -190,10 +188,10 @@ test.describe('minimum order value gate', () => {
         // Admin runs in its own context so the buyer page keeps its session and
         // is never reloaded — the whole point is the in-page recalc.
         const adminContext = await browser.newContext();
+        await authoriseStore(adminContext);
         const adminPage = await adminContext.newPage();
         await adminLogin(adminPage);
-        const original = await readMinimumConfig(adminPage);
-        pending = original;
+        pending = DEFAULT_MINIMUM;
         try {
             // gross basis compares the grand total directly — the number the
             // buyer sees in the totals block. A pinned custom value, so neither
@@ -211,14 +209,17 @@ test.describe('minimum order value gate', () => {
             // `not.toContain` alone also passes on the empty list the payment
             // service shows mid-repopulation.
             await expect
-                .poll(async () => {
-                    const methods = await availableMethods(page);
+                .poll(
+                    async () => {
+                        const methods = await availableMethods(page);
 
-                    return {
-                        offered: methods.includes('two_payment'),
-                        populated: methods.includes(control as string)
-                    };
-                }, { timeout: 25_000 })
+                        return {
+                            offered: methods.includes('two_payment'),
+                            populated: methods.includes(control as string)
+                        };
+                    },
+                    { timeout: 25_000 }
+                )
                 .toEqual({ offered: false, populated: true });
             // …and back, so the gate re-opens as well as closes.
             await editShippingMethod(page);
@@ -228,12 +229,13 @@ test.describe('minimum order value gate', () => {
                 .poll(() => availableMethods(page), { timeout: 25_000 })
                 .toContain('two_payment');
         } finally {
-            // Restore exactly as found — including putting a field back on its
-            // default (Use Default) rather than filling an empty string into a
-            // now-disabled input, which is what timed the teardown out before.
-            await writeMinimumConfig(adminPage, original);
-            pending = null;
-            await adminContext.close();
+            try {
+                await writeMinimumConfig(adminPage, DEFAULT_MINIMUM);
+                pending = null;
+            } finally {
+                await adminLogout(adminPage);
+                await adminContext.close();
+            }
         }
     });
 });

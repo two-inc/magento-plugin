@@ -261,6 +261,7 @@ define([
             this.initOrderIntentApprovedNotice(config);
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
+            this.orderIntentFieldErrors = config.orderIntentFieldErrors || null;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.termUnavailableMessage = config.termUnavailableMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
@@ -1513,60 +1514,48 @@ define([
                 return;
             }
 
-            // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
-            // this to '' once it has pushed the field-level errors into
-            // messageContainer itself. A `const` here made every
-            // SCHEMA_ERROR response throw
-            // "TypeError: Assignment to constant variable" the instant it
-            // arrived — silently, since this runs inside a jQuery Deferred
-            // `.fail()` handler with nothing upstream to surface a thrown
-            // error to the buyer. That is very likely why a manual-entry
-            // buyer saw no message at all before the TWO-25326 client-side
-            // gate was added: this path was the one meant to show it, and
-            // it was broken.
-            let message = this.generalErrorMessage,
-                self = this;
-            if (response && response.responseJSON) {
-                const errorCode = response.responseJSON.error_code,
-                    errorMessage = response.responseJSON.error_message,
-                    errorDetails = response.responseJSON.error_details;
-                switch (errorCode) {
-                    case 'SCHEMA_ERROR':
-                        const errors = response.responseJSON.error_json;
-                        if (errors) {
-                            message = '';
-                            self.messageContainer.clear();
-                            _.each(errors, function (error) {
-                                self.messageContainer.errorMessages.push(error.msg);
-                            });
-                        }
-                        break;
-                    case 'JSON_MISSING_FIELD':
-                        if (errorDetails) {
-                            message = errorDetails;
-                        }
-                        break;
-                    case 'PROXY_REFUSED':
-                        message = errorMessage;
-                        break;
-                    case 'MERCHANT_NOT_FOUND_ERROR':
-                    case 'ORDER_INVALID':
-                        message = errorMessage;
-                        if (errorDetails) {
-                            message += ' - ' + errorDetails;
-                        }
-                        break;
-                }
+            // The API's own text never reaches the buyer (TWO-26295): it is
+            // written for an integrator or the merchant. A refusal naming a
+            // field the buyer can fix says which, in our own words; anything
+            // else shows the general message. A refusal this module made
+            // itself before calling the API (PROXY_REFUSED) keeps its own
+            // translated sentence.
+            const body = (response && response.responseJSON) || {};
+            let message = this.orderIntentFieldErrorMessage(body.error_json) || this.generalErrorMessage;
+            if (body.error_code === 'PROXY_REFUSED' && body.error_message) {
+                message = body.error_message;
             }
             if (message) {
                 // The tile's own bordered box, not the checkout message
-                // region (TWO-25326, 2026-08-05). SCHEMA_ERROR is the one
-                // exception and it opts itself out by blanking `message`
-                // above: those are per-FIELD validation errors, several at a
-                // time, which belong with the fields and not in a box that
-                // states one outcome.
+                // region (TWO-25326, 2026-08-05).
                 this.showOrderIntentErrorNotice(message);
             }
+        },
+        /**
+         * "<Field> is not valid." for each field a refusal's error_json names
+         * that the buyer can fix, or '' when it names none (TWO-26295).
+         * Chosen from the field path, never the message, with model-name
+         * segments a validator may insert (a capital first letter) dropped,
+         * exactly as order create does.
+         *
+         * @param {Array} errors the refusal's error_json
+         * @returns {string}
+         */
+        orderIntentFieldErrorMessage: function (errors) {
+            const copy = this.orderIntentFieldErrors;
+            if (!copy || !copy.labels || !copy.notValid || !Array.isArray(errors)) return '';
+            const messages = [];
+            errors.forEach(function (error) {
+                if (!error || !Array.isArray(error.loc)) return;
+                const path = error.loc.filter(function (segment) {
+                    return typeof segment === 'string' && segment !== '' && !/^[A-Z]/.test(segment);
+                }).join('.');
+                const label = Object.prototype.hasOwnProperty.call(copy.labels, path) ? copy.labels[path] : '';
+                if (!label) return;
+                const text = copy.notValid.replace('%1', label);
+                if (messages.indexOf(text) === -1) messages.push(text);
+            });
+            return messages.join(' ');
         },
         processTermsNotAcceptedErrorResponse: function (response) {
             this.showErrorMessage(this.termsNotAcceptedMessage);

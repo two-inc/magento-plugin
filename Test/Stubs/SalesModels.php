@@ -91,6 +91,10 @@ use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 if (!class_exists(Invoice::class, false)) {
     class Invoice extends AbstractSalesModelStub
     {
+        public const CAPTURE_ONLINE = 'online';
+        public const CAPTURE_OFFLINE = 'offline';
+        public const NOT_CAPTURE = 'not_capture';
+
         private $order;
 
         public function setOrder($order): self
@@ -109,6 +113,10 @@ if (!class_exists(Invoice::class, false)) {
 if (!class_exists(Creditmemo::class, false)) {
     class Creditmemo extends AbstractSalesModelStub
     {
+        public const STATE_OPEN = 1;
+        public const STATE_REFUNDED = 2;
+        public const STATE_CANCELED = 3;
+
         private $order;
 
         /**
@@ -160,6 +168,9 @@ use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 if (!class_exists(Order::class, false)) {
     class Order extends AbstractSalesModelStub
     {
+        public const STATE_PENDING_PAYMENT = 'pending_payment';
+        public const STATE_PROCESSING = 'processing';
+
         /** @var iterable|false */
         private $creditmemos = false;
 

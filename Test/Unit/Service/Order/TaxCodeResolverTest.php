@@ -25,6 +25,7 @@ use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
 use Two\Gateway\Service\Order\ComposeShipment;
+use Two\Gateway\Service\Order\ShopTaxRates;
 use Two\Gateway\Service\Order\TaxCodeResolver;
 use Two\Gateway\Test\Stubs\UnderscoreDataObject;
 
@@ -40,11 +41,14 @@ class TaxCodeResolverTest extends TestCase
 {
     private const EXPORT = 'ES_IVA_EXPORT';
     private const INTRA = 'ES_IVA_INTRA_COMMUNITY';
-    private const REVERSE = 'ES_IVA_REVERSE_CHARGE';
+    private const SERVICES = 'ES_IVA_INTRA_COMMUNITY_SERVICES';
     private const ART20 = 'ES_IVA_EXEMPT_ART20';
 
     /** @var bool whether the composers get a resolver; false composes as before TWO-24877 */
     private $withResolver = true;
+
+    /** @var array<int, array> the shop's rates per product tax class, [['code' => .., 'percent' => ..]] */
+    private $rates = [];
 
     /** @var int|null the store's shipping tax class as the repository reports it (null = None) */
     private $shippingClass = 9;
@@ -55,7 +59,7 @@ class TaxCodeResolverTest extends TestCase
      * @dataProvider createCases
      * @param array $products [product type, tax percent] per line
      * @param array|null $shipping [delivery country, postcode], null for no delivery address
-     * @param string $billing buyer (billing) country
+     * @param string $billing buyer (billing) country, optionally followed by the billing postcode and VAT id
      * @param array $expected tax_code per line, null for none; the shipping line last when there is one
      * @param bool $withShipping whether the order charges shipping at 0%
      */
@@ -85,38 +89,274 @@ class TaxCodeResolverTest extends TestCase
         $service = [['virtual', 0.0]];
         $mixed = [['virtual', 0.0], ['simple', 0.0]];
         return [
-            ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT], 'goods delivered outside the EU'],
-            ['ES', [], $goods, ['US', '10001'], 'ES', [self::EXPORT], 'goods delivered outside the EU to a Spanish buyer'],
-            ['ES', [], $goods, ['ES', '35001'], 'ES', [self::EXPORT], 'goods delivered to Las Palmas'],
-            ['ES', [], $goods, ['ES', '38001'], 'ES', [self::EXPORT], 'goods delivered to Tenerife'],
-            ['ES', [], $goods, ['ES', '51001'], 'ES', [self::EXPORT], 'goods delivered to Ceuta'],
-            ['ES', [], $goods, ['ES', '52001'], 'ES', [self::EXPORT], 'goods delivered to Melilla'],
-            ['ES', [], $goods, ['DE', '10115'], 'FR', [self::INTRA], 'goods to another EU state, buyer in another EU state'],
-            ['ES', [], $goods, ['MC', '98000'], 'MC', [self::INTRA], 'goods to Monaco, which counts as France'],
-            ['ES', [], $goods, ['FR', '75001'], 'ES', [null], 'goods to another EU state, Spanish buyer'],
-            ['ES', [], $goods, ['ES', '28001'], 'ES', [null], 'domestic goods'],
-            ['ES', [], $goods, ['ES', '07001'], 'ES', [null], 'goods to the Balearics'],
-            ['ES', [], $goods, ['ES', '28001'], 'FR', [null], 'goods delivered in Spain to a French buyer'],
-            ['ES', [], $service, null, 'DE', [self::REVERSE], 'service to a buyer in another EU state'],
-            ['ES', [], [['downloadable', 0.0]], null, 'FR', [self::REVERSE], 'download to a buyer in another EU state'],
-            ['ES', [], [['bundle', 0.0, true]], null, 'FR', [self::REVERSE], 'a bundle with nothing to ship is a service'],
-            ['ES', [], [['bundle', 0.0, false]], ['FR', '75001'], 'FR', [self::INTRA], 'a bundle that ships is goods'],
-            ['ES', [], [['configurable', 0.0, true]], ['ES', '28001'], 'DE', [self::REVERSE], 'a configurable with a virtual child is a service'],
+            ['ES', [], $goods, ['US', '10001'], 'US', [null], 'nothing mapped: no code, even for an export'],
+            ['ES', [], $service, null, 'DE 10115 DE123456789', [null], 'nothing mapped: no code for an EU buyer with a VAT number'],
+            ['ES', [], $mixed, ['ES', '35001'], 'ES', [null, null, null], 'nothing mapped: no code for any line, shipping included', true],
+            ['ES', ['5' => self::ART20], $goods, ['US', '10001'], 'US', [self::ART20], 'a mapped class'],
+            ['ES', ['5' => self::ART20], $goods, ['ES', '28001'], 'ES', [self::ART20], 'a mapped class on a domestic order'],
             ['ES', ['7' => self::ART20], [['configurable', 0.0, true]], ['US', '10001'], 'US', [self::ART20], 'a configurable maps by its child\'s class'],
-            ['ES', [], $service, null, 'ES', [null], 'service to a Spanish buyer'],
-            ['ES', [], $service, null, 'NO', [null], 'service to a buyer outside the EU'],
-            ['ES', [], $goods, ['US', '10001'], 'US', [self::EXPORT, self::EXPORT], 'shipping follows goods', true],
-            ['ES', [], $service, ['US', '10001'], 'DE', [self::REVERSE, self::REVERSE], 'shipping follows services', true],
-            ['ES', [], $mixed, ['ES', '28001'], 'DE', [self::REVERSE, null, null], 'a mixed order: service by buyer, goods and shipping by delivery', true],
-            ['ES', [], $mixed, ['US', '10001'], 'US', [null, self::EXPORT, self::EXPORT], 'a mixed order: no export code on the service', true],
-            ['ES', ['5' => self::ART20], $goods, ['US', '10001'], 'US', [self::ART20], 'the mapping beats the derivation'],
-            ['ES', ['5' => self::ART20], $goods, ['ES', '28001'], 'ES', [self::ART20], 'the mapping covers a line nothing derives'],
-            ['ES', ['7' => self::ART20], $mixed, ['US', '10001'], 'US', [self::ART20, self::EXPORT, self::EXPORT], 'a mapped service in a mixed order', true],
-            ['ES', ['9' => 'ES_IVA_EXEMPT_ART22'], $goods, ['US', '10001'], 'US', [self::EXPORT, 'ES_IVA_EXEMPT_ART22'], 'the shipping tax class maps the shipping line', true],
+            ['ES', ['7' => self::ART20], $mixed, ['US', '10001'], 'US', [self::ART20, null, null], 'only the mapped class of a mixed order', true],
+            ['ES', ['9' => 'ES_IVA_EXEMPT_ART22'], $goods, ['US', '10001'], 'US', [null, 'ES_IVA_EXEMPT_ART22'], 'the shipping tax class maps the shipping line', true],
             ['NO', [], $goods, ['US', '10001'], 'US', [null], 'a non-Spanish merchant with no mapping'],
             ['DE', ['5' => 'DE_ZERO'], $goods, ['DE', '10115'], 'DE', ['DE_ZERO'], 'a non-Spanish merchant with a mapping'],
             ['ES', ['5' => self::ART20], [['simple', 21.0]], ['US', '10001'], 'US', [null], 'a mapped line at 21%'],
-            ['ES', [], [['simple', 21.0], ['simple', 0.0]], ['US', '10001'], 'US', [null, self::EXPORT], 'only the 0% line of two'],
+            ['ES', ['5' => self::ART20], [['simple', 21.0], ['simple', 0.0]], ['US', '10001'], 'US', [null, self::ART20], 'only the 0% line of two'],
+        ];
+    }
+
+    /**
+     * TWO-26153: the case table shared by the three plugins, rows 1 to 17
+     * (row 18, the upgrade's fan-out, is in FanOutTaxCodeMapTest). Merchant
+     * country ES. Rows are keyed `<class>|exempt`, `<class>|rate:<rate code>`
+     * and `<class>|none`; $rates is what the shop's rules match for each
+     * class at the tax address (none for a buyer whose customer group the
+     * shop exempts).
+     *
+     * @dataProvider sharedCases
+     * @param array $products [product type, tax percent] per line
+     * @param array $billing [country, postcode]
+     * @param array|null $delivery [country, postcode], null for a virtual order
+     * @param array $expected tax_code per line, the "Other charges" fee line last when $fee is set
+     */
+    public function testTheSharedCaseTable(
+        array $products,
+        array $billing,
+        ?array $delivery,
+        ?string $vat,
+        array $rates,
+        array $map,
+        array $expected,
+        string $description,
+        float $fee = 0.0
+    ): void {
+        $this->rates = $rates;
+        $order = $this->order($products, $delivery, $billing[0], false, $fee);
+        $order->billing->setData('postcode', $billing[1]);
+        $order->billing->setData('vat_id', $vat);
+
+        $create = $this->create($order, 'ES', $map);
+        $this->assertSame($expected, $this->codes($create['line_items']), $description);
+    }
+
+    public static function sharedCases(): array
+    {
+        $goods = [['simple', 0.0]];
+        $de = ['DE', '10115'];
+        $es = ['ES', '28001'];
+        $exempt = ['5|exempt' => self::INTRA];
+        $exportOutside = ['5|exempt' => self::INTRA, '5|none' => self::EXPORT];
+        $mixed = [['simple', 0.0], ['virtual', 0.0]];
+        return [
+            'row 1' => [[['simple', 21.0]], $es, $es, null, [5 => [['code' => 'ES-21', 'percent' => 21.0]]], $exempt, [null], 'non-0% lines are never touched'],
+            'row 2' => [$goods, $de, $de, 'DE123', [], $exempt, [self::INTRA], 'step 1 exempt buyer'],
+            'row 3' => [$goods, $de, $de, 'de 123', [], $exempt, [self::INTRA], 'VAT read as entered, any non-empty value counts'],
+            'row 4' => [$goods, $de, $de, '   ', [], $exempt, [null], 'whitespace-only VAT is empty; NR on (none) gives no code'],
+            'row 5' => [$goods, $de, ['US', '10001'], 'DE123', [5 => [['code' => 'US-0', 'percent' => 0.0]]], $exempt + ['5|rate:US-0' => self::EXPORT], [self::EXPORT], 'export: tax address outside the EU skips step 1'],
+            'row 6' => [$goods, $es, ['ES', '35001'], null, [5 => [['code' => 'ES-CANARIAS-0', 'percent' => 0.0]]], ['5|rate:ES-CANARIAS-0' => self::EXPORT], [self::EXPORT], "step 2 shop's 0% rule"],
+            'row 7' => [$goods, ['US', '10001'], ['US', '10001'], null, [], ['5|none' => self::EXPORT], [self::EXPORT], 'step 3 no-rule row'],
+            'row 8' => [$goods, $de, $de, 'DE123', [], ['5|none' => self::INTRA], [null], 'a matched row on (none) never falls through'],
+            'row 9' => [$goods, $es, $es, 'ESB123', [], $exempt, [null], 'merchant-country buyer is never exempt'],
+            'row 10' => [$goods, ['MC', '98000'], ['MC', '98000'], 'FR123', [], $exempt, [self::INTRA], 'Monaco is in the EU VAT area'],
+            'row 11' => [$goods, ['GB', 'BT1 1AA'], ['GB', 'BT1 1AA'], 'XI123', [], $exempt, [self::INTRA], 'Northern Ireland (GB + BT postcode) is in the EU VAT area'],
+            'row 12' => [$goods, ['GB', 'SW1A 1AA'], ['GB', 'SW1A 1AA'], 'GB123', [], $exportOutside, [self::EXPORT], 'Great Britain is outside'],
+            'row 13' => [$goods, ['CH', '8001'], ['CH', '8001'], 'CHE123', [], $exportOutside, [self::EXPORT], 'Switzerland is outside'],
+            'row 14' => [[['virtual', 0.0]], ['FR', '75001'], null, 'FR123', [], ['7|exempt' => self::SERVICES], [self::SERVICES], "goods vs services comes from the merchant's per-class mapping"],
+            'row 15' => [$goods, $de, $de, 'DE123', [], $exempt, [self::INTRA, self::INTRA], "step 4: shared code of the order's coded 0% lines", 12.50],
+            'row 16' => [$mixed, $de, $de, 'DE123', [], $exempt + ['7|exempt' => self::SERVICES], [self::INTRA, self::SERVICES, null], 'step 4: disagreeing codes give no code', 12.50],
+            'row 17' => [$goods, $de, $de, null, [], $exempt, [null, null], 'step 4 with nothing to share', 12.50],
+            'billing at home' => [$goods, $es, $de, 'DE123', [], $exportOutside, [self::EXPORT], "step 1 needs the billing country abroad too: a merchant-country buyer delivered abroad is not exempt"],
+            'billing outside the EU' => [$goods, ['US', '10001'], $de, 'DE123', [], $exportOutside, [self::EXPORT], 'step 1 needs the billing country in the EU VAT area'],
+            'two 0% rates' => [$goods, $es, ['ES', '35001'], null, [5 => [['code' => 'ES-CANARIAS-0', 'percent' => 0.0], ['code' => 'ES-OTHER-0', 'percent' => 0.0]]], ['5|rate:ES-CANARIAS-0' => self::EXPORT, '5|rate:ES-OTHER-0' => self::INTRA], [self::EXPORT], "two 0% rates match: the first in core's order wins"],
+            '0% beside 21%' => [$goods, $es, ['ES', '35001'], null, [5 => [['code' => 'ES-CANARIAS-0', 'percent' => 0.0], ['code' => 'ES-21', 'percent' => 21.0]]], ['5|rate:ES-CANARIAS-0' => self::EXPORT], [null], 'a 0% rate beside one above 0% gives no code'],
+            'rate above 0%' => [$goods, $es, $es, null, [5 => [['code' => 'ES-21', 'percent' => 21.0]]], ['5|none' => self::EXPORT], [null], 'a 0% line whose matched rate is not 0% gets no code'],
+        ];
+    }
+
+    /**
+     * TWO-26153: on a later request, step 4 shares the codes steps 1 to 3 gave
+     * at placement, the same as at placement.
+     *
+     * @dataProvider adjustmentCases
+     */
+    public function testARefundAdjustmentSharesOnlyTheCodesStepsOneToThreeGave(
+        array $map,
+        array $products,
+        string $billing,
+        ?string $expected,
+        string $description
+    ): void {
+        $order = $this->order($products, ['US', '10001'], $billing);
+        $this->create($order, 'ES', $map);
+        $this->save($order);
+
+        $adjustment = array_values(array_filter(
+            $this->refund($order, 'ES', $map),
+            static fn (array $line) => ($line['order_item_id'] ?? null) === 'adjustment'
+        ));
+        $this->assertSame($expected, $adjustment[0]['tax_code'] ?? null, $description);
+    }
+
+    public static function adjustmentCases(): array
+    {
+        $mixed = [['simple', 0.0], ['virtual', 0.0]];
+        return [
+            [[], $mixed, 'US', null, 'nothing mapped: nothing to share, so no code'],
+            [['5|none' => self::EXPORT], [['simple', 0.0]], 'US', self::EXPORT, 'a mapped code recorded at placement is shared'],
+            [['5|none' => self::EXPORT], $mixed, 'US', self::EXPORT, 'an unmapped class beside it does not make the codes disagree'],
+            [['5|none' => self::EXPORT, '7|none' => self::ART20], $mixed, 'US', null, 'codes that disagreed at placement give no code'],
+        ];
+    }
+
+    /**
+     * A record written before it listed the shared codes gives a line with no
+     * class the one code its recorded lines carry (the fee line aside), and
+     * no code when they disagree or carry none.
+     *
+     * @dataProvider recordWithNoSharedKeyCases
+     */
+    public function testARecordWithNoSharedKeySharesItsRecordedCodes(string $record, ?string $expected, string $description): void
+    {
+        $order = $this->order([['simple', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
+        $this->save($order);
+        $order->setData(TaxCodeResolver::STORED_CODES, $record);
+
+        // Two items, then the adjustment, then shipping (class 9, unmapped).
+        $codes = $this->codes($this->refund($order, 'ES', []));
+        $this->assertSame($expected, $codes[2], $description);
+    }
+
+    public static function recordWithNoSharedKeyCases(): array
+    {
+        $export = self::EXPORT;
+        $art20 = self::ART20;
+        return [
+            ["{\"item:101\":\"$export\",\"item:102\":\"$export\"}", self::EXPORT, 'recorded codes that agree are shared'],
+            ["{\"item:101\":\"$export\",\"item:102\":null}", self::EXPORT, 'a line recorded with no code does not make them disagree'],
+            ["{\"item:101\":\"$export\",\"item:102\":\"$art20\"}", null, 'recorded codes that disagree give no code'],
+            ["{\"item:101\":null,\"item:102\":null,\"fee\":\"$art20\"}", null, 'no recorded code (the fee line aside) gives no code'],
+            ['{}', null, 'an empty record gives no code'],
+        ];
+    }
+
+    /**
+     * With the merchant's country unknown, no buyer can be told apart from a
+     * domestic one, so step 1 never fires.
+     */
+    public function testStepOneNeedsTheMerchantsCountry(): void
+    {
+        $order = $this->order([['simple', 0.0]], ['DE', '10115'], 'DE 10115 DE123');
+
+        $create = $this->create($order, '', ['5|exempt' => self::INTRA]);
+        $this->assertSame([null], $this->codes($create['line_items']));
+    }
+
+    /**
+     * A shop with no row set never looks up its tax: nothing would read it.
+     */
+    public function testAShopWithNoRowSetNeverLooksUpItsTax(): void
+    {
+        $shop = $this->createMock(ShopTaxRates::class);
+        $shop->expects($this->never())->method('taxAddress');
+        $shop->expects($this->never())->method('rates');
+        $order = $this->order([['simple', 0.0]], ['DE', '10115'], 'DE 10115 DE123', true);
+        $lines = [
+            ['order_item_id' => 'x', 'type' => 'PHYSICAL', 'tax_rate' => '0.00'],
+            ['order_item_id' => 'shipping', 'type' => 'SHIPPING_FEE', 'tax_rate' => '0.00'],
+        ];
+
+        (new TaxCodeResolver($this->config([]), $this->records('ES'), $shop))
+            ->apply($lines, $order, ['0' => $order->itemsById[1]]);
+    }
+
+    /**
+     * The buyer VAT number comes from the billing address VAT id, then the
+     * order's customer tax/VAT number, as entered and trimmed of leading and
+     * trailing whitespace only; an address VAT id that a VAT check which got an
+     * answer marked invalid is no number at all.
+     *
+     * @dataProvider vatSourceCases
+     * @param mixed $vatIsValid the billing address VAT check result
+     * @param mixed $requestSuccess whether the VAT check request got an answer
+     */
+    public function testBuyerVatNumberSourceOrder(
+        ?string $vatId,
+        $vatIsValid,
+        $requestSuccess,
+        ?string $taxvat,
+        string $expected,
+        string $description
+    ): void {
+        $order = $this->order([['simple', 0.0]], null, 'DE 10115');
+        $order->billing->setData('vat_id', $vatId);
+        $order->billing->setData('vat_is_valid', $vatIsValid);
+        $order->billing->setData('vat_request_success', $requestSuccess);
+        $order->setData('customer_taxvat', $taxvat);
+
+        $this->assertSame($expected, TaxCodeResolver::buyerVatNumber($order), $description);
+    }
+
+    public static function vatSourceCases(): array
+    {
+        return [
+            ['DE111111111', null, null, 'DE222222222', 'DE111111111', 'address VAT id first'],
+            [null, null, null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
+            [' ', null, null, 'DE222222222', 'DE222222222', 'a blank address VAT id is none'],
+            ['DE111111111', 1, 1, 'DE222222222', 'DE111111111', 'a VAT check that passed keeps the address VAT id'],
+            ['DE111111111', '0', '1', 'DE222222222', '', 'a refused address VAT id is no number, not the customer VAT number'],
+            ['DE111111111', 0, 1, 'DE111111111', '', 'a refused address VAT id is not sent again as the customer VAT number'],
+            [null, 0, 1, 'DE222222222', 'DE222222222', 'with no address VAT id a refusal leaves the customer VAT number'],
+            ['DE111111111', 0, 1, null, '', 'answered invalid and no customer VAT number is no number'],
+            ['DE111111111', 0, 0, 'DE222222222', 'DE111111111', 'a VAT check request that failed keeps the address VAT id'],
+            ['DE111111111', 0, null, null, 'DE111111111', 'invalid with no request result keeps the address VAT id'],
+            ['DE111111111', '', 1, null, 'DE111111111', 'an empty check result is no check'],
+            ['111111111', null, null, null, '111111111', 'an unprefixed number is kept as entered'],
+            [" \tDE123456789\n ", null, null, null, 'DE123456789', 'leading and trailing whitespace is trimmed'],
+            ['de 123.456-789', null, null, null, 'de 123.456-789', 'inner spaces, dots, hyphens and case are kept'],
+            [null, null, null, '   ', '', 'a whitespace-only customer VAT number is no number'],
+            [null, null, null, null, '', 'neither source is no number'],
+        ];
+    }
+
+    /**
+     * TWO-26153: order create sends buyer_vat_number only for a Spanish
+     * merchant and a buyer outside Spain; otherwise the key is absent. An
+     * edit never sends it.
+     *
+     * @dataProvider sentVatCases
+     */
+    public function testCreateSendsTheBuyerVatNumber(
+        string $merchant,
+        string $billing,
+        ?string $vatId,
+        ?string $taxvat,
+        ?string $expected,
+        string $description
+    ): void {
+        $order = $this->order([['simple', 0.0]], null, $billing);
+        $order->billing->setData('vat_id', $vatId);
+        $order->setData('customer_taxvat', $taxvat);
+
+        $create = $this->create($order, $merchant, []);
+        $this->assertSame($expected, $create['buyer_vat_number'] ?? null, "$description: create");
+        $this->assertSame($expected !== null, array_key_exists('buyer_vat_number', $create), "$description: key");
+
+        $this->save($order);
+        $edit = $this->composer(ComposeOrder::class, $merchant, [])
+            ->execute($order, 'ref', ['isEdit' => true, 'placedTerms' => null]);
+        $this->assertArrayNotHasKey('buyer_vat_number', $edit, "$description: edit");
+    }
+
+    public static function sentVatCases(): array
+    {
+        return [
+            ['ES', 'DE 10115', ' DE 123.456.789 ', null, 'DE 123.456.789', 'Spanish merchant, EU buyer: sent as entered, trimmed'],
+            ['ES', 'DE 10115', '123456789', null, '123456789', 'unprefixed number sent as entered'],
+            ['ES', 'GR 10431', 'EL123456789', null, 'EL123456789', 'Greek buyer sent with EL as entered'],
+            ['ES', 'US 10001', 'US123', null, 'US123', 'Spanish merchant, non-EU buyer with a number'],
+            ['ES', 'DE 10115', null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
+            ['ES', 'ES 28001', 'ESB12345678', null, null, 'Spanish buyer: never sent'],
+            ['NO', 'DE 10115', 'DE123456789', null, null, 'non-Spanish merchant with a VAT number'],
+            ['ES', 'DE 10115', null, null, null, 'Spanish merchant, no VAT number'],
         ];
     }
 
@@ -142,7 +382,8 @@ class TaxCodeResolverTest extends TestCase
     public function testLaterPayloadsSendTheCodesRecordedAtPlacement(string $payload, array $expected): void
     {
         $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['US', '10001'], 'US', true);
-        $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20])->execute($order, 'ref', []);
+        $map = ['5' => self::EXPORT, '7' => self::ART20, '9' => self::EXPORT];
+        $this->composer(ComposeOrder::class, 'ES', $map)->execute($order, 'ref', []);
         $this->save($order);
         $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
         $order->billing = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
@@ -155,14 +396,14 @@ class TaxCodeResolverTest extends TestCase
         return [
             ['capture', [self::EXPORT, self::ART20, self::EXPORT]],
             ['shipment', [self::EXPORT, self::ART20, self::EXPORT]],
-            // The adjustment was never placed, so it resolves against the edited Madrid address.
+            // The adjustment was never placed, and steps 1 to 3 gave two codes at placement: no code (step 4).
             ['refund', [self::EXPORT, self::ART20, null, self::EXPORT]],
             ['edit', [self::EXPORT, self::ART20, self::EXPORT]],
         ];
     }
 
     /**
-     * Placement recorded no code; a later change that would now derive one is ignored.
+     * Placement recorded no code; a mapping set since is ignored.
      *
      * @dataProvider recordedNoCodePayloads
      */
@@ -171,9 +412,9 @@ class TaxCodeResolverTest extends TestCase
         $order = $this->order([['simple', 0.0]], ['ES', '28001'], 'ES', true);
         $this->composer(ComposeOrder::class, 'ES', [])->execute($order, 'ref', []);
         $this->save($order);
-        $order->shipping = new UnderscoreDataObject(['country_id' => 'US', 'postcode' => '10001']);
 
-        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', [])), $payload);
+        $map = ['5' => self::EXPORT, '9' => self::EXPORT];
+        $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', $map)), $payload);
     }
 
     public static function recordedNoCodePayloads(): array
@@ -181,8 +422,8 @@ class TaxCodeResolverTest extends TestCase
         return [
             ['capture', [null, null]],
             ['shipment', [null, null]],
-            // The adjustment was never placed, so it resolves against the edited US address.
-            ['refund', [null, self::EXPORT, null]],
+            // The adjustment was never placed: no line was coded at placement, so it has nothing to share.
+            ['refund', [null, null, null]],
             ['edit', [null, null]],
         ];
     }
@@ -195,11 +436,11 @@ class TaxCodeResolverTest extends TestCase
     public function testAFeeLineSendsTheCodeRecordedAtPlacement(string $payload, array $expected): void
     {
         $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US', true, 12.50);
-        $create = $this->composer(ComposeOrder::class, 'ES', [])->execute($order, 'ref', []);
+        $create = $this->composer(ComposeOrder::class, 'ES', ['5' => self::EXPORT, '9' => self::EXPORT])
+            ->execute($order, 'ref', []);
         $this->assertSame([self::EXPORT, self::EXPORT, self::EXPORT], $this->codes($create['line_items']));
         $this->assertSame('other_charges', $create['line_items'][2]['order_item_id']);
         $this->save($order);
-        $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
 
         $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', [])), $payload);
     }
@@ -209,8 +450,8 @@ class TaxCodeResolverTest extends TestCase
         return [
             ['capture', [self::EXPORT, self::EXPORT, self::EXPORT]],
             ['edit', [self::EXPORT, self::EXPORT, self::EXPORT]],
-            // The adjustment stays out of the record and resolves against the edited Madrid address.
-            ['refund', [self::EXPORT, null, self::EXPORT, self::EXPORT]],
+            // The adjustment takes the one code steps 1 to 3 gave at placement (step 4).
+            ['refund', [self::EXPORT, self::EXPORT, self::EXPORT, self::EXPORT]],
         ];
     }
 
@@ -233,10 +474,10 @@ class TaxCodeResolverTest extends TestCase
                 ]] : [];
             }
         }]);
-        $create = $this->composer(ComposeOrder::class, 'ES', [], null, $pool)->execute($order, 'ref', []);
+        $create = $this->composer(ComposeOrder::class, 'ES', ['5' => self::EXPORT, '9' => self::EXPORT], null, $pool)
+            ->execute($order, 'ref', []);
         $this->assertSame('other_charges', $create['line_items'][2]['order_item_id']);
         $this->save($order);
-        $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
 
         $edit = $this->composer(ComposeOrder::class, 'ES', [], null, $pool)
             ->execute($order, 'ref', ['isEdit' => true, 'placedTerms' => null]);
@@ -253,11 +494,12 @@ class TaxCodeResolverTest extends TestCase
         $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
         $order->itemsById[2]->data['sku'] = 'SKU1';
         $order->itemsById[2]->data['name'] = 'Item 1';
-        $create = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20])->execute($order, 'ref', []);
+        $create = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20, '5' => self::EXPORT])
+            ->execute($order, 'ref', []);
 
         $this->assertSame([self::ART20, self::EXPORT], $this->codes($create['line_items']));
         $this->assertSame(
-            ['item:101' => self::ART20, 'item:102' => self::EXPORT],
+            ['item:101' => self::ART20, 'item:102' => self::EXPORT, 'shared' => [self::ART20, self::EXPORT]],
             json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true)
         );
     }
@@ -276,17 +518,18 @@ class TaxCodeResolverTest extends TestCase
     }
 
     /**
-     * A line whose SKU another extension changed matches no item, but its own
-     * DIGITAL type still makes it a service in a mixed order.
+     * A line whose SKU another extension changed matches no item, so it has no
+     * class and takes the code the order's other lines share (step 4), not
+     * its item's class's row.
      */
-    public function testAnUnmatchedDigitalLineIsAService(): void
+    public function testAnUnmatchedProductLineTakesStepFour(): void
     {
-        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['FR', '75001'], 'FR');
-        $service = $this->composer(ComposeOrder::class, 'ES', []);
+        $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['FR', '75001'], 'FR 75001 FR12345678901');
+        $service = $this->composer(ComposeOrder::class, 'ES', ['5|exempt' => self::INTRA]);
         $lines = $service->getLineItemsOrder($order);
         $lines[0]['details']['barcodes'][0]['value'] = 'CHANGED';
 
-        $this->assertSame([self::REVERSE, self::INTRA], $this->codes($service->applyTaxCodes($lines, $order, true)));
+        $this->assertSame([self::INTRA, self::INTRA], $this->codes($service->applyTaxCodes($lines, $order, true)));
     }
 
     /**
@@ -296,8 +539,9 @@ class TaxCodeResolverTest extends TestCase
     {
         $order = $this->order([['configurable', 0.0, true], ['simple', 0.0]], ['US', '10001'], 'US', true);
         $order->itemsById[2]->data['parent_item_id'] = 50;
-        $create = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20])->execute($order, 'ref', []);
-        $this->assertSame([self::ART20, self::EXPORT, self::EXPORT], $this->codes($create['line_items']));
+        $create = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20, '5' => self::EXPORT])
+            ->execute($order, 'ref', []);
+        $this->assertSame([self::ART20, self::EXPORT, null], $this->codes($create['line_items']));
         $this->save($order);
         $order->shipping = new UnderscoreDataObject(['country_id' => 'ES', 'postcode' => '28001']);
 
@@ -314,10 +558,10 @@ class TaxCodeResolverTest extends TestCase
     {
         $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US');
         $this->save($order);
-        $resolver = new TaxCodeResolver($this->config(['5' => self::ART20]), $this->records('ES'));
+        $resolver = new TaxCodeResolver($this->config(['5' => self::ART20]), $this->records('ES'), $this->shopRates());
         $lines = [['order_item_id' => 1, 'type' => 'OTHER', 'tax_rate' => '0.00']];
 
-        $this->assertSame([self::EXPORT], $this->codes($resolver->apply($lines, $order)));
+        $this->assertSame([null], $this->codes($resolver->apply($lines, $order)));
     }
 
     /**
@@ -327,7 +571,7 @@ class TaxCodeResolverTest extends TestCase
     public function testPlacementMatchesLinesToItemsWhateverTheirOrder(): void
     {
         $order = $this->order([['virtual', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
-        $service = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20]);
+        $service = $this->composer(ComposeOrder::class, 'ES', ['7' => self::ART20, '5' => self::EXPORT]);
         $reordered = array_reverse($service->getLineItemsOrder($order));
 
         $this->assertSame([self::EXPORT, self::ART20], $this->codes($service->applyTaxCodes($reordered, $order, true)));
@@ -340,7 +584,7 @@ class TaxCodeResolverTest extends TestCase
      */
     public function testAnOrderWithNoRecordResolvesAsAtPlacement(string $payload, array $expected): void
     {
-        $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['ES', '28001'], 'DE', true);
+        $order = $this->order([['simple', 0.0], ['virtual', 0.0]], ['ES', '28001'], 'DE 10115 DE123456789', true);
         $this->save($order);
 
         $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', ['5' => self::ART20])), $payload);
@@ -349,9 +593,10 @@ class TaxCodeResolverTest extends TestCase
     public static function unrecordedPayloads(): array
     {
         return [
-            ['capture', [self::ART20, self::REVERSE, null]],
-            ['shipment', [self::ART20, self::REVERSE, null]],
-            ['refund', [self::ART20, self::REVERSE, null, null]],
+            ['capture', [self::ART20, null, null]],
+            ['shipment', [self::ART20, null, null]],
+            // The adjustment has no class: it takes the one code steps 1 to 3 gave (step 4).
+            ['refund', [self::ART20, null, self::ART20, null]],
         ];
     }
 
@@ -407,7 +652,7 @@ class TaxCodeResolverTest extends TestCase
      */
     public function testACodeAlreadyOnTheLineIsKept(): void
     {
-        $resolver = new TaxCodeResolver($this->config([]), $this->records('ES'));
+        $resolver = new TaxCodeResolver($this->config([]), $this->records('ES'), $this->shopRates());
         $order = $this->order([['simple', 0.0]], ['US', '10001'], 'US');
         $lines = [['order_item_id' => 'fee', 'type' => 'OTHER', 'tax_rate' => '0.00', 'tax_code' => 'ES_IVA_ZERO']];
 
@@ -513,7 +758,8 @@ class TaxCodeResolverTest extends TestCase
      *
      * @param array $products [product type, tax percent, is virtual] per item, 100.00 net each, quantity 2
      * @param array|null $shipping [country, postcode] of the delivery address; null for none
-     * @param string $billing billing country
+     * @param string $billing billing country, optionally followed by the billing postcode and VAT id,
+     *                        space separated
      * @param bool $withShipping whether the order charges 10.00 shipping at 0%
      * @param float $fee an untaxed charge in the grand total that no line itemizes
      */
@@ -584,7 +830,10 @@ class TaxCodeResolverTest extends TestCase
             $grand += 100.00 + $tax;
             $taxTotal += $tax;
         }
-        $order->billing = new UnderscoreDataObject(['country_id' => $billing, 'postcode' => '00000']);
+        [$billingCountry, $billingPostcode, $vatId] = array_pad(explode(' ', $billing, 3), 3, null);
+        $order->billing = new UnderscoreDataObject(
+            ['country_id' => $billingCountry, 'postcode' => $billingPostcode ?? '00000', 'vat_id' => $vatId]
+        );
         $order->shipping = $shipping
             ? new UnderscoreDataObject(['country_id' => $shipping[0], 'postcode' => $shipping[1]])
             : null;
@@ -633,10 +882,22 @@ class TaxCodeResolverTest extends TestCase
         };
     }
 
+    /**
+     * A map in the old class => code shape becomes every row of that class,
+     * as the upgrade fans it out; rows already in the new shape are kept.
+     */
     private function config(array $map): ConfigRepository
     {
+        $rows = [];
+        foreach ($map as $key => $code) {
+            if (ctype_digit((string)$key)) {
+                $rows[$key . '|exempt'] = $rows[$key . '|none'] = $code;
+            } else {
+                $rows[$key] = $code;
+            }
+        }
         $config = $this->createMock(ConfigRepository::class);
-        $config->method('getTaxCodeMap')->willReturn($map);
+        $config->method('getTaxCodeMap')->willReturn($rows);
         $config->method('getShippingTaxClassId')->willReturn($this->shippingClass);
         $config->method('getSurchargeTaxClassId')->willReturn(null);
         $config->method('isTaxSubtotalsEnabled')->willReturn(true);
@@ -648,6 +909,22 @@ class TaxCodeResolverTest extends TestCase
         $config->method('getPaymentTermsType')->willReturn('invoice_date');
 
         return $config;
+    }
+
+    /**
+     * The shop's tax: the order taxed on its delivery address (billing when
+     * none), with $this->rates as the rates each product tax class matches there.
+     */
+    private function shopRates(): ShopTaxRates
+    {
+        $shop = $this->createMock(ShopTaxRates::class);
+        $shop->method('taxAddress')->willReturnCallback(static function (Order $order): array {
+            $address = $order->getShippingAddress() ?: $order->getBillingAddress();
+            return ['country' => (string)$address->getCountryId(), 'postcode' => (string)$address->getPostcode()];
+        });
+        $shop->method('rates')->willReturnCallback(fn (Order $order, int $classId): array => $this->rates[$classId] ?? []);
+
+        return $shop;
     }
 
     private function records(string $merchantCountry): RecordProvider
@@ -706,7 +983,7 @@ class TaxCodeResolverTest extends TestCase
             'feeLineProviderPool' => $pool ?? new FeeLineProviderPool([]),
         ];
         if ($this->withResolver) {
-            $properties['taxCodeResolver'] = new TaxCodeResolver($config, $this->records($merchant));
+            $properties['taxCodeResolver'] = new TaxCodeResolver($config, $this->records($merchant), $this->shopRates());
         }
         foreach ($properties as $name => $value) {
             (new \ReflectionProperty(OrderService::class, $name))->setValue($service, $value);

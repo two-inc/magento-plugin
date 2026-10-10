@@ -714,6 +714,49 @@ tab stop back before the newly opened one takes its. A pointer press outside the
 open popover closes it too, with the company field counted as inside the
 control.
 
+## The company relay resolves an ISO 3166-2 region to the store's own
+
+The company lookup answers an address region as an ISO 3166-2 code ("ES-M",
+"IT-RM") for some countries, which no region select is labelled with. `CompanyLookup::get()` passes
+each address through `Service\Address\IsoRegionResolver`, which adds
+`region_id` and `region_code` from the store's own region rows when the code
+resolves, and leaves `region` exactly as answered (TWO-26263). Both checkouts
+select `region_id` when their select offers it, and otherwise fall back to
+matching the region text, where an unmatched own-country code is left out of
+the city (TWO-26258).
+
+The match is against the live directory rows, so a merchant's edited region
+list is respected. Only a code for the address's own country is considered,
+then the whole code, then its suffix (numeric suffixes as numbers, for France).
+Released core codes that are neither (all of ES, DE, AT and FI; some of FR,
+EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing in
+core's own `UpdateRegionCodesFor<Country>V1` patches that those rules miss,
+plus the ES-IB code those patches give the Balearic province. IN-DH is left
+out: it is a merged territory, and core's older "DN" is only half of it, so a
+match would select the wrong region for the other half. A core region
+the patches leave alone has no current ISO code (abolished Italian, Indian and
+Latvian units, US military and Pacific codes).
+
+Registries outside Spain do not all answer ISO codes: Italy's answers a bare
+province code ("RM") and France's a region name. After the ISO rules, and still
+within the address's own country only, the resolver takes a value equal to
+exactly one store region code, then a value equal to exactly one store region
+name (`RegionDirectory::namesForCountry()`: the default name and the store
+locale's name), both case-insensitively and the name ignoring accents
+(TWO-26266). A value two regions share selects neither: the US military "AE"
+code, and on a store carrying core's recoded Spanish rows the name Cantabria,
+both a province (ES-S) and a community (ES-CB); the recoding renames the other
+communities ("Madrid, Comunidad de"), so their provinces keep a name of their
+own. Checked over core 2.4.9 and develop region data, with core's renames
+applied: every region's own code and name resolves to itself or, for those
+shared ones, to nothing, no code equals another region's name, and every
+ISO-code result is unchanged. A French region name such as "ILE DE FRANCE" names
+no row in core's French list, which holds departments, so it still resolves to
+nothing. Anything else resolves to nothing and the address is relayed as before;
+do not add a guess or a fuzzy match, because a wrong region is worse than none.
+Both checkouts never append a region they selected to the city; one that
+resolved to nothing is appended as before.
+
 ## What focus landing on the checkout does to an open signup popup
 
 Every `focusin` while the hosted sole-trader signup window is up is classified
@@ -831,6 +874,157 @@ speaks through the chips' status region (below). Neither reads the other's
 state, so a buyer held for a stale total is never told they were declined, and
 a declined buyer is never told their term is still applying. A third condition
 added later needs its own region for the same reason.
+
+## An order intent is never sent for a company from another country
+
+An organisation number belongs to its own country's registry, and the intent
+and the order go out under the billing country, so the API refuses any other
+pairing (TWO-26295). Two guards, one per route a company can arrive by:
+`applyCompanyData()` refuses a stored company whose country stamp differs from
+the shipping panel's country (TWO-24867), and the source resolver never falls
+back from a number-less billing capture to the shipping company while the
+quote's shipping and billing addresses are in different countries. Both fail
+open while a country is unknown.
+
+The API's own text never reaches the buyer: it is written for an integrator or
+for the merchant. A refusal whose `error_json` names a field the buyer can fix
+says which, in our own words ("Phone Number is not valid."), with the field
+chosen from its path and never from the message; `Two::getFieldErrorLabels()` is
+the one path-to-label map, and both the order intent tile (through the checkout
+config) and order create read it. A path drops any segment starting with a
+capital letter, which is where a validator inserts model names. A refusal that
+names nothing the buyer can fix shows a standard message: the general error, or
+at order create the "not available for this order" notice for a non-validation
+refusal. `PROXY_REFUSED`, a refusal this module made before calling the API,
+keeps its own translated sentence. The buyer's return to the shop follows the
+same rule: `OrderService` throws `Exception\TwoRefusalException`, whose message
+is Two's full account for the order comment and admin notice, and whose buyer
+message is what the return pages show. All three return controllers (confirm,
+cancel, failed verification) hand any exception to
+`OrderService::failBuyerReturn()`, which restores the cart and fails the order
+(each step guarded, so neither can keep the buyer from a message) and answers
+the refusal's buyer message, this module's own translated sentence for a plain
+`LocalizedException`, or the general message for anything else, such as a
+database error, whose text is logged and never shown. A server error (5xx) is
+always generic, whatever field path it carries. The full detail always reaches
+the merchant through the error log or the order comment.
+
+## An offline invoice before the fulfilment trigger is commented, not refused
+
+With a fulfilment trigger other than `invoice`, `Two::canCapture()` is false, so
+the admin invoice form submits an offline capture and core records a Paid invoice
+without calling Two. An unverified order is refused that invoice outright
+(`Plugin\Model\Sales\RefuseInvoiceWhileUnverified`, TWO-26294). A verified one
+is allowed, and `Observer\InvoiceRegisteredOffline` adds one merchant-only order
+comment on `sales_order_invoice_register`, which core dispatches once per invoice
+(TWO-26302). Online captures and other payment methods get nothing.
+
+**The plugin's own fulfilment invoices are flagged.** The shipment and
+status-change flows also register offline invoices, after Two has been told, and
+set `InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER` on the invoice first. A
+new code path that registers an invoice after fulfilling with Two must set it
+too, or the merchant is told Two was not notified when it was.
+
+**The status-change fulfilment is gated on the fulfilment marker, not on an
+invoice.** `SalesOrderSaveAfter` used to return early on `hasInvoices()`, which
+made a merchant's offline invoice suppress the fulfilment for good. It now
+returns early only once the payment carries `marked_completed`, which every
+successful fulfilment sets (its own, the shipment observer's and
+`Two::capture()`) and which the order save persists with the payment. A
+fulfilment sets it, with the completion comment, only when Two's response
+carries the fulfilled order's id; Two returns that id on every accepted full or
+partial fulfilment, so a response without it marks nothing. A merchant
+invoice for everything leaves a zero-total invoice, which is not created; a
+partial one leaves the rest for the plugin's invoice. `FulfilmentInvoiceTest`
+saves the order twice per case, in two requests, and pins one fulfil.
+
+**The fulfilment waits for the commit.** Core's refund routes save the order and
+the credit memo one after the other, so `sales_order_save_after` can fire with
+the memo not yet saved: the REST routes (`RefundOrderInterface`,
+`RefundInvoiceInterface`) save the order first. So `Observer\SalesOrderSaveAfter`
+only decides, and `Service\Order\StatusFulfilment` sends:
+
+-   **Synchronous, as before:** the gate (Two order, `complete` trigger, a
+    fulfil-on status, no marker) and the whole-order check, which still refuses
+    the merchant's save with its error.
+-   **Then deferred to the commit.** The observer registers a commit callback on
+    the sales connection, which core's `ExecuteCommitCallbacks` plugin on the
+    database adapter runs after the outermost commit and drops on a rollback.
+    The callback reloads the order through `OrderFactory` and the resource model
+    (the repository hands back the instance the save was working on),
+    re-checks it and fulfils it. Once Two accepts, the marker, the comment, the
+    plugin's invoice and the order with its invoiced totals are saved in one
+    transaction on the sales connection. With no transaction open it runs at
+    once; the order's own save always holds one when the event fires, so that
+    branch only serves a dispatch outside a save.
+
+**This relies on core running the refund saves inside one transaction.** From
+2.4.6, the module's minimum, it does on every core route: the REST routes run
+inside the order lock, whose executor wraps the order and memo saves in one
+transaction, and the admin credit memo (`CreditmemoService::refund()`) wraps both
+in an adapter transaction. A refund made by another extension's own code that
+saves the order and the memo without a transaction is not covered: the callback
+runs after the order's own commit, before the memo exists, so what that memo
+refunds of the fee-provider lines and the other charges is not netted out.
+
+**A failed fulfilment is commented, not thrown.** When it runs, the merchant's save
+or refund has already succeeded, and throwing would report a failed refund that in
+fact went through. The order gets the comment "Failed to fulfil order with Two.
+Reason: ...", the wording a failed refund uses; an admin request also gets it as an
+error message (REST and other callers get nothing extra); and
+`StatusFulfilmentFailed` is logged at error. That covers a refusal by Two and one by
+the postprocessing hook alike. The marker stays unset, so the next save of the
+order while it is in a fulfil-on status tries again. If Two accepts but saving
+the order and invoice then fails, all of it rolls back, and the comment says
+instead that Two fulfilled the order but it could not be saved
+(`StatusFulfilmentNotSaved` at error). If that rollback itself fails, it is
+logged on its own line (`StatusFulfilmentRollBackFailed` at error), and the
+original reason the save failed is still reported in the log and the admin
+message. The order comment is written only if the connection still works: a
+rollback that fails because the connection was lost leaves the adapter inside
+the transaction, so the comment's save fails too and is logged as a
+`report_error`. The admin message is shown before the comment is saved, so a
+failed comment cannot suppress it.
+
+**Never twice.** The callback's own order save fires the observer again, and the
+marker it has just set stops it; two saves in one transaction register two
+callbacks, and the second finds the marker. `Service\Order\FulfilmentAttempts`
+records each order sent in the request, refused or not, which stops a copy of
+the order loaded before the marker was set from fulfilling again when it is
+saved later in the same request. The payment resource is version-controlled, so
+an unmodified stale payment is not written and the saved marker survives; the
+record matters when that copy's payment was changed, since its save then writes
+the payment back without the marker, and after a refusal or timeout, when there
+is no marker at all. The request's own order instance (and the one in the
+repository registry and in `sales_order_save_commit_after`) is stale once the
+callback has run: a later modifying save of it in the same request would write
+the pre-fulfilment totals back over the callback's. No core route does this.
+
+**Refunds before that fulfilment are netted out.** Once the merchant can invoice
+first, they can also credit-memo first. The whole-order check counts refunded and
+cancelled quantity as not waiting to ship, and when anything was refunded or
+cancelled the fulfilment is sent as a `partial` body built by
+`ComposeShipment::executeNetOfRefunds()`: each line prorated to its net quantity,
+shipping only while none of it was refunded. It is the only fulfilment the order
+gets, so unlike a shipment's partial it also carries the charges no item owns,
+each less what the credit memos refunded of it: the surcharge (its amount less
+`two_surcharge_refunded`), each fee-provider line (less that provider's lines on
+the saved memos) and the other-charges residual (less the memos'
+`two_other_charges_amount`). The memos come from a fresh credit memo query, not
+`Order::getCreditmemosCollection()`: the order caches that collection once
+loaded, and the memo whose refund moved the order into the fulfil-on status can
+be missing from it. A cancelled memo refunded nothing and counts for nothing.
+Tax shrinks in proportion, so each line keeps its declared rate, and a charge
+with nothing refunded goes in exactly as the order line. With nothing left, nothing is sent. The Two remainder of such a partial
+fulfilment stays open, as it does after a partial shipment the merchant never
+completes.
+
+**An offline invoice is also one with no capture case** where the method cannot
+capture online: the REST invoice route names no capture case.
+
+**The comment names the trigger.** On shipment, or on reaching one of the
+configured fulfil-on statuses by their labels. With no status configured the
+complete trigger never fulfils, so no comment is added there.
 
 ## The term chips are a radio group
 
@@ -1041,8 +1235,9 @@ dependency that way and relying on DI to fill it in gets you a silent
 `bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
 (value null) instead of `"_i_"` (instance); that is the check.
 
-`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool` and
-`Service\Order::$taxCodeResolver` are all declared optional for constructor BC and all named explicitly in
+`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool`,
+`Service\Order::$taxCodeResolver` and `Service\Order::$creditmemoCollectionFactory`
+are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 
@@ -1080,7 +1275,10 @@ plugin never refuses over shipping tax. Populated, the rate resolves through
 that class and the tax rules engine, with the arguments core's quote-time tax
 calculator uses, including the tax class of the customer group the order was
 placed under (TWO-26073), and the line's tax must reconcile with it within
-0.02 or the request is refused. A declared rate, 0% included, is always sent
+0.02 or the request is refused. That reconcile is a shop-match check
+(TWO-26276): the builders compose the line with `getTaxRateShipping($entity,
+false)`, and the postprocessing hook's default handler runs
+`assertShippingTaxFallback()` after the hook, unless a subscriber took it over. A declared rate, 0% included, is always sent
 as is and never checked by the plugin. A refund relays the rate without the
 check. The plugin has no shipping tax setting of its own.
 
@@ -1095,14 +1293,39 @@ request reads that record and never the current configuration; a `none` with a
 rate is re-checked against it (except on refund). Both NULL is an order placed
 before the record existed, which resolves live as at placement.
 
-`validateTaxReconciliation()` closes the same loop at composition time: a
-line other than shipping whose declared tax does not follow from its own
-declared rate and net declines the checkout with a generic buyer notice. It never corrects the
-numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
-the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
-fraction-of-net term, and a discounted line may reconcile against
-`net + discount` as well as `net`, because "Before Discount" tax calculation
-taxes the undiscounted base.
+The plugin does not reconcile a line other than shipping against its own
+declared rate and net, on any request, with or without a subscriber: whether a
+payload adds up is for Two's API to validate (TWO-26284). Do not add such a check
+back after the hook; only a shop-match check, which compares with shop data the
+API cannot see, belongs there.
+
+## The postprocessing hook's checks: shop-match only
+
+After the hook, `OrderPostprocessor` refuses only a subscriber code fault
+(it throws, returns a non-array, or returns a payload that cannot be
+JSON-encoded) and lets a shop-match refusal through. Whether the payload adds
+up is left to Two's API (TWO-26284).
+
+Shop-match checks ask whether what the plugin built matches the shop.
+`Service\Order\ShopMatchChecks` holds them (today the shipping tax fallback
+reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface` for a
+subscriber that opts back in. They run in the hook's default handler,
+`Plugin\OrderPostprocessing\ShopMatchDefaultHandler`, a plugin named
+`two_gateway_shop_match_checks`, which stands down and logs
+`OrderPostprocessingShopMatchDelegated` when any other handler is registered.
+Each applies to the line the plugin built while the result carries it
+unchanged.
+
+`Service\Order\PostprocessingSubscribers` detects other handlers from the
+shared `PluginListInterface`, walking `getNext()` from `__self` through each
+around plugin as the generated interceptor does, for the interceptor's own
+type, so what it counts is exactly what runs in the request's area; a
+preference replacing `Model\OrderPostprocessing` counts too. Do not replace it
+with a read of the merged di.xml: that ignores area, `disabled` and module
+state. A shop-match refusal is a `ShopMatchRefusedException`, which
+`OrderPostprocessor` lets through its catch-all, so it never reads as
+`HOOK_FAILED`. Do not move a shop-match check back into a builder, where a
+subscriber cannot take it over.
 
 ## A 0% line carries a tax code, resolved in the builder
 
@@ -1112,16 +1335,64 @@ taxes the undiscounted base.
 payload before the postprocessing hook runs and a subscriber can override it.
 Order intent is left alone: the API does not check codes there.
 
-The order is: the merchant's mapping (`tax_code_map`, product tax class id to
-code; the shipping line keys on core's shipping tax class, the surcharge on its
-own), then, for a merchant whose record says `country_code` ES, the derivation
-table in the README, then nothing. **The plugin never refuses over a missing
-code**: the API does. Do not add a guard that declines a Spanish 0% line with
-no code; the line is sent and Two decides.
+The rows live in `tax_code_map` as JSON keyed `<product tax class>|exempt`,
+`<class>|rate:<tax rate code>` and `<class>|none` (`Model\Config\Backend\TaxCodeMap`).
+The form posts the whole map as one hidden JSON field that
+`Two_Gateway/js/tax-code-map` rewrites from the dropdowns: a rate code can
+hold any character, and one field per row could pass `max_input_vars`, where
+PHP silently drops the rest and the save would delete rows. A post that is not
+a JSON object is refused, never stored as empty. The shipping line keys on core's shipping tax class, the
+surcharge on its own; lines with no class (`OTHER` fees, a flat-rate
+surcharge, the refund `adjustment`, an unmatched product line) have no key.
+For each 0% line the first match wins (TWO-26153; by design the plugin
+never decides how the merchant levies tax, it reads which of their rows the
+line falls under):
+
+1. Exempt buyer: billing country and tax address both in the EU VAT area
+   (`EU` plus GB with a BT postcode) and not the merchant record's country,
+   which must be known, and `buyerVatNumber()` non-empty. The class's `exempt` row.
+2. The class's rates at the tax address from core, via `Service\Order\ShopTaxRates`:
+   `Calculation::getRateRequest()` with the order's addresses, the
+   order-time customer group's tax class and the store, then
+   `getAppliedRates()` per product class. Core drops 0% rates from applied
+   taxes (`AbstractCalculator::getAppliedTaxes()`), so the order holds no
+   record of them, but `getAppliedRates()` keeps them with their `code`. All
+   0%: the first rate's `rate:<code>` row. Any rate above 0%: no code.
+3. No rate: the class's `none` row.
+4. No class: the single code the payload's step 1 to 3 lines (and, on a later
+   payload, the recorded lines other than `fee`) share; none if they disagree.
+
+A matched row left on (none) never falls through. The tax address is the
+rate request's (core's `tax/calculation/based_on`), the same address core
+taxed the line on. `ZeroTaxRates` lists each class's 0% rates for the admin
+rows and for the `FanOutTaxCodeMap` data patch, which copies each old
+`class => code` entry to that class's `exempt`, `none` and existing rate rows.
+
+There is no step after these: the plugin never works a code out itself
+(TWO-26153). A line whose rows are not set gets no code, and so does a
+classless line when the step 1 to 3 lines give nothing to share. Do not add a
+fallback that picks a code from the addresses or the product type; the
+merchant's rows are the only source.
+
+Step 1's VAT number comes from `TaxCodeResolver::buyerVatNumber()`, which
+reads the billing address `vat_id`, then
+the order's `customer_taxvat`, and uses it exactly as entered, trimmed of
+leading and trailing whitespace and nothing else (no case change, no
+characters stripped, no prefix guessed; blank is no number). A `vat_id`
+refused by Magento's VAT check (`vat_request_success` true and `vat_is_valid` set and
+false) gives no number at all and never falls back to `customer_taxvat`, which
+often holds the same number. Core stores a failed request as invalid too, and
+that alone must not drop the number. The same number goes on order
+create only as `buyer_vat_number` (`vatNumberToSend()`), for an ES merchant
+and a non-ES buyer: the API requires an ES buyer's VAT number to equal its
+organisation number, an edit that omits the key keeps the stored value, and
+every other merchant's payload stays byte-identical. **The plugin never
+refuses over a missing code**: the API does. Do not add a guard that declines
+a Spanish 0% line with no code; the line is sent and Two decides.
 
 Two rules hold the invariants and should not be loosened:
 
--   A non-zero line, and every line of a non-Spanish merchant with no mapping,
+-   A non-zero line, and every line of a non-Spanish merchant with no row set,
     is composed byte for byte as before. `TaxCodeResolverTest` pins that by
     composing each payload with and without the resolver.
 -   The merchant's country is the merchant record's, never the store's
@@ -1132,23 +1403,27 @@ Placement stores what each 0% line resolved to, "no code" included, in
 `sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, then
 `shipping`, `surcharge`, and one shared `fee` key for every other `OTHER` or
 `BUYER_FEE` line), the same pattern as the shipping rate record. Fee lines
-share a key because they all resolve alike (no class, the order's goods or
-service type) and because a fee can change id after placement: a provider that
-itemizes only a saved order leaves the create with an "Other charges" residual
-and the edit with its own line. The refund `adjustment` line is deliberately
-not recorded and keeps resolving live until its split is decided. Edit,
-capture, shipment and refund read the record and never resolve those lines
+share a key because they all resolve alike (no class, so step 4) and because
+a fee can change id after placement: a provider that itemizes only a saved
+order leaves the create with an "Other charges" residual and the edit with its
+own line. The record's `shared` key lists the codes steps 1 to 3 gave at
+placement; the refund `adjustment` line is not recorded and takes step 4 over
+that list. A record written before the key existed shares the codes its
+recorded lines carry instead, other than `fee`'s; with none, or disagreeing
+ones, no code. Edit, capture, shipment and refund read the record and
+never resolve those lines
 again; a line it does not cover, or an order placed before it existed,
 resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
 items, so a fee provider's numeric id is never taken for one, and a product
-line no item matches takes goods or service from its own type. At placement
+line no item matches has no class, so step 4. At placement
 the items have no id, so `ComposeOrder` matches its product lines to the
 items behind them on SKU, the name only breaking a tie, never by position
 (`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
 shift classes. The dropdown list comes from
 `Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
-when it cannot be read, the admin field carries the saved mapping as hidden
-inputs so a section save keeps it.
+the hidden field starts as the saved map, so a save while that list cannot be
+read keeps it, and it carries saved rows the form no longer shows (a rate
+deleted or raised above 0%).
 
 ## An unitemized fee is reconciled per entity, and refundable
 

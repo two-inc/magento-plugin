@@ -56,12 +56,14 @@ class ComposeIntent
     /**
      * @param Quote $quote
      * @param array $buyer
+     * @param Order|null $order The quote already converted by toOrder(), which the caller hands the
+     *                          postprocessing hook as `intent_order` (TWO-26276); converted here if null.
      * @return array
      * @throws LocalizedException
      */
-    public function execute(Quote $quote, array $buyer): array
+    public function execute(Quote $quote, array $buyer, ?Order $order = null): array
     {
-        $order = $this->toOrder($quote);
+        $order = $order ?? $this->toOrder($quote);
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
 

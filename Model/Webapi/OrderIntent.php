@@ -112,7 +112,8 @@ class OrderIntent implements OrderIntentInterface
 
         try {
             $quote = $this->checkoutSession->getQuote();
-            $body = $this->composeIntent->execute($quote, $request['buyer']);
+            $order = $this->composeIntent->toOrder($quote);
+            $body = $this->composeIntent->execute($quote, $request['buyer'], $order);
             $body['merchant_id'] = $merchantId;
             // Absent means absent — upstream reads an absent key and an explicit
             // null apart.
@@ -126,7 +127,13 @@ class OrderIntent implements OrderIntentInterface
                     $this->orderPostprocessor->process(
                         OrderPostprocessingInterface::REQUEST_ORDER_INTENT,
                         $body,
-                        ['trigger' => 'checkout', 'endpoint' => self::ENDPOINT, 'quote' => $quote]
+                        [
+                            'trigger' => 'checkout',
+                            'endpoint' => self::ENDPOINT,
+                            'quote' => $quote,
+                            // The order the lines were built from, for the shop-match checks (TWO-26276).
+                            'intent_order' => $order,
+                        ]
                     ),
                     'POST',
                     $storeId

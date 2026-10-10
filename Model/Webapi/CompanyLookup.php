@@ -10,6 +10,7 @@ namespace Two\Gateway\Model\Webapi;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
+use Two\Gateway\Service\Address\IsoRegionResolver;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -45,7 +46,8 @@ class CompanyLookup implements CompanyLookupInterface
         private readonly SettingsProvider $settingsProvider,
         private readonly RateLimiter $rateLimiter,
         private readonly LogRepository $logRepository,
-        private readonly CheckoutSession $checkoutSession
+        private readonly CheckoutSession $checkoutSession,
+        private readonly IsoRegionResolver $regionResolver
     ) {
     }
 
@@ -103,7 +105,29 @@ class CompanyLookup implements CompanyLookupInterface
             $endpoint .= '?' . http_build_query($merchant);
         }
 
-        return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId()));
+        return $this->envelope($this->withStoreRegions(
+            $this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId())
+        ));
+    }
+
+    /**
+     * TWO-26263, TWO-26266: each address whose region (an ISO 3166-2 code, a bare
+     * store code or a region name) resolves to one of the store's own regions
+     * gains `region_id` and `region_code`, so a checkout can select it.
+     * `region` itself is relayed as answered.
+     *
+     * @param array{status: int, body: mixed} $result from Adapter::executeWithStatus()
+     * @return array{status: int, body: mixed}
+     */
+    private function withStoreRegions(array $result): array
+    {
+        $status = (int)($result['status'] ?? 0);
+        $addresses = $result['body']['addresses'] ?? null;
+        if ($status >= 200 && $status < 300 && is_array($addresses)) {
+            $result['body']['addresses'] = array_map([$this->regionResolver, 'enrich'], $addresses);
+        }
+
+        return $result;
     }
 
     /**

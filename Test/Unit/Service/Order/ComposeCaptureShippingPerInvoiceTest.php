@@ -10,7 +10,14 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
+use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
+use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Order\ComposeCapture;
+use Two\Gateway\Service\Order\PostprocessingTotals;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\PostprocessorFactory;
+use Two\OrderPostprocessingFixture\Plugin\Subscriber;
+
+require_once __DIR__ . '/../../../Integration/OrderPostprocessingFixture/Plugin/Subscriber.php';
 
 /**
  * TWO-26091: Magento invoices shipping once, on whichever invoice is created
@@ -24,6 +31,8 @@ use Two\Gateway\Service\Order\ComposeCapture;
  */
 class ComposeCaptureShippingPerInvoiceTest extends TestCase
 {
+    use PostprocessorFactory;
+
     private const ORDER_SHIPPING = [10.00, 2.50];
 
     public static function captureProvider(): array
@@ -84,6 +93,50 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
             "$description: taxable_amount vs line nets"
         );
         $this->assertSame($payload['tax_amount'], $this->sum($subtotals, 'tax_amount'), "$description: subtotal tax");
+    }
+
+    /**
+     * TWO-26276: execute() composes an invoice's shipping line without the
+     * fallback reconcile, so a mismatch reaches the hook. With no subscriber
+     * the default handler refuses it in today's merchant wording; with one,
+     * the capture is sent as composed.
+     *
+     * @dataProvider mismatchCases
+     */
+    public function testAFallbackMismatchOnTheInvoiceIsTheDefaultHandlersToRefuse(
+        bool $subscriber,
+        string $description
+    ): void {
+        Subscriber::$mode = null;
+        // 10.00 of shipping charged untaxed, against the fallback's 25%.
+        $invoice = $this->invoice([[100.00, 25.00, 25]], [10.00, 0.00]);
+        $payload = ['partial' => $this->composeCapture()->execute($invoice)];
+        $log = $this->createMock(LogRepository::class);
+        $hook = $this->hookChain($log, $subscriber
+            ? ['two_order_postprocessing_fixture' => new Subscriber(new PostprocessingTotals(), $this->shopMatchChecks($log))]
+            : []);
+        $context = ['trigger' => 'invoice', 'endpoint' => 'test', 'order' => $invoice->getOrder(), 'invoice' => $invoice];
+
+        try {
+            $sent = $this->buildPostprocessor($hook, null, $log)->process(Hook::REQUEST_CAPTURE, $payload, $context);
+            $this->assertTrue($subscriber, "$description: nothing was refused");
+            $this->assertSame($payload, $sent, $description);
+        } catch (ShopMatchRefusedException $e) {
+            $this->assertFalse($subscriber, "$description: refused despite a subscriber");
+            $this->assertStringStartsWith(
+                'Shipping tax on this order does not match the rate of the Tax Class for Shipping',
+                $e->getMessage(),
+                $description
+            );
+        }
+    }
+
+    public static function mismatchCases(): array
+    {
+        return [
+            [false, 'no subscriber: refused in the merchant wording'],
+            [true, 'a subscriber: sent as composed'],
+        ];
     }
 
     private function sum(array $rows, string $key): string

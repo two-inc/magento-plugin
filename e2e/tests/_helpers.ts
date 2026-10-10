@@ -23,6 +23,8 @@ export async function availableMethods(page: Page): Promise<string[]> {
     return page.evaluate(
         () =>
             new Promise<string[]>((resolve) => {
+                // Mid-reload the new document has no RequireJS yet; keep the caller polling.
+                if (typeof (window as any).require !== 'function') return resolve([]);
                 (window as any).require(
                     ['Magento_Checkout/js/model/payment-service'],
                     (ps: any) => {
@@ -38,6 +40,8 @@ async function shippingAmount(page: Page): Promise<number> {
     return page.evaluate(
         () =>
             new Promise<number>((resolve) => {
+                // Mid-reload the new document has no RequireJS yet; keep the caller polling.
+                if (typeof (window as any).require !== 'function') return resolve(NaN);
                 (window as any).require(['Magento_Checkout/js/model/quote'], (q: any) => {
                     // totals() can be momentarily null mid-recalc — exactly the
                     // window we poll in; NaN keeps the caller polling.
@@ -50,10 +54,12 @@ async function shippingAmount(page: Page): Promise<number> {
 
 // Whether the checkout has reached the payment step, per Magento's own
 // step-navigator (the authority the checkout renders from).
-async function onPaymentStep(page: Page): Promise<boolean> {
+async function onPaymentStep(page: Page): Promise<boolean | null> {
     return page.evaluate(
         () =>
-            new Promise<boolean>((resolve) => {
+            new Promise<boolean | null>((resolve) => {
+                // Mid-reload the new document has no RequireJS yet; keep the caller polling.
+                if (typeof (window as any).require !== 'function') return resolve(null);
                 (window as any).require(
                     ['Magento_Checkout/js/model/step-navigator'],
                     (nav: any) => {
@@ -143,11 +149,17 @@ export async function addToCart(page: Page) {
 export const COMPANY_FIELD = '#shipping-new-address-form input[name="company"]';
 
 function companyWrap(page: Page, fieldSelector = COMPANY_FIELD) {
-    return page.locator(fieldSelector).locator('xpath=ancestor::*[contains(@class,"two-company-field-wrap")][1]');
+    return page
+        .locator(fieldSelector)
+        .locator('xpath=ancestor::*[contains(@class,"two-company-field-wrap")][1]');
 }
 
 // Open the popover, search, and take the first hit.
-export async function selectCompany(page: Page, query = COMPANY_QUERY, fieldSelector = COMPANY_FIELD) {
+export async function selectCompany(
+    page: Page,
+    query = COMPANY_QUERY,
+    fieldSelector = COMPANY_FIELD
+) {
     const wrap = companyWrap(page, fieldSelector);
     const panel = wrap.locator('.two-company-dropdown');
 
@@ -193,6 +205,21 @@ export async function adminLogin(page: Page, user = process.env.ADMIN_USER || 'b
     await page.fill('#login', process.env.ADMIN_PASS || '');
     await page.locator('.action-login, button.action-primary').first().click();
     await page.waitForURL(/dashboard/, { timeout: 30_000 }).catch(() => {});
+}
+// End the admin session so CI never leaves e2e_ci logged in. Best effort: runs in
+// teardown, after failures too.
+export async function adminLogout(page: Page) {
+    try {
+        if (!/\/admin\//.test(page.url()))
+            await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+        const href = await page
+            .locator('a.account-signout')
+            .first()
+            .getAttribute('href', { timeout: 5_000 });
+        if (href) await page.goto(href, { waitUntil: 'domcontentloaded' });
+    } catch {
+        // not logged in, or the page is already gone
+    }
 }
 // The admin secret-key changes per session; grab it from any config link.
 export async function configKey(page: Page): Promise<string> {

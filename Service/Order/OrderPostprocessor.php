@@ -15,10 +15,14 @@ use Throwable;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
+use Two\Gateway\Exception\ShopMatchRefusedException;
 
 /**
  * Every order request passes through here just before it is sent (TWO-26092). A subscriber's
- * result is sent as returned: the plugin checks only what it builds, and Two's API validates the rest.
+ * result is sent as returned; only a fault in the subscriber's code refuses it, or a shop-match
+ * refusal from the checks it opted back into. Whether the payload adds up is for Two's API to
+ * validate (TWO-26284). The shop-match checks belong to the hook's default handler, which stands
+ * down for a subscriber (TWO-26276).
  */
 class OrderPostprocessor
 {
@@ -32,9 +36,6 @@ class OrderPostprocessor
 
     /** Requests whose refusal reaches the buyer rather than the merchant. */
     private const BUYER_FACING = [Hook::REQUEST_ORDER_INTENT, Hook::REQUEST_ORDER_CREATE];
-
-    /** Composed by ComposeOrder, which ran the line tax gate before the hook existed. */
-    private const LINE_TAX_GATED = [Hook::REQUEST_ORDER_CREATE, Hook::REQUEST_ORDER_UPDATE];
 
     /**
      * @var ComposeOrder
@@ -90,15 +91,11 @@ class OrderPostprocessor
      * @param array $context trigger, endpoint and the platform objects
      *                       (quote or order, invoice, shipment, creditmemo).
      * @return array
-     * @throws LocalizedException when the plugin's own lines fail the tax reconcile, or the hook
-     *                            throws or returns what cannot be sent on a request with a body
+     * @throws LocalizedException when a shop-match check refuses, or the hook throws or returns what
+     *                            cannot be sent on a request with a body
      */
     public function process(string $requestType, array $payload, array $context): array
     {
-        if (in_array($requestType, self::LINE_TAX_GATED, true)) {
-            $this->orderService->validateTaxReconciliation($payload['line_items'] ?? []);
-        }
-
         $context = $this->buildContext($requestType, $context);
         if (in_array($requestType, self::BODYLESS, true)) {
             return $this->processBodyless($context);
@@ -106,6 +103,9 @@ class OrderPostprocessor
 
         try {
             $result = $this->hook->process($payload, $context);
+        } catch (ShopMatchRefusedException $e) {
+            // The default handler's refusal, or a subscriber's through the opt-in checks: not a hook bug.
+            throw $e;
         } catch (Throwable $e) {
             // A non-array return lands here too, as the interface's return type fails.
             throw $this->refusal(self::HOOK_FAILED, $context, [
