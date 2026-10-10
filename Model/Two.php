@@ -511,9 +511,9 @@ class Two extends AbstractMethod
      * Get error from response
      *
      * With $atOrderCreate, any refusal at status 400 or above shows the buyer
-     * the field validation messages if there are any, else the same-company
-     * message, else a generic notice; a call that got no HTTP response shows
-     * the general error. The API's own error message and trace id speak to
+     * the general error when the API reported field validation failures, else
+     * the same-company message, else a generic notice; a call that got no HTTP
+     * response shows the general error too. The API's own error message and trace id speak to
      * the integration, not the buyer (TWO-26259), and the merchant finds them
      * in the error log. Same order as the WooCommerce plugin.
      *
@@ -547,7 +547,11 @@ class Two extends AbstractMethod
 
         if ($atOrderCreate && $status !== null && $status >= 400) {
             if ($validation !== null) {
-                return $validation;
+                // The validator's text is written for an integrator (a field
+                // path, an identifier format), so the buyer gets the general
+                // message and the merchant finds the detail in the error log
+                // (TWO-26295).
+                return $generalError;
             }
             if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
                 return $sameCompany;

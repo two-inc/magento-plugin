@@ -304,6 +304,8 @@ describe('gateway_method intent-approved notice', () => {
     test.each([
         [{ error_code: 'SCHEMA_ERROR', error_message: 'invalid company number', error_details: 'number' }, 'a field failing validation'],
         [{ error_code: 'JSON_MISSING_FIELD', error_details: 'a field is missing' }, 'a field missing'],
+        [{ error_code: 'ORDER_INVALID', error_message: 'Order is invalid', error_details: 'a field path' }, 'an order the API calls invalid'],
+        [{ error_code: 'MERCHANT_NOT_FOUND_ERROR', error_message: 'Merchant not found', error_details: 'detail' }, 'a shop configuration fault'],
         [{ error_code: 'SOMETHING_NEW', error_message: 'unexpected', error_details: 'detail' }, 'a code the tile does not know']
     ])('a refused request (%j) shows the general message, never the API text (%s)', (body, description) => {
         // TWO-26295: the API's own wording is for an integrator; a buyer shown
@@ -331,12 +333,14 @@ describe('gateway_method intent-approved notice', () => {
 
         ctx.processOrderIntentErrorResponse.call(ctx, {
             responseJSON: {
-                error_code: 'ORDER_INVALID',
-                error_message: 'Order is invalid'
+                error_code: 'PROXY_REFUSED',
+                error_message: 'The service is temporarily unavailable. Please try again.'
             }
         });
 
-        expect(ctx.orderIntentErrorNotice()).toBe('Order is invalid');
+        // PROXY_REFUSED is this module's own translated refusal, so its
+        // sentence is the one shown.
+        expect(ctx.orderIntentErrorNotice()).toBe('The service is temporarily unavailable. Please try again.');
     });
 
     test('an approval clears a previous error box', () => {

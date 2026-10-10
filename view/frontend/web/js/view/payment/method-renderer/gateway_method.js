@@ -1513,27 +1513,17 @@ define([
                 return;
             }
 
-            // A request the API refused as malformed (a field failing
-            // validation, a field missing) falls through to the general
-            // message (TWO-26295): its own text is written for an integrator,
-            // and a buyer shown it has nothing to act on.
+            // Every refusal from the API shows the general message
+            // (TWO-26295): its own text is written for an integrator or the
+            // merchant, and a buyer shown it has nothing to act on. The one
+            // exception is a refusal this module made itself before calling
+            // the API (PROXY_REFUSED), whose message is our own translated
+            // sentence.
             let message = this.generalErrorMessage;
-            if (response && response.responseJSON) {
-                const errorCode = response.responseJSON.error_code,
-                    errorMessage = response.responseJSON.error_message,
-                    errorDetails = response.responseJSON.error_details;
-                switch (errorCode) {
-                    case 'PROXY_REFUSED':
-                        message = errorMessage;
-                        break;
-                    case 'MERCHANT_NOT_FOUND_ERROR':
-                    case 'ORDER_INVALID':
-                        message = errorMessage;
-                        if (errorDetails) {
-                            message += ' - ' + errorDetails;
-                        }
-                        break;
-                }
+            if (response && response.responseJSON
+                && response.responseJSON.error_code === 'PROXY_REFUSED'
+                && response.responseJSON.error_message) {
+                message = response.responseJSON.error_message;
             }
             if (message) {
                 // The tile's own bordered box, not the checkout message

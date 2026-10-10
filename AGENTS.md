@@ -886,9 +886,13 @@ back from a number-less billing capture to the shipping company while the
 quote's shipping and billing addresses are in different countries. Both fail
 open while a country is unknown.
 
-A refused intent request shows the general error message, never the API's own
-text: that is written for an integrator, and a buyer shown it has nothing to
-act on.
+Every refusal the API gives the order intent shows the general error message,
+whatever its code, never the API's own text: that is written for an
+integrator or for the merchant, and a buyer shown it has nothing to act on. The
+one exception is `PROXY_REFUSED`, a refusal this module made before calling the
+API, whose message is our own translated sentence. Order create follows the
+same rule for field validation failures: the buyer gets the general error and
+the validator's text goes to the error log with the rest of the refusal.
 
 ## The term chips are a radio group
 
