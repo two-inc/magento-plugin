@@ -203,8 +203,8 @@ class TaxCodeResolver
      * letters and digits removed (whitespace of every kind, dots, hyphens,
      * slashes), and the address country added in front when it does not start
      * with two letters (Greece's prefix is EL, Monaco's FR). '' when nothing is
-     * left or what is left holds no digit, so a placeholder such as "n/a" is
-     * no number.
+     * left; any other value is taken as the number the buyer gave, so "n/a"
+     * is the number NA.
      *
      * @param string $raw as the shop holds it
      * @param string $country the address country it belongs to, '' for none
@@ -212,7 +212,7 @@ class TaxCodeResolver
     public static function normaliseVatNumber(string $raw, string $country): string
     {
         $vat = (string)preg_replace('/[^A-Z0-9]+/', '', strtoupper($raw));
-        if (!preg_match('/\d/', $vat)) {
+        if ($vat === '') {
             return '';
         }
         if (preg_match('/^[A-Z]{2}/', $vat)) {

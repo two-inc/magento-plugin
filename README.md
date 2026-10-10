@@ -224,8 +224,8 @@ A line's code comes from the first of these that gives one:
    order has no buyer VAT number at all: the customer's Tax/VAT number is not
    used in its place, since it often holds the same number. A check that
    could not reach the VAT service keeps the number. Everything but letters
-   and digits is removed and it is upper-cased, and a value with no digit
-   (such as "n/a") is no number; a number that does not start with two
+   and digits is removed and it is upper-cased, and only a value with
+   nothing left is no number; a number that does not start with two
    letters gets the billing country in front (`EL` for Greece, `FR` for
    Monaco). The prefix `EL` counts as Greece, and `MC` is not a VAT prefix.
    Order create also sends it to Two as `buyer_vat_number`, for a

@@ -245,7 +245,7 @@ class TaxCodeResolverTest extends TestCase
             ['123456789', '', '123456789', 'no address country leaves it unprefixed'],
             [' .- ', 'DE', '', 'nothing left is no number'],
             ["de\u{00A0}123\t456\n789", 'DE', 'DE123456789', 'strips no-break spaces, tabs and newlines'],
-            ['n/a', 'DE', '', 'a placeholder with no digit is no number'],
+            ['n/a', 'DE', 'NA', 'a value with no digit is still a number'],
             ['DE/123456789', 'DE', 'DE123456789', 'strips a slash'],
         ];
     }
