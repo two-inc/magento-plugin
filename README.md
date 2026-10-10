@@ -199,25 +199,47 @@ A line's code comes from the first of these that gives one:
    the billing country the plugin sends. The Canary Islands, Ceuta and Melilla
    (Spanish postcodes starting 35, 38, 51 or 52) count as outside the EU: the
    delivery postcode decides for goods, the billing postcode for services.
+   Both intra-community codes also need the buyer's VAT number, with a prefix
+   naming an EU state other than your own country (see below); without one
+   the line gets no code.
 
    | Line | Where | Code |
    |---|---|---|
    | Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
    | Goods | Delivered to the Canary Islands, Ceuta or Melilla | `ES_IVA_EXPORT` |
-   | Goods | Delivered to another EU state, buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY` |
+   | Goods | Delivered to another EU state, buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY` |
+   | Goods | Delivered to another EU state for a buyer with no such VAT number | none |
    | Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
-   | Service | Buyer in an EU state other than Spain | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
+   | Service | Buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
+   | Service | Buyer in an EU state other than Spain with no such VAT number | none |
    | Service | Buyer outside the EU, or billed in the Canary Islands, Ceuta or Melilla | `ES_IVA_NON_EU_SERVICES` |
    | Service | Buyer in mainland Spain or the Balearics | none |
 
    Monaco counts as part of the EU (through France). Two only sells to
    verified businesses, so every buyer counts as a business.
+
+   **The buyer's VAT number** (TWO-26153) is the order billing address's VAT
+   number, and otherwise the customer's Tax/VAT number. When Magento's VAT
+   check got an answer that marked the billing address's number invalid, the
+   order has no buyer VAT number at all: the customer's Tax/VAT number is not
+   used in its place, since it often holds the same number. A check that
+   could not reach the VAT service keeps the number. Everything but letters
+   and digits is removed and it is upper-cased, and a value with no digit
+   (such as "n/a") is no number; a number that does not start with two
+   letters gets the billing country in front (`EL` for Greece, `FR` for
+   Monaco). The prefix `EL` counts as Greece, and `MC` is not a VAT prefix.
+   Order create also sends it to Two as `buyer_vat_number`, for a
+   merchant in Spain and a buyer outside Spain only: Two requires a Spanish
+   buyer's VAT number to equal its organisation number, so it is never sent
+   for one. Later requests leave it out, so Two keeps the number placement
+   sent.
 3. **Otherwise no code is sent.**
 
 **The plugin never refuses; the API does.** A 0% line with no code is sent
 as is, and Two's API decides. For a Spanish merchant it refuses such a line, so
 map the tax classes that produce 0% lines nothing above covers (for example
-domestic exempt sales, or services to buyers in mainland Spain). A non-Spanish
+domestic exempt sales, or services to buyers in mainland Spain), and make
+sure EU buyers outside Spain give their VAT number at checkout. A non-Spanish
 merchant with no mapping sends exactly what it sent before.
 
 Placement records each line's code, or that it had none, on the order

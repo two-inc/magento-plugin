@@ -187,6 +187,12 @@ class ComposeOrder extends OrderService
         }
 
         if (!$isEdit) {
+            // Create only (TWO-26153): an edit that omits it keeps the number
+            // sent at placement, and a refund reads that stored number.
+            $buyerVatNumber = $this->getBuyerVatNumber($order);
+            if ($buyerVatNumber !== null) {
+                $payload['buyer_vat_number'] = $buyerVatNumber;
+            }
             // The edit-order schema has no available_terms.
             $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
         } elseif ($placedTerms === null) {
