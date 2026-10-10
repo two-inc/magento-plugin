@@ -337,8 +337,9 @@ A few specifics:
   invoice for everything still open and the fulfil-on status trigger (which
   carries no `invoice` key at all). The status trigger sends a `partial` body
   instead when part of the order was refunded or cancelled in Magento first:
-  the order lines net of those quantities, and shipping unless any of it was
-  refunded.
+  the order lines net of those quantities, shipping unless any of it was
+  refunded, and whatever of the surcharge, fee lines and other charges is not
+  yet refunded.
 - If Two answers a whole-order capture with `PARTIAL_ORDER_MISSING_DATA`, the
   plugin retries it as a partial capture of the latest invoice, so the hook
   fires twice for one capture: first with `[]`, then with the `partial` body.

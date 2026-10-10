@@ -1445,6 +1445,65 @@ abstract class Order
     }
 
     /**
+     * The Two surcharge as a BUYER_FEE line, shared by every payload that
+     * carries it. Each amount is rounded on its own from the 6dp source and
+     * gross from the unrounded sum, so a refund or fulfilment line cannot
+     * differ from the order line by a cent at a half-cent boundary.
+     *
+     * @param float $net
+     * @param float $tax
+     * @param string $description
+     * @param float $taxRatePercent
+     * @return array
+     */
+    public function getSurchargeLine(float $net, float $tax, string $description, float $taxRatePercent): array
+    {
+        $description = $description ?: (string)__('Payment terms fee');
+
+        return [
+            'order_item_id' => 'surcharge',
+            'name' => $description,
+            'description' => $description,
+            'type' => 'BUYER_FEE',
+            'image_url' => '',
+            'product_page_url' => '',
+            'gross_amount' => $this->roundAmt($net + $tax),
+            'net_amount' => $this->roundAmt($net),
+            'tax_amount' => $this->roundAmt($tax),
+            'discount_amount' => '0.00',
+            'tax_rate' => $this->roundAmt($taxRatePercent / 100, 6),
+            'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
+            'unit_price' => $this->roundAmt($net, 6),
+            'quantity' => 1,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
+    /**
+     * The order's unitemized charge as a line, or null when the order's grand
+     * total is fully accounted for. Fee-provider lines are merged first, so a
+     * fee a provider itemizes is never counted twice.
+     *
+     * @param OrderModel $order
+     * @return array|null getOtherChargesLineItem() shape.
+     * @throws LocalizedException
+     */
+    public function getOtherChargesLineOrder(OrderModel $order): ?array
+    {
+        $lineItems = $this->getKnownLineAmountsOrder($order);
+        foreach ($this->getFeeLines($order) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        return $this->getOtherChargesLineItem(
+            $lineItems,
+            $order,
+            (float)$order->getGrandTotal(),
+            (float)$order->getTaxAmount()
+        );
+    }
+
+    /**
      * The gross and tax of every line composition itemizes, for callers that
      * need the order's known amounts rather than its payload.
      *

@@ -38,7 +38,9 @@ class ComposeShipment extends OrderService
      * Compose a fulfilment of everything on the order not refunded or
      * cancelled in Magento (TWO-26302): what the buyer is to pay for when the
      * merchant refunded part of the order before it was fulfilled. Shipping
-     * goes in only while none of it was refunded.
+     * goes in only while none of it was refunded. This is the only fulfilment
+     * the order gets, so it also carries whatever of the surcharge, the
+     * fee-provider lines and the other-charges residual is not yet refunded.
      *
      * @param Order $order
      * @return array
@@ -46,6 +48,21 @@ class ComposeShipment extends OrderService
      * @throws NoSuchEntityException
      */
     public function executeNetOfRefunds(Order $order): array
+    {
+        $items = $this->getProductLinesNetOfRefunds($order);
+        foreach ($this->getChargeLinesNetOfRefunds($order) as $line) {
+            $items[] = $line;
+        }
+
+        return $this->payload($items, $order);
+    }
+
+    /**
+     * @param Order $order
+     * @return array
+     * @throws LocalizedException
+     */
+    private function getProductLinesNetOfRefunds(Order $order): array
     {
         $items = [];
         foreach ($order->getAllVisibleItems() as $orderItem) {
@@ -63,7 +80,94 @@ class ComposeShipment extends OrderService
             $items['shipping'] = $this->getShippingLineOrder($order);
         }
 
-        return $this->payload($items, $order);
+        return $items;
+    }
+
+    /**
+     * The surcharge, each fee-provider line and the other-charges residual,
+     * each less what the order's credit memos already refunded of it. A charge
+     * with nothing left is left out.
+     *
+     * @param Order $order
+     * @return array
+     * @throws LocalizedException
+     */
+    private function getChargeLinesNetOfRefunds(Order $order): array
+    {
+        $memos = [];
+        foreach ($order->getCreditmemosCollection() as $memo) {
+            if ($memo->getId()) {
+                $memos[] = $memo;
+            }
+        }
+
+        $lines = [];
+        $surchargeNet = (float)$order->getTwoSurchargeAmount();
+        if ($surchargeNet > 0) {
+            $lines[] = $this->remainderOf(
+                $this->getSurchargeLine(
+                    $surchargeNet,
+                    (float)$order->getTwoSurchargeTaxAmount(),
+                    (string)$order->getTwoSurchargeDescription(),
+                    (float)$order->getTwoSurchargeTaxRate()
+                ),
+                (float)$order->getTwoSurchargeRefunded()
+            );
+        }
+
+        // A provider's lines on each memo say what that memo refunded of the fee.
+        $refundedFees = [];
+        foreach ($memos as $memo) {
+            foreach ($this->getFeeLines($memo) as $feeLine) {
+                $id = (string)($feeLine['order_item_id'] ?? '');
+                $refundedFees[$id] = ($refundedFees[$id] ?? 0.0) + (float)$feeLine['net_amount'];
+            }
+        }
+        foreach ($this->getFeeLines($order) as $feeLine) {
+            $lines[] = $this->remainderOf($feeLine, $refundedFees[(string)($feeLine['order_item_id'] ?? '')] ?? 0.0);
+        }
+
+        $residual = $this->getOtherChargesLineOrder($order);
+        if ($residual) {
+            $refundedCharge = 0.0;
+            foreach ($memos as $memo) {
+                $refundedCharge += (float)$memo->getTwoOtherChargesAmount();
+            }
+            $lines[] = $this->remainderOf($residual, $refundedCharge);
+        }
+
+        return array_values(array_filter($lines));
+    }
+
+    /**
+     * $line less $refundedNet of its net, its tax shrunk in proportion so the
+     * line keeps its declared rate. The line as it is when nothing was
+     * refunded, so the fulfilment matches the order line exactly; null when
+     * nothing a line can carry is left.
+     *
+     * @param array $line
+     * @param float $refundedNet
+     * @return array|null
+     */
+    private function remainderOf(array $line, float $refundedNet): ?array
+    {
+        if ($refundedNet <= 0) {
+            return $line;
+        }
+        $net = (float)$line['net_amount'];
+        $remainingNet = round($net - $refundedNet, 6);
+        if (round($remainingNet, 2) <= 0) {
+            return null;
+        }
+        $remainingTax = (float)$line['tax_amount'] * $remainingNet / $net;
+
+        return array_merge($line, [
+            'gross_amount' => $this->roundAmt($remainingNet + $remainingTax),
+            'net_amount' => $this->roundAmt($remainingNet),
+            'tax_amount' => $this->roundAmt($remainingTax),
+            'unit_price' => $this->roundAmt($remainingNet, 6),
+            'quantity' => 1,
+        ]);
     }
 
     /**

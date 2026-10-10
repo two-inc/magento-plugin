@@ -9,9 +9,11 @@ namespace Two\Gateway\Test\Unit\Service\Order;
 
 use Magento\Catalog\Model\Product;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Creditmemo;
 use Magento\Sales\Model\Order\Shipment;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Fee\FeeLineProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order as OrderService;
@@ -69,6 +71,98 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         );
     }
 
+    /**
+     * One item of two, one unit refunded, so the fulfilment is a net partial.
+     * Each charge is [net, tax, refunded net]; the residual is an untaxed
+     * amount the grand total carries beyond every known line. Expected lines
+     * are [order_item_id, gross, net, tax, quantity], in that order; the
+     * order's fee line is for a quantity of two.
+     *
+     * @dataProvider chargeCases
+     */
+    public function testCarriesTheChargesNotYetRefunded(
+        ?array $surcharge,
+        ?array $fee,
+        ?array $residual,
+        array $expected,
+        string $description
+    ): void {
+        $order = $this->order([[1, 2, 1, 0]], 0.0);
+        $memo = (new Creditmemo())->setId(9)->setTwoOtherChargesAmount($residual[1] ?? 0.0);
+        // A memo not yet saved is not a refund yet.
+        $order->setCreditmemosCollection([$memo, (new Creditmemo())->setTwoOtherChargesAmount(50.0)]);
+        $grandTotal = 260.00;
+        $taxTotal = 52.00;
+        if ($surcharge) {
+            [$net, $tax, $refunded] = $surcharge;
+            $order->setTwoSurchargeAmount($net)
+                ->setTwoSurchargeTaxAmount($tax)
+                ->setTwoSurchargeTaxRate(25.0)
+                ->setTwoSurchargeRefunded($refunded)
+                ->setTwoSurchargeDescription('Terms fee');
+            $grandTotal += $net + $tax;
+            $taxTotal += $tax;
+        }
+        $feeLines = [];
+        if ($fee) {
+            [$net, $tax, $refunded] = $fee;
+            $feeLines = [$order, $this->feeLine($net, $tax, 2), $memo, $this->feeLine($refunded, $refunded * 0.25)];
+            $grandTotal += $net + $tax;
+            $taxTotal += $tax;
+        }
+        $grandTotal += $residual[0] ?? 0.0;
+        $order->setGrandTotal($grandTotal);
+        $order->setTaxAmount($taxTotal);
+
+        $lines = [];
+        foreach ($this->composer($order, $feeLines)->executeNetOfRefunds($order)['line_items'] as $line) {
+            if (in_array($line['type'], ['BUYER_FEE', 'OTHER'], true)) {
+                $lines[] = [$line['order_item_id'], $line['gross_amount'], $line['net_amount'], $line['tax_amount'], $line['quantity']];
+            }
+        }
+
+        $this->assertSame($expected, $lines, $description);
+    }
+
+    public static function chargeCases(): array
+    {
+        return [
+            [[10.0, 2.5, 0.0], null, null, [['surcharge', '12.50', '10.00', '2.50', 1]], 'a surcharge with nothing refunded goes in whole'],
+            [[10.0, 2.5, 4.0], null, null, [['surcharge', '7.50', '6.00', '1.50', 1]], 'a partly refunded surcharge goes in net, at its rate'],
+            [[10.0, 2.5, 10.0], null, null, [], 'a fully refunded surcharge is left out'],
+            [null, [8.0, 2.0, 0.0], null, [['fee_1', '10.00', '8.00', '2.00', 2]], 'a provider fee with nothing refunded goes in whole'],
+            [null, [8.0, 2.0, 3.0], null, [['fee_1', '6.25', '5.00', '1.25', 1]], 'a partly refunded provider fee goes in net of the memo line'],
+            [null, [8.0, 2.0, 8.0], null, [], 'a fully refunded provider fee is left out'],
+            [null, null, [4.0, 0.0], [['other_charges', '4.00', '4.00', '0.00', 1]], 'an other-charges residual with nothing refunded goes in whole'],
+            [null, null, [4.0, 1.5], [['other_charges', '2.50', '2.50', '0.00', 1]], 'an other-charges residual goes in net of saved memos'],
+            [null, null, [4.0, 4.0], [], 'a fully refunded other-charges residual is left out'],
+            [[10.0, 2.5, 4.0], [8.0, 2.0, 3.0], [4.0, 1.5], [
+                ['surcharge', '7.50', '6.00', '1.50', 1],
+                ['fee_1', '6.25', '5.00', '1.25', 1],
+                ['other_charges', '2.50', '2.50', '0.00', 1],
+            ], 'all three together, none counted twice'],
+        ];
+    }
+
+    private function feeLine(float $net, float $tax, int $quantity = 1): array
+    {
+        return [
+            'order_item_id' => 'fee_1',
+            'name' => 'Handling',
+            'description' => 'Handling',
+            'type' => 'OTHER',
+            'gross_amount' => number_format($net + $tax, 2, '.', ''),
+            'net_amount' => number_format($net, 2, '.', ''),
+            'tax_amount' => number_format($tax, 2, '.', ''),
+            'discount_amount' => '0.00',
+            'tax_rate' => '0.250000',
+            'tax_class_name' => 'VAT 25%',
+            'unit_price' => number_format($net / $quantity, 6, '.', ''),
+            'quantity' => $quantity,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
     public static function cases(): array
     {
         return [
@@ -85,6 +179,7 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         $order = new class extends Order {
             /** @var array */
             public $itemsById = [];
+
 
             public function getItemById($id)
             {
@@ -119,6 +214,10 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         $order->setShippingTaxAmount(2.00);
         $order->setShippingInclTax(10.00);
         $order->setShippingRefunded($shippingRefunded);
+        $order->setCreditmemosCollection([]);
+        // Balanced, so no other-charges residual unless a case adds one.
+        $order->setGrandTotal(array_sum(array_map(static fn ($i) => 125.00 * $i[1], $items)) + 10.00);
+        $order->setTaxAmount(array_sum(array_map(static fn ($i) => 25.00 * $i[1], $items)) + 2.00);
         $order->setShipmentsCollection(new class {
             public function getFirstItem()
             {
@@ -151,7 +250,7 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
     /**
      * A real composer; only the catalogue and repository lookups are stubbed.
      */
-    private function composer(Order $order): ComposeShipment
+    private function composer(Order $order, array $feeLines = []): ComposeShipment
     {
         $service = $this->getMockBuilder(ComposeShipment::class)
             ->disableOriginalConstructor()
@@ -173,7 +272,7 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         $service->method('getOrderItem')->willReturnCallback(static fn (int $id) => $order->getItemById($id));
         foreach ([
             'logRepository' => $this->createMock(LogRepository::class),
-            'feeLineProviderPool' => new FeeLineProviderPool([]),
+            'feeLineProviderPool' => new FeeLineProviderPool([$this->feeProvider($feeLines)]),
         ] as $name => $value) {
             (new \ReflectionProperty(OrderService::class, $name))->setValue($service, $value);
         }
@@ -183,5 +282,33 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         $service->configRepository = $config;
 
         return $service;
+    }
+
+    /**
+     * A provider answering $feeLines as [entity, line, entity, line, ...].
+     */
+    private function feeProvider(array $feeLines): FeeLineProviderInterface
+    {
+        return new class ($feeLines) implements FeeLineProviderInterface {
+            /** @var array */
+            private $feeLines;
+
+            public function __construct(array $feeLines)
+            {
+                $this->feeLines = $feeLines;
+            }
+
+            public function getFeeLines($entity): array
+            {
+                $lines = [];
+                for ($i = 0; $i < count($this->feeLines); $i += 2) {
+                    if ($this->feeLines[$i] === $entity) {
+                        $lines[] = $this->feeLines[$i + 1];
+                    }
+                }
+
+                return $lines;
+            }
+        };
     }
 }

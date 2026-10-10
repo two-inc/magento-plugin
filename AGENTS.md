@@ -940,9 +940,16 @@ first, they can also credit-memo first. The whole-order check counts refunded an
 cancelled quantity as not waiting to ship, and when anything was refunded or
 cancelled the fulfilment is sent as a `partial` body built by
 `ComposeShipment::executeNetOfRefunds()`: each line prorated to its net quantity,
-shipping only while none of it was refunded. With nothing left, nothing is sent.
-The Two remainder of such a partial fulfilment stays open, as it does after a
-partial shipment the merchant never completes.
+shipping only while none of it was refunded. It is the only fulfilment the order
+gets, so unlike a shipment's partial it also carries the charges no item owns,
+each less what the credit memos refunded of it: the surcharge (its amount less
+`two_surcharge_refunded`), each fee-provider line (less that provider's lines on
+the saved memos) and the other-charges residual (less the memos'
+`two_other_charges_amount`). Tax shrinks in proportion, so each line keeps its
+declared rate, and a charge with nothing refunded goes in exactly as the order
+line. With nothing left, nothing is sent. The Two remainder of such a partial
+fulfilment stays open, as it does after a partial shipment the merchant never
+completes.
 
 **An offline invoice is also one with no capture case** where the method cannot
 capture online: the REST invoice route names no capture case.
