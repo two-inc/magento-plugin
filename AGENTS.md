@@ -1250,24 +1250,21 @@ taxed the line on. `ZeroTaxRates` lists each class's 0% rates for the admin
 rows and for the `FanOutTaxCodeMap` data patch, which copies each old
 `class => code` entry to that class's `exempt`, `none` and existing rate rows.
 
-Derivation (`TaxCodeResolver::derive()`) stays as a transitional last step
-for a merchant whose record says `country_code` ES, only for a line whose
-class has no row mapped at all, or a classless line when no line was coded by
-steps 1 to 3. It is the table in the README. Goods take
-the delivery address, services the billing country and postcode, so a Spanish
-buyer billed in the Canaries, Ceuta or Melilla is outside the EU for services
-(TWO-26151). `ES_IVA_REVERSE_CHARGE` is Spanish domestic reverse charge only
-and is never derived. Both intra-community codes also need a buyer VAT number
-whose prefix is an EU state other than the merchant's country (TWO-26153):
-`TaxCodeResolver::buyerVatNumber()` reads the billing address `vat_id`, then
+There is no step after these: the plugin never works a code out itself
+(TWO-26153). A line whose rows are not set gets no code, and so does a
+classless line when the step 1 to 3 lines give nothing to share. Do not add a
+fallback that picks a code from the addresses or the product type; the
+merchant's rows are the only source.
+
+Step 1's VAT number comes from `TaxCodeResolver::buyerVatNumber()`, which
+reads the billing address `vat_id`, then
 the order's `customer_taxvat`, and uses it exactly as entered, trimmed of
 leading and trailing whitespace and nothing else (no case change, no
 characters stripped, no prefix guessed; blank is no number). A `vat_id`
 refused by Magento's VAT check (`vat_request_success` true and `vat_is_valid` set and
 false) gives no number at all and never falls back to `customer_taxvat`, which
 often holds the same number. Core stores a failed request as invalid too, and
-that alone must not drop the number. Without a number the line gets no code,
-never the export or non-EU services code. The same number goes on order
+that alone must not drop the number. The same number goes on order
 create only as `buyer_vat_number` (`vatNumberToSend()`), for an ES merchant
 and a non-ES buyer: the API requires an ES buyer's VAT number to equal its
 organisation number, an edit that omits the key keeps the stored value, and
@@ -1292,13 +1289,15 @@ share a key because they all resolve alike (no class, so step 4) and because
 a fee can change id after placement: a provider that itemizes only a saved
 order leaves the create with an "Other charges" residual and the edit with its
 own line. The record's `shared` key lists the codes steps 1 to 3 gave at
-placement (never derived ones); the refund `adjustment` line is not recorded
-and takes step 4 over that list, or derives as before when it is empty. Edit,
-capture, shipment and refund read the record and never resolve those lines
+placement; the refund `adjustment` line is not recorded and takes step 4 over
+that list. A record written before the key existed shares the codes its
+recorded lines carry instead, other than `fee`'s; with none, or disagreeing
+ones, no code. Edit, capture, shipment and refund read the record and
+never resolve those lines
 again; a line it does not cover, or an order placed before it existed,
 resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
 items, so a fee provider's numeric id is never taken for one, and a product
-line no item matches takes goods or service from its own type. At placement
+line no item matches has no class, so step 4. At placement
 the items have no id, so `ComposeOrder` matches its product lines to the
 items behind them on SKU, the name only breaking a tie, never by position
 (`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
