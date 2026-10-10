@@ -253,7 +253,8 @@ class StatusFulfilment
         try {
             // A fresh instance, not the repository's: the repository hands back
             // the very instance the refund was working on.
-            $order = $this->orderFactory->create()->load($orderId);
+            $order = $this->orderFactory->create();
+            $this->orderResource->load($order, $orderId);
             if (!$order->getEntityId() || !$this->isDue($order)) {
                 return;
             }

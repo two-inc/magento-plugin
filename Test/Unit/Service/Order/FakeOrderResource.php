@@ -22,6 +22,15 @@ class FakeOrderResource extends OrderResource
     /** @var callable[] */
     public $callbacks = [];
 
+    /**
+     * Reads the row into the object; the test order stands in for the read.
+     */
+    public function load($object, $value): self
+    {
+        $object->load($value);
+        return $this;
+    }
+
     public function getConnection(): self
     {
         return $this;
