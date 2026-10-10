@@ -251,10 +251,10 @@ gave a Spanish merchant's 0% line a code of their own choosing when none of
 its class's rows was set. The plugin no longer does: a line gets a code only
 from your rows (steps 1 to 4 above). If your Two account is in Spain, set a
 code on every row your 0% lines fall under, or Two refuses those lines.
-Orders placed on a version without the per-row settings keep the codes they
-recorded, but their record does not list the codes their lines shared, so a
-later line with no tax class that placement did not record (such as a refund
-adjustment) now gets no code.
+Orders placed before this version keep the codes they recorded. If none of
+an order's lines was coded from your rows (because they were placed before
+the per-row settings, or the plugin worked their codes out), a later line
+with no tax class, such as a refund adjustment, gets no code.
 
 **The plugin never refuses; the API does.** A 0% line with no code is sent
 as is, and Two's API decides. For a Spanish merchant it refuses such a line,
