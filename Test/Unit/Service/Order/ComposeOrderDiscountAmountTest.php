@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -28,6 +27,7 @@ require_once __DIR__ . '/../../Observer/SalesOrderAddressUpdateOptionalFieldsTes
  * edit request. Magento stores the order's discount negative, unlike the
  * positive item and shipping discounts, so every order with a cart-rule
  * discount used to be refused by the negative-discount guard (TWO-25099).
+ * The field is informational, so its sign never refuses an order.
  *
  * Nothing discount-related is stubbed: the order carries Magento's own fields
  * and the real getter computes what is sent.
@@ -70,6 +70,16 @@ class ComposeOrderDiscountAmountTest extends TestCase
                 ['discount_amount' => -0.004],
                 '0.00',
                 'sub-cent discount rounds to zero',
+            ],
+            [
+                ['discount_amount' => 20.00],
+                '20.00',
+                'positive stored order discount is sent as its absolute value',
+            ],
+            [
+                ['discount_amount' => -2.00, 'discount_tax_compensation_amount' => 3.00],
+                '0.00',
+                'compensation exceeding the discount sends 0, never refuses',
             ],
         ];
     }
@@ -139,18 +149,6 @@ class ComposeOrderDiscountAmountTest extends TestCase
             $description . ': edit request sent; history: ' . implode(' | ', $order->historyComments)
         );
         $this->assertSame($expected, $sent['discount_amount'], $description);
-    }
-
-    /**
-     * A positive stored order discount has the wrong sign for Magento, so it
-     * is refused like a negative item discount rather than sent.
-     */
-    public function testWrongSignStoredOrderDiscountIsRefused(): void
-    {
-        $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage('Negative discount amount -20.000000 for order 100000001');
-
-        $this->makeComposeOrder()->execute($this->makeOrder(['discount_amount' => 20.00]), 'ref', []);
     }
 
     private function makeOrder(array $fields): AddressUpdateOrderStub

@@ -539,36 +539,23 @@ abstract class Order
      * Get the order's total discount before tax, as a positive amount
      *
      * Magento stores the order-level discount negative, unlike the item and
-     * shipping discounts, which it stores positive (TWO-26277). Negated here
-     * so it is sent with the same sign as the line discounts it totals, less
-     * the same tax compensation. A positive stored value is a discount with
-     * the wrong sign, refused like a negative item discount (TWO-25099).
+     * shipping discounts, which it stores positive (TWO-26277). The absolute
+     * value is sent, less the tax compensation, the same convention as the
+     * line discounts it totals. The field is informational, so its sign never
+     * refuses an order: a value below zero is sent as 0. The line discounts
+     * keep their guard (TWO-25099).
      *
      * @param OrderModel $order
      * @return float
-     * @throws LocalizedException when the discount is negative at currency precision
      */
     public function getDiscountAmountOrder(OrderModel $order): float
     {
         // Native-precision compute, single round at the payload boundary:
         // see getDiscountAmountItem() for the rounding-order rationale.
-        $discountAmount = -(float)$order->getDiscountAmount()
+        $discountAmount = abs((float)$order->getDiscountAmount())
             - (float)$order->getDiscountTaxCompensationAmount();
 
-        if (round($discountAmount, 2) < 0) {
-            $message = sprintf(
-                'Negative discount amount %.6F for order %s: '
-                . 'order discount %.6F (stored negative) - discount tax compensation %.6F',
-                $discountAmount,
-                $order->getIncrementId(),
-                (float)$order->getDiscountAmount(),
-                (float)$order->getDiscountTaxCompensationAmount()
-            );
-            $this->logRepository->addErrorLog('NegativeDiscountGuard', $message);
-            throw new LocalizedException(__($message));
-        }
-
-        return $discountAmount;
+        return round($discountAmount, 2) < 0 ? 0.0 : $discountAmount;
     }
 
     /**
