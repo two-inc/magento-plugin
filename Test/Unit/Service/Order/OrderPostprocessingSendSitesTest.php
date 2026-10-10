@@ -247,17 +247,20 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
 
-        $deferral = new \Two\Gateway\Service\Order\FulfilmentDeferral();
+        $order = $this->order();
+        $orderFactory = $this->getMockBuilder(\Magento\Sales\Model\OrderFactory::class)
+            ->addMethods(['create'])
+            ->getMock();
+        $orderFactory->method('create')->willReturn($order);
         (new SalesOrderSaveAfter(
             $this->buildStatusFulfilment([
                 'configRepository' => $config,
                 'apiAdapter' => $this->adapter(),
                 'overlayRegistry' => $this->overlay(),
                 'orderPostprocessor' => $this->recorder(),
-                'deferral' => $deferral,
-            ]),
-            $deferral
-        ))->execute(new SendSiteObserver(new DataObject(['order' => $this->order()])));
+                'orderFactory' => $orderFactory,
+            ])
+        ))->execute(new SendSiteObserver(new DataObject(['order' => $order])));
     }
 
     private function refund(): void
@@ -361,6 +364,13 @@ class OrderPostprocessingSendSitesTest extends TestCase
 
 class SendSiteOrder extends Order implements \Magento\Sales\Api\Data\OrderInterface
 {
+    /**
+     * The status fulfilment's fresh load: the order stands in for its own row.
+     */
+    public function load($id): self
+    {
+        return $this;
+    }
 }
 
 /**

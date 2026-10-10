@@ -11,12 +11,8 @@ use Magento\Framework\App\State;
 use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
-use Magento\Sales\Api\CreditmemoManagementInterface;
-use Magento\Sales\Api\Data\CreditmemoInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
-use Magento\Sales\Api\RefundInvoiceInterface;
-use Magento\Sales\Api\RefundOrderInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
@@ -29,25 +25,23 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Observer\SalesOrderSaveAfter;
-use Two\Gateway\Plugin\Model\Sales\FulfilAfterRefund\CreditmemoManagement;
-use Two\Gateway\Plugin\Model\Sales\FulfilAfterRefund\RefundInvoice;
-use Two\Gateway\Plugin\Model\Sales\FulfilAfterRefund\RefundOrder;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeShipment;
-use Two\Gateway\Service\Order\FulfilmentDeferral;
+use Two\Gateway\Service\Order\FulfilmentAttempts;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\Order\StatusFulfilment;
 
 /**
- * TWO-26302: a fulfil-on status reached during a refund is fulfilled once the
- * refund call returns, from the order and credit memos as saved; outside a
- * refund, after the outermost commit. A failure is commented, not thrown.
+ * TWO-26302: a fulfil-on status is fulfilled after the outermost commit on the
+ * sales connection, from the order and credit memos as saved, or at once when
+ * no transaction is open. A failure is commented, not thrown.
  *
  * A small shop stands in for core: saving the order persists it and fires
  * sales_order_save_after inside the save's own transaction, the composer reads
  * the credit memos saved so far, and a fresh load reads what was persisted.
+ * Core's refund routes hold one transaction across the order and memo saves.
  */
-class StatusFulfilmentDeferralTest extends TestCase
+class StatusFulfilmentAfterCommitTest extends TestCase
 {
     use BuildsStatusFulfilment;
 
@@ -83,14 +77,8 @@ class StatusFulfilmentDeferralTest extends TestCase
     /** @var FakeOrderResource */
     private $resource;
 
-    /** @var FulfilmentDeferral */
-    private $deferral;
-
     /** @var SalesOrderSaveAfter */
     private $observer;
-
-    /** @var StatusFulfilment */
-    private $service;
 
     protected function setUp(): void
     {
@@ -101,14 +89,13 @@ class StatusFulfilmentDeferralTest extends TestCase
     /**
      * @dataProvider refundRoutes
      */
-    public function testARefundFulfilsOnceFromSavedState(string $route, string $description): void
+    public function testARefundFulfilsOnceAfterItsCommitFromSavedState(string $route, string $description): void
     {
         $order = $this->order(['status' => 'processing', 'items' => [[2, 1, 0]]]);
         $this->persist($order);
 
-        $result = $this->refund($route, $order, 1.0);
+        $this->refund($route, $order, 1.0);
 
-        $this->assertSame('refund-result', $result, $description . ': the refund call returns what core returned');
         $this->assertCount(1, $this->sent, $description . ': one fulfilment');
         $this->assertSame(1.0, $this->sent[0]['partial']['net'], $description . ': the saved memo is netted out');
         $this->assertNotSame($order, $this->composedFrom[0], $description . ': composed from a fresh load');
@@ -123,61 +110,59 @@ class StatusFulfilmentDeferralTest extends TestCase
     public static function refundRoutes(): array
     {
         return [
-            ['rest_order', 'REST order refund (order then memo, inside the order lock)'],
-            ['rest_invoice', 'REST invoice refund (order then memo, inside the order lock)'],
+            ['rest', 'REST refund (order then memo, inside the order lock\'s transaction)'],
             ['admin', 'admin credit memo (memo then order, inside one transaction)'],
-            ['rest_order_unlocked', 'order refund saving order then memo with no transaction'],
-            ['rest_invoice_unlocked', 'invoice refund saving order then memo with no transaction'],
         ];
     }
 
-    public function testTheObserverQueuesInsideARefundAndSendsNothing(): void
+    public function testTheObserverRegistersACommitCallbackAndSendsNothingInline(): void
     {
         $order = $this->order(['status' => 'complete', 'items' => [[1, 1, 0]]]);
-        $this->deferral->enterRefund();
+        $this->persist($order);
+        $this->resource->beginTransaction();
 
-        $this->saveOrder($order);
+        $this->observer->execute($this->saveEvent($order));
 
-        $this->assertSame([], $this->sent, 'nothing sent inside the refund call');
-        $this->assertSame([], $this->resource->callbacks, 'no commit callback inside the refund call');
-        $this->assertSame([self::ORDER_ID], $this->deferral->takeQueue(), 'the order is queued');
+        $this->assertSame([], $this->sent, 'nothing sent inside the transaction');
+        $this->assertCount(1, $this->resource->callbacks, 'one commit callback');
     }
 
-    public function testTheWholeOrderCheckStillRefusesInsideARefund(): void
+    public function testAnOrderNotDueSavesWithoutCheckOrCallback(): void
+    {
+        $order = $this->order(['status' => 'processing', 'items' => [[1, 0, 0]]]);
+        $this->resource->beginTransaction();
+
+        $this->observer->execute($this->saveEvent($order));
+
+        $this->assertSame([], $this->resource->callbacks, 'no commit callback');
+    }
+
+    public function testTheWholeOrderCheckStillRefusesTheSave(): void
     {
         $order = $this->order(['status' => 'complete', 'items' => [[1, 1, 0], [1, 0, 0]]]);
-        $this->deferral->enterRefund();
+        $this->resource->beginTransaction();
 
         try {
             $this->observer->execute($this->saveEvent($order));
             $this->fail('the unshipped item refuses the save');
         } catch (LocalizedException $e) {
-            $this->assertSame([], $this->deferral->takeQueue(), 'a refused save queues nothing');
+            $this->assertSame([], $this->resource->callbacks, 'a refused save registers nothing');
         }
     }
 
-    public function testARefundThatThrowsFulfilsNothing(): void
+    public function testARefundThatRollsBackFulfilsNothing(): void
     {
         $order = $this->order(['status' => 'processing', 'items' => [[2, 2, 0]]]);
-        $plugin = new RefundOrder($this->service);
-        try {
-            $plugin->aroundExecute(
-                $this->createMock(RefundOrderInterface::class),
-                function () use ($order): void {
-                    $order->setData('status', 'complete');
-                    $this->saveOrder($order);
-                    throw new \RuntimeException('memo save failed');
-                },
-                self::ORDER_ID
-            );
-            $this->fail('the refund failure reaches the caller');
-        } catch (\RuntimeException $e) {
-            $this->assertSame('memo save failed', $e->getMessage());
-        }
+        $this->resource->beginTransaction();
+        $order->setData('status', 'complete');
+        $this->saveOrder($order);
+        // The memo save fails, and the order lock rolls the whole refund back.
+        $this->resource->rollBack();
 
-        $plugin->aroundExecute($this->createMock(RefundOrderInterface::class), static fn () => 1, self::ORDER_ID);
+        $this->saveMemo(1.0);
 
-        $this->assertSame([], $this->sent, 'the failed refund\'s queue is discarded, not flushed by the next refund');
+        $this->assertSame(0, $this->resource->level, 'the later save committed');
+        $this->assertSame([], $this->sent, 'the rolled-back refund is not fulfilled by a later commit');
     }
 
     /**
@@ -195,9 +180,8 @@ class StatusFulfilmentDeferralTest extends TestCase
         $order = $this->order(['status' => 'processing', 'items' => [[2, 1, 0]]]);
         $this->persist($order);
 
-        $result = $this->refund('rest_order', $order, 1.0);
+        $this->refund('rest', $order, 1.0);
 
-        $this->assertSame('refund-result', $result, $description . ': the refund still succeeds');
         $this->assertSame(
             ['Failed to fulfil order with Two. Reason: ' . $expectedReason],
             $this->comments,
@@ -229,54 +213,47 @@ class StatusFulfilmentDeferralTest extends TestCase
     {
         $order = $this->order(['status' => 'processing', 'items' => [[2, 1, 0]]]);
         $this->persist($order);
-        $this->refund('rest_order', $order, 1.0);
+        $this->refund('rest', $order, 1.0);
 
-        // The in-memory order never saw the marker the fresh copy saved.
+        // The in-memory order never saw the marker, and its save writes the
+        // payment back without it, so a fresh load cannot see it either.
         $this->saveOrder($order);
 
         $this->assertCount(1, $this->sent, 'one fulfilment');
     }
 
-    public function testTwoSavesInOneRefundFulfilOnce(): void
+    public function testTwoSavesInOneTransactionFulfilOnce(): void
     {
         $order = $this->order(['status' => 'complete', 'items' => [[1, 1, 0]]]);
-        (new RefundOrder($this->service))->aroundExecute(
-            $this->createMock(RefundOrderInterface::class),
-            function () use ($order): void {
-                $this->saveOrder($order);
-                $this->saveOrder($order);
-            },
-            self::ORDER_ID
-        );
+        $this->resource->beginTransaction();
+        $this->saveOrder($order);
+        $this->saveOrder($order);
+        $this->resource->commit();
 
         $this->assertCount(1, $this->sent, 'one fulfilment');
-        $this->assertSame(2 + 1, $this->orderSaves, 'the two refund saves and the fulfilment\'s own');
+        $this->assertSame(2 + 1, $this->orderSaves, 'the two saves and the fulfilment\'s own');
     }
 
     /**
-     * @dataProvider staleQueues
+     * @dataProvider changedBeforeCommit
      */
-    public function testTheFlushRechecksTheSavedOrder(
-        array $savedAfterQueueing,
+    public function testTheCallbackRechecksTheSavedOrder(
+        array $savedBeforeCommit,
         int $expectedSent,
         array $expectedComments,
         string $description
     ): void {
         $order = $this->order(['status' => 'complete', 'items' => [[2, 2, 0]]]);
-        (new RefundOrder($this->service))->aroundExecute(
-            $this->createMock(RefundOrderInterface::class),
-            function () use ($order, $savedAfterQueueing): void {
-                $this->saveOrder($order);
-                $this->saved = $savedAfterQueueing + $this->saved;
-            },
-            self::ORDER_ID
-        );
+        $this->resource->beginTransaction();
+        $this->saveOrder($order);
+        $this->saved = $savedBeforeCommit + $this->saved;
+        $this->resource->commit();
 
         $this->assertCount($expectedSent, $this->sent, $description . ': fulfilments');
         $this->assertSame($expectedComments, $this->comments, $description . ': comments');
     }
 
-    public static function staleQueues(): array
+    public static function changedBeforeCommit(): array
     {
         return [
             [['status' => 'closed'], 0, [], 'no longer in a fulfil-on status'],
@@ -295,58 +272,32 @@ class StatusFulfilmentDeferralTest extends TestCase
         $order = $this->order(['status' => 'processing', 'items' => [[1, 0, 0]]]);
         $this->persist($order);
 
-        $this->refund('rest_order', $order, 1.0);
+        $this->refund('rest', $order, 1.0);
 
         $this->assertSame([], $this->sent, 'nothing left to fulfil');
         $this->assertSame(1, $this->orderSaves, 'only the refund\'s own order save');
     }
 
-    public function testOnlyTheOutermostRefundCallFlushes(): void
-    {
-        $order = $this->order(['status' => 'complete', 'items' => [[1, 1, 0]]]);
-        $sentWhenInnerReturned = null;
-        (new CreditmemoManagement($this->service))->aroundRefund(
-            $this->createMock(CreditmemoManagementInterface::class),
-            function () use ($order, &$sentWhenInnerReturned) {
-                (new RefundOrder($this->service))->aroundExecute(
-                    $this->createMock(RefundOrderInterface::class),
-                    fn () => $this->saveOrder($order),
-                    self::ORDER_ID
-                );
-                $sentWhenInnerReturned = count($this->sent);
-            },
-            $this->createMock(CreditmemoInterface::class)
-        );
-
-        $this->assertSame(0, $sentWhenInnerReturned, 'nothing sent while the outer refund call runs');
-        $this->assertCount(1, $this->sent, 'sent once the outer call returns');
-    }
-
-    public function testARefundInsideAnOuterTransactionWaitsForItsCommit(): void
+    public function testOnlyTheOutermostCommitFulfils(): void
     {
         $order = $this->order(['status' => 'processing', 'items' => [[2, 1, 0]]]);
         $this->persist($order);
         $this->resource->beginTransaction();
 
-        $this->refund('rest_order', $order, 1.0);
-        $sentBeforeCommit = count($this->sent);
+        $this->refund('rest', $order, 1.0);
+        $sentBeforeOuterCommit = count($this->sent);
         $this->resource->commit();
 
-        $this->assertSame(0, $sentBeforeCommit, 'nothing sent before the outer commit');
+        $this->assertSame(0, $sentBeforeOuterCommit, 'nothing sent when the refund\'s own transaction commits');
         $this->assertCount(1, $this->sent, 'sent after the outer commit');
         $this->assertSame(1.0, $this->sent[0]['partial']['net'], 'from saved state');
     }
 
     /**
-     * @dataProvider outsideARefund
+     * @dataProvider transactions
      */
-    public function testAStatusChangeOutsideARefund(
-        bool $inTransaction,
-        ?bool $commits,
-        int $expectedSent,
-        bool $expectedFresh,
-        string $description
-    ): void {
+    public function testAStatusChange(bool $inTransaction, ?bool $commits, int $expectedSent, string $description): void
+    {
         $order = $this->order(['status' => 'complete', 'items' => [[1, 1, 0]]]);
         $this->persist($order);
         if ($inTransaction) {
@@ -364,146 +315,42 @@ class StatusFulfilmentDeferralTest extends TestCase
         if ($inTransaction) {
             $this->assertSame(0, $sentBeforeCommit, $description . ': nothing sent inside the transaction');
         }
+        $this->assertSame([], $this->resource->callbacks, $description . ': nothing left waiting on a commit');
         $this->assertCount($expectedSent, $this->sent, $description . ': fulfilments');
         if ($expectedSent) {
-            $this->assertSame(
-                $expectedFresh,
-                $this->composedFrom[0] !== $order,
-                $description . ': composed from a fresh load'
-            );
+            $this->assertNotSame($order, $this->composedFrom[0], $description . ': composed from a fresh load');
+            $this->assertTrue(!empty($this->saved['info']['marked_completed']), $description . ': the marker is saved');
         }
     }
 
-    public static function outsideARefund(): array
+    public static function transactions(): array
     {
         return [
-            [false, null, 1, false, 'no transaction open: fulfilled at once, as before'],
-            [true, true, 1, true, 'inside a transaction that commits: fulfilled after the commit'],
-            [true, false, 0, false, 'inside a transaction that rolls back: nothing sent'],
+            [false, null, 1, 'no transaction open: fulfilled at once'],
+            [true, true, 1, 'inside a transaction that commits: fulfilled after the commit'],
+            [true, false, 0, 'inside a transaction that rolls back: nothing sent'],
         ];
     }
 
     /**
-     * @dataProvider plugins
+     * Refunds the first item, saving the order and the memo in the order core
+     * saves them, inside one transaction: the REST routes save the order
+     * first, the admin credit memo the memo first.
      */
-    public function testEachPluginPassesTheCallThrough(callable $call, array $expectedArguments, string $description): void
+    private function refund(string $route, Order $order, float $qty): void
     {
-        $received = null;
-        $result = $call($this->service, function (...$arguments) use (&$received) {
-            $received = $arguments;
-            return 'core-result';
-        });
-
-        $this->assertSame($expectedArguments, $received, $description . ': arguments');
-        $this->assertSame('core-result', $result, $description . ': result');
-    }
-
-    public static function plugins(): array
-    {
-        $memo = self::stubOf(CreditmemoInterface::class);
-
-        return [
-            [
-                static fn ($service, $proceed) => (new CreditmemoManagement($service))->aroundRefund(
-                    self::stubOf(CreditmemoManagementInterface::class),
-                    $proceed,
-                    $memo,
-                    true
-                ),
-                [$memo, true],
-                'credit memo management',
-            ],
-            [
-                static fn ($service, $proceed) => (new RefundOrder($service))->aroundExecute(
-                    self::stubOf(RefundOrderInterface::class),
-                    $proceed,
-                    5,
-                    ['item'],
-                    true,
-                    false
-                ),
-                [5, ['item'], true, false, null, null],
-                'REST order refund',
-            ],
-            [
-                static fn ($service, $proceed) => (new RefundInvoice($service))->aroundExecute(
-                    self::stubOf(RefundInvoiceInterface::class),
-                    $proceed,
-                    6,
-                    ['item'],
-                    true,
-                    false,
-                    true
-                ),
-                [6, ['item'], true, false, true, null, null],
-                'REST invoice refund',
-            ],
-        ];
-    }
-
-    /**
-     * @param class-string $interface
-     * @return object
-     */
-    private static function stubOf(string $interface)
-    {
-        return eval('return new class implements \\' . $interface . ' {};');
-    }
-
-    /**
-     * Runs a refund of the first item through the route's plugin, saving the
-     * order and the memo in the order core saves them: the REST routes inside
-     * the order lock's transaction unless the route is "_unlocked".
-     *
-     * @return mixed
-     */
-    private function refund(string $route, Order $order, float $qty)
-    {
-        $refundOnOrder = function () use ($order, $qty): void {
-            $item = $order->getAllVisibleItems()[0];
-            $item->setData('qtyRefunded', $item->getData('qtyRefunded') + $qty);
-            $order->setData('status', 'complete');
-        };
-        $locked = strpos($route, '_unlocked') === false;
-        $restRefund = function () use ($order, $qty, $refundOnOrder, $locked): string {
-            if ($locked) {
-                $this->resource->beginTransaction();
-            }
-            $refundOnOrder();
-            $this->saveOrder($order);
+        $this->resource->beginTransaction();
+        if ($route === 'admin') {
             $this->saveMemo($qty);
-            if ($locked) {
-                $this->resource->commit();
-            }
-            return 'refund-result';
-        };
-        switch (str_replace('_unlocked', '', $route)) {
-            case 'rest_order':
-                return (new RefundOrder($this->service))->aroundExecute(
-                    $this->createMock(RefundOrderInterface::class),
-                    $restRefund,
-                    self::ORDER_ID
-                );
-            case 'rest_invoice':
-                return (new RefundInvoice($this->service))->aroundExecute(
-                    $this->createMock(RefundInvoiceInterface::class),
-                    $restRefund,
-                    3
-                );
-            default:
-                return (new CreditmemoManagement($this->service))->aroundRefund(
-                    $this->createMock(CreditmemoManagementInterface::class),
-                    function () use ($order, $qty, $refundOnOrder): string {
-                        $this->resource->beginTransaction();
-                        $this->saveMemo($qty);
-                        $refundOnOrder();
-                        $this->saveOrder($order);
-                        $this->resource->commit();
-                        return 'refund-result';
-                    },
-                    $this->createMock(CreditmemoInterface::class)
-                );
         }
+        $item = $order->getAllVisibleItems()[0];
+        $item->setData('qtyRefunded', $item->getData('qtyRefunded') + $qty);
+        $order->setData('status', 'complete');
+        $this->saveOrder($order);
+        if ($route !== 'admin') {
+            $this->saveMemo($qty);
+        }
+        $this->resource->commit();
     }
 
     /**
@@ -526,8 +373,7 @@ class StatusFulfilmentDeferralTest extends TestCase
         $state = new State();
         $state->setAreaCode($area);
 
-        $this->deferral = new FulfilmentDeferral();
-        $this->service = $this->buildStatusFulfilment([
+        $service = $this->buildStatusFulfilment([
             'configRepository' => $config,
             'brandRegistry' => $brand,
             'overlayRegistry' => $overlay,
@@ -537,7 +383,7 @@ class StatusFulfilmentDeferralTest extends TestCase
             'historyFactory' => $this->historyFactory(),
             'invoiceService' => $this->invoiceService(),
             'orderStatusHistoryRepository' => $this->historyRepository(),
-            'deferral' => $this->deferral,
+            'attempts' => new FulfilmentAttempts(),
             'orderFactory' => $this->orderFactory(),
             'orderRepository' => $this->orderRepository(),
             'orderResource' => $this->resource,
@@ -545,7 +391,7 @@ class StatusFulfilmentDeferralTest extends TestCase
             'appState' => $state,
             'logRepository' => $this->logRepository(),
         ]);
-        $this->observer = new SalesOrderSaveAfter($this->service, $this->deferral);
+        $this->observer = new SalesOrderSaveAfter($service);
     }
 
     /**
@@ -627,16 +473,16 @@ class StatusFulfilmentDeferralTest extends TestCase
         $order->setData('shipping_refunded', 0.0);
         $payment = new Payment();
         $payment->setData('method', 'two_payment');
-        $payment->setData('method_instance', new DeferralMethodInstance());
+        $payment->setData('method_instance', new AfterCommitMethodInstance());
         $payment->setData('additional_information', $state['info'] ?? []);
         $order->setData('payment', $payment);
 
         return $order;
     }
 
-    private function saveEvent(Order $order): DeferralSaveEvent
+    private function saveEvent(Order $order): AfterCommitSaveEvent
     {
-        return new DeferralSaveEvent(new DataObject(['order' => $order]));
+        return new AfterCommitSaveEvent(new DataObject(['order' => $order]));
     }
 
     private function orderFactory(): OrderFactory
@@ -763,7 +609,7 @@ class StatusFulfilmentDeferralTest extends TestCase
     }
 }
 
-class DeferralSaveEvent extends \Magento\Framework\Event\Observer
+class AfterCommitSaveEvent extends \Magento\Framework\Event\Observer
 {
     /** @var DataObject */
     private $event;
@@ -779,7 +625,7 @@ class DeferralSaveEvent extends \Magento\Framework\Event\Observer
     }
 }
 
-class DeferralMethodInstance
+class AfterCommitMethodInstance
 {
     /**
      * @param mixed $response

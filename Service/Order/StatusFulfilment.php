@@ -33,12 +33,12 @@ use Two\Gateway\Service\Api\Adapter;
  * Fulfils a Two order with Two when it reaches a configured fulfil-on status
  * (fulfilment trigger "complete").
  *
- * Observer\SalesOrderSaveAfter decides when: inside a refund call it queues
- * the order in FulfilmentDeferral, and otherwise it defers to after the
- * outermost commit on the sales connection. Either way the order is reloaded
- * from the database and fulfilled from saved state, and a failure is reported
- * on the order rather than thrown, since the merchant's save has already
- * succeeded (TWO-26302).
+ * Observer\SalesOrderSaveAfter checks the order and hands it here, and the
+ * fulfilment runs after the outermost commit on the sales connection. Core's
+ * refund routes save the order and its credit memo inside one transaction, so
+ * by then the memo is saved too. The order is reloaded from the database and
+ * fulfilled from saved state, and a failure is reported on the order rather
+ * than thrown, since the merchant's save has already succeeded (TWO-26302).
  */
 class StatusFulfilment
 {
@@ -72,8 +72,8 @@ class StatusFulfilment
     /** @var OrderStatusHistoryRepositoryInterface */
     private $orderStatusHistoryRepository;
 
-    /** @var FulfilmentDeferral */
-    private $deferral;
+    /** @var FulfilmentAttempts */
+    private $attempts;
 
     /** @var OrderFactory */
     private $orderFactory;
@@ -104,7 +104,7 @@ class StatusFulfilment
         TransactionFactory $transactionFactory,
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
-        FulfilmentDeferral $deferral,
+        FulfilmentAttempts $attempts,
         OrderFactory $orderFactory,
         OrderRepositoryInterface $orderRepository,
         OrderResource $orderResource,
@@ -122,7 +122,7 @@ class StatusFulfilment
         $this->transactionFactory = $transactionFactory;
         $this->historyFactory = $historyFactory;
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
-        $this->deferral = $deferral;
+        $this->attempts = $attempts;
         $this->orderFactory = $orderFactory;
         $this->orderRepository = $orderRepository;
         $this->orderResource = $orderResource;
@@ -158,7 +158,7 @@ class StatusFulfilment
         }
 
         return empty(((array)$payment->getAdditionalInformation())['marked_completed'])
-            && !$this->deferral->wasAttempted((int)$order->getEntityId());
+            && !$this->attempts->wasAttempted((int)$order->getEntityId());
     }
 
     /**
@@ -179,65 +179,20 @@ class StatusFulfilment
     }
 
     /**
-     * Fulfils once everything the current save is part of has committed: at
-     * once when no transaction is open on the sales connection, otherwise
-     * from a commit callback, which core runs after the outermost commit on
-     * that connection and drops on a rollback.
-     *
-     * @throws LocalizedException only when fulfilling at once
+     * Fulfils once everything the current save is part of has committed: from
+     * a commit callback, which core runs after the outermost commit on the
+     * sales connection and drops on a rollback, or at once when no transaction
+     * is open.
      */
-    public function fulfilAfterCommit(Order $order): void
-    {
-        if (!$this->deferToCommit((int)$order->getEntityId())) {
-            $this->fulfil($order);
-        }
-    }
-
-    /**
-     * Runs a refund entry point with status fulfilments queued, then fulfils
-     * each queued order once the refund call has returned. A refund that
-     * throws fulfils nothing.
-     *
-     * @return mixed what the refund call returned
-     */
-    public function duringRefund(callable $refund)
-    {
-        $this->deferral->enterRefund();
-        $succeeded = false;
-        try {
-            $result = $refund();
-            $succeeded = true;
-
-            return $result;
-        } finally {
-            if ($this->deferral->leaveRefund()) {
-                $queued = $this->deferral->takeQueue();
-                if ($succeeded) {
-                    foreach ($queued as $orderId) {
-                        // A refund call made inside someone else's transaction
-                        // has not committed when it returns.
-                        if (!$this->deferToCommit($orderId)) {
-                            $this->fulfilSaved($orderId);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * @return bool whether a transaction is open, and the fulfilment now waits for it
-     */
-    private function deferToCommit(int $orderId): bool
+    public function fulfilAfterCommit(int $orderId): void
     {
         if ($this->orderResource->getConnection()->getTransactionLevel() === 0) {
-            return false;
+            $this->fulfilSaved($orderId);
+            return;
         }
         $this->orderResource->addCommitCallback(function () use ($orderId): void {
             $this->fulfilSaved($orderId);
         });
-
-        return true;
     }
 
     /**
@@ -247,15 +202,15 @@ class StatusFulfilment
      * an error log line. The marker stays unset, so the next save of the order
      * in a fulfil-on status tries again.
      */
-    public function fulfilSaved(int $orderId): void
+    private function fulfilSaved(int $orderId): void
     {
         $order = null;
         try {
             // A fresh instance, not the repository's: the repository hands back
-            // the very instance the refund was working on.
+            // the very instance the save was working on.
             $order = $this->orderFactory->create();
             $this->orderResource->load($order, $orderId);
-            if (!$order->getEntityId() || !$this->isDue($order)) {
+            if (!$this->isDue($order)) {
                 return;
             }
             $this->assertWholeOrderShipped($order);
@@ -274,7 +229,7 @@ class StatusFulfilment
      * @return bool whether a fulfilment was sent
      * @throws LocalizedException
      */
-    public function fulfil(Order $order): bool
+    private function fulfil(Order $order): bool
     {
         // A merchant who invoiced in Magento can refund there before the order
         // is fulfilled with Two. Two is then told only what is left to pay
@@ -287,7 +242,7 @@ class StatusFulfilment
             return false;
         }
 
-        $this->deferral->markAttempted((int)$order->getEntityId());
+        $this->attempts->markAttempted((int)$order->getEntityId());
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             $this->orderPostprocessor->process(

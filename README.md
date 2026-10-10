@@ -128,12 +128,14 @@ that trigger happens, and a Magento invoice is recorded offline:
   in Magento before then is left out of what Two is told to invoice
   (TWO-26302). An invoice created through the REST API without an online
   capture is treated the same way.
-- On a configured status, Two is told once the order, and any credit memo
-  being created with it, has been saved. If Two cannot be told, the save
-  still stands: the order gets a comment saying why (and the admin an error
-  message), and saving the order again while it has that status retries. A
-  credit memo created by another extension's own code, rather than through
-  Magento's refund services, is not waited for.
+- On a configured status, Two is told once the save has committed. Magento's
+  own refunds (the credit memo form and the REST refund routes) save the order
+  and its credit memo in one transaction, from 2.4.6 on, so the credit memo is
+  saved by then. A refund made by another extension's own code that saves
+  them without a transaction is not covered: Two may be told before that
+  credit memo exists. If Two cannot be told, the save still stands: the order
+  gets a comment saying why (and the admin an error message), and saving the
+  order again while it has that status retries.
 
 ## Upgrading to 4.0
 

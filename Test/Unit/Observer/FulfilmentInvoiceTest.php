@@ -15,6 +15,7 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
+use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\Service\InvoiceService;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
@@ -27,7 +28,6 @@ use Two\Gateway\Observer\SalesOrderShipmentAfter;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Invoice\UploadService;
 use Two\Gateway\Service\Order\ComposeShipment;
-use Two\Gateway\Service\Order\FulfilmentDeferral;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Test\Unit\Service\Order\BuildsStatusFulfilment;
@@ -72,8 +72,8 @@ class FulfilmentInvoiceTest extends TestCase
         $order->setData('shipping_refunded', $shippingRefunded);
         // Two saves in two requests, so only the persisted marker can stop the second.
         $event = new FulfilmentObserver(new DataObject(['order' => $order]));
-        $this->statusObserver($leftToInvoice)->execute($event);
-        $this->statusObserver($leftToInvoice)->execute($event);
+        $this->statusObserver($leftToInvoice, $order)->execute($event);
+        $this->statusObserver($leftToInvoice, $order)->execute($event);
 
         $this->assertSame($expectedFulfils, $this->fulfils, $description . ': fulfilments sent');
         foreach ($this->payloads as $payload) {
@@ -115,16 +115,21 @@ class FulfilmentInvoiceTest extends TestCase
         $order = $this->order([], true, [[1, 1, 0], [1, 0, 0]]);
 
         $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
-        $this->statusObserver(0.0)->execute(new FulfilmentObserver(new DataObject(['order' => $order])));
+        $this->statusObserver(0.0, $order)->execute(new FulfilmentObserver(new DataObject(['order' => $order])));
     }
 
-    private function statusObserver(float $leftToInvoice): SalesOrderSaveAfter
+    /**
+     * The order stands in for its own row: no transaction is open, so the
+     * fulfilment runs inline on each save, from a "fresh" load that hands back
+     * the order as saved.
+     */
+    private function statusObserver(float $leftToInvoice, Order $order): SalesOrderSaveAfter
     {
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
-        // No transaction open, so the fulfilment runs inline on each save.
-        $deferral = new FulfilmentDeferral();
+        $orderFactory = $this->getMockBuilder(OrderFactory::class)->addMethods(['create'])->getMock();
+        $orderFactory->method('create')->willReturn($order);
 
         return new SalesOrderSaveAfter(
             $this->buildStatusFulfilment([
@@ -136,9 +141,8 @@ class FulfilmentInvoiceTest extends TestCase
                 'overlayRegistry' => $this->overlay(),
                 'orderPostprocessor' => $this->passThrough(),
                 'composeShipment' => $this->composeShipment(),
-                'deferral' => $deferral,
-            ]),
-            $deferral
+                'orderFactory' => $orderFactory,
+            ])
         );
     }
 
@@ -199,6 +203,11 @@ class FulfilmentInvoiceTest extends TestCase
             public function getAllVisibleItems(): array
             {
                 return $this->getData('visible_items');
+            }
+
+            public function load($id): self
+            {
+                return $this;
             }
         };
         $visible = [];

@@ -146,24 +146,6 @@
         <plugin name="two-refuse-invoice-while-unverified"
                 type="Two\Gateway\Plugin\Model\Sales\RefuseInvoiceWhileUnverified" sortOrder="20"/>
     </type>
-    <!--
-        TWO-26302: a fulfil-on status reached during a refund is fulfilled once
-        the refund call returns, from saved state. Global, since the REST routes
-        run in the webapi areas and the credit memo form in adminhtml. Declared
-        on the interfaces, so core's preferences inherit them.
-    -->
-    <type name="Magento\Sales\Api\CreditmemoManagementInterface">
-        <plugin name="two-fulfil-after-refund"
-                type="Two\Gateway\Plugin\Model\Sales\FulfilAfterRefund\CreditmemoManagement"/>
-    </type>
-    <type name="Magento\Sales\Api\RefundOrderInterface">
-        <plugin name="two-fulfil-after-refund"
-                type="Two\Gateway\Plugin\Model\Sales\FulfilAfterRefund\RefundOrder"/>
-    </type>
-    <type name="Magento\Sales\Api\RefundInvoiceInterface">
-        <plugin name="two-fulfil-after-refund"
-                type="Two\Gateway\Plugin\Model\Sales\FulfilAfterRefund\RefundInvoice"/>
-    </type>
     <!-- Every order save builds this; the proxy starts no session until a failure is reported. -->
     <type name="Two\Gateway\Service\Order\StatusFulfilment">
         <arguments>
