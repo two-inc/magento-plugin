@@ -233,53 +233,28 @@ used in its place, since it often holds the same number. A check that
 could not reach the VAT service keeps the number. The number is used
 exactly as entered, trimmed of leading and trailing spaces, and a value
 with nothing left is no number. Nothing is corrected or added, and for
-step 1 any value counts. For derivation (below), a number entered without
-its upper-case country prefix names no country, so it gets no
-intra-community code; the prefix `EL` counts as Greece, and `MC` is not a
-VAT prefix.
+step 1 any value counts.
 Order create also sends it to Two as `buyer_vat_number`, for a
 merchant in Spain and a buyer outside Spain only: Two requires a Spanish
 buyer's VAT number to equal its organisation number, so it is never sent
 for one. Later requests leave it out, so Two keeps the number placement
 sent.
 
-**Derivation, for merchants in Spain, until it is retired.** A line whose
-product tax class has no row set at all (or, for a line with no class, whose
-order has no line coded by steps 1 to 3) still gets the code the plugin used
-to work out itself. Physical products are goods;
-virtual and downloadable products are services, and so is any item Magento
-marks virtual, such as a bundle, gift card or configurable product with
-nothing to ship. Shipping and other fee
-lines count as goods when the order has a physical product, and as services
-when it has none. Goods follow the delivery address (the billing address
-when there is none). Services follow the buyer company's country, which is
-the billing country the plugin sends. The Canary Islands, Ceuta and Melilla
-(Spanish postcodes starting 35, 38, 51 or 52) count as outside the EU: the
-delivery postcode decides for goods, the billing postcode for services.
-Both intra-community codes also need the buyer's VAT number, with a prefix
-naming an EU state other than your own country (see above); without one
-the line gets no code.
-
-| Line | Where | Code |
-|---|---|---|
-| Goods | Delivered outside the EU | `ES_IVA_EXPORT` |
-| Goods | Delivered to the Canary Islands, Ceuta or Melilla | `ES_IVA_EXPORT` |
-| Goods | Delivered to another EU state, buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY` |
-| Goods | Delivered to another EU state for a buyer with no such VAT number | none |
-| Goods | Delivered in mainland Spain or the Balearics, or to another EU state for a Spanish buyer | none |
-| Service | Buyer in an EU state other than Spain, with an EU VAT number from a state other than yours | `ES_IVA_INTRA_COMMUNITY_SERVICES` |
-| Service | Buyer in an EU state other than Spain with no such VAT number | none |
-| Service | Buyer outside the EU, or billed in the Canary Islands, Ceuta or Melilla | `ES_IVA_NON_EU_SERVICES` |
-| Service | Buyer in mainland Spain or the Balearics | none |
-
-Monaco counts as part of the EU (through France). Two only sells to
-verified businesses, so every buyer counts as a business.
-
 **Upgrading from one code per tax class.** The upgrade copies each class's
 old code to that class's **Buyer in another EU country** row, its **No rule
 for the address** row and the row of every 0% rate its rules use at that
 moment, so every line the old setting covered keeps its code. Rates you add
 later start at (none).
+
+**Upgrading from a version that worked codes out itself.** Earlier versions
+gave a Spanish merchant's 0% line a code of their own choosing when none of
+its class's rows was set. The plugin no longer does: a line gets a code only
+from your rows (steps 1 to 4 above). If your Two account is in Spain, set a
+code on every row your 0% lines fall under, or Two refuses those lines.
+Orders placed on a version without the per-row settings keep the codes they
+recorded, but their record does not list the codes their lines shared, so a
+later line with no tax class that placement did not record (such as a refund
+adjustment) now gets no code.
 
 **The plugin never refuses; the API does.** A 0% line with no code is sent
 as is, and Two's API decides. For a Spanish merchant it refuses such a line,
