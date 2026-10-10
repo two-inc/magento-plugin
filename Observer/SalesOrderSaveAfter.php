@@ -122,10 +122,12 @@ class SalesOrderSaveAfter implements ObserverInterface
             return;
         }
 
-        // Idempotency: once we've created the Magento invoice, we've already
-        // fulfilled with Two. Subsequent saves of the same order should be
-        // no-ops here.
-        if ($order->hasInvoices()) {
+        // Idempotency: every successful fulfilment marks the payment
+        // (parseFulfillResponse here, the shipment observer and
+        // Two::capture() alike), so later saves of the same order are no-ops.
+        // An invoice alone is no evidence: the merchant may have invoiced
+        // offline in Magento only, and Two must still be told (TWO-26302).
+        if (!empty(((array)$order->getPayment()->getAdditionalInformation())['marked_completed'])) {
             return;
         }
 
@@ -154,7 +156,9 @@ class SalesOrderSaveAfter implements ObserverInterface
         // CAPTURE_OFFLINE so we do not route back through Two::capture()
         // and re-post /fulfillments. Persist only the invoice — we are
         // already inside sales_order_save_after, so the order object will
-        // continue through Magento's existing save lifecycle.
+        // continue through Magento's existing save lifecycle. Where the
+        // merchant already invoiced everything, the invoice totals zero and
+        // none is created.
         $invoice = $this->invoiceService->prepareInvoice($order);
         if ($invoice->getGrandTotal() > 0) {
             $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
