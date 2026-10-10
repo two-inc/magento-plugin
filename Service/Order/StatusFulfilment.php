@@ -299,7 +299,16 @@ class StatusFulfilment
             $this->orderRepository->save($order);
             $connection->commit();
         } catch (Throwable $e) {
-            $connection->rollBack();
+            // A failing rollback is logged on its own, so it cannot hide why the save failed.
+            try {
+                $connection->rollBack();
+            } catch (Throwable $rollBackError) {
+                $this->logRepository->addErrorLog('StatusFulfilmentRollBackFailed', [
+                    'order_id' => (int)$order->getEntityId(),
+                    'exception' => get_class($rollBackError),
+                    'message' => $rollBackError->getMessage(),
+                ]);
+            }
             throw $e;
         }
     }

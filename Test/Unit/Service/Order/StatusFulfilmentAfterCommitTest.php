@@ -335,6 +335,30 @@ class StatusFulfilmentAfterCommitTest extends TestCase
         ];
     }
 
+    public function testAFailingRollBackDoesNotHideWhyTheSaveFailed(): void
+    {
+        $this->leftToInvoice = 100.0;
+        $this->orderSaveFails = new \RuntimeException('Deadlock found');
+        $this->resource->outermostRollBackFails = new \RuntimeException('Connection lost');
+        $order = $this->order(['status' => 'processing', 'items' => [[1, 1, 0]]]);
+        $this->persist($order);
+
+        $order->setData('status', 'complete');
+        $this->saveOrder($order);
+
+        $notSaved = 'Two fulfilled the order, but the order could not be saved. Reason: Deadlock found';
+        $this->assertSame([$notSaved], $this->comments, 'the comment gives the save failure');
+        $this->assertSame(
+            [
+                ['StatusFulfilmentRollBackFailed', 'Connection lost'],
+                ['StatusFulfilmentNotSaved', 'Deadlock found'],
+            ],
+            array_map(static fn (array $error): array => [$error[0], $error[1]['message']], $this->errors),
+            'the rollback failure is logged on its own, the save failure is reported'
+        );
+        $this->assertTrue(empty($this->saved['info']['marked_completed']), 'no marker');
+    }
+
     public function testAnEventWithoutAnOrderIsIgnored(): void
     {
         $this->resource->beginTransaction();

@@ -28,6 +28,9 @@ class FakeOrderResource extends OrderResource
     /** @var array rows committed */
     public $rows = [];
 
+    /** @var \Throwable|null what the outermost rollback throws, once it has rolled back */
+    public $outermostRollBackFails;
+
     /** @var array rows written inside the open transaction */
     private $pending = [];
 
@@ -94,6 +97,9 @@ class FakeOrderResource extends OrderResource
         $this->level--;
         $this->callbacks = [];
         $this->pending = [];
+        if ($this->level === 0 && $this->outermostRollBackFails !== null) {
+            throw $this->outermostRollBackFails;
+        }
         return $this;
     }
 }

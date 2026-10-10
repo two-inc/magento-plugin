@@ -977,7 +977,9 @@ the postprocessing hook alike. The marker stays unset, so the next save of the
 order while it is in a fulfil-on status tries again. If Two accepts but saving
 the order and invoice then fails, all of it rolls back, and the comment says
 instead that Two fulfilled the order but it could not be saved
-(`StatusFulfilmentNotSaved` at error).
+(`StatusFulfilmentNotSaved` at error). If that rollback itself fails, it is
+logged on its own (`StatusFulfilmentRollBackFailed` at error) and the comment
+still gives the reason the save failed.
 
 **Never twice.** The callback's own order save fires the observer again, and the
 marker it has just set stops it; two saves in one transaction register two
