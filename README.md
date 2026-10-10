@@ -303,8 +303,9 @@ A few specifics:
   stock, numbering, writing records) will run then too.
 
 **Unchanged means unchanged.** When no subscriber changes the payload, every
-request is sent byte for byte as the plugin composed it. The plugin refuses it
-only on a failed shop-match check.
+request is sent byte for byte as the plugin composed it. After the hook, the
+plugin refuses it only on a failed shop-match check or a fault in the
+subscriber's code.
 
 **What you return is sent.** The payload goes out as your subscriber returns
 it, and Two's API validates it as it validates any request, including whether

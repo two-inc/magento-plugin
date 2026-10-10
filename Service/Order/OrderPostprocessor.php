@@ -19,9 +19,10 @@ use Two\Gateway\Exception\ShopMatchRefusedException;
 
 /**
  * Every order request passes through here just before it is sent (TWO-26092). A subscriber's
- * result is sent as returned; only a fault in the subscriber's code refuses it. Whether the payload
- * adds up is for Two's API to validate (TWO-26284). The shop-match checks belong to the hook's
- * default handler, which stands down for a subscriber (TWO-26276).
+ * result is sent as returned; only a fault in the subscriber's code refuses it, or a shop-match
+ * refusal from the checks it opted back into. Whether the payload adds up is for Two's API to
+ * validate (TWO-26284). The shop-match checks belong to the hook's default handler, which stands
+ * down for a subscriber (TWO-26276).
  */
 class OrderPostprocessor
 {

@@ -1147,22 +1147,22 @@ payload adds up is for Two's API to validate (TWO-26284). Do not add such a chec
 back after the hook; only a shop-match check, which compares with shop data the
 API cannot see, belongs there.
 
-## The postprocessing hook's checks: the default handler's
+## The postprocessing hook's checks: shop-match only
 
 After the hook, `OrderPostprocessor` refuses only a subscriber code fault
 (it throws, returns a non-array, or returns a payload that cannot be
 JSON-encoded) and lets a shop-match refusal through. Whether the payload adds
 up is left to Two's API (TWO-26284).
 
--   **Shop-match checks** ask whether what the plugin built matches the shop.
-    `Service\Order\ShopMatchChecks` holds them (today the shipping tax
-    fallback reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface`
-    for a subscriber that opts back in. They run in the hook's default handler,
-    `Plugin\OrderPostprocessing\ShopMatchDefaultHandler`, a plugin named
-    `two_gateway_shop_match_checks`, which stands down and logs
-    `OrderPostprocessingShopMatchDelegated` when any other handler is
-    registered. Each applies to the line the plugin built while the result
-    carries it unchanged.
+Shop-match checks ask whether what the plugin built matches the shop.
+`Service\Order\ShopMatchChecks` holds them (today the shipping tax fallback
+reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface` for a
+subscriber that opts back in. They run in the hook's default handler,
+`Plugin\OrderPostprocessing\ShopMatchDefaultHandler`, a plugin named
+`two_gateway_shop_match_checks`, which stands down and logs
+`OrderPostprocessingShopMatchDelegated` when any other handler is registered.
+Each applies to the line the plugin built while the result carries it
+unchanged.
 
 `Service\Order\PostprocessingSubscribers` detects other handlers from the
 shared `PluginListInterface`, walking `getNext()` from `__self` through each
