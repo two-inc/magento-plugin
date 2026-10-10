@@ -324,7 +324,10 @@ jobs:
       # server that, like the API, accepts only PUT on both routes. Checks
       # the method, route and payload on the wire, and what the order
       # history records for an accepted and a refused edit, and that a fully
-      # or partially fulfilled order gets no edit at all.
+      # or partially fulfilled order gets no edit at all. TWO-26277: the edited
+      # order carries a coupon, and coupon orders (items only, and items and
+      # shipping) are created through the payment method's authorize(), with
+      # the order-level discount checked on the wire.
       - name: API wire probe
         run: |
           docker exec magento-project-community-edition \

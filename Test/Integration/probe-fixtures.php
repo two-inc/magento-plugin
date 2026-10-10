@@ -41,6 +41,8 @@ use Magento\Tax\Model\ClassModelFactory;
 class ProbeFixtures
 {
     public const COUPON = 'PROBE10';
+    /** 10% off the items and the shipping (TWO-26277). */
+    public const SHIPPING_COUPON = 'PROBESHIP10';
     public const STANDARD_CLASS = 2;
     public const ADDRESS = [
         'firstname' => 'Probe',
@@ -103,7 +105,8 @@ class ProbeFixtures
             $this->simple('probe-reduced', 50.00, $this->reducedClass);
             $this->configurable();
             $this->bundle();
-            $this->coupon();
+            $this->coupon('Probe coupon', self::COUPON, false);
+            $this->coupon('Probe shipping coupon', self::SHIPPING_COUPON, true);
         });
         // CI's indexers run on schedule, and an unindexed product is not salable.
         foreach ($om->create(\Magento\Indexer\Model\Indexer\Collection::class)->getItems() as $indexer) {
@@ -343,26 +346,26 @@ class ProbeFixtures
         $repository->save($bundle);
     }
 
-    private function coupon(): void
+    private function coupon(string $name, string $code, bool $toShipping): void
     {
         $rule = $this->om->get(SalesRuleFactory::class)->create();
         $existing = $this->om->create(\Magento\SalesRule\Model\ResourceModel\Rule\Collection::class)
-            ->addFieldToFilter('name', 'Probe coupon')->getFirstItem();
+            ->addFieldToFilter('name', $name)->getFirstItem();
         if ($existing->getId()) {
             return;
         }
         $rule->setData([
-            'name' => 'Probe coupon',
+            'name' => $name,
             'is_active' => 1,
             'website_ids' => [1],
             'customer_group_ids' => [0, 1, 2, 3],
             'coupon_type' => 2,
-            'coupon_code' => self::COUPON,
+            'coupon_code' => $code,
             'uses_per_coupon' => 0,
             'uses_per_customer' => 0,
             'simple_action' => 'by_percent',
             'discount_amount' => 10,
-            'apply_to_shipping' => 0,
+            'apply_to_shipping' => (int)$toShipping,
             'stop_rules_processing' => 0,
         ])->save();
     }

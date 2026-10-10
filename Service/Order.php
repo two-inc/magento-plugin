@@ -536,6 +536,29 @@ abstract class Order
     }
 
     /**
+     * Get the order's total discount before tax, as a positive amount
+     *
+     * Magento stores the order-level discount negative, unlike the item and
+     * shipping discounts, which it stores positive (TWO-26277). The absolute
+     * value is sent, less the tax compensation, the same convention as the
+     * line discounts it totals. The field is informational, so its sign never
+     * refuses an order: a value below zero is sent as 0. The line discounts
+     * keep their guard (TWO-25099).
+     *
+     * @param OrderModel $order
+     * @return float
+     */
+    public function getDiscountAmountOrder(OrderModel $order): float
+    {
+        // Native-precision compute, single round at the payload boundary:
+        // see getDiscountAmountItem() for the rounding-order rationale.
+        $discountAmount = abs((float)$order->getDiscountAmount())
+            - (float)$order->getDiscountTaxCompensationAmount();
+
+        return round($discountAmount, 2) < 0 ? 0.0 : $discountAmount;
+    }
+
+    /**
      * Get category array by category ids
      *
      * @param array $categoryIds
