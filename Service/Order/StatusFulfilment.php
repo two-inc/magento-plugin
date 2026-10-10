@@ -12,6 +12,7 @@ use Magento\Framework\App\State;
 use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
+use Magento\Framework\Phrase;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -214,22 +215,38 @@ class StatusFulfilment
                 return;
             }
             $this->assertWholeOrderShipped($order);
-            if ($this->fulfil($order)) {
-                $this->orderRepository->save($order);
-            }
+            $response = $this->send($order);
         } catch (Throwable $e) {
-            $this->reportFailure($orderId, $order, $e);
+            $this->report($orderId, $order, $e, 'StatusFulfilmentFailed', __(
+                'Failed to fulfil order with %1. Reason: %2',
+                $this->brandRegistry->getProductName(),
+                $e->getMessage()
+            ));
+            return;
+        }
+        if ($response === null) {
+            return;
+        }
+
+        try {
+            $this->persist($order, $response);
+        } catch (Throwable $e) {
+            // Two has fulfilled the order: say so, rather than that it failed.
+            $this->report($orderId, $order, $e, 'StatusFulfilmentNotSaved', __(
+                '%1 fulfilled the order, but the order could not be saved. Reason: %2',
+                $this->brandRegistry->getProductName(),
+                $e->getMessage()
+            ));
         }
     }
 
     /**
-     * Sends the fulfilment and mirrors it with the plugin's own invoice. The
-     * caller persists the order (the marker rides on its payment).
+     * Sends the fulfilment to Two.
      *
-     * @return bool whether a fulfilment was sent
-     * @throws LocalizedException
+     * @return array|null Two's response, or null when nothing was left to send
+     * @throws LocalizedException when Two refuses
      */
-    private function fulfil(Order $order): bool
+    private function send(Order $order): ?array
     {
         // A merchant who invoiced in Magento can refund there before the order
         // is fulfilled with Two. Two is then told only what is left to pay
@@ -239,7 +256,7 @@ class StatusFulfilment
             : [];
         if (isset($payload['partial']) && empty($payload['partial']['line_items'])) {
             // Everything was refunded: nothing is left to fulfil.
-            return false;
+            return null;
         }
 
         $this->attempts->markAttempted((int)$order->getEntityId());
@@ -254,27 +271,61 @@ class StatusFulfilment
             (int)$order->getStoreId()
         );
 
-        $this->parseFulfillResponse($response, $order);
-
-        // Two has invoiced the buyer; mirror with a Magento invoice. Use
-        // CAPTURE_OFFLINE so we do not route back through Two::capture()
-        // and re-post /fulfillments. Where the merchant already invoiced
-        // everything, the invoice totals zero and none is created.
-        $invoice = $this->invoiceService->prepareInvoice($order);
-        if ($invoice->getGrandTotal() > 0) {
-            $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
-            $invoice->setData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER, true);
-            $invoice->register();
-            $invoice->pay();
-            $invoice->setTransactionId(
-                $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
-            );
-            $this->transactionFactory->create()
-                ->addObject($invoice)
-                ->save();
+        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+        if ($error) {
+            throw new LocalizedException($error);
         }
 
-        return true;
+        return $response;
+    }
+
+    /**
+     * Records the accepted fulfilment: the marker on the payment, the comment,
+     * the plugin's own invoice and the order with its invoiced totals, in one
+     * transaction on the sales connection, so they persist or fail together.
+     *
+     * @throws Throwable
+     */
+    private function persist(Order $order, array $response): void
+    {
+        $connection = $this->orderResource->getConnection();
+        $connection->beginTransaction();
+        try {
+            $comment = $this->markCompleted($order, $response);
+            if ($comment !== null) {
+                $this->addStatusToOrderHistory($order, $comment);
+            }
+            $this->saveInvoice($order, $response);
+            $this->orderRepository->save($order);
+            $connection->commit();
+        } catch (Throwable $e) {
+            $connection->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Two has invoiced the buyer; mirror with a Magento invoice. Use
+     * CAPTURE_OFFLINE so we do not route back through Two::capture() and
+     * re-post /fulfillments. Where the merchant already invoiced everything,
+     * the invoice totals zero and none is created.
+     */
+    private function saveInvoice(Order $order, array $response): void
+    {
+        $invoice = $this->invoiceService->prepareInvoice($order);
+        if ($invoice->getGrandTotal() <= 0) {
+            return;
+        }
+        $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+        $invoice->setData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER, true);
+        $invoice->register();
+        $invoice->pay();
+        $invoice->setTransactionId(
+            $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
+        );
+        $this->transactionFactory->create()
+            ->addObject($invoice)
+            ->save();
     }
 
     /**
@@ -295,52 +346,35 @@ class StatusFulfilment
     }
 
     /**
-     * @throws LocalizedException
+     * Sets the marker on the payment when Two returned the fulfilled order.
+     *
+     * @return string|null the order comment to add, if any
      */
-    private function parseFulfillResponse(array $response, Order $order): void
+    private function markCompleted(Order $order, array $response): ?string
     {
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-
-        if ($error) {
-            throw new LocalizedException($error);
-        }
-
         if (empty($response['fulfilled_order'] ||
             empty($response['fulfilled_order']['id']))) {
-            return;
+            return null;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
         $additionalInformation['marked_completed'] = true;
-
         $order->getPayment()->setAdditionalInformation($additionalInformation);
 
-        if (empty($response['remained_order'])) {
-            $comment = __(
-                '%1 order marked as completed.',
-                $this->brandRegistry->getProductName(),
-            );
-        } else {
-            $comment = __(
-                '%1 order marked as partially completed.',
-                $this->brandRegistry->getProductName(),
-            );
-        }
-
-        $this->addStatusToOrderHistory($order, $comment->render());
+        return __(
+            empty($response['remained_order'])
+                ? '%1 order marked as completed.'
+                : '%1 order marked as partially completed.',
+            $this->brandRegistry->getProductName()
+        )->render();
     }
 
-    private function reportFailure(int $orderId, ?Order $order, Throwable $e): void
+    private function report(int $orderId, ?Order $order, Throwable $e, string $logType, Phrase $message): void
     {
-        $this->logRepository->addErrorLog('StatusFulfilmentFailed', [
+        $this->logRepository->addErrorLog($logType, [
             'order_id' => $orderId,
             'exception' => get_class($e),
             'message' => $e->getMessage(),
         ]);
-        $message = __(
-            'Failed to fulfil order with %1. Reason: %2',
-            $this->brandRegistry->getProductName(),
-            $e->getMessage()
-        );
         try {
             if ($order !== null && $order->getEntityId()) {
                 $this->addStatusToOrderHistory($order, $message->render());
@@ -349,7 +383,7 @@ class StatusFulfilment
                 $this->messageManager->addErrorMessage($message);
             }
         } catch (Throwable $reportError) {
-            $this->logRepository->addErrorLog('StatusFulfilmentFailed', [
+            $this->logRepository->addErrorLog($logType, [
                 'order_id' => $orderId,
                 'report_error' => $reportError->getMessage(),
             ]);

@@ -949,7 +949,9 @@ only decides, and `Service\Order\StatusFulfilment` sends:
     database adapter runs after the outermost commit and drops on a rollback.
     The callback reloads the order through `OrderFactory` and the resource model
     (the repository hands back the instance the save was working on),
-    re-checks it, fulfils it and saves it. With no transaction open it runs at
+    re-checks it and fulfils it. Once Two accepts, the marker, the comment, the
+    plugin's invoice and the order with its invoiced totals are saved in one
+    transaction on the sales connection. With no transaction open it runs at
     once; the order's own save always holds one when the event fires, so that
     branch only serves a dispatch outside a save.
 
@@ -969,15 +971,24 @@ Reason: ...", the wording a failed refund uses; an admin request also gets it as
 error message (REST and other callers get nothing extra); and
 `StatusFulfilmentFailed` is logged at error. That covers a refusal by Two and one by
 the postprocessing hook alike. The marker stays unset, so the next save of the
-order while it is in a fulfil-on status tries again.
+order while it is in a fulfil-on status tries again. If Two accepts but saving
+the order and invoice then fails, all of it rolls back, and the comment says
+instead that Two fulfilled the order but it could not be saved
+(`StatusFulfilmentNotSaved` at error).
 
 **Never twice.** The callback's own order save fires the observer again, and the
 marker it has just set stops it; two saves in one transaction register two
 callbacks, and the second finds the marker. `Service\Order\FulfilmentAttempts`
-records each order sent in the request, which stops a copy of the order loaded
-before the marker was set from fulfilling again when it is saved later in the
-same request: that save writes the payment back without the marker, so a fresh
-load cannot see it either.
+records each order sent in the request, refused or not, which stops a copy of
+the order loaded before the marker was set from fulfilling again when it is
+saved later in the same request. The payment resource is version-controlled, so
+an unmodified stale payment is not written and the saved marker survives; the
+record matters when that copy's payment was changed, since its save then writes
+the payment back without the marker, and after a refusal or timeout, when there
+is no marker at all. The request's own order instance (and the one in the
+repository registry and in `sales_order_save_commit_after`) is stale once the
+callback has run: a later modifying save of it in the same request would write
+the pre-fulfilment totals back over the callback's. No core route does this.
 
 **Refunds before that fulfilment are netted out.** Once the merchant can invoice
 first, they can also credit-memo first. The whole-order check counts refunded and

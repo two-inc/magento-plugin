@@ -436,3 +436,4 @@
 "This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when it is shipped.","Esta factura se ha registrado solo en Magento y no se ha notificado a %1. El pedido se cumplirá con %1 cuando se envíe."
 "This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when its status changes to %2.","Esta factura se ha registrado solo en Magento y no se ha notificado a %1. El pedido se cumplirá con %1 cuando su estado cambie a %2."
 "Failed to fulfil order with %1. Reason: %2","No se ha podido cumplir el pedido con %1. Motivo: %2"
+"%1 fulfilled the order, but the order could not be saved. Reason: %2","%1 ha cumplido el pedido, pero no se ha podido guardar el pedido. Motivo: %2"

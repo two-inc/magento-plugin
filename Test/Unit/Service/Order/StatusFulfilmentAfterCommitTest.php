@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Order;
 
 use Magento\Framework\App\State;
+use Magento\Framework\DB\TransactionFactory;
 use Magento\Framework\DataObject;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
@@ -73,6 +74,15 @@ class StatusFulfilmentAfterCommitTest extends TestCase
 
     /** @var \Throwable|null what the next call to Two throws */
     private $twoFails;
+
+    /** @var int calls to Two, failed ones included */
+    private $twoCalls = 0;
+
+    /** @var float what the plugin's own invoice totals */
+    private $leftToInvoice = 0.0;
+
+    /** @var \Throwable|null what the fulfilment's own order save throws */
+    private $orderSaveFails;
 
     /** @var FakeOrderResource */
     private $resource;
@@ -215,8 +225,9 @@ class StatusFulfilmentAfterCommitTest extends TestCase
         $this->persist($order);
         $this->refund('rest', $order, 1.0);
 
-        // The in-memory order never saw the marker, and its save writes the
-        // payment back without it, so a fresh load cannot see it either.
+        // The in-memory order never saw the marker. Where its payment was
+        // changed, its save writes the payment back without the marker, so a
+        // fresh load cannot see it either; the test's save always does.
         $this->saveOrder($order);
 
         $this->assertCount(1, $this->sent, 'one fulfilment');
@@ -232,6 +243,99 @@ class StatusFulfilmentAfterCommitTest extends TestCase
 
         $this->assertCount(1, $this->sent, 'one fulfilment');
         $this->assertSame(2 + 1, $this->orderSaves, 'the two saves and the fulfilment\'s own');
+    }
+
+    /**
+     * @dataProvider secondSaves
+     */
+    public function testAFailedFulfilmentIsNotSentAgainInTheSameRequest(string $secondSave, string $description): void
+    {
+        $this->twoFails = new \RuntimeException('timeout');
+        $order = $this->order(['status' => 'processing', 'items' => [[2, 2, 0]]]);
+        $this->persist($order);
+
+        $this->resource->beginTransaction();
+        $order->setData('status', 'complete');
+        $this->saveOrder($order);
+        if ($secondSave === 'same transaction') {
+            $this->saveOrder($order);
+        }
+        $this->resource->commit();
+        if ($secondSave === 'stale copy') {
+            $this->saveOrder($order);
+        }
+
+        $this->assertSame(1, $this->twoCalls, $description . ': one call to Two');
+        $this->assertSame(
+            ['Failed to fulfil order with Two. Reason: timeout'],
+            $this->comments,
+            $description . ': one failure comment'
+        );
+    }
+
+    public static function secondSaves(): array
+    {
+        return [
+            ['same transaction', 'saved twice in one transaction, so two callbacks'],
+            ['stale copy', 'the stale copy saved again after the commit'],
+        ];
+    }
+
+    /**
+     * @dataProvider orderSaves
+     */
+    public function testTheInvoiceAndTheOrderPersistTogether(
+        ?\Throwable $orderSaveFails,
+        array $expectedRows,
+        array $expectedComments,
+        array $expectedLogs,
+        bool $expectedMarker,
+        string $description
+    ): void {
+        $this->leftToInvoice = 100.0;
+        $this->orderSaveFails = $orderSaveFails;
+        $order = $this->order(['status' => 'processing', 'items' => [[1, 1, 0]]]);
+        $this->persist($order);
+
+        $order->setData('status', 'complete');
+        $this->saveOrder($order);
+
+        $this->assertSame(1, $this->twoCalls, $description . ': one call to Two');
+        $this->assertSame($expectedRows, $this->resource->rows, $description . ': rows committed');
+        $this->assertSame($expectedComments, $this->comments, $description . ': failure comments');
+        $this->assertSame($expectedLogs, array_column($this->errors, 0), $description . ': error logs');
+        $this->assertSame(
+            $expectedMarker,
+            !empty($this->saved['info']['marked_completed']),
+            $description . ': marker saved'
+        );
+        $this->assertSame(0, $this->resource->level, $description . ': transactions balanced');
+    }
+
+    public static function orderSaves(): array
+    {
+        $notSaved = 'Two fulfilled the order, but the order could not be saved. Reason: Deadlock found';
+
+        return [
+            [null, ['Two order marked as completed.', 'invoice'], [], [], true, 'the order saves'],
+            [
+                new \RuntimeException('Deadlock found'),
+                [$notSaved],
+                [$notSaved],
+                ['StatusFulfilmentNotSaved'],
+                false,
+                'the order save fails after Two accepted: no orphan invoice or completion comment',
+            ],
+        ];
+    }
+
+    public function testAnEventWithoutAnOrderIsIgnored(): void
+    {
+        $this->resource->beginTransaction();
+
+        $this->observer->execute(new AfterCommitSaveEvent(new DataObject(['order' => null])));
+
+        $this->assertSame([], $this->resource->callbacks, 'no commit callback');
     }
 
     /**
@@ -276,6 +380,8 @@ class StatusFulfilmentAfterCommitTest extends TestCase
 
         $this->assertSame([], $this->sent, 'nothing left to fulfil');
         $this->assertSame(1, $this->orderSaves, 'only the refund\'s own order save');
+        $this->assertSame([], $this->comments, 'no comment');
+        $this->assertSame([], $this->errors, 'nothing logged');
     }
 
     public function testOnlyTheOutermostCommitFulfils(): void
@@ -382,6 +488,7 @@ class StatusFulfilmentAfterCommitTest extends TestCase
             'composeShipment' => $this->composeShipment(),
             'historyFactory' => $this->historyFactory(),
             'invoiceService' => $this->invoiceService(),
+            'transactionFactory' => $this->transactionFactory(),
             'orderStatusHistoryRepository' => $this->historyRepository(),
             'attempts' => new FulfilmentAttempts(),
             'orderFactory' => $this->orderFactory(),
@@ -507,6 +614,12 @@ class StatusFulfilmentAfterCommitTest extends TestCase
     {
         $repository = $this->createMock(OrderRepositoryInterface::class);
         $repository->method('save')->willReturnCallback(function (Order $order): Order {
+            if ($this->orderSaveFails !== null) {
+                // Core's save rolls its own transaction back and rethrows.
+                $this->resource->beginTransaction();
+                $this->resource->rollBack();
+                throw $this->orderSaveFails;
+            }
             $this->saveOrder($order);
             return $order;
         });
@@ -533,6 +646,7 @@ class StatusFulfilmentAfterCommitTest extends TestCase
     {
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = []): array {
+            $this->twoCalls++;
             if ($this->twoFails !== null) {
                 throw $this->twoFails;
             }
@@ -544,8 +658,9 @@ class StatusFulfilmentAfterCommitTest extends TestCase
     }
 
     /**
-     * The merchant invoiced everything offline, so the plugin's own invoice
-     * totals zero and is not created (FulfilmentInvoiceTest covers the rest).
+     * By default the merchant invoiced everything offline, so the plugin's own
+     * invoice totals zero and is not created (FulfilmentInvoiceTest covers the
+     * rest); $leftToInvoice makes it create one.
      */
     private function invoiceService(): InvoiceService
     {
@@ -553,13 +668,48 @@ class StatusFulfilmentAfterCommitTest extends TestCase
             ->disableOriginalConstructor()
             ->addMethods(['prepareInvoice'])
             ->getMock();
-        $service->method('prepareInvoice')->willReturnCallback(static function (): Invoice {
+        $service->method('prepareInvoice')->willReturnCallback(function (): Invoice {
             $invoice = new Invoice();
-            $invoice->setData('grand_total', 0.0);
+            $invoice->setData('grand_total', $this->leftToInvoice);
             return $invoice;
         });
 
         return $service;
+    }
+
+    /**
+     * Saving the invoice writes its row on the sales connection.
+     */
+    private function transactionFactory(): TransactionFactory
+    {
+        $resource = $this->resource;
+        $transaction = new class ($resource) {
+            /** @var FakeOrderResource */
+            private $resource;
+
+            public function __construct(FakeOrderResource $resource)
+            {
+                $this->resource = $resource;
+            }
+
+            public function addObject($object): self
+            {
+                return $this;
+            }
+
+            public function save(): self
+            {
+                $this->resource->write('invoice');
+                return $this;
+            }
+        };
+        $factory = $this->getMockBuilder(TransactionFactory::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['create'])
+            ->getMock();
+        $factory->method('create')->willReturn($transaction);
+
+        return $factory;
     }
 
     private function historyFactory(): HistoryFactory
@@ -578,6 +728,7 @@ class StatusFulfilmentAfterCommitTest extends TestCase
         $repository = $this->createMock(OrderStatusHistoryRepositoryInterface::class);
         $repository->method('save')->willReturnCallback(function ($history) {
             $comment = (string)$history->getComment();
+            $this->resource->write($comment);
             if (strpos($comment, 'marked as') === false) {
                 $this->comments[] = $comment;
             }
