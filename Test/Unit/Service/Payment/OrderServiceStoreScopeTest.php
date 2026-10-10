@@ -79,6 +79,15 @@ class OrderServiceStoreScopeTest extends TestCase
             $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
             return ['id' => 'remote-order-id'];
         });
+        $apiAdapter->method('executeWithStatus')->willReturnCallback(function (
+            string $endpoint,
+            array $payload = [],
+            string $method = 'POST',
+            ?int $storeId = null
+        ): array {
+            $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
+            return ['status' => 200, 'body' => ['id' => 'remote-order-id']];
+        });
 
         return new OrderService(
             $apiAdapter,
@@ -97,8 +106,17 @@ class OrderServiceStoreScopeTest extends TestCase
             $this->createMock(OrderPaymentRepositoryInterface::class),
             $this->createMock(OrderRepositoryInterface::class),
             $this->createMock(LogRepository::class),
-            $this->createMock(BrandOverlayRegistryInterface::class)
+            $this->createMock(BrandOverlayRegistryInterface::class),
+            $this->passThroughPostprocessor()
         );
+    }
+
+    private function passThroughPostprocessor(): \Two\Gateway\Service\Order\OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
     }
 }
 

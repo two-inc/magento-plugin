@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Service\Api;
 
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\ApiCall;
 use Two\Gateway\Api\ApiResult;
@@ -178,15 +179,50 @@ class AdapterTest extends TestCase
         $this->adapter->execute('/v1/order', []);
     }
 
-    public function testPutRoutesThoughPostBranch(): void
+    /**
+     * TWO-26150: Curl::post() always issues a POST, so every other
+     * non-GET method must name itself through CURLOPT_CUSTOMREQUEST.
+     *
+     * @return array<string, array{string, string, ?string, string}>
+     *         [method, client call, CURLOPT_CUSTOMREQUEST, description]
+     */
+    public static function methodCases(): array
     {
+        return [
+            'POST' => ['POST', 'post', null, 'POST goes through post() with no override'],
+            'PUT' => ['PUT', 'post', 'PUT', 'an order edit PUT must reach the API as PUT'],
+            'DELETE' => ['DELETE', 'post', 'DELETE', 'DELETE must not fall through to a GET'],
+            'GET' => ['GET', 'get', null, 'GET goes through get() with no override'],
+        ];
+    }
+
+    #[DataProvider('methodCases')]
+    public function testEachMethodIsSentAsItself(
+        string $method,
+        string $clientCall,
+        ?string $customRequest,
+        string $description
+    ): void {
         $this->curl->method('getStatus')->willReturn(200);
         $this->curl->method('getBody')->willReturn('{}');
+        $options = [];
+        $this->curl->method('setOption')->willReturnCallback(
+            function ($option, $value) use (&$options): void {
+                $options[$option] = $value;
+            }
+        );
+        $calls = [];
+        $this->curl->method('post')->willReturnCallback(function () use (&$calls): void {
+            $calls[] = 'post';
+        });
+        $this->curl->method('get')->willReturnCallback(function () use (&$calls): void {
+            $calls[] = 'get';
+        });
 
-        $this->curl->expects($this->once())->method('post');
-        $this->curl->expects($this->never())->method('get');
+        $this->adapter->execute('/v1/order/123', ['status' => 'x'], $method);
 
-        $this->adapter->execute('/v1/order/123', ['status' => 'fulfilled'], 'PUT');
+        $this->assertSame([$clientCall], $calls, $description);
+        $this->assertSame($customRequest, $options[CURLOPT_CUSTOMREQUEST] ?? null, $description);
     }
 
     public function testExceptionDuringRequestReturnsCaughtError(): void

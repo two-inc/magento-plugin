@@ -86,7 +86,8 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             });
 
         $this->apiAdapter = $this->createMock(Adapter::class);
-        $this->apiAdapter->expects($this->once())
+        // One state lookup, then the edit itself.
+        $this->apiAdapter->expects($this->exactly(2))
             ->method('execute')
             ->willReturnCallback(function (
                 string $endpoint,
@@ -94,6 +95,9 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                 string $method = 'POST',
                 ?int $storeId = null
             ): array {
+                if ($method === 'GET') {
+                    return ['state' => 'CONFIRMED'];
+                }
                 $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
                 return ['id' => 'remote-order-id'];
             });
@@ -113,7 +117,9 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             $orderRepository,
             $composeOrder,
             $this->apiAdapter,
-            $overlayRegistry
+            $overlayRegistry,
+            $this->createMock(\Magento\Framework\Message\ManagerInterface::class),
+            $this->passThroughPostprocessor()
         );
     }
 
@@ -147,6 +153,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                     'phone_number' => '+4712345678',
                 ],
             ],
+            'terms' => ['type' => 'NET_TERMS', 'duration_days' => 30],
         ];
     }
 
@@ -290,6 +297,14 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             'shipping_address is required and is not the field being omitted'
         );
     }
+
+    private function passThroughPostprocessor(): \Two\Gateway\Service\Order\OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
+    }
 }
 
 /**
@@ -357,7 +372,7 @@ class AddressUpdateMethodInstanceStub
      */
     public function getErrorFromResponse($response)
     {
-        return null;
+        return $response['error_message'] ?? null;
     }
 }
 

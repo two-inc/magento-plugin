@@ -571,24 +571,14 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>
                 </field>
-                <field id="default_shipping_tax_class" translate="label comment" type="select" sortOrder="40"
+                <field id="tax_code_map" translate="label comment" type="text" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Default shipping tax class</label>
-                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. The rate is resolved through this Product Tax Class against the order's shipping destination, the same way a product's tax is resolved. Leave unselected to refuse such orders instead of assuming a rate.</comment>
-                    <source_model>Magento\Tax\Model\TaxClass\Source\Product</source_model>
-                    <config_path>payment/{{code}}/default_shipping_tax_class</config_path>
-                </field>
-                <!-- DEPRECATED: hidden unless a value is already stored — see
-                     the matching comment in system.xml. -->
-                <field id="default_shipping_tax_rate" translate="label" type="text" sortOrder="50"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Default shipping tax rate (%) (deprecated)</label>
-                    <comment>Deprecated flat rate. Only used when default_shipping_tax_class above is unset.</comment>
-                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
-                    <validate>validate-zero-or-greater</validate>
-                    <config_path>payment/{{code}}/default_shipping_tax_rate</config_path>
+                    <label>Tax codes for 0% lines</label>
+                    <comment>Optional. For each product tax class, the tax code to send on lines taxed at 0%. Shipping takes the code of the shipping tax class. A class left at (none) keeps the automatic choice for merchants in Spain: export, intra-community supply of goods or services, or services outside the EU, worked out from the delivery address, the buyer's country and the buyer's VAT number. Otherwise no code is sent. The plugin never refuses an order over a tax code; the API checks every code it receives.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\TaxCodeMap</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\TaxCodeMap</backend_model>
+                    <config_path>payment/{{code}}/tax_code_map</config_path>
                 </field>
             </group>
         </section>

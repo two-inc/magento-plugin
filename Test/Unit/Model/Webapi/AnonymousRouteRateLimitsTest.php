@@ -17,6 +17,7 @@ use Two\Gateway\Model\Webapi\OrderIntent;
 use Two\Gateway\Model\Webapi\SoleTrader;
 use Two\Gateway\Model\Webapi\Surcharges;
 use Two\Gateway\Model\Webapi\TermSelection;
+use Two\Gateway\Service\Address\IsoRegionResolver;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -124,7 +125,9 @@ class AnonymousRouteRateLimitsTest extends TestCase
                     $this->createMock(LogRepository::class),
                     $this->createMock(CheckoutSession::class),
                     $this->createMock(BuyerCountryResolver::class),
-                    $this->createMock(SupportedCountriesProvider::class)
+                    $this->createMock(SupportedCountriesProvider::class),
+                    $this->createMock(\Two\Gateway\Service\Order\ComposeIntent::class),
+                    $this->createMock(\Two\Gateway\Service\Order\OrderPostprocessor::class)
                 ))->place('{}');
                 return;
             case 'surcharges':
@@ -143,7 +146,8 @@ class AnonymousRouteRateLimitsTest extends TestCase
             $this->createMock(SettingsProvider::class),
             $limiter,
             $this->createMock(LogRepository::class),
-            $this->createMock(CheckoutSession::class)
+            $this->createMock(CheckoutSession::class),
+            $this->createMock(IsoRegionResolver::class)
         );
     }
 

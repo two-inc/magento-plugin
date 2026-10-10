@@ -31,7 +31,7 @@ class ComposeShipment extends OrderService
      */
     public function execute(Order\Shipment $shipment, Order $order): array
     {
-        $shipmentItems = $this->getLineItemsShipment($order, $shipment);
+        $shipmentItems = $this->applyTaxCodes($this->getLineItemsShipment($order, $shipment), $order);
 
         // Deliberately no getFeeLines()/getOtherChargesLineItem() call here,
         // unlike ComposeOrder/ComposeCapture/ComposeRefund: every total

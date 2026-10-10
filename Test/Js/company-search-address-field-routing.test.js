@@ -179,11 +179,19 @@ const REGION_MARKUP = {
  * Build the form and load the REAL shared model against it.
  *
  * @param {string} [regionShape] key of REGION_MARKUP, default 'none'
+ * @param {string} [country] the form's selected country; no country select
+ *        when omitted
  * @returns {object} { model, $, field }
  */
-function load(regionShape) {
+function load(regionShape, country) {
+    const countrySelect = country
+        ? '<select name="country_id">' +
+          `<option value="${country}" selected>${country}</option>` +
+          '</select>'
+        : '';
     document.body.innerHTML =
         '<div id="shipping-new-address-form">' +
+        countrySelect +
         ADDRESS_FIELDS +
         REGION_MARKUP[regionShape || 'none'] +
         '</div>';
@@ -409,6 +417,111 @@ describe('a region lands wherever the address format can hold it', () => {
         expect(field('region_id').value).toBe('43');
         expect(field('region_id').hasAttribute(MARKER)).toBe(false);
         expect(field('city').value).toBe('Ashford, Kent');
+    });
+});
+
+describe("an ISO 3166-2 code for the form's own country is not appended to the city", () => {
+    // TWO-26258: a registry can answer the region as a subdivision code
+    // ("ES-M"), which no Magento option for that country is labelled with. It
+    // is no use to anyone reading the city, so the region select is left for
+    // the buyer and Magento's own required-field validation prompts them.
+    test.each([
+        [
+            'select',
+            'ES',
+            'ES-M',
+            { region_id: '', city: 'MADRID' },
+            'own-country code, unmatched select'
+        ],
+        [
+            'none',
+            'ES',
+            'ES-M',
+            { city: 'MADRID' },
+            'own-country code, no region control'
+        ],
+        [
+            'none',
+            'ES',
+            'es-m',
+            { city: 'MADRID' },
+            'the code is matched case-insensitively'
+        ],
+        [
+            'select',
+            'ES',
+            'Kent',
+            { region_id: '', city: 'MADRID, Kent' },
+            'same-country free-text name still appended'
+        ],
+        [
+            'select',
+            'ES',
+            'FR-75',
+            { region_id: '', city: 'MADRID, FR-75' },
+            "another country's code stays free text"
+        ],
+        [
+            'none',
+            '',
+            'ES-M',
+            { city: 'MADRID, ES-M' },
+            'no country in the form: nothing to judge the code against'
+        ],
+        [
+            'select',
+            'ES',
+            '',
+            { region_id: '', city: 'MADRID' },
+            'an empty region writes nothing anywhere'
+        ]
+    ])('%s form, country=%p, region=%p -> %p (%s)', (shape, country, region, expected, why) => {
+        const { apply, field } = load(shape, country);
+
+        apply({ city: 'MADRID', postal_code: '28013', street: 'Calle Mayor', region });
+
+        Object.keys(expected).forEach(function (name) {
+            expect(`${why}: ${name}=${field(name).value}`).toBe(
+                `${why}: ${name}=${expected[name]}`
+            );
+        });
+    });
+
+    test('an own-country code is not written into an empty city either', () => {
+        const { apply, field } = load('select', 'ES');
+
+        apply({ street: 'Calle Mayor', region: 'ES-M' });
+
+        expect(field('city').value).toBe('');
+        expect(field('city').hasAttribute(MARKER)).toBe(false);
+    });
+});
+
+describe("the relay's store region id is preferred over matching the region text", () => {
+    // TWO-26263: the module's company relay adds the store's own region id
+    // beside an ISO 3166-2 region it could resolve. The select takes it
+    // wherever it offers that id; otherwise the text routing above applies.
+    test.each([
+        [{ region: 'US-NY', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'id offered by the select'],
+        [{ region: 'US-NY', region_id: 43 }, { region_id: '43', city: 'Albany' }, 'a numeric id is matched as text'],
+        [{ region: 'California', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'the id wins over a text match'],
+        [{ region: 'US-NY', region_id: '99' }, { region_id: '', city: 'Albany' }, 'an id the select lacks falls back'],
+        [{ region: 'US-NY' }, { region_id: '', city: 'Albany' }, 'no id: the text routing is unchanged'],
+        // TWO-26266: the relay also resolves a bare code or a name. A region it
+        // resolved and the select took is never appended to the city; one it
+        // could not resolve is appended exactly as before.
+        [{ region: 'NY', region_id: '43' }, { region_id: '43', city: 'Albany' }, 'a resolved bare code is selected, not appended'],
+        [{ region: 'ZZ' }, { region_id: '', city: 'Albany, ZZ' }, 'an unresolved bare code is appended as before']
+    ])('%p -> %p (%s)', (payload, expected, why) => {
+        const { apply, field } = load('select', 'US');
+
+        apply(Object.assign({ city: 'Albany', postal_code: '12207', street: 'State St' }, payload));
+
+        Object.keys(expected).forEach(function (name) {
+            expect(`${why}: ${name}=${field(name).value}`).toBe(
+                `${why}: ${name}=${expected[name]}`
+            );
+        });
     });
 });
 

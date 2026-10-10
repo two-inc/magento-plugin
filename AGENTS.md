@@ -714,6 +714,49 @@ tab stop back before the newly opened one takes its. A pointer press outside the
 open popover closes it too, with the company field counted as inside the
 control.
 
+## The company relay resolves an ISO 3166-2 region to the store's own
+
+The company lookup answers an address region as an ISO 3166-2 code ("ES-M",
+"IT-RM") for some countries, which no region select is labelled with. `CompanyLookup::get()` passes
+each address through `Service\Address\IsoRegionResolver`, which adds
+`region_id` and `region_code` from the store's own region rows when the code
+resolves, and leaves `region` exactly as answered (TWO-26263). Both checkouts
+select `region_id` when their select offers it, and otherwise fall back to
+matching the region text, where an unmatched own-country code is left out of
+the city (TWO-26258).
+
+The match is against the live directory rows, so a merchant's edited region
+list is respected. Only a code for the address's own country is considered,
+then the whole code, then its suffix (numeric suffixes as numbers, for France).
+Released core codes that are neither (all of ES, DE, AT and FI; some of FR,
+EE, CR, IS, IN, CO and LV) resolve through a table holding every pairing in
+core's own `UpdateRegionCodesFor<Country>V1` patches that those rules miss,
+plus the ES-IB code those patches give the Balearic province. IN-DH is left
+out: it is a merged territory, and core's older "DN" is only half of it, so a
+match would select the wrong region for the other half. A core region
+the patches leave alone has no current ISO code (abolished Italian, Indian and
+Latvian units, US military and Pacific codes).
+
+Registries outside Spain do not all answer ISO codes: Italy's answers a bare
+province code ("RM") and France's a region name. After the ISO rules, and still
+within the address's own country only, the resolver takes a value equal to
+exactly one store region code, then a value equal to exactly one store region
+name (`RegionDirectory::namesForCountry()`: the default name and the store
+locale's name), both case-insensitively and the name ignoring accents
+(TWO-26266). A value two regions share selects neither: the US military "AE"
+code, and on a store carrying core's recoded Spanish rows the name Cantabria,
+both a province (ES-S) and a community (ES-CB); the recoding renames the other
+communities ("Madrid, Comunidad de"), so their provinces keep a name of their
+own. Checked over core 2.4.9 and develop region data, with core's renames
+applied: every region's own code and name resolves to itself or, for those
+shared ones, to nothing, no code equals another region's name, and every
+ISO-code result is unchanged. A French region name such as "ILE DE FRANCE" names
+no row in core's French list, which holds departments, so it still resolves to
+nothing. Anything else resolves to nothing and the address is relayed as before;
+do not add a guess or a fuzzy match, because a wrong region is worse than none.
+Both checkouts never append a region they selected to the city; one that
+resolved to nothing is appended as before.
+
 ## What focus landing on the checkout does to an open signup popup
 
 Every `focusin` while the hosted sole-trader signup window is up is classified
@@ -1041,8 +1084,8 @@ dependency that way and relying on DI to fill it in gets you a silent
 `bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
 (value null) instead of `"_i_"` (instance); that is the check.
 
-`Service\Order::$orderTaxManagement` and `Service\Order::$feeLineProviderPool`
-are both declared optional for constructor BC and both named explicitly in
+`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool` and
+`Service\Order::$taxCodeResolver` are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 
@@ -1064,20 +1107,136 @@ has no entity id and the `sales_order_tax_item` rows the management interface
 reads do not exist yet. That interface stays the source for the post-save
 consumers (capture, refund).
 
-Nothing declared and no shipping tax charged is 0% — a store whose shipping
-is untaxed records no tax row at all, and 0% is a statement rather than a
-guess. Nothing declared but tax charged consults the "Default Shipping Tax
-Rate" admin field, and with that unset the order is refused rather than
-given an assumed rate.
+Nothing declared is "no rate provided" (TWO-26117), whatever the line's tax.
+The shipping tax fallback decides what happens then. It has no admin field,
+so a merchant only gets it after talking to us:
 
-`validateTaxReconciliation()` closes the same loop at composition time: a
-line whose declared tax does not follow from its own declared rate and net
-declines the checkout with a generic buyer notice. It never corrects the
-numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
-the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
-fraction-of-net term, and a discounted line may reconcile against
-`net + discount` as well as `net`, because "Before Discount" tax calculation
-taxes the undiscounted base.
+```
+bin/magento config:set --scope=stores --scope-code=<store_code> payment/two_payment/enable_shipping_tax_fallback 1
+```
+
+(`payment/<brand code>/...` on an overlay; drop the scope flags for the whole
+install.) It is populated only when enabled AND Magento core's own shipping tax
+class (`tax/classes/shipping_tax_class`, store scope) is set. Blank, the line
+goes at 0% with its tax as charged, unchecked, and the API validates it: the
+plugin never refuses over shipping tax. Populated, the rate resolves through
+that class and the tax rules engine, with the arguments core's quote-time tax
+calculator uses, including the tax class of the customer group the order was
+placed under (TWO-26073), and the line's tax must reconcile with it within
+0.02 or the request is refused. That reconcile is a shop-match check
+(TWO-26276): the builders compose the line with `getTaxRateShipping($entity,
+false)`, and the postprocessing hook's default handler runs
+`assertShippingTaxFallback()` after the hook, unless a subscriber took it over. A declared rate, 0% included, is always sent
+as is and never checked by the plugin. A refund relays the rate without the
+check. The plugin has no shipping tax setting of its own.
+
+Magento 2.4.7 core records a 0% shipping rate on the quote only when shipping
+prices exclude tax (`getAppliedTaxes()` skips 0% on the tax-inclusive path),
+and `ConvertQuoteTaxToOrderTax` never saves a 0% row, so after placement the
+tax rows cannot tell a declared 0% from no rate. Placement therefore records
+the case on `sales_order`: `two_shipping_tax_rate_source` (`declared`/`none`)
+and `two_shipping_tax_rate` (percent; the declared rate, or for `none` the
+fallback's resolved rate, NULL when the fallback was blank). Every later
+request reads that record and never the current configuration; a `none` with a
+rate is re-checked against it (except on refund). Both NULL is an order placed
+before the record existed, which resolves live as at placement.
+
+The plugin does not reconcile a line other than shipping against its own
+declared rate and net, on any request, with or without a subscriber: whether a
+payload adds up is for Two's API to validate (TWO-26284). Do not add such a check
+back after the hook; only a shop-match check, which compares with shop data the
+API cannot see, belongs there.
+
+## The postprocessing hook's checks: shop-match only
+
+After the hook, `OrderPostprocessor` refuses only a subscriber code fault
+(it throws, returns a non-array, or returns a payload that cannot be
+JSON-encoded) and lets a shop-match refusal through. Whether the payload adds
+up is left to Two's API (TWO-26284).
+
+Shop-match checks ask whether what the plugin built matches the shop.
+`Service\Order\ShopMatchChecks` holds them (today the shipping tax fallback
+reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface` for a
+subscriber that opts back in. They run in the hook's default handler,
+`Plugin\OrderPostprocessing\ShopMatchDefaultHandler`, a plugin named
+`two_gateway_shop_match_checks`, which stands down and logs
+`OrderPostprocessingShopMatchDelegated` when any other handler is registered.
+Each applies to the line the plugin built while the result carries it
+unchanged.
+
+`Service\Order\PostprocessingSubscribers` detects other handlers from the
+shared `PluginListInterface`, walking `getNext()` from `__self` through each
+around plugin as the generated interceptor does, for the interceptor's own
+type, so what it counts is exactly what runs in the request's area; a
+preference replacing `Model\OrderPostprocessing` counts too. Do not replace it
+with a read of the merged di.xml: that ignores area, `disabled` and module
+state. A shop-match refusal is a `ShopMatchRefusedException`, which
+`OrderPostprocessor` lets through its catch-all, so it never reads as
+`HOOK_FAILED`. Do not move a shop-match check back into a builder, where a
+subscriber cannot take it over.
+
+## A 0% line carries a tax code, resolved in the builder
+
+`Service\Order\TaxCodeResolver` adds `tax_code` to every composed line whose
+`tax_rate` is 0 (TWO-24877). Each `Compose*::execute()` that sends lines calls
+`Service\Order::applyTaxCodes()` before returning, so the code is on the
+payload before the postprocessing hook runs and a subscriber can override it.
+Order intent is left alone: the API does not check codes there.
+
+The order is: the merchant's mapping (`tax_code_map`, product tax class id to
+code; the shipping line keys on core's shipping tax class, the surcharge on its
+own), then, for a merchant whose record says `country_code` ES, the derivation
+table in the README (`TaxCodeResolver::derive()`), then nothing. Goods take
+the delivery address, services the billing country and postcode, so a Spanish
+buyer billed in the Canaries, Ceuta or Melilla is outside the EU for services
+(TWO-26151). `ES_IVA_REVERSE_CHARGE` is Spanish domestic reverse charge only
+and is never derived. Both intra-community codes also need a buyer VAT number
+whose prefix is an EU state other than the merchant's country (TWO-26153):
+`TaxCodeResolver::buyerVatNumber()` reads the billing address `vat_id`, then
+the order's `customer_taxvat`, and normalises it against the billing country
+(letters and digits only; no digit left is no number). A `vat_id` refused by
+Magento's VAT check (`vat_request_success` true and `vat_is_valid` set and
+false) gives no number at all and never falls back to `customer_taxvat`, which
+often holds the same number. Core stores a failed request as invalid too, and
+that alone must not drop the number. Without a number the line gets no code,
+never the export or non-EU services code. The same number goes on order
+create only as `buyer_vat_number` (`vatNumberToSend()`), for an ES merchant
+and a non-ES buyer: the API requires an ES buyer's VAT number to equal its
+organisation number, an edit that omits the key keeps the stored value, and
+every other merchant's payload stays byte-identical. **The plugin never
+refuses over a missing code**: the API does. Do not add a guard that declines
+a Spanish 0% line with no code; the line is sent and Two decides.
+
+Two rules hold the invariants and should not be loosened:
+
+-   A non-zero line, and every line of a non-Spanish merchant with no mapping,
+    is composed byte for byte as before. `TaxCodeResolverTest` pins that by
+    composing each payload with and without the resolver.
+-   The merchant's country is the merchant record's, never the store's
+    configured country: the API rejects a code whose country differs from the
+    Two merchant's.
+
+Placement stores what each 0% line resolved to, "no code" included, in
+`sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, then
+`shipping`, `surcharge`, and one shared `fee` key for every other `OTHER` or
+`BUYER_FEE` line), the same pattern as the shipping rate record. Fee lines
+share a key because they all resolve alike (no class, the order's goods or
+service type) and because a fee can change id after placement: a provider that
+itemizes only a saved order leaves the create with an "Other charges" residual
+and the edit with its own line. The refund `adjustment` line is deliberately
+not recorded and keeps resolving live until its split is decided. Edit,
+capture, shipment and refund read the record and never resolve those lines
+again; a line it does not cover, or an order placed before it existed,
+resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
+items, so a fee provider's numeric id is never taken for one, and a product
+line no item matches takes goods or service from its own type. At placement
+the items have no id, so `ComposeOrder` matches its product lines to the
+items behind them on SKU, the name only breaking a tie, never by position
+(`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
+shift classes. The dropdown list comes from
+`Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
+when it cannot be read, the admin field carries the saved mapping as hidden
+inputs so a section save keeps it.
 
 ## An unitemized fee is reconciled per entity, and refundable
 
@@ -1127,7 +1286,7 @@ from the order columns, where `ComposeOrder::execute()` still falls back to
 the checkout session. It also loads no products, which a totals collector
 re-run on every credit-memo render cannot afford, and it avoids
 `getShippingLineOrder()`, because resolving the shipping tax rate queries the
-tax engine and throws when none is declared.
+tax engine and can refuse the line (TWO-26117).
 
 **The fee's VAT is not already on the credit memo.** Core's
 `Creditmemo\Total\Tax` builds the tax up from item `tax_invoiced` plus

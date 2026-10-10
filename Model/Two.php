@@ -31,6 +31,7 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -44,6 +45,7 @@ use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -180,6 +182,10 @@ class Two extends AbstractMethod
      */
     private $settingsProvider;
     /**
+     * @var OrderPostprocessor
+     */
+    private $orderPostprocessor;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -218,6 +224,7 @@ class Two extends AbstractMethod
      * @param BuyerCountryResolver $buyerCountryResolver
      * @param SupportedCountriesProvider $supportedCountriesProvider
      * @param SettingsProvider $settingsProvider
+     * @param OrderPostprocessor $orderPostprocessor
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -253,6 +260,7 @@ class Two extends AbstractMethod
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
         SettingsProvider $settingsProvider,
+        OrderPostprocessor $orderPostprocessor,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -292,6 +300,7 @@ class Two extends AbstractMethod
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
         $this->settingsProvider = $settingsProvider;
+        $this->orderPostprocessor = $orderPostprocessor;
     }
 
     /**
@@ -322,9 +331,19 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', (int)$order->getStoreId());
-        $error = $this->getErrorFromResponse($response);
+        $response = $this->apiAdapter->execute(
+            '/v1/order',
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_ORDER_CREATE,
+                $payload,
+                ['trigger' => 'checkout', 'endpoint' => '/v1/order', 'order' => $order]
+            ),
+            'POST',
+            (int)$order->getStoreId()
+        );
+        $error = $this->getErrorFromResponse($response, true);
         if ($error) {
+            $this->logOrderCreateRefusal($order, $response);
             throw new LocalizedException($error);
         }
 
@@ -462,13 +481,48 @@ class Two extends AbstractMethod
     }
 
     /**
+     * Record why the order create was refused, for the merchant (TWO-26259).
+     *
+     * The buyer sees only what getErrorFromResponse() chose to show, which for
+     * a refused order is a generic notice. The error message and details are
+     * the part that says what to fix, so they go to the merchant's error log
+     * whatever the buyer was shown.
+     *
+     * @param Order $order
+     * @param array $response
+     * @return void
+     */
+    private function logOrderCreateRefusal(Order $order, array $response): void
+    {
+        $this->logRepository->addErrorLog(
+            'Order create refused',
+            [
+                'quote_id' => $order->getQuoteId(),
+                'error_code' => $response['error_code'] ?? null,
+                'error_message' => $response['error_message'] ?? null,
+                'error_details' => $response['error_details'] ?? null,
+                'error_json' => $response['error_json'] ?? null,
+                'error_trace_id' => $response['error_trace_id'] ?? null,
+            ]
+        );
+    }
+
+    /**
      * Get error from response
      *
-     * @param $response
+     * With $atOrderCreate, any refusal at status 400 or above shows the buyer
+     * the field validation messages if there are any, else the same-company
+     * message, else a generic notice; a call that got no HTTP response shows
+     * the general error. The API's own error message and trace id speak to
+     * the integration, not the buyer (TWO-26259), and the merchant finds them
+     * in the error log. Same order as the WooCommerce plugin.
+     *
+     * @param array $response
+     * @param bool $atOrderCreate whether the buyer sees this at place order
      *
      * @return Phrase|null
      */
-    public function getErrorFromResponse(array $response): ?Phrase
+    public function getErrorFromResponse(array $response, bool $atOrderCreate = false): ?Phrase
     {
         $tryAgainLater = __('Please try again later.');
         $generalError = __(
@@ -485,30 +539,32 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
-        $isClientError = isset($response['http_status']) && $response['http_status'] == 400;
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        $isClientError = $status === 400;
+        $sameCompany = __('The buyer and the seller are the same company.');
 
-        // Validation errors — user-facing, no trace ID
-        if ($isClientError && isset($response['error_json']) && is_array($response['error_json'])) {
-            $errs = [];
-            foreach ($response['error_json'] as $err) {
-                $fieldName = isset($err['loc'])
-                    ? $this->getFieldNameFromLoc(json_encode($err['loc']))
-                    : null;
-                $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+        $validation = $this->getValidationMessage($response);
 
-                if ($fieldName && $msg) {
-                    $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
-                } elseif ($fieldName) {
-                    $errs[] = __('%1 is not valid.', $fieldName);
-                } elseif ($msg) {
-                    $errs[] = $msg;
-                }
+        if ($atOrderCreate && $status !== null && $status >= 400) {
+            if ($validation !== null) {
+                return $validation;
             }
-            if (count($errs) > 0) {
-                // Wrap as a Phrase without re-running translation: each
-                // entry in $errs is already __()-translated.
-                return __('%1', join(' ', $errs));
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return $sameCompany;
             }
+            return __(
+                'Invoice purchase with %1 is not available for this order.',
+                $this->brandRegistry->getProductName()
+            );
+        }
+        if ($atOrderCreate && $status === null && isset($response['error_code'])) {
+            // No HTTP response at all: the transport error is not for the buyer.
+            return $generalError;
+        }
+
+        // Validation errors: user-facing, no trace ID
+        if ($isClientError && $validation !== null) {
+            return $validation;
         }
 
         if (isset($response['error_code'])) {
@@ -517,7 +573,7 @@ class Two extends AbstractMethod
 
             // User errors — no trace ID
             if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
-                $reason = __('The buyer and the seller are the same company.');
+                $reason = $sameCompany;
             }
             if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
                 return $reason instanceof Phrase ? $reason : __($reason);
@@ -532,6 +588,57 @@ class Two extends AbstractMethod
             return $this->_getMessageWithTrace($message, $traceID);
         }
 
+        // A non-2xx status with no error_code (a 405 or a gateway's HTML
+        // error page) is still a failure. The adapter sets http_status on any
+        // status other than 200/201/202 (TWO-26150).
+        if ($status !== null && ($status < 200 || $status >= 300)) {
+            $reason = $response['error_message'] ?? null;
+            $message = __(
+                'Your request to %1 failed. Reason: %2',
+                $this->brandRegistry->getProductName(),
+                is_string($reason) && $reason !== '' ? $reason : __('HTTP status %1', $status)
+            );
+            return $this->_getMessageWithTrace($message, $traceID);
+        }
+
+        return null;
+    }
+
+    /**
+     * The buyer-facing field messages in a response's error_json, if any.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    private function getValidationMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $errs = [];
+        foreach ($response['error_json'] as $err) {
+            $fieldName = isset($err['loc'])
+                ? $this->getFieldNameFromLoc(json_encode($err['loc']))
+                : null;
+            $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+
+            if ($fieldName && $msg) {
+                $entry = (string)__('%1: %2.', $fieldName, rtrim($msg, '.'));
+                // A message already ending in ? or ! keeps its own mark,
+                // not the template's full stop.
+                $errs[] = preg_match('/[!?]$/', $msg) ? preg_replace('/\.$/', '', $entry) : $entry;
+            } elseif ($fieldName) {
+                $errs[] = __('%1 is not valid.', $fieldName);
+            } elseif ($msg) {
+                $errs[] = preg_match('/[.!?]$/', $msg) ? $msg : $msg . '.';
+            }
+        }
+        $errs = array_values(array_unique(array_map('strval', $errs)));
+        if (count($errs) > 0) {
+            // Wrap as a Phrase without re-running translation: each
+            // entry in $errs is already __()-translated.
+            return __('%1', join(' ', $errs));
+        }
         return null;
     }
 
@@ -593,7 +700,11 @@ class Two extends AbstractMethod
             $twoOrderId = $order->getTwoOrderId();
             $response = $this->apiAdapter->execute(
                 '/v1/order/' . $order->getTwoOrderId() . '/cancel',
-                [],
+                $this->orderPostprocessor->process(
+                    Postprocessing::REQUEST_CANCEL,
+                    [],
+                    ['trigger' => 'cancel', 'endpoint' => '/v1/order/{id}/cancel', 'order' => $order]
+                ),
                 'POST',
                 (int)$order->getStoreId()
             );
@@ -651,6 +762,7 @@ class Two extends AbstractMethod
             }
 
             $payload = [];
+            $createdInvoice = null;
             $isWholeOrderInvoiced = $this->isWholeOrderInvoiced($order);
             $isPartialOrder = !$isWholeOrderInvoiced;
             while (true) {
@@ -671,14 +783,23 @@ class Two extends AbstractMethod
                 }
                 $response = $this->apiAdapter->execute(
                     '/v1/order/' . $twoOrderId . '/fulfillments',
-                    $payload,
+                    $this->orderPostprocessor->process(
+                        Postprocessing::REQUEST_CAPTURE,
+                        $payload,
+                        [
+                            'trigger' => 'invoice',
+                            'endpoint' => '/v1/order/{id}/fulfillments',
+                            'order' => $order,
+                            'invoice' => $createdInvoice,
+                        ]
+                    ),
                     'POST',
                     (int)$order->getStoreId()
                 );
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
-                    if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                    if (($response['error_code'] ?? null) == 'PARTIAL_ORDER_MISSING_DATA') {
                         $isPartialOrder = true;
                         continue;
                     }
@@ -786,7 +907,16 @@ class Two extends AbstractMethod
         );
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $payload,
+            $this->orderPostprocessor->process(
+                Postprocessing::REQUEST_REFUND,
+                $payload,
+                [
+                    'trigger' => 'credit_memo',
+                    'endpoint' => '/v1/order/{id}/refund',
+                    'order' => $order,
+                    'creditmemo' => $payment->getCreditmemo(),
+                ]
+            ),
             'POST',
             (int)$order->getStoreId()
         );

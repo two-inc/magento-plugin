@@ -43,7 +43,6 @@ class ComposeOrderPaymentTermTest extends TestCase
                 'getAddress',
                 'getBuyer',
                 'getTaxSubtotals',
-                'getDiscountAmountItem',
                 'getFeeLines',
                 'getOtherChargesLineItem',
             ])
@@ -53,7 +52,6 @@ class ComposeOrderPaymentTermTest extends TestCase
         $composeOrder->method('getAddress')->willReturn([]);
         $composeOrder->method('getBuyer')->willReturn([]);
         $composeOrder->method('getTaxSubtotals')->willReturn([]);
-        $composeOrder->method('getDiscountAmountItem')->willReturn(0.0);
         $composeOrder->method('getFeeLines')->willReturn([]);
         $composeOrder->method('getOtherChargesLineItem')->willReturn(null);
 
@@ -101,6 +99,7 @@ class ComposeOrderPaymentTermTest extends TestCase
             ->execute($this->makeOrder(), 'ref', ['selectedTerm' => 14]);
 
         $this->assertSame(14, $payload['terms']['duration_days']);
+        $this->assertSame([14, 30], array_column($payload['available_terms'], 'duration_days'), 'placement offers the buyer terms');
     }
 
     public function testAnUnavailableSelectedTermBlocksTheOrder(): void

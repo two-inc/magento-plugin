@@ -24,6 +24,9 @@
         <column xsi:type="varchar" name="two_invoice_upload_reference" nullable="true" length="255" comment="Two self-invoice upload reference (from signed-URL step)"/>
         <column xsi:type="timestamp" name="two_invoice_uploaded_at" nullable="true" comment="Two self-invoice upload completion timestamp"/>
         <column xsi:type="text" name="two_invoice_upload_error" nullable="true" comment="Two self-invoice upload last error message"/>
+        <column xsi:type="varchar" name="two_shipping_tax_rate_source" nullable="true" length="16" comment="Shipping tax rate at placement: declared/none, NULL before this was recorded"/>
+        <column xsi:type="decimal" name="two_shipping_tax_rate" scale="6" precision="12" nullable="true" comment="Shipping tax rate at placement (percent): declared, or the fallback rate for none"/>
+        <column xsi:type="text" name="two_tax_codes" nullable="true" comment="Tax code per 0% line at placement (JSON), NULL before this was recorded"/>
     </table>
     <table name="quote">
         <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (quote currency, net)"/>

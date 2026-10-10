@@ -13,8 +13,12 @@ use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\ResourceModel\Category\Collection;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
+use Magento\Customer\Api\CustomerRepositoryInterface;
+use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\App\Area;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Phrase;
 use Magento\Framework\Url;
 use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
@@ -28,15 +32,24 @@ use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
 use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
+use Two\Gateway\Service\Order\TaxCodeResolver;
 
 /**
  * Abstract order class
  */
 abstract class Order
 {
+    /** two_shipping_tax_rate_source: Magento recorded a shipping rate at placement, 0% included. */
+    public const SHIPPING_RATE_DECLARED = 'declared';
+
+    /** two_shipping_tax_rate_source: Magento recorded no shipping rate at placement. */
+    public const SHIPPING_RATE_NONE = 'none';
+
     /**
      * Ceiling on getOtherChargesLineItem()'s per-line-count epsilon. Bounds
      * the worst case of "a genuine small untaxed fee vanishes silently on
@@ -52,21 +65,6 @@ abstract class Order
      * narrow enough that a wrong rate or a wrong tax amount never passes.
      */
     private const TAX_FORMULA_TOLERANCE = 0.02;
-
-    /**
-     * Per-unit component of the same tolerance, for the "Unit Price" tax
-     * algorithm: Magento rounds each unit's tax and sums, so the line-level
-     * residual is bounded by half a cent per unit.
-     */
-    private const TAX_UNIT_ROUNDING_TOLERANCE = 0.005;
-
-    /**
-     * Fraction-of-net component of the same tolerance. The rate goes on the
-     * wire at 6dp (see the `tax_rate` roundAmt calls), so on a large net the
-     * declared rate's own precision is worth more than a cent. Deliberately
-     * far too small to hide a wrong rate, which is off by whole basis points.
-     */
-    private const TAX_RATE_PRECISION_TOLERANCE = 0.0000005;
 
     /**
      * @var ConfigRepository
@@ -116,6 +114,26 @@ abstract class Order
     private $orderTaxCollectionFactory;
 
     /**
+     * @var GroupRepositoryInterface
+     */
+    private $groupRepository;
+
+    /**
+     * @var CustomerRepositoryInterface
+     */
+    private $customerRepository;
+
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
+    /**
+     * @var TaxCodeResolver|null
+     */
+    private $taxCodeResolver;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -129,6 +147,10 @@ abstract class Order
      * @param OrderTaxManagementInterface $orderTaxManagement
      * @param TaxCalculation $taxCalculation
      * @param OrderTaxCollectionFactory $orderTaxCollectionFactory
+     * @param GroupRepositoryInterface $groupRepository
+     * @param BrandRegistryInterface $brandRegistry
+     * @param CustomerRepositoryInterface $customerRepository
+     * @param TaxCodeResolver|null $taxCodeResolver
      */
     public function __construct(
         Image $imageHelper,
@@ -141,7 +163,11 @@ abstract class Order
         FeeLineProviderPool $feeLineProviderPool,
         OrderTaxManagementInterface $orderTaxManagement,
         TaxCalculation $taxCalculation,
-        OrderTaxCollectionFactory $orderTaxCollectionFactory
+        OrderTaxCollectionFactory $orderTaxCollectionFactory,
+        GroupRepositoryInterface $groupRepository,
+        BrandRegistryInterface $brandRegistry,
+        CustomerRepositoryInterface $customerRepository,
+        ?TaxCodeResolver $taxCodeResolver = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -154,6 +180,93 @@ abstract class Order
         $this->orderTaxManagement = $orderTaxManagement;
         $this->taxCalculation = $taxCalculation;
         $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
+        $this->groupRepository = $groupRepository;
+        $this->brandRegistry = $brandRegistry;
+        $this->customerRepository = $customerRepository;
+        $this->taxCodeResolver = $taxCodeResolver;
+    }
+
+    /**
+     * The lines with a Two tax code on each 0% line that resolves one
+     * (TWO-24877). Every request that carries lines calls this before the
+     * postprocessing hook, so a subscriber can still change the code.
+     *
+     * @param array $lineItems
+     * @param OrderModel $order
+     * @param bool $orderLines true when $lineItems starts with getLineItemsOrder()'s product
+     *                         lines, whose items have no id yet at placement
+     * @return array
+     */
+    public function applyTaxCodes(array $lineItems, OrderModel $order, bool $orderLines = false): array
+    {
+        // Null only where a test skipped the constructor; etc/di.xml names it.
+        if (!$this->taxCodeResolver) {
+            return $lineItems;
+        }
+        $items = $orderLines ? $this->matchLineItemSources($lineItems, $order) : [];
+
+        return $this->taxCodeResolver->apply($lineItems, $order, $items);
+    }
+
+    /**
+     * The buyer VAT number order create sends, or null to leave the key out
+     * (TWO-26153). See TaxCodeResolver::vatNumberToSend().
+     *
+     * @param OrderModel $order
+     * @return string|null
+     */
+    public function getBuyerVatNumber(OrderModel $order): ?string
+    {
+        return $this->taxCodeResolver ? $this->taxCodeResolver->vatNumberToSend($order) : null;
+    }
+
+    /**
+     * The item behind each product line, by line key. Matched on SKU rather
+     * than position, so a plugin on getLineItemsOrder() that drops, reorders or
+     * adds lines cannot hand a line another item's class; the name only picks
+     * between items sharing a SKU. A line whose SKU a plugin changed matches
+     * nothing, keeps its goods or service type, and resolves afresh later.
+     *
+     * @param array $lineItems
+     * @param OrderModel $order
+     * @return array<int|string, OrderModel\Item>
+     */
+    private function matchLineItemSources(array $lineItems, OrderModel $order): array
+    {
+        $unused = array_column($this->getLineItemSourcesOrder($order), 0);
+        $matched = [];
+        foreach ($lineItems as $key => $line) {
+            $sku = $line['details']['barcodes'][0]['value'] ?? null;
+            $candidates = array_filter($unused, static fn ($item) => $sku !== null && $item->getSku() === $sku);
+            if ($candidates === []) {
+                continue;
+            }
+            $named = array_filter($candidates, static fn ($item) => $item->getName() === ($line['name'] ?? null));
+            $i = array_key_first($named ?: $candidates);
+            $matched[$key] = $unused[$i];
+            unset($unused[$i]);
+        }
+
+        return $matched;
+    }
+
+    /**
+     * The order items getLineItemsOrder() turns into lines, in the same order,
+     * each with the product its line describes.
+     *
+     * @param OrderModel $order
+     * @return array<int, array{0: OrderModel\Item, 1: Product}>
+     */
+    public function getLineItemSourcesOrder(OrderModel $order): array
+    {
+        $sources = [];
+        foreach ($order->getAllVisibleItems() as $item) {
+            if ($product = $this->getProduct($order, $item)) {
+                $sources[] = [$item, $product];
+            }
+        }
+
+        return $sources;
     }
 
     /**
@@ -252,10 +365,7 @@ abstract class Order
     public function getLineItemsOrder(OrderModel $order): array
     {
         $items = [];
-        foreach ($order->getAllVisibleItems() as $item) {
-            if (!$product = $this->getProduct($order, $item)) {
-                continue;
-            }
+        foreach ($this->getLineItemSourcesOrder($order) as [$item, $product]) {
             $items[] = [
                 'order_item_id' => $item->getId(),
                 'name' => $item->getName(),
@@ -423,6 +533,29 @@ abstract class Order
     }
 
     /**
+     * Get the order's total discount before tax, as a positive amount
+     *
+     * Magento stores the order-level discount negative, unlike the item and
+     * shipping discounts, which it stores positive (TWO-26277). The absolute
+     * value is sent, less the tax compensation, the same convention as the
+     * line discounts it totals. The field is informational, so its sign never
+     * refuses an order: a value below zero is sent as 0. The line discounts
+     * keep their guard (TWO-25099).
+     *
+     * @param OrderModel $order
+     * @return float
+     */
+    public function getDiscountAmountOrder(OrderModel $order): float
+    {
+        // Native-precision compute, single round at the payload boundary:
+        // see getDiscountAmountItem() for the rounding-order rationale.
+        $discountAmount = abs((float)$order->getDiscountAmount())
+            - (float)$order->getDiscountTaxCompensationAmount();
+
+        return round($discountAmount, 2) < 0 ? 0.0 : $discountAmount;
+    }
+
+    /**
      * Get category array by category ids
      *
      * @param array $categoryIds
@@ -465,7 +598,8 @@ abstract class Order
      */
     public function getShippingLineOrder(OrderModel $order): array
     {
-        $taxRate = $this->getTaxRateShipping($order);
+        // The fallback reconcile runs after the postprocessing hook (TWO-26276).
+        $taxRate = $this->getTaxRateShipping($order, false);
 
         return [
             'order_item_id' => 'shipping',
@@ -559,109 +693,262 @@ abstract class Order
     }
 
     /**
-     * Shipping tax rate as a fraction, relayed from Magento's tax engine.
+     * Shipping tax rate as a fraction (TWO-26117).
      *
-     * Never derived from the amounts (TWO-25503). A rate computed as
-     * tax/net is a different statement from the rate the store actually
-     * applied: rounding, mixed rates and a discounted shipping base all
-     * make the quotient land somewhere no tax rule declares, and Two
-     * validates the declared rate against the line's own numbers.
+     * A rate Magento's tax engine recorded for the shipping line, 0% included,
+     * is sent as is: never derived from the amounts (TWO-25503) and not
+     * checked here, Two's API validates it. Without a recorded rate the line
+     * is sent at 0% with its tax as charged, unless the store's shipping tax
+     * fallback is populated: then the rate comes from core's Tax Class for
+     * Shipping and the line's tax has to reconcile with it.
      *
-     * @param OrderModel|CreditmemoModel $entity
+     * Placement records which case applied, and the fallback's rate, on the
+     * order: Magento does not save a 0% shipping rate with the order, so its
+     * tax records alone cannot tell the two cases apart afterwards. Later
+     * requests read that record and never the current configuration. An order
+     * placed before it was recorded resolves as at placement.
+     *
+     * The builders pass $reconcile false: the reconcile is a shop-match check,
+     * which the order postprocessing default handler runs after the hook
+     * through assertShippingTaxFallback() (TWO-26276).
+     *
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @param bool $reconcile false to skip the fallback reconcile: a builder, or a refund, which relays its
+     *                        parent line's rate
      * @return float
-     * @throws LocalizedException when shipping is taxed, no rate is declared
-     *                            and the merchant configured no fallback
+     * @throws LocalizedException when the fallback rate does not reconcile with the line's tax
      */
-    public function getTaxRateShipping($entity): float
+    public function getTaxRateShipping($entity, bool $reconcile = true): float
+    {
+        $order = $this->shippingTaxRateOrder($entity);
+        $recorded = $this->recordedShippingTaxRate($order);
+        if ($recorded !== null) {
+            [$source, $rate] = $recorded;
+            if ($source === self::SHIPPING_RATE_NONE && $rate !== null && $reconcile) {
+                $this->assertShippingTaxReconciles($entity, $rate);
+            }
+            return $rate ?? 0.0;
+        }
+
+        [$source, $rate] = $this->resolveShippingTaxRate($entity, $reconcile);
+        if (method_exists($order, 'getData') && !$order->getId()) {
+            $order->setData('two_shipping_tax_rate_source', $source);
+            $order->setData('two_shipping_tax_rate', $rate === null ? null : round($rate * 100, 6));
+        }
+        return $rate ?? 0.0;
+    }
+
+    /**
+     * The shipping tax fallback reconcile on its own, for the entity the
+     * shipping line was composed from: a shop-match check (TWO-26276). Reads
+     * the case the build recorded, so it checks exactly what the builder
+     * would have; refuses as getTaxRateShipping() does, and does nothing
+     * where the fallback did not supply the rate.
+     *
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
+     * @return void
+     * @throws ShopMatchRefusedException when the fallback rate does not reconcile with the line's tax
+     */
+    public function assertShippingTaxFallback($entity): void
+    {
+        $recorded = $this->recordedShippingTaxRate($this->shippingTaxRateOrder($entity));
+        if ($recorded === null) {
+            $this->resolveShippingTaxRate($entity, true, false);
+            return;
+        }
+        [$source, $rate] = $recorded;
+        if ($source === self::SHIPPING_RATE_NONE && $rate !== null) {
+            $this->assertShippingTaxReconciles($entity, $rate);
+        }
+    }
+
+    /**
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @return OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel the order carrying the record
+     */
+    private function shippingTaxRateOrder($entity)
+    {
+        return method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+    }
+
+    /**
+     * The case placement recorded, and its rate as a fraction; null when nothing was recorded.
+     *
+     * @param mixed $order
+     * @return array{0: string, 1: float|null}|null
+     */
+    private function recordedShippingTaxRate($order): ?array
+    {
+        $source = method_exists($order, 'getData') ? $order->getData('two_shipping_tax_rate_source') : null;
+        if ($source !== self::SHIPPING_RATE_DECLARED && $source !== self::SHIPPING_RATE_NONE) {
+            return null;
+        }
+        $percent = $order->getData('two_shipping_tax_rate');
+
+        return [$source, $percent === null ? null : (float)$percent / 100];
+    }
+
+    /**
+     * The table as the current order data and configuration answer it: which
+     * case applies, and the rate, null for no recorded rate and a blank fallback.
+     *
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @param bool $reconcile
+     * @param bool $log false to resolve again without a second debug line
+     * @return array{0: string, 1: float|null}
+     * @throws LocalizedException
+     */
+    private function resolveShippingTaxRate($entity, bool $reconcile, bool $log = true): array
     {
         $declaredPercent = $this->getDeclaredShippingTaxPercent($entity);
         if ($declaredPercent !== null) {
-            return $declaredPercent / 100;
-        }
-
-        // A shipping line carrying no tax needs no declaration: 0% is a
-        // statement, not a guess. This is also the ordinary shape of a
-        // store whose shipping is not taxed at all — no tax rule applied
-        // means no rate to look up.
-        if (round($this->getTaxAmountShipping($entity), 2) === 0.0) {
-            return 0.0;
+            return [self::SHIPPING_RATE_DECLARED, $declaredPercent / 100];
         }
 
         $storeId = (int)$entity->getStoreId();
+        $taxClassId = $this->configRepository->isShippingTaxFallbackEnabled($storeId)
+            ? $this->configRepository->getShippingTaxClassId($storeId)
+            : null;
+        if ($taxClassId === null) {
+            return [self::SHIPPING_RATE_NONE, null];
+        }
 
-        // Primary fallback: resolve the rate through Magento's tax rules
-        // engine for the configured Product Tax Class against the order's
-        // shipping destination — the same mechanism a product line's own
-        // tax is resolved through, rather than a merchant-typed flat
-        // percentage. TWO-25386.
-        $taxClassId = $this->configRepository->getDefaultShippingTaxClassId($storeId);
-        if ($taxClassId !== null) {
-            $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
+        $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
+        if ($reconcile) {
+            $this->assertShippingTaxReconciles($entity, $rate);
+        }
+        if ($log) {
             $this->logRepository->addDebugLog(
                 'ShippingTaxRateFallback',
                 sprintf(
-                    'Using the tax-rules-engine rate %.6F%% for entity %s (Product Tax Class %d): '
-                    . 'Magento declared no rate for a taxed shipping line.',
+                    'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
+                    . 'Magento recorded no rate for the shipping line.',
                     $rate * 100,
                     $entity->getIncrementId(),
                     $taxClassId
                 )
             );
-            return $rate;
+        }
+        return [self::SHIPPING_RATE_NONE, $rate];
+    }
+
+    /**
+     * The fallback rate must account for the tax Magento charged on shipping,
+     * on the discounted base or, under "Before Discount", the undiscounted one.
+     * An invoice books the order's shipping discount, as ComposeCapture does.
+     *
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
+     * @throws ShopMatchRefusedException
+     */
+    private function assertShippingTaxReconciles($entity, float $rate): void
+    {
+        $order = $this->shippingTaxRateOrder($entity);
+        $tax = round($this->getTaxAmountShipping($entity), 2);
+        $gross = $this->getUnitPriceShipping($entity);
+        $net = $gross - $this->getDiscountAmountShipping($order);
+        $discrepancy = min(abs($tax - $net * $rate), abs($tax - $gross * $rate));
+        if ($discrepancy <= self::TAX_FORMULA_TOLERANCE) {
+            return;
         }
 
-        // Deprecated fallback: only consulted once the primary mechanism
-        // above is unconfigured, for merchants who set the flat rate
-        // before default_shipping_tax_class existed.
-        $fallbackPercent = $this->configRepository->getDefaultShippingTaxRate($storeId);
-        if ($fallbackPercent === null) {
-            $this->logRepository->addErrorLog(
-                'ShippingTaxRateUnresolvable',
-                sprintf(
-                    'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
-                    . 'and no default shipping tax rate is configured. Refusing rather than deriving a rate.',
-                    $this->getTaxAmountShipping($entity),
-                    $entity->getIncrementId()
-                )
-            );
-            throw new LocalizedException(
-                __('This order could not be placed. Please contact the merchant.')
-            );
-        }
-
-        $this->logRepository->addDebugLog(
-            'ShippingTaxRateFallback',
+        $this->logRepository->addErrorLog(
+            'ShippingTaxFallbackMismatch',
             sprintf(
-                'Using the configured default shipping tax rate %.6F%% for entity %s: '
-                . 'Magento declared no rate for a taxed shipping line.',
-                $fallbackPercent,
-                $entity->getIncrementId()
+                'Shipping tax %.2F on entity %s does not reconcile with the %.6F%% shipping tax fallback rate '
+                . 'on base %.2F (off by %.2F, tolerance %.2F). Magento recorded no rate for the shipping line.',
+                $tax,
+                $entity->getIncrementId(),
+                $rate * 100,
+                $net,
+                $discrepancy,
+                self::TAX_FORMULA_TOLERANCE
             )
         );
+        throw new ShopMatchRefusedException($this->shippingTaxRefusal());
+    }
 
-        return $fallbackPercent / 100;
+    /**
+     * Refusal for a shipping line whose tax does not reconcile with the
+     * fallback rate. Capture runs after placement, so this default speaks to
+     * the merchant; ComposeOrder overrides it with the buyer's wording.
+     */
+    protected function shippingTaxRefusal(): Phrase
+    {
+        return __(
+            'Shipping tax on this order does not match the rate of the Tax Class for Shipping (Stores > Configuration > Sales > Tax > Tax Classes), which applies because Magento recorded no shipping tax rate.'
+        );
     }
 
     /**
      * Resolves a shipping tax rate through Magento's tax rules engine for
-     * the given Product Tax Class against the entity's shipping
-     * destination — mirrors Repository::getDefaultTaxRate()'s
-     * getRateRequest()/getRate() call, but destination-aware (that one
-     * resolves the store's overall default with no address at all).
+     * core's shipping tax class, with the getRateRequest() arguments core's
+     * quote-time calculator uses (Tax\Model\Calculation\AbstractCalculator::
+     * getAddressRateRequest()): shipping and billing separately so
+     * tax/calculation/based_on picks, the store, the current tax class of
+     * the order-time customer group, and the customer id, which core reads
+     * for its default-address fallback.
+     *
+     * Once that group is deleted the class is null, as in core's
+     * Quote::getCustomerTaxClassId(): core then uses the customer's current
+     * group, or NOT LOGGED IN for a guest or a customer who is also deleted.
+     *
+     * sales_order stores no customer tax class, so a class edit on that
+     * group since placement still changes the rate.
      *
      * A destination with no matching Tax Rule resolves to 0.0, same as an
-     * ordinary product line in an untaxed region — not a refusal, since a
-     * merchant selecting a real Product Tax Class has made a rate
-     * decision, however it resolves per destination.
+     * ordinary product line in an untaxed region.
      *
      * @param OrderModel|CreditmemoModel $entity
      */
-    private function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
+    public function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
     {
-        $address = $this->resolveShippingAddressForTax($entity);
-        $request = $this->taxCalculation->getRateRequest($address, $address, null, $storeId);
+        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+        $customerTaxClassId = $this->resolveCustomerTaxClassId($order);
+        $customerId = method_exists($order, 'getCustomerId') ? $order->getCustomerId() : null;
+        // A null class with a customer id makes core load that customer, which throws once they are deleted.
+        if ($customerTaxClassId === null && $customerId && !$this->customerExists((int)$customerId)) {
+            $customerId = null;
+        }
+        $request = $this->taxCalculation->getRateRequest(
+            $this->resolveShippingAddressForTax($order),
+            method_exists($order, 'getBillingAddress') ? $order->getBillingAddress() : null,
+            $customerTaxClassId,
+            $storeId,
+            $customerId
+        );
         $request->setProductClassId($taxClassId);
         return (float)$this->taxCalculation->getRate($request) / 100;
+    }
+
+    /**
+     * Current tax class of the customer group the order was placed under,
+     * resolved as core's Quote::getCustomerTaxClassId() does. NULL when the
+     * order has no group or it no longer exists, leaving getRateRequest() to
+     * resolve the class from the customer id.
+     *
+     * @param OrderModel $order
+     */
+    private function resolveCustomerTaxClassId($order): ?int
+    {
+        $groupId = method_exists($order, 'getCustomerGroupId') ? $order->getCustomerGroupId() : null;
+        if ($groupId === null) {
+            return null;
+        }
+        try {
+            return (int)$this->groupRepository->getById((int)$groupId)->getTaxClassId();
+        } catch (NoSuchEntityException $e) {
+            return null;
+        }
+    }
+
+    private function customerExists(int $customerId): bool
+    {
+        try {
+            $this->customerRepository->getById($customerId);
+            return true;
+        } catch (NoSuchEntityException $e) {
+            return false;
+        }
     }
 
     /**
@@ -669,15 +956,11 @@ abstract class Order
      * shipping address, falling back to billing for a virtual order (no
      * shipping address exists) — same fallback getAddress() applies.
      *
-     * @param OrderModel|CreditmemoModel $entity
+     * @param OrderModel $order
      * @return \Magento\Sales\Model\Order\Address|null
      */
-    private function resolveShippingAddressForTax($entity)
+    private function resolveShippingAddressForTax($order)
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder()
-            ? $entity->getOrder()
-            : $entity;
-
         if (!method_exists($order, 'getShippingAddress')) {
             return null;
         }
@@ -793,92 +1076,6 @@ abstract class Order
         }
 
         return $percent;
-    }
-
-    /**
-     * Refuse any line whose declared tax does not reconcile with its own
-     * declared rate and net amount (TWO-25503).
-     *
-     * The plugin never derives a rate from amounts and never corrects a
-     * line's numbers, so an internally-inconsistent line has to stop the
-     * checkout: the buyer sees a generic notice and the detail goes to the
-     * log. Tolerance is in currency units, the same convention as
-     * getOtherChargesLineItem()'s epsilon — see lineTaxTolerance() for what
-     * widens it, and the "before discount" base below.
-     *
-     * @param array $lineItems Composed payload line items.
-     * @return void
-     * @throws LocalizedException when a line's tax does not reconcile
-     */
-    public function validateTaxReconciliation(array $lineItems): void
-    {
-        foreach ($lineItems as $lineItem) {
-            $net = (float)($lineItem['net_amount'] ?? 0);
-            $tax = (float)($lineItem['tax_amount'] ?? 0);
-            $rate = (float)($lineItem['tax_rate'] ?? 0);
-            $tolerance = $this->lineTaxTolerance($lineItem, $net);
-
-            // Under tax/calculation/apply_after_discount = 0 ("Before
-            // Discount") Magento taxes the UNDISCOUNTED base while net_amount
-            // is already net of the discount, so the line reconciles against
-            // net + discount rather than net. Both bases are accepted; the
-            // residual is measured against whichever the line actually used.
-            $discount = abs((float)($lineItem['discount_amount'] ?? 0));
-            $base = $net;
-            $discrepancy = abs($tax - $net * $rate);
-            if ($discount > 0) {
-                $discountedBaseDiscrepancy = abs($tax - ($net + $discount) * $rate);
-                if ($discountedBaseDiscrepancy < $discrepancy) {
-                    $discrepancy = $discountedBaseDiscrepancy;
-                    $base = $net + $discount;
-                }
-            }
-            if ($discrepancy <= $tolerance) {
-                continue;
-            }
-
-            $this->logRepository->addErrorLog(
-                'TaxReconciliationFailed',
-                sprintf(
-                    'Line %s declares tax %.2F but rate %.6F on base %.2F implies %.2F '
-                    . '(off by %.2F, tolerance %.2F).',
-                    $lineItem['order_item_id'] ?? 'unknown',
-                    $tax,
-                    $rate,
-                    $base,
-                    $base * $rate,
-                    $discrepancy,
-                    $tolerance
-                )
-            );
-            throw new LocalizedException(
-                __('This order could not be placed. Please contact the merchant.')
-            );
-        }
-    }
-
-    /**
-     * Per-line reconciliation tolerance, in currency units.
-     *
-     * TAX_FORMULA_TOLERANCE alone assumes the line's tax was rounded once,
-     * on the line. Under tax/calculation/algorithm = "Unit Price" Magento
-     * rounds per UNIT and sums, so the line-level residual grows with
-     * quantity — up to half a cent per unit. The net-proportional term covers
-     * the declared rate's own 6dp precision, which on a large net is itself
-     * worth more than a cent.
-     *
-     * @param array $lineItem
-     * @param float $net
-     * @return float
-     */
-    private function lineTaxTolerance(array $lineItem, float $net): float
-    {
-        $quantity = max(1.0, (float)($lineItem['quantity'] ?? 1));
-
-        return max(
-            self::TAX_FORMULA_TOLERANCE,
-            self::TAX_UNIT_ROUNDING_TOLERANCE * $quantity
-        ) + self::TAX_RATE_PRECISION_TOLERANCE * abs($net);
     }
 
     /**

@@ -62,6 +62,7 @@
         <arguments>
             <argument name="feeLineProviderPool" xsi:type="object">Two\Gateway\Service\Fee\FeeLineProviderPool</argument>
             <argument name="orderTaxManagement" xsi:type="object">Magento\Tax\Api\OrderTaxManagementInterface</argument>
+            <argument name="taxCodeResolver" xsi:type="object">Two\Gateway\Service\Order\TaxCodeResolver</argument>
         </arguments>
     </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"
@@ -78,6 +79,23 @@
                 type="Two\Gateway\Model\Webapi\OrderIntent"/>
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
+    <!-- Stable extension contract (TWO-26092): subscribe with an `after` plugin on process(). -->
+    <preference for="Two\Gateway\Api\OrderPostprocessingInterface"
+                type="Two\Gateway\Model\OrderPostprocessing"/>
+    <preference for="Two\Gateway\Api\OrderPostprocessingTotalsInterface"
+                type="Two\Gateway\Service\Order\PostprocessingTotals"/>
+    <!--
+        TWO-26276: the plugin's own handler on the hook runs the shop-match
+        checks, and stands down when any other handler is registered. The name
+        is PostprocessingSubscribers::DEFAULT_HANDLER; a subscriber opts back
+        in through the interface below.
+    -->
+    <type name="Two\Gateway\Api\OrderPostprocessingInterface">
+        <plugin name="two_gateway_shop_match_checks"
+                type="Two\Gateway\Plugin\OrderPostprocessing\ShopMatchDefaultHandler"/>
+    </type>
+    <preference for="Two\Gateway\Api\OrderPostprocessingShopMatchInterface"
+                type="Two\Gateway\Service\Order\ShopMatchChecks"/>
     <!--
         Brand binding. Routes BrandRegistryInterface through
         DescriptorBackedBrandRegistry → ActiveBrandResolver →

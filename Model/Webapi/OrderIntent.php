@@ -9,12 +9,15 @@ namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Api\OrderPostprocessingInterface;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
+use Two\Gateway\Service\Order\ComposeIntent;
+use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\RateLimiter;
 
 class OrderIntent implements OrderIntentInterface
@@ -37,7 +40,9 @@ class OrderIntent implements OrderIntentInterface
         private readonly LogRepository $logRepository,
         private readonly CheckoutSession $checkoutSession,
         private readonly BuyerCountryResolver $buyerCountryResolver,
-        private readonly SupportedCountriesProvider $supportedCountriesProvider
+        private readonly SupportedCountriesProvider $supportedCountriesProvider,
+        private readonly ComposeIntent $composeIntent,
+        private readonly OrderPostprocessor $orderPostprocessor
     ) {
     }
 
@@ -61,10 +66,9 @@ class OrderIntent implements OrderIntentInterface
             return $this->refusal(413, (string)__('This order is too large to send for approval.'));
         }
 
-        $body = json_decode($payload, true);
-        // A JSON list decodes to an array too, and merchant_id written onto one
-        // would go upstream as an appended element rather than an identity.
-        if (!is_array($body) || array_is_list($body)) {
+        $request = json_decode($payload, true);
+        // Only the buyer comes from the browser; amounts and lines are composed from the quote (TWO-26092).
+        if (!is_array($request) || !isset($request['buyer']) || !is_array($request['buyer'])) {
             return $this->refusal(400, (string)__('Invalid order intent payload.'));
         }
 
@@ -106,17 +110,39 @@ class OrderIntent implements OrderIntentInterface
             return $this->refusal(403, (string)__('The payment integration is not available right now.'));
         }
 
-        $body['merchant_id'] = $merchantId;
-        // Absent means absent — upstream reads an absent key and an explicit
-        // null apart.
-        unset($body['merchant_short_name']);
-        if ($identity['short_name'] !== null) {
-            $body['merchant_short_name'] = $identity['short_name'];
-        }
+        try {
+            $quote = $this->checkoutSession->getQuote();
+            $order = $this->composeIntent->toOrder($quote);
+            $body = $this->composeIntent->execute($quote, $request['buyer'], $order);
+            $body['merchant_id'] = $merchantId;
+            // Absent means absent — upstream reads an absent key and an explicit
+            // null apart.
+            if ($identity['short_name'] !== null) {
+                $body['merchant_short_name'] = $identity['short_name'];
+            }
 
-        return $this->envelope(
-            $this->adapter->executeWithStatus(self::ENDPOINT, $body, 'POST', $storeId)
-        );
+            return $this->envelope(
+                $this->adapter->executeWithStatus(
+                    self::ENDPOINT,
+                    $this->orderPostprocessor->process(
+                        OrderPostprocessingInterface::REQUEST_ORDER_INTENT,
+                        $body,
+                        [
+                            'trigger' => 'checkout',
+                            'endpoint' => self::ENDPOINT,
+                            'quote' => $quote,
+                            // The order the lines were built from, for the shop-match checks (TWO-26276).
+                            'intent_order' => $order,
+                        ]
+                    ),
+                    'POST',
+                    $storeId
+                )
+            );
+        } catch (\Throwable $e) {
+            $this->logRepository->addErrorLog('OrderIntentNotComposed', $e->getMessage());
+            return $this->refusal(422, (string)__('This order could not be placed. Please contact the merchant.'));
+        }
     }
 
     private function quoteBuyerCountry(): string

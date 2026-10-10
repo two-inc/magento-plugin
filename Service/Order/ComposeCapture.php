@@ -46,6 +46,7 @@ class ComposeCapture extends OrderService
             (float)$invoice->getGrandTotal(),
             (float)$invoice->getTaxAmount()
         );
+        $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
@@ -53,7 +54,7 @@ class ComposeCapture extends OrderService
             'line_items' => $lineItems,
             'net_amount' => $this->roundAmt($invoice->getGrandTotal() - $invoice->getTaxAmount()),
             'tax_amount' => $this->roundAmt($invoice->getTaxAmount()),
-            'tax_subtotal' => $this->getTaxSubtotals($lineItems),
+            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
         return $reqBody;
     }
@@ -105,8 +106,14 @@ class ComposeCapture extends OrderService
             }
         }
 
-        if ($order->getShippingAmount() != 0) {
-            $taxRate = $this->getTaxRateShipping($order);
+        // Magento invoices shipping once, so it follows the invoice, not the order (TWO-26091).
+        if ((float)$invoice->getShippingAmount() != 0) {
+            // The fallback reconcile runs after the postprocessing hook (TWO-26276).
+            $taxRate = $this->getTaxRateShipping($invoice, false);
+            $unitPrice = $this->getUnitPriceShipping($invoice);
+            $taxAmount = $this->getTaxAmountShipping($invoice);
+            // Invoices lack a shipping-discount field; Magento books the order's on the first invoice with shipping.
+            $discountAmount = $this->getDiscountAmountShipping($order);
             $items[] = [
                 'order_item_id' => 'shipping',
                 'name' => 'Shipping - ' . $order->getShippingMethod(),
@@ -114,12 +121,12 @@ class ComposeCapture extends OrderService
                 'type' => 'SHIPPING_FEE',
                 'image_url' => '',
                 'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($this->getGrossAmountShipping($order)),
-                'net_amount' => $this->roundAmt($this->getNetAmountShipping($order)),
-                'tax_amount' => $this->roundAmt((float)$order->getShippingTaxAmount()),
-                'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($order)),
+                'gross_amount' => $this->roundAmt($unitPrice - $discountAmount + $taxAmount),
+                'net_amount' => $this->roundAmt($unitPrice - $discountAmount),
+                'tax_amount' => $this->roundAmt($taxAmount),
+                'discount_amount' => $this->roundAmt($discountAmount),
                 'tax_rate' => $this->roundAmt($taxRate, 6),
-                'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
+                'unit_price' => $this->roundAmt($unitPrice, 6),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($taxRate * 100) . '%',
                 'quantity' => 1,
                 'quantity_unit' => 'sc',

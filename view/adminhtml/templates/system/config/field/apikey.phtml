@@ -31,11 +31,18 @@ $status = $block->getApiKeyStatus();
         // message (and, where an HTTP exchange completed, its status code)
         // which is the whole of what an admin can act on.
         ?>
-        <?php if (!empty($status['merchant_id'])): ?>
-            <div style="margin-top: 8px; color: #666; font-size: 13px;">
-                <strong><?= $block->escapeHtml(__('Merchant ID:')); ?></strong>
-                <?= $block->escapeHtml($status['merchant_id']); ?><?php if (!empty($status['merchant_short_name'])): ?> &middot; <?= $block->escapeHtml($status['merchant_short_name']); ?><?php endif; ?>
-            </div>
-        <?php endif; ?>
+        <?php
+        // Always rendered (hidden when there is no merchant) so the live check
+        // can fill in the merchant a candidate key resolves to before save.
+        $merchantId = (string)($status['merchant_id'] ?? '');
+        $shortName = $merchantId !== '' ? (string)($status['merchant_short_name'] ?? '') : '';
+        ?>
+        <div class="two-api-key-verify__merchant"
+             style="margin-top: 8px; color: #666; font-size: 13px;"<?= $merchantId === '' ? ' hidden' : ''; ?>>
+            <strong><?= $block->escapeHtml(__('Merchant ID:')); ?></strong>
+            <span class="two-api-key-verify__merchant-id"><?= $block->escapeHtml($merchantId); ?></span><span
+                class="two-api-key-verify__merchant-short-name"><?php if ($shortName !== ''): ?>
+                &middot; <?= $block->escapeHtml($shortName); ?><?php endif; ?></span>
+        </div>
     </div>
 </div>
