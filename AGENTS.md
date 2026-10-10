@@ -930,7 +930,10 @@ invoice.** `SalesOrderSaveAfter` used to return early on `hasInvoices()`, which
 made a merchant's offline invoice suppress the fulfilment for good. It now
 returns early only once the payment carries `marked_completed`, which every
 successful fulfilment sets (its own, the shipment observer's and
-`Two::capture()`) and which the order save persists with the payment. A merchant
+`Two::capture()`) and which the order save persists with the payment. A
+fulfilment sets it, with the completion comment, only when Two's response
+carries the fulfilled order's id; Two returns that id on every accepted full or
+partial fulfilment, so a response without it marks nothing. A merchant
 invoice for everything leaves a zero-total invoice, which is not created; a
 partial one leaves the rest for the plugin's invoice. `FulfilmentInvoiceTest`
 saves the order twice per case, in two requests, and pins one fulfil.

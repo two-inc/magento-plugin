@@ -75,6 +75,12 @@ class StatusFulfilmentAfterCommitTest extends TestCase
     /** @var \Throwable|null what the next call to Two throws */
     private $twoFails;
 
+    /** @var array what Two answers to an accepted fulfilment */
+    private $twoResponse = ['fulfilled_order' => ['id' => 'fulfilled-id']];
+
+    /** @var string[] completion comments written */
+    private $completions = [];
+
     /** @var int calls to Two, failed ones included */
     private $twoCalls = 0;
 
@@ -429,6 +435,38 @@ class StatusFulfilmentAfterCommitTest extends TestCase
         }
     }
 
+    /**
+     * @dataProvider markerResponses
+     */
+    public function testTheMarkerNeedsTheFulfilledOrderId(
+        array $response,
+        ?string $expectedComment,
+        string $description
+    ): void {
+        $this->twoResponse = $response;
+        $order = $this->order(['status' => 'complete', 'items' => [[1, 1, 0]]]);
+        $this->persist($order);
+
+        $this->observer->execute($this->saveEvent($order));
+
+        $this->assertCount(1, $this->sent, $description . ': sent once');
+        $this->assertSame(
+            $expectedComment !== null,
+            !empty($this->saved['info']['marked_completed']),
+            $description . ': marker'
+        );
+        $this->assertSame(
+            $expectedComment === null ? [] : [$expectedComment],
+            $this->completions,
+            $description . ': completion comment'
+        );
+    }
+
+    public static function markerResponses(): array
+    {
+        return FulfilledOrderMarkerTest::responses();
+    }
+
     public static function transactions(): array
     {
         return [
@@ -651,7 +689,7 @@ class StatusFulfilmentAfterCommitTest extends TestCase
                 throw $this->twoFails;
             }
             $this->sent[] = $payload;
-            return ['fulfilled_order' => ['id' => 'fulfilled-id']];
+            return $this->twoResponse;
         });
 
         return $adapter;
@@ -731,6 +769,8 @@ class StatusFulfilmentAfterCommitTest extends TestCase
             $this->resource->write($comment);
             if (strpos($comment, 'marked as') === false) {
                 $this->comments[] = $comment;
+            } else {
+                $this->completions[] = $comment;
             }
             return $history;
         });

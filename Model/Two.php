@@ -957,8 +957,8 @@ class Two extends AbstractMethod
      */
     private function parseFulfillResponse(array $response, Order $order): void
     {
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
+        if (empty($response['fulfilled_order']) ||
+            empty($response['fulfilled_order']['id'])) {
             return;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();

@@ -352,8 +352,8 @@ class StatusFulfilment
      */
     private function markCompleted(Order $order, array $response): ?string
     {
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
+        if (empty($response['fulfilled_order']) ||
+            empty($response['fulfilled_order']['id'])) {
             return null;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
