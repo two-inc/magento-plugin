@@ -83,7 +83,13 @@ class SalesOrderCancelAfter implements ObserverInterface
         }
 
         try {
+            // The only cancel sent for a Magento cancellation: the payment
+            // method's own cancel() makes no call (TWO-26298).
             $this->orderService->cancelTwoOrder($order);
+            $order->addStatusToHistory(
+                $order->getStatus(),
+                __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())
+            );
             $this->lifecycleEvents->dispatchCancelled($order);
         } catch (LocalizedException $e) {
             // Already user-friendly — let it propagate so the admin sees
