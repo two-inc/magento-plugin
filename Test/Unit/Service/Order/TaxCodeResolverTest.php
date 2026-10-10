@@ -171,8 +171,8 @@ class TaxCodeResolverTest extends TestCase
             [[], $goods, ['FR', '75001'], 'FR 75001', 'ESB12345678', null, [null], 'goods: VAT prefix of the merchant\'s country'],
             [[], $goods, ['FR', '75001'], 'FR 75001', 'GB123456789', null, [null], 'goods: VAT prefix outside the EU'],
             [[], $goods, ['GR', '10431'], 'GR 10431', 'EL123456789', null, [self::INTRA], 'goods: EL is Greece'],
-            [[], $goods, ['GR', '10431'], 'GR 10431', '123456789', null, [self::INTRA], 'goods: unprefixed Greek number takes EL'],
-            [[], $goods, ['MC', '98000'], 'MC 98000', '12345678901', null, [self::INTRA], 'goods: unprefixed Monaco number takes FR'],
+            [[], $goods, ['GR', '10431'], 'GR 10431', '123456789', null, [null], 'goods: an unprefixed number names no country'],
+            [[], $goods, ['MC', '98000'], 'MC 98000', 'FR12345678901', null, [self::INTRA], 'goods: a Monaco buyer with a French number'],
             [[], $goods, ['MC', '98000'], 'MC 98000', 'MC12345678901', null, [null], 'goods: MC is not a VAT prefix'],
             [[], $goods, ['FR', '75001'], 'DE 10115', 'FR12345678901', null, [self::INTRA], 'goods: VAT state need not be the buyer\'s or delivery state'],
             [[], $goods, ['US', '10001'], 'US 10001', null, null, [self::EXPORT], 'goods: an export needs no VAT number'],
@@ -181,8 +181,9 @@ class TaxCodeResolverTest extends TestCase
             [[], $service, null, 'DE 10115', '', '  ', [null], 'services: blank VAT numbers are none'],
             [[], $service, null, 'DE 10115', 'ES B12345678', null, [null], 'services: VAT prefix of the merchant\'s country'],
             [[], $service, null, 'DE 10115', 'NO123456789', null, [null], 'services: VAT prefix outside the EU'],
-            [[], $service, null, 'GR 10431', 'el 123 456 789', null, [self::SERVICES], 'services: EL is Greece, lower case and spaces'],
-            [[], $service, null, 'DE 10115', '123.456-789', null, [self::SERVICES], 'services: unprefixed number takes the billing country'],
+            [[], $service, null, 'GR 10431', ' EL 123 456 789 ', null, [self::SERVICES], 'services: EL is Greece, inner spaces kept'],
+            [[], $service, null, 'GR 10431', 'el123456789', null, [null], 'services: a lower-case prefix names no country'],
+            [[], $service, null, 'DE 10115', '123.456-789', null, [null], 'services: an unprefixed number names no country'],
             [[], $service, null, 'DE 10115', null, 'DE123456789', [self::SERVICES], 'services: the customer VAT number when the address has none'],
             [[], $service, null, 'US 10001', null, null, [self::NON_EU], 'services: a non-EU buyer needs no VAT number'],
             [$art20, $goods, ['FR', '75001'], 'FR 75001', null, null, [self::ART20], 'goods: the mapping wins without a VAT number'],
@@ -227,26 +228,21 @@ class TaxCodeResolverTest extends TestCase
     /**
      * @dataProvider normaliseCases
      */
-    public function testNormaliseVatNumber(string $raw, string $country, string $expected, string $description): void
+    public function testNormaliseVatNumber(string $raw, string $expected, string $description): void
     {
-        $this->assertSame($expected, TaxCodeResolver::normaliseVatNumber($raw, $country), $description);
+        $this->assertSame($expected, TaxCodeResolver::normaliseVatNumber($raw), $description);
     }
 
     public static function normaliseCases(): array
     {
         return [
-            [' de 123.456-789 ', 'DE', 'DE123456789', 'strips spaces, dots and hyphens and upper-cases'],
-            ['123456789', 'DE', 'DE123456789', 'unprefixed takes the address country'],
-            ['123456789', 'gr', 'EL123456789', 'unprefixed Greek number takes EL'],
-            ['EL123456789', 'GR', 'EL123456789', 'an EL prefix is kept'],
-            ['12345678901', 'MC', 'FR12345678901', 'unprefixed Monaco number takes FR'],
-            ['FR12345678901', 'DE', 'FR12345678901', 'an existing prefix is kept'],
-            ['1A2345678', 'DE', 'DE1A2345678', 'one leading letter is not a prefix'],
-            ['123456789', '', '123456789', 'no address country leaves it unprefixed'],
-            [' .- ', 'DE', '', 'nothing left is no number'],
-            ["de\u{00A0}123\t456\n789", 'DE', 'DE123456789', 'strips no-break spaces, tabs and newlines'],
-            ['n/a', 'DE', '', 'a placeholder with no digit is no number'],
-            ['DE/123456789', 'DE', 'DE123456789', 'strips a slash'],
+            [" \tDE123456789\n ", 'DE123456789', 'trims leading and trailing whitespace'],
+            ['de 123.456-789', 'de 123.456-789', 'inner spaces, dots, hyphens and case are kept'],
+            ['123456789', '123456789', 'an unprefixed number gets no prefix'],
+            ['GR123456789', 'GR123456789', 'a GR prefix is kept as entered'],
+            ['DE/123456789', 'DE/123456789', 'a slash is kept'],
+            ['n/a', 'n/a', 'a value with no digit is still a number'],
+            ['   ', '', 'whitespace only is no number'],
         ];
     }
 
@@ -290,7 +286,7 @@ class TaxCodeResolverTest extends TestCase
             ['DE111111111', 0, 0, 'DE222222222', 'DE111111111', 'a VAT check request that failed keeps the address VAT id'],
             ['DE111111111', 0, null, null, 'DE111111111', 'invalid with no request result keeps the address VAT id'],
             ['DE111111111', '', 1, null, 'DE111111111', 'an empty check result is no check'],
-            ['111111111', null, null, null, 'DE111111111', 'normalised against the billing country'],
+            ['111111111', null, null, null, '111111111', 'an unprefixed number is kept as entered'],
             [null, null, null, null, '', 'neither source is no number'],
         ];
     }
@@ -327,10 +323,9 @@ class TaxCodeResolverTest extends TestCase
     public static function sentVatCases(): array
     {
         return [
-            ['ES', 'DE 10115', 'DE 123.456.789', null, 'DE123456789', 'Spanish merchant, EU buyer with a VAT number'],
-            ['ES', 'DE 10115', '123456789', null, 'DE123456789', 'unprefixed number sent with the billing prefix'],
-            ['ES', 'GR 10431', '123456789', null, 'EL123456789', 'Greek buyer sent with EL'],
-            ['ES', 'MC 98000', '12345678901', null, 'FR12345678901', 'Monaco buyer sent with FR'],
+            ['ES', 'DE 10115', ' DE 123.456.789 ', null, 'DE 123.456.789', 'Spanish merchant, EU buyer: sent as entered, trimmed'],
+            ['ES', 'DE 10115', '123456789', null, '123456789', 'unprefixed number sent as entered'],
+            ['ES', 'GR 10431', 'EL123456789', null, 'EL123456789', 'Greek buyer sent with EL as entered'],
             ['ES', 'US 10001', 'US123', null, 'US123', 'Spanish merchant, non-EU buyer with a number'],
             ['ES', 'DE 10115', null, 'DE222222222', 'DE222222222', 'customer VAT number when the address has none'],
             ['ES', 'ES 28001', 'ESB12345678', null, null, 'Spanish buyer: never sent'],

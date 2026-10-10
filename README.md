@@ -223,11 +223,12 @@ A line's code comes from the first of these that gives one:
    check got an answer that marked the billing address's number invalid, the
    order has no buyer VAT number at all: the customer's Tax/VAT number is not
    used in its place, since it often holds the same number. A check that
-   could not reach the VAT service keeps the number. Everything but letters
-   and digits is removed and it is upper-cased, and a value with no digit
-   (such as "n/a") is no number; a number that does not start with two
-   letters gets the billing country in front (`EL` for Greece, `FR` for
-   Monaco). The prefix `EL` counts as Greece, and `MC` is not a VAT prefix.
+   could not reach the VAT service keeps the number. The number is used
+   exactly as entered, trimmed of leading and trailing spaces, and a value
+   with nothing left is no number. Nothing is corrected or added: a number
+   entered without its upper-case country prefix names no country, so it
+   gets no intra-community code. The prefix `EL` counts as Greece, and `MC`
+   is not a VAT prefix.
    Order create also sends it to Two as `buyer_vat_number`, for a
    merchant in Spain and a buyer outside Spain only: Two requires a Spanish
    buyer's VAT number to equal its organisation number, so it is never sent
