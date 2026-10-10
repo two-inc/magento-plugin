@@ -945,9 +945,12 @@ gets, so unlike a shipment's partial it also carries the charges no item owns,
 each less what the credit memos refunded of it: the surcharge (its amount less
 `two_surcharge_refunded`), each fee-provider line (less that provider's lines on
 the saved memos) and the other-charges residual (less the memos'
-`two_other_charges_amount`). Tax shrinks in proportion, so each line keeps its
-declared rate, and a charge with nothing refunded goes in exactly as the order
-line. With nothing left, nothing is sent. The Two remainder of such a partial
+`two_other_charges_amount`). The memos come from a fresh credit memo query, not
+`Order::getCreditmemosCollection()`: the order caches that collection once
+loaded, and the memo whose refund moved the order into the fulfil-on status can
+be missing from it. A cancelled memo refunded nothing and counts for nothing.
+Tax shrinks in proportion, so each line keeps its declared rate, and a charge
+with nothing refunded goes in exactly as the order line. With nothing left, nothing is sent. The Two remainder of such a partial
 fulfilment stays open, as it does after a partial shipment the merchant never
 completes.
 
@@ -1167,8 +1170,9 @@ dependency that way and relying on DI to fill it in gets you a silent
 `bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
 (value null) instead of `"_i_"` (instance); that is the check.
 
-`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool` and
-`Service\Order::$taxCodeResolver` are all declared optional for constructor BC and all named explicitly in
+`Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool`,
+`Service\Order::$taxCodeResolver` and `Service\Order::$creditmemoCollectionFactory`
+are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 

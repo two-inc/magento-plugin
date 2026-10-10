@@ -63,6 +63,7 @@
             <argument name="feeLineProviderPool" xsi:type="object">Two\Gateway\Service\Fee\FeeLineProviderPool</argument>
             <argument name="orderTaxManagement" xsi:type="object">Magento\Tax\Api\OrderTaxManagementInterface</argument>
             <argument name="taxCodeResolver" xsi:type="object">Two\Gateway\Service\Order\TaxCodeResolver</argument>
+            <argument name="creditmemoCollectionFactory" xsi:type="object">Magento\Sales\Model\ResourceModel\Order\Creditmemo\CollectionFactory</argument>
         </arguments>
     </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"

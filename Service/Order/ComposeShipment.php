@@ -13,6 +13,7 @@ use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\Data\ShipmentItemInterface;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Creditmemo;
 use Two\Gateway\Service\Order as OrderService;
 
 /**
@@ -94,9 +95,14 @@ class ComposeShipment extends OrderService
      */
     private function getChargeLinesNetOfRefunds(Order $order): array
     {
+        // A fresh query, not $order->getCreditmemosCollection(): the order
+        // caches that collection once loaded, and the memo being saved in this
+        // same refund (the one moving the order into the fulfil-on status) is
+        // not in it when OtherCharges::collect() loaded it first. A cancelled
+        // memo refunded nothing.
         $memos = [];
-        foreach ($order->getCreditmemosCollection() as $memo) {
-            if ($memo->getId()) {
+        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
+            if ($memo->getId() && (int)$memo->getState() !== Creditmemo::STATE_CANCELED) {
                 $memos[] = $memo;
             }
         }
@@ -111,7 +117,8 @@ class ComposeShipment extends OrderService
                     (string)$order->getTwoSurchargeDescription(),
                     (float)$order->getTwoSurchargeTaxRate()
                 ),
-                (float)$order->getTwoSurchargeRefunded()
+                (float)$order->getTwoSurchargeRefunded(),
+                [$surchargeNet, (float)$order->getTwoSurchargeTaxAmount()]
             );
         }
 
@@ -143,23 +150,26 @@ class ComposeShipment extends OrderService
      * $line less $refundedNet of its net, its tax shrunk in proportion so the
      * line keeps its declared rate. The line as it is when nothing was
      * refunded, so the fulfilment matches the order line exactly; null when
-     * nothing a line can carry is left.
+     * nothing a line can carry is left. $source is the unrounded [net, tax]
+     * the line was built from, where there is one, so a refund of a sub-cent
+     * source is taken from that source and not from the rounded line.
      *
      * @param array $line
      * @param float $refundedNet
+     * @param array|null $source
      * @return array|null
      */
-    private function remainderOf(array $line, float $refundedNet): ?array
+    private function remainderOf(array $line, float $refundedNet, ?array $source = null): ?array
     {
         if ($refundedNet <= 0) {
             return $line;
         }
-        $net = (float)$line['net_amount'];
+        [$net, $tax] = $source ?? [(float)$line['net_amount'], (float)$line['tax_amount']];
         $remainingNet = round($net - $refundedNet, 6);
         if (round($remainingNet, 2) <= 0) {
             return null;
         }
-        $remainingTax = (float)$line['tax_amount'] * $remainingNet / $net;
+        $remainingTax = $tax * $remainingNet / $net;
 
         return array_merge($line, [
             'gross_amount' => $this->roundAmt($remainingNet + $remainingTax),

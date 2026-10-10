@@ -27,6 +27,7 @@ use Magento\Sales\Model\Order\Creditmemo as CreditmemoModel;
 use Magento\Sales\Model\Order\Creditmemo\Item as CreditmemoItem;
 use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
+use Magento\Sales\Model\ResourceModel\Order\Creditmemo\CollectionFactory as CreditmemoCollectionFactory;
 use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
@@ -134,6 +135,11 @@ abstract class Order
     private $taxCodeResolver;
 
     /**
+     * @var CreditmemoCollectionFactory|null
+     */
+    protected $creditmemoCollectionFactory;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -151,6 +157,7 @@ abstract class Order
      * @param BrandRegistryInterface $brandRegistry
      * @param CustomerRepositoryInterface $customerRepository
      * @param TaxCodeResolver|null $taxCodeResolver
+     * @param CreditmemoCollectionFactory|null $creditmemoCollectionFactory
      */
     public function __construct(
         Image $imageHelper,
@@ -167,7 +174,8 @@ abstract class Order
         GroupRepositoryInterface $groupRepository,
         BrandRegistryInterface $brandRegistry,
         CustomerRepositoryInterface $customerRepository,
-        ?TaxCodeResolver $taxCodeResolver = null
+        ?TaxCodeResolver $taxCodeResolver = null,
+        ?CreditmemoCollectionFactory $creditmemoCollectionFactory = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -184,6 +192,7 @@ abstract class Order
         $this->brandRegistry = $brandRegistry;
         $this->customerRepository = $customerRepository;
         $this->taxCodeResolver = $taxCodeResolver;
+        $this->creditmemoCollectionFactory = $creditmemoCollectionFactory;
     }
 
     /**

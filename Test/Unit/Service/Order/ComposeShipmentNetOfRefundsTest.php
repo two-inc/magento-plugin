@@ -25,6 +25,9 @@ use Two\Gateway\Service\Order\ComposeShipment;
  */
 class ComposeShipmentNetOfRefundsTest extends TestCase
 {
+    /** @var Order|null The order the memo collection was filtered on. */
+    public $filteredOrder;
+
     /**
      * Items are [id, ordered, refunded, canceled]; the expected shipment lists
      * [id, qty] and whether shipping goes in.
@@ -73,10 +76,12 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
 
     /**
      * One item of two, one unit refunded, so the fulfilment is a net partial.
-     * Each charge is [net, tax, refunded net]; the residual is an untaxed
-     * amount the grand total carries beyond every known line. Expected lines
-     * are [order_item_id, gross, net, tax, quantity], in that order; the
-     * order's fee line is for a quantity of two.
+     * The surcharge is [net, tax, refunded net]; the fee is [net, tax, the net
+     * each saved memo refunded of it]; the residual is [an untaxed amount the
+     * grand total carries beyond every known line, what each saved memo
+     * refunded of it]. Memo i carries refund i of each. Expected lines are
+     * [order_item_id, gross, net, tax, quantity], in that order; the order's
+     * fee line is for a quantity of two.
      *
      * @dataProvider chargeCases
      */
@@ -88,9 +93,20 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         string $description
     ): void {
         $order = $this->order([[1, 2, 1, 0]], 0.0);
-        $memo = (new Creditmemo())->setId(9)->setTwoOtherChargesAmount($residual[1] ?? 0.0);
-        // A memo not yet saved is not a refund yet.
-        $order->setCreditmemosCollection([$memo, (new Creditmemo())->setTwoOtherChargesAmount(50.0)]);
+        $memos = [];
+        $feeLines = [];
+        for ($i = 0; $i < max(count($fee[2] ?? []), count($residual[1] ?? []), 1); $i++) {
+            $memo = (new Creditmemo())->setId(9 + $i)->setState(Creditmemo::STATE_REFUNDED)
+                ->setTwoOtherChargesAmount($residual[1][$i] ?? 0.0);
+            $memos[] = $memo;
+            if (isset($fee[2][$i])) {
+                array_push($feeLines, $memo, $this->feeLine($fee[2][$i], $fee[2][$i] * 0.25));
+            }
+        }
+        // A memo not yet saved, or cancelled, refunded nothing.
+        $cancelled = (new Creditmemo())->setId(20)->setState(Creditmemo::STATE_CANCELED)->setTwoOtherChargesAmount(50.0);
+        $memos[] = $cancelled;
+        $memos[] = (new Creditmemo())->setTwoOtherChargesAmount(50.0);
         $grandTotal = 260.00;
         $taxTotal = 52.00;
         if ($surcharge) {
@@ -103,10 +119,9 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
             $grandTotal += $net + $tax;
             $taxTotal += $tax;
         }
-        $feeLines = [];
         if ($fee) {
-            [$net, $tax, $refunded] = $fee;
-            $feeLines = [$order, $this->feeLine($net, $tax, 2), $memo, $this->feeLine($refunded, $refunded * 0.25)];
+            [$net, $tax] = $fee;
+            array_push($feeLines, $order, $this->feeLine($net, $tax, 2), $cancelled, $this->feeLine($net, $tax));
             $grandTotal += $net + $tax;
             $taxTotal += $tax;
         }
@@ -115,7 +130,9 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         $order->setTaxAmount($taxTotal);
 
         $lines = [];
-        foreach ($this->composer($order, $feeLines)->executeNetOfRefunds($order)['line_items'] as $line) {
+        $payload = $this->composer($order, $feeLines, $memos)->executeNetOfRefunds($order);
+        $this->assertNotContains(null, $payload['line_items'], $description);
+        foreach ($payload['line_items'] as $line) {
             if (in_array($line['type'], ['BUYER_FEE', 'OTHER'], true)) {
                 $lines[] = [$line['order_item_id'], $line['gross_amount'], $line['net_amount'], $line['tax_amount'], $line['quantity']];
             }
@@ -130,18 +147,45 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
             [[10.0, 2.5, 0.0], null, null, [['surcharge', '12.50', '10.00', '2.50', 1]], 'a surcharge with nothing refunded goes in whole'],
             [[10.0, 2.5, 4.0], null, null, [['surcharge', '7.50', '6.00', '1.50', 1]], 'a partly refunded surcharge goes in net, at its rate'],
             [[10.0, 2.5, 10.0], null, null, [], 'a fully refunded surcharge is left out'],
-            [null, [8.0, 2.0, 0.0], null, [['fee_1', '10.00', '8.00', '2.00', 2]], 'a provider fee with nothing refunded goes in whole'],
-            [null, [8.0, 2.0, 3.0], null, [['fee_1', '6.25', '5.00', '1.25', 1]], 'a partly refunded provider fee goes in net of the memo line'],
-            [null, [8.0, 2.0, 8.0], null, [], 'a fully refunded provider fee is left out'],
-            [null, null, [4.0, 0.0], [['other_charges', '4.00', '4.00', '0.00', 1]], 'an other-charges residual with nothing refunded goes in whole'],
-            [null, null, [4.0, 1.5], [['other_charges', '2.50', '2.50', '0.00', 1]], 'an other-charges residual goes in net of saved memos'],
-            [null, null, [4.0, 4.0], [], 'a fully refunded other-charges residual is left out'],
-            [[10.0, 2.5, 4.0], [8.0, 2.0, 3.0], [4.0, 1.5], [
+            [[10.005, 2.50125, 10.005], null, null, [], 'a fully refunded sub-cent surcharge is left out, not billed the rounding cent'],
+            [[10.005, 2.50125, 4.0], null, null, [['surcharge', '7.51', '6.01', '1.50', 1]], 'a sub-cent surcharge is netted from its source amounts'],
+            [null, [8.0, 2.0, []], null, [['fee_1', '10.00', '8.00', '2.00', 2]], 'a provider fee with nothing refunded goes in whole'],
+            [null, [8.0, 2.0, [3.0]], null, [['fee_1', '6.25', '5.00', '1.25', 1]], 'a partly refunded provider fee goes in net of the memo line'],
+            [null, [8.0, 2.0, [3.0, 2.0]], null, [['fee_1', '3.75', '3.00', '0.75', 1]], 'a provider fee goes in net of every memo line, summed'],
+            [null, [8.0, 2.0, [8.0]], null, [], 'a fully refunded provider fee is left out'],
+            [null, null, [4.0, []], [['other_charges', '4.00', '4.00', '0.00', 1]], 'an other-charges residual with nothing refunded goes in whole'],
+            [null, null, [4.0, [1.5]], [['other_charges', '2.50', '2.50', '0.00', 1]], 'an other-charges residual goes in net of saved memos'],
+            [null, null, [4.0, [1.5, 1.0]], [['other_charges', '1.50', '1.50', '0.00', 1]], 'an other-charges residual goes in net of every saved memo, summed'],
+            [null, null, [4.0, [4.0]], [], 'a fully refunded other-charges residual is left out'],
+            [[10.0, 2.5, 4.0], [8.0, 2.0, [3.0]], [4.0, [1.5]], [
                 ['surcharge', '7.50', '6.00', '1.50', 1],
                 ['fee_1', '6.25', '5.00', '1.25', 1],
                 ['other_charges', '2.50', '2.50', '0.00', 1],
             ], 'all three together, none counted twice'],
         ];
+    }
+
+    /**
+     * The order caches its credit memo collection once loaded, so a memo saved
+     * after OtherCharges::collect() loaded it (the one moving the order into
+     * the fulfil-on status) is missing from it. Memos come from a fresh query.
+     */
+    public function testReadsSavedMemosFreshNotFromTheOrderCache(): void
+    {
+        $order = $this->order([[1, 2, 1, 0]], 0.0);
+        $earlier = (new Creditmemo())->setId(9)->setTwoOtherChargesAmount(1.0);
+        $order->setCreditmemosCollection([$earlier]);
+        $order->setGrandTotal(264.00);
+        $order->setTaxAmount(52.00);
+        $composer = $this->composer($order, [], [$earlier, (new Creditmemo())->setId(10)->setTwoOtherChargesAmount(1.5)]);
+
+        $lines = array_values(array_filter(
+            $composer->executeNetOfRefunds($order)['line_items'],
+            static fn ($line) => $line['order_item_id'] === 'other_charges'
+        ));
+
+        $this->assertSame('1.50', $lines[0]['net_amount'], 'the memo saved in this refund is netted out too');
+        $this->assertSame($order, $this->filteredOrder, 'the fresh query is filtered on the order');
     }
 
     private function feeLine(float $net, float $tax, int $quantity = 1): array
@@ -250,7 +294,7 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
     /**
      * A real composer; only the catalogue and repository lookups are stubbed.
      */
-    private function composer(Order $order, array $feeLines = []): ComposeShipment
+    private function composer(Order $order, array $feeLines = [], array $memos = []): ComposeShipment
     {
         $service = $this->getMockBuilder(ComposeShipment::class)
             ->disableOriginalConstructor()
@@ -273,6 +317,7 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         foreach ([
             'logRepository' => $this->createMock(LogRepository::class),
             'feeLineProviderPool' => new FeeLineProviderPool([$this->feeProvider($feeLines)]),
+            'creditmemoCollectionFactory' => $this->memoCollectionFactory($memos),
         ] as $name => $value) {
             (new \ReflectionProperty(OrderService::class, $name))->setValue($service, $value);
         }
@@ -282,6 +327,52 @@ class ComposeShipmentNetOfRefundsTest extends TestCase
         $service->configRepository = $config;
 
         return $service;
+    }
+
+    /**
+     * A Creditmemo\CollectionFactory whose collection yields $memos once
+     * filtered on an order, which it records.
+     */
+    private function memoCollectionFactory(array $memos): object
+    {
+        $test = $this;
+
+        return new class ($memos, $test) {
+            /** @var array */
+            private $memos;
+
+            /** @var ComposeShipmentNetOfRefundsTest */
+            private $test;
+
+            public function __construct(array $memos, ComposeShipmentNetOfRefundsTest $test)
+            {
+                $this->memos = $memos;
+                $this->test = $test;
+            }
+
+            public function create(): object
+            {
+                return new class ($this->memos, $this->test) {
+                    /** @var array */
+                    private $memos;
+
+                    /** @var ComposeShipmentNetOfRefundsTest */
+                    private $test;
+
+                    public function __construct(array $memos, ComposeShipmentNetOfRefundsTest $test)
+                    {
+                        $this->memos = $memos;
+                        $this->test = $test;
+                    }
+
+                    public function setOrderFilter($order): iterable
+                    {
+                        $this->test->filteredOrder = $order;
+                        return $this->memos;
+                    }
+                };
+            }
+        };
     }
 
     /**

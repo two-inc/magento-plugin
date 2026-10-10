@@ -113,6 +113,10 @@ if (!class_exists(Invoice::class, false)) {
 if (!class_exists(Creditmemo::class, false)) {
     class Creditmemo extends AbstractSalesModelStub
     {
+        public const STATE_OPEN = 1;
+        public const STATE_REFUNDED = 2;
+        public const STATE_CANCELED = 3;
+
         private $order;
 
         /**
