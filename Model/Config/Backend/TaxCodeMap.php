@@ -85,7 +85,12 @@ class TaxCodeMap extends Value
     public function beforeSave()
     {
         $value = $this->getValue();
-        if (is_string($value) && trim($value) !== '' && !is_array(json_decode($value, true))) {
+        // Only the form's JSON object, or an emptied field, is saved: anything
+        // else (a form rendered before an upgrade, a JSON list) would store an
+        // empty map and delete every row.
+        if (!is_string($value)
+            || (trim($value) !== '' && !(json_decode($value) instanceof \stdClass))
+        ) {
             throw new LocalizedException(__(
                 'The tax codes for 0% lines could not be read, so nothing was saved. Reload the page and try again.'
             ));

@@ -133,7 +133,7 @@ class TaxCodesTest extends TestCase
      *
      * @dataProvider postedMaps
      */
-    public function testSaveRefusesAnUnreadablePost(string $posted, ?string $stored, string $description): void
+    public function testSaveRefusesAnUnreadablePost($posted, ?string $stored, string $description): void
     {
         $config = $this->createMock(\Magento\Framework\App\Config\ScopeConfigInterface::class);
         $value = new TaxCodeMap(null, null, $config, null, null, null, ['value' => $posted]);
@@ -152,6 +152,11 @@ class TaxCodesTest extends TestCase
             ['', '', 'an emptied field stores nothing'],
             ['{"5|none":"ES_IVA_EXP', null, 'a cut-off post is refused'],
             ['"5|none"', null, 'JSON that is not an object is refused'],
+            ['[]', null, 'a JSON list is refused'],
+            ['["ES_IVA_EXPORT"]', null, 'a JSON list with entries is refused'],
+            [['5' => 'ES_IVA_EXPORT'], null, 'a form rendered before the upgrade (one field per class) is refused'],
+            [[['key' => '5|none', 'code' => 'ES_IVA_EXPORT']], null, 'a form posting key and code pairs is refused'],
+            [null, null, 'no value is refused'],
         ];
     }
 

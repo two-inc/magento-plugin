@@ -142,7 +142,7 @@ class TaxCodeMap extends Field
         return sprintf(
             '<div id="%s_rows"><table class="admin__control-table"><thead><tr><th>%s</th><th>%s</th><th>%s</th>'
             . '</tr></thead><tbody>%s</tbody></table></div>',
-            $htmlId,
+            $this->escapeHtmlAttr($htmlId),
             $this->escapeHtml(__('Tax class')),
             $this->escapeHtml(__('Line')),
             $this->escapeHtml(__('Tax code')),
@@ -167,7 +167,7 @@ class TaxCodeMap extends Field
     {
         return sprintf(
             '<input type="hidden" id="%s" name="%s" value="%s" data-carried="%s"/>',
-            $htmlId,
+            $this->escapeHtmlAttr($htmlId),
             $this->escapeHtmlAttr($name),
             $this->escapeHtmlAttr((string)json_encode((object)$saved)),
             $this->escapeHtmlAttr((string)json_encode((object)$carried))
