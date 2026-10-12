@@ -401,6 +401,15 @@ before sending (`GET /v1/order/<id>` and its `/fulfillments`):
 If Two's record cannot be read, the request is not sent and says so: the
 prepaid part is never guessed.
 
+A credit memo refunded offline never reaches Two, and Magento returns the
+tenders before the payment. When it returns tenders a fulfilled part had
+already declared as prepaid (a 60 gift card, a first shipment of 50 declared
+wholly prepaid, then an offline memo of the unshipped rest returning 50 to the
+card), Two still holds that part as paid and cannot raise what the buyer owes
+on it. The plugin then logs `TendersReturnedAfterDeclared` as an error and
+adds an order comment naming the amount not collected through Two, here 40;
+collect it outside Two.
+
 An order placed with tenders before this version has no prepaid at Two and an
 invoice of the grand total alone. Every later request on it, edits included,
 is sent exactly as before: its lines reconciled against the grand total, its

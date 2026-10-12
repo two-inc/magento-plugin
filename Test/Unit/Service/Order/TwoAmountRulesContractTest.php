@@ -128,6 +128,35 @@ class TwoAmountRulesContractTest extends TestCase
     }
 
     /**
+     * The reported case (TWO-26309): a first shipment declared the gift card
+     * as prepaid, then an offline memo of the unshipped rest returned the
+     * card. Two holds the shipped part as paid and cannot be told, so the
+     * card's amount goes uncollected through it; a memo that leaves the card
+     * covering what was declared leaves nothing uncollected.
+     *
+     * @dataProvider returnedTenders
+     */
+    public function testWhatAMemoReturningDeclaredTendersLeavesUncollected(float $card, int $declared, int $expected): void
+    {
+        $tenders = ['gift_cards_amount' => $card];
+        $order = $this->order($tenders);
+        $this->fulfilled(8950, $declared);
+        $this->memos = [];
+        $this->shipmentAfterMemo($order, $tenders);
+
+        $this->assertSame($expected, $this->composer(\Two\Gateway\Service\Order\ComposeRefund::class, $order)->uncollectedPrepaid($order));
+    }
+
+    public static function returnedTenders(): array
+    {
+        return [
+            'card 60 declared on the first shipment, then returned' => [60.00, 6000, 6000],
+            'card 100, 89.50 declared, 60.50 returned' => [100.00, 8950, 5000],
+            'nothing declared yet' => [60.00, 0, 0],
+        ];
+    }
+
+    /**
      * Several refunds of one order: each is its lines, and together they
      * return no more prepaid than the order declared.
      */

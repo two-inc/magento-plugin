@@ -32,5 +32,6 @@
     </event>
     <event name="sales_order_creditmemo_save_after">
         <observer name="two_creditmemo_surcharge_running_total" instance="Two\Gateway\Observer\CreditmemoSurchargeRunningTotal"/>
+        <observer name="two_creditmemo_tenders_returned" instance="Two\Gateway\Observer\CreditmemoTendersReturned"/>
     </event>
 </config>

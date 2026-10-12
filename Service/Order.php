@@ -272,6 +272,28 @@ abstract class Order
     }
 
     /**
+     * What the buyer will not be asked to pay through Two, in cents
+     * (TWO-26309): tenders Two holds as prepaid on the parts it has fulfilled
+     * that Magento no longer holds, because a credit memo refunded offline
+     * returned them. Two cannot raise the payable of a fulfilled part, so that
+     * amount is not collected through it. 0 for an order that declared no
+     * tenders.
+     *
+     * @param OrderModel $order
+     * @return int
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function uncollectedPrepaid(OrderModel $order): int
+    {
+        if ($this->declaredTenders($order, $order) <= 0) {
+            return 0;
+        }
+        $ledger = $this->twoLedger($order);
+
+        return max(0, $ledger['fulfilled_prepaid'] - $ledger['refunded_prepaid'] - $this->tendersKept($order));
+    }
+
+    /**
      * The tenders Magento still holds as paid, in cents: the order's, less
      * what every saved credit memo returned to them, online or offline.
      *
