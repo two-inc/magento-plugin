@@ -441,3 +441,5 @@
 "This invoice was recorded in Magento only and %1 was not notified. The order will be fulfilled with %1 when its status changes to %2.","Denne fakturaen ble kun registrert i Magento, og %1 ble ikke varslet. Bestillingen blir oppfylt hos %1 når statusen endres til %2."
 "Failed to fulfil order with %1. Reason: %2","Kunne ikke oppfylle bestillingen hos %1. Årsak: %2"
 "%1 fulfilled the order, but the order could not be saved. Reason: %2","%1 har oppfylt bestillingen, men bestillingen kunne ikke lagres. Årsak: %2"
+"The order lines do not add up to the order total.","Ordrelinjene summerer seg ikke til ordretotalen."
+"The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.","De lagrede avgiftskodene for linjer med 0 % kan ikke leses. Lagre dem på nytt i betalingsinnstillingene."

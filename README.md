@@ -173,6 +173,10 @@ for Shipping is set. Enabled with no class set, it does nothing.
 | Magento recorded no rate, whatever the line's tax (0 included) | Sent as is: rate 0, tax as charged. The plugin does not check it; the hook runs, then Two's API validates it. | The rate comes from the Tax Class for Shipping, and the line's tax must reconcile with it within 0.02. The line is built at that rate and the hook runs; with no subscriber, a line that does not reconcile is then refused. |
 
 With the fallback blank, the plugin never refuses a request over shipping tax.
+Each time the fallback supplies a shipping rate, the plugin writes a
+`ShippingTaxRateFallback` warning to the error log naming the order, the
+shipping tax class, the rate and the shipping charge, so a shop relying on it
+shows without Debug Mode.
 
 "Recorded a rate" means Magento applied a tax rate to the shipping line when
 the order was placed. A Tax Class for Shipping of **None**, or no tax rule
@@ -288,12 +292,21 @@ so set a code on every row your 0% lines fall under, and make sure EU buyers
 outside Spain give their VAT number at checkout. A non-Spanish merchant with
 no row set sends exactly what it sent before.
 
-Placement records each line's code, or that it had none, on the order
-(`two_tax_codes`): per product line, for shipping, for the payment terms fee,
+**A stored setting the form could not have written** (TWO-26309), such as a
+value set with `config:set` that is not a JSON object of valid rows, is never
+read as "nothing mapped": Two is withheld from checkout, order create and an
+order edit that needs the rows are refused, and `TaxCodeMapUnreadable` is
+logged once per request until the setting is saved again. Capture, shipment
+and refund are never held over it: they send the codes recorded at placement,
+and a line that would need the rows goes without a code.
+
+Placement records each line's code on the order (`two_tax_codes`), only where
+the line got one: per product line, for shipping, for the payment terms fee,
 and once for all other fee lines ("Other charges" and fee-provider lines),
 which share one code whatever their id. Order edit, capture, shipment and
 refund send those codes, so a later change to the addresses, your rows or a
-product's tax class does not move a placed order. The refund adjustment line
+product's tax class does not move a coded line. A line placed with no code is
+resolved again against your rows on each later request (TWO-26309). The refund adjustment line
 takes the code the lines coded by steps 1 to 3 shared at placement (step 4). These resolve afresh
 instead: a product line placement could not match to its item (its SKU was
 changed by another extension, or its item has no quote item), a fee line on
@@ -336,15 +349,58 @@ The default implementation returns the payload unchanged. Plugins chain by
 |---|---|---|
 | `request_type` | string | `order_intent`, `order_create`, `order_update`, `order_confirm`, `capture`, `refund` or `cancel` |
 | `trigger` | string | What caused the request: `checkout`, `admin_edit`, `confirmation`, `invoice`, `shipment`, `status_change`, `credit_memo`, `cancel`, `buyer_cancel` |
-| `endpoint` | string | The API path, for example `/v1/order/{id}/refund` |
+| `endpoint` | string | The API path as sent, with Two's order id, for example `/v1/order/<id>/refund` |
 | `quote` or `order` | object | The quote for `order_intent`, the order for everything else |
 | `invoice`, `shipment`, `creditmemo` | object | Present where the request has one |
 | `intent_order` | object | `order_intent` only: the unsaved order the plugin converted the quote into and built the lines from. Never saved |
 | `shipping_tax_rate` | float or null | The rate Magento's **Tax Class for Shipping** applies at the order's tax address, whether or not the shipping line was taxed. `0.21` means 21%. Null when no class is set |
 | `fallback_shipping_tax_rate` | float or null | The shipping tax fallback's rate, null unless the fallback is enabled for the store |
+| `fallback_shipping_tax_code` | string or null | With the fallback enabled, the code steps 1 to 3 of "Tax codes on 0% lines" give a 0% shipping line taxed by the Tax Class for Shipping at the order's addresses. Null otherwise, and when that class is None, the rate there is not 0%, the row is (none) or the setting cannot be read |
 | `contract_version` | int | `1` |
+| `order_lines` | array or null | On `order_update` and `refund`: the order's `line_items` as Two's `GET /v1/order/<id>` returns them, with Two's line ids. Read for an admin edit, and otherwise only when a handler other than the plugin's own is registered. Null on other requests and when the read fails. Read-only |
+| `order_refunds` | array or null | From the same read: Two's refunds on the order. Two leaves each refund line's `prototype_id` empty, so the plugin fills it with the order line it best matches on name, description, type, tax code and rate; a line that matches none keeps it empty. Null as for `order_lines` |
+| `order_tenders` | array | What has already paid part of the order outside its lines (see "Tenders" below): the credit memo's for a refund, the invoice's for an invoice capture, else the order's. `[]` when there are none |
 
 **Return.** The full payload, edited or not.
+
+**Tenders** (TWO-26309). A tender is anything that has already paid part of
+the order without being a line: a gift card, store credit, reward points.
+Magento takes it off the grand total, so the lines add up to the grand total
+plus the tenders. Discounts are not tenders: they are on the lines already.
+
+An order with tenders is sent as an invoice for its full lines, with the
+tenders declared as already paid. Two funds only what is left:
+
+| Field | Value |
+|---|---|
+| `net_amount`, `tax_amount` | The lines' net and tax: a tender is a payment and reduces neither |
+| `invoice_amount` | `net_amount` plus `tax_amount` |
+| `prepaid_amount` | The tenders |
+| `payable_amount`, `gross_amount` | The grand total: `invoice_amount` less `prepaid_amount` |
+
+That holds for `order_create`, `order_update` and a partial `capture`. An
+invoice capture declares the invoice's own share of the tenders, which Magento
+takes off the first invoices; a partial shipment declares what the tenders
+have left, up to its own lines, so the rest of the order never carries more
+prepaid than invoice. A `refund` carries `prepaid_amount` too: what the credit
+memo returns to the tenders, so `amount` plus `prepaid_amount` is the refunded
+lines. The `order_intent` body is unchanged. An order with no tenders carries
+none of `invoice_amount`, `payable_amount` and `prepaid_amount`, and its bodies
+are as they always were.
+
+`$context['order_tenders']` lists them, each `{type, label, amount, source}`:
+`type` is `gift_card`, `store_credit` or `other`; `label` a name for logs,
+never a card's code; `amount` a positive 2dp string; `source` where it was
+read from. The plugin reads Adobe Commerce's gift card account
+(`gift_cards_amount`), store credit (`customer_balance_amount`) and reward
+points (`reward_currency_amount`) on the order, invoice and credit memo, and
+the quote's own fields for the cart; Magento Open Source has none. To declare
+another tender, add an `after` plugin on
+`Two\Gateway\Api\OrderTendersInterface::collect($entity): array` that
+appends to the list. An entry whose amount is zero is skipped; one that is
+negative or not a number is dropped and logged as `OrderTenderDropped` with its
+type, source and amount, never its label. Declare each tender once: one
+declared twice is counted twice, and the order no longer adds up.
 
 **When it fires.** Immediately before every order request is sent, once per
 request:
@@ -353,7 +409,7 @@ request:
 |---|---|
 | `order_intent` | The checkout's approval check. The body is built here from the quote, with the same lines as the order |
 | `order_create` | Order placement |
-| `order_update` | An admin edit of the order's address. Not sent once the order can no longer be edited, for example once Two has invoiced all or part of it: the admin sees a notice instead |
+| `order_update` | An admin edit of the order's address. Once the order can no longer be edited, for example once Two has invoiced all or part of it, the body is still built and the hook runs, but nothing is sent: the admin sees a notice instead |
 | `order_confirm` | The buyer returns from Two's checkout |
 | `capture` | An online invoice, a shipment, or the order reaching a fulfil-on status, per the fulfilment trigger |
 | `refund` | A credit memo |
@@ -393,10 +449,24 @@ admin for an admin action, or to the buyer at checkout.
 your subscriber's code (it throws, returns something other than an array, or
 returns a payload that cannot be JSON-encoded) or for a failed shop-match
 check. A *shop-match check* asks whether what the plugin built matches what
-the shop worked out, which Two's API cannot see. There is one: a shipping line
-whose rate the shipping tax fallback supplied must carry the tax Magento
-charged at that rate (see "Shipping tax fallback"). It applies to the shipping
-line the plugin built, on order intent, create, update and capture.
+the shop worked out, which Two's API cannot see. On single lines, each on the
+line the plugin built while the payload still carries it unchanged:
+
+- a shipping line whose rate the shipping tax fallback supplied must carry the
+  tax Magento charged at that rate (see "Shipping tax fallback"), on order
+  intent, create, update and capture;
+- every other line's tax must follow its declared rate and net (or, with tax
+  applied before discount, net plus discount), on create and update. The line
+  is Magento's own figures, so a mismatch means the shop's tax does not match
+  the rate it declared. Refused as `ShopMatchLineTaxRefused`.
+
+On the whole order (TWO-26309): the payload's lines must add up to the order's
+grand total plus its tenders, gross, net and tax each, within 0.02 or half a
+cent per line plus half for the order if that is more. A create or update that
+fails it is refused as `ShopMatchWholeOrderRefused`; the order intent only
+logs `ShopMatchWholeOrderDrift`, since the create checks it again. The log
+names the unexplained gap and `OrderTendersInterface`, for a payment taken
+outside the lines.
 
 **The default handler and when it stands down.** The plugin registers its own
 `after` plugin on this interface, `two_gateway_shop_match_checks`, which runs
@@ -408,7 +478,7 @@ runs on, in the area of the request (storefront, admin, REST, cron), so a
 plugin that is disabled, belongs to a disabled module, or is declared for
 another area does not count. When the default handler stands down, it writes
 `OrderPostprocessingShopMatchDelegated` to the debug log for each request,
-naming the handlers.
+naming the order (or quote) and the handlers.
 
 **With a subscriber, shop-match correctness is yours.** Whatever you change,
 nothing in the plugin compares your result with the shop's figures. For
@@ -424,7 +494,15 @@ and the `$payload` and `$context` your plugin received. Each check applies to
 the line the plugin built it for, and only while your result still carries that
 line unchanged: a line you edited, replaced or removed is yours. A failing check
 throws `Two\Gateway\Exception\ShopMatchRefusedException`, and the request is
-refused exactly as the default handler refuses it.
+refused exactly as the default handler refuses it. Only a refusal those checks
+raised is passed through as one: a `ShopMatchRefusedException` your code
+constructs itself is treated as a fault in your code (below).
+
+`check()` also runs the whole-order check on your result. A subscriber that
+declares its own split of the order, which the shop's totals cannot match,
+injects `Two\Gateway\Api\OrderPostprocessingShopMatchLinesInterface` instead
+and calls `checkLines($result, $payload, $context)`: the single-line checks
+only.
 
 ```php
 public function afterProcess(OrderPostprocessingInterface $subject, array $result, array $payload, array $context): array
@@ -436,15 +514,19 @@ public function afterProcess(OrderPostprocessingInterface $subject, array $resul
 }
 ```
 
-A shop-match refusal is logged with `ShippingTaxFallbackMismatch`. On order
-intent and create the buyer sees a generic notice. On update, an admin address
-edit, the update is not sent to Two: the address still saves, and the admin sees
-that same generic notice as a warning and in the order's history. On a capture
+A shop-match refusal is logged with the check's own code
+(`ShippingTaxFallbackMismatch`, `ShopMatchLineTaxRefused`,
+`ShopMatchWholeOrderRefused`). On order intent and create the buyer sees a
+generic notice. On update, an admin address edit, the update is not sent to
+Two: the address still saves, and the admin sees the reason as a warning and in
+the order's history. On a capture
 the admin sees the reason, and the invoice or shipment is blocked.
 
 A subscriber that throws, returns something other than an array, or returns a
 payload that cannot be JSON-encoded has a bug. That request is refused and
-logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED`:
+logged with `TWO_ORDER_POSTPROCESSING_HOOK_FAILED`, naming the request, its
+trigger, the exception's class and where it was thrown, never the exception's
+own message, which can carry buyer data:
 
 | Request type | Effect of a refusal |
 |---|---|
@@ -462,14 +544,20 @@ affects, or the API will reject the request: inject
 `recompute($edited, $before)`, passing the payload you received as `$before`.
 It sets `net_amount`, `tax_amount` and `gross_amount` (or a refund's `amount`)
 to the sum over your lines plus whatever the total carried outside its lines
-in `$before` (store credit, a gift card, an unitemised fee), and does the same
-for each `tax_subtotals` bucket by rate. A bucket residual under half a cent is
+in `$before` (rounding, an unitemised fee, a refund's prepaid part), and does
+the same for each `tax_subtotals` bucket by rate. On a body that declares
+tenders it keeps `prepaid_amount`, sets `invoice_amount` to net plus tax, and
+`payable_amount` and `gross_amount` to the invoice less the prepaid amount. A bucket residual under half a cent is
 float noise and is dropped. A total you set by hand before the call is replaced, not
 counted twice.
 
-Every change is written to the debug log with the request type and each
-changed field's JSON pointer, old and new value, and noted in the order's
-comment history where there is an order.
+With Debug Mode on, every change is written to the debug log as
+`OrderPostprocessingChanged`: the request type and trigger, the handlers
+registered, the number of changes and at most 40 of them by JSON pointer.
+Old and new values are kept only for the totals, `currency`,
+`discount_amount`, a refund's `amount`, `line_items` and `tax_subtotals`; any
+other value can carry buyer data and is logged as `redacted`. Strings are cut
+to 120 bytes. Nothing is written to the order's comment history.
 
 **Your code owns what it declares.** With a subscriber that changes amounts,
 the invoice Two issues can differ from what the shop charged. That is your
