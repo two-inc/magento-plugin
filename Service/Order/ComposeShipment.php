@@ -63,11 +63,41 @@ class ComposeShipment extends OrderService
     }
 
     /**
+     * The order's saved credit memos that refunded something.
+     *
+     * A fresh query, not $order->getCreditmemosCollection(): the order caches
+     * that collection once loaded, and the memo being saved in this same
+     * refund (the one moving the order into the fulfil-on status) is not in it
+     * when OtherCharges::collect() loaded it first. A cancelled memo refunded
+     * nothing.
+     *
+     * @param Order $order
+     * @return Creditmemo[]
+     */
+    private function savedMemos(Order $order): array
+    {
+        if (!$this->creditmemoCollectionFactory) {
+            // Null only where a test skipped the constructor; etc/di.xml names it.
+            return [];
+        }
+        $memos = [];
+        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
+            if ($memo->getId() && (int)$memo->getState() !== Creditmemo::STATE_CANCELED) {
+                $memos[] = $memo;
+            }
+        }
+
+        return $memos;
+    }
+
+    /**
      * Declare the order's tenders on its first fulfilments (TWO-26309): each
      * partial takes as prepaid what the tenders have left, up to its own
      * lines, so the part of the order not yet fulfilled never carries more
      * prepaid than invoice. Magento takes tenders off the first invoices the
-     * same way. With no tenders the body is unchanged.
+     * same way. What the credit memos already returned to the tenders (Magento
+     * refunds a gift card or store credit before the payment) is no longer
+     * paid, so it comes off first. With no tenders the body is unchanged.
      *
      * @param array $payload a partial built by payload()
      * @param Order $order
@@ -80,6 +110,10 @@ class ComposeShipment extends OrderService
         if ($tendered <= 0 || $payload['line_items'] === []) {
             return $payload;
         }
+        foreach ($this->savedMemos($order) as $memo) {
+            $tendered -= (int)round($this->getTenderTotal($memo) * 100);
+        }
+        $tendered = max(0, $tendered);
         $invoice = (int)round((float)$payload['net_amount'] * 100) + (int)round((float)$payload['tax_amount'] * 100);
         $prepaid = max(0, min($tendered - min($tendered, (int)round($fulfilledBefore * 100)), $invoice));
         $payload['invoice_amount'] = $this->roundAmt($invoice / 100);
@@ -155,17 +189,7 @@ class ComposeShipment extends OrderService
      */
     private function getChargeLinesNetOfRefunds(Order $order): array
     {
-        // A fresh query, not $order->getCreditmemosCollection(): the order
-        // caches that collection once loaded, and the memo being saved in this
-        // same refund (the one moving the order into the fulfil-on status) is
-        // not in it when OtherCharges::collect() loaded it first. A cancelled
-        // memo refunded nothing.
-        $memos = [];
-        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
-            if ($memo->getId() && (int)$memo->getState() !== Creditmemo::STATE_CANCELED) {
-                $memos[] = $memo;
-            }
-        }
+        $memos = $this->savedMemos($order);
 
         $lines = [];
         $surchargeNet = (float)$order->getTwoSurchargeAmount();

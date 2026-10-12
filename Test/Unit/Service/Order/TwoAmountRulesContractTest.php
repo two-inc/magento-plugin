@@ -30,8 +30,13 @@ class TwoAmountRulesContractTest extends TestCase
      */
     public function testEveryBodyMeetsTheOrderAmountRules(string $build, array $tenders, ?string $prepaid, string $description): void
     {
+        $this->memos = [];
+        $this->shipments = [];
         $order = $this->order($tenders);
         $body = $this->{$build}($order, $tenders);
+        if (isset($body['partial'])) {
+            $body = $body['partial'];
+        }
 
         $this->assertSame([], self::ruleFailures($body, $build, self::sum($tenders)), $description . "\n" . json_encode(array_diff_key($body, ["merchant_urls" => 1, "buyer" => 1, "billing_address" => 1, "shipping_address" => 1, "terms" => 1]), JSON_PRETTY_PRINT));
         $this->assertSame($prepaid, $body['prepaid_amount'] ?? null, $description . ': prepaid');
@@ -57,7 +62,65 @@ class TwoAmountRulesContractTest extends TestCase
             ['capture', $card, '10.00', 'a partial capture carries the invoice\'s share of the tenders'],
             ['shipment', $credit, '25.00', 'the first partial shipment takes the tenders'],
             ['refund', $card, '10.00', 'a refund returning a gift card: the lines beyond amount are prepaid'],
+            ['shipment', ['gift_cards_amount' => 100.00], '89.50', 'a large card: the first shipment is wholly prepaid'],
+            ['secondShipment', ['gift_cards_amount' => 100.00], '10.50', 'the second shipment takes what the card has left'],
+            ['secondShipment', $card, '0.00', 'the first shipment used the card up'],
+            ['shipmentAfterMemo', ['gift_cards_amount' => 30.00], '0.00', 'a memo returned the card before the shipment'],
+            ['netOfRefunds', ['gift_cards_amount' => 30.00], '0.00', 'net of refunds: the memo returned the card, so the buyer owes all of it'],
+            ['netOfRefunds', ['gift_cards_amount' => 100.00], '39.50', 'net of refunds: what the memo did not return stays prepaid'],
         ];
+    }
+
+    /**
+     * Several refunds of one order: each is its lines, and together they
+     * return no more prepaid than the order declared.
+     */
+    public function testSeveralRefundsReturnNoMoreThanTheOrderPrepaid(): void
+    {
+        $card = ['gift_cards_amount' => 30.00];
+        $order = $this->order($card);
+        $bodies = [$this->refundOneUnit($order, $card), $this->refundOneUnit($order, [])];
+        $returned = 0;
+        foreach ($bodies as $i => $body) {
+            $this->assertSame([], self::ruleFailures($body, 'refund', 30.00), "refund $i");
+            $returned += (int)round((float)($body['prepaid_amount'] ?? 0) * 100);
+        }
+        $this->assertSame(['30.00', null], [$bodies[0]['prepaid_amount'] ?? null, $bodies[1]['prepaid_amount'] ?? null]);
+        $this->assertLessThanOrEqual(3000, $returned, 'no more prepaid back than the order declared');
+    }
+
+    /**
+     * An unreadable stored tax code map (TWO-26309): a create refuses, while
+     * a capture and a refund still go, their 0% shipping line uncoded.
+     *
+     * @dataProvider unreadableMapBuilds
+     */
+    public function testAnUnreadableMapRefusesACreateButNeverAFulfilmentOrRefund(string $build, bool $refused): void
+    {
+        $this->unreadableMap = true;
+        $order = $this->order([]);
+        if ($refused) {
+            $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        }
+        $body = $this->{$build}($order, []);
+        $lines = $body['line_items'] ?? $body['partial']['line_items'] ?? [];
+        $shipping = array_values(array_filter($lines, static fn ($l) => ($l['type'] ?? '') === 'SHIPPING_FEE'));
+        $this->assertCount(1, $shipping, $build . ': the 0% shipping line went');
+        $this->assertArrayNotHasKey('tax_code', $shipping[0], $build . ': uncoded');
+    }
+
+    public static function unreadableMapBuilds(): array
+    {
+        return ['create' => ['create', true], 'capture' => ['capture', false], 'refund' => ['refund', false]];
+    }
+
+    /** The intent's net carries the tenders its lines carry, so it agrees with them (TWO-26309). */
+    public function testTheIntentNetIncludesTheTenders(): void
+    {
+        $body = $this->intent($this->order(['gift_cards_amount' => 10.00]));
+
+        $this->assertSame(['140.00', '129.00', '21.00'], [$body['gross_amount'], $body['net_amount'], $body['tax_amount']]);
+        $this->assertSame('129.00', number_format(array_sum(array_column($body['line_items'], 'net_amount')), 2, '.', ''));
     }
 
     /**
@@ -120,10 +183,12 @@ class TwoAmountRulesContractTest extends TestCase
                 $body['tax_subtotals']
             )) !== $tax,
         ];
-        if (in_array($build, ['capture', 'shipment'], true)) {
+        if (in_array($build, ['capture', 'shipment', 'secondShipment'], true)) {
             // A partial fulfilment must leave the rest of the order no more prepaid than invoice.
-            $rules['the remainder keeps prepaid within its invoice'] = (15000 - $invoice) - ($c($orderPrepaid) - $prepaid) < 0;
-            $rules['prepaid within the order\'s'] = $prepaid > $c($orderPrepaid);
+            [$priorInvoice, $priorPrepaid] = $build === 'secondShipment' ? [8950, min($c($orderPrepaid), 8950)] : [0, 0];
+            $rules['the remainder keeps prepaid within its invoice'] =
+                (15000 - $priorInvoice - $invoice) - ($c($orderPrepaid) - $priorPrepaid - $prepaid) < 0;
+            $rules['prepaid within what the order has left'] = $prepaid > $c($orderPrepaid) - $priorPrepaid;
         }
 
         return array_merge($failures, array_keys(array_filter($rules)));
