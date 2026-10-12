@@ -213,15 +213,54 @@ rate are sent exactly as before.
 
 How your shop levies tax is your decision: the plugin reads which of your rows
 a line falls under and sends the code you chose for it. **Order management >
-Tax codes for 0% lines** lists each product tax class (including **None**)
-with these rows, each with a dropdown of Two's tax codes for your country
-(fetched from Two and cached for a day, every row defaulting to (none)):
+Tax** holds **Validate tax subtotals** and **Tax codes for 0% lines**;
+**Order management > Status mapping** holds the fulfilment settings.
 
-- **Buyer in another EU country with a VAT number.**
-- **One row per 0% tax rate** the class's tax rules use, labelled with the
-  rate's code, country and postcode, for example `ES-CANARIAS-0 (ES, 35*)`.
-  Rates above 0% are not listed, since they never give a 0% line.
-- **No rule for the address.**
+**The table.** "Tax codes for 0% lines" spans the width of the form, with one
+row per product tax class (including **None**) and the cases as columns:
+
+- **VAT-registered buyer, other EU state.**
+- **Your 0% tax rates**: one dropdown per 0% tax rate the class's tax rules
+  use, labelled with the rate's code, country and postcode, for example
+  `ES-CANARIAS-0 (ES, 35*)`. Rates above 0% are not listed, since they never
+  give a 0% line. A class with none says so.
+- **Buyer's address does not map to a tax rule (no tax charged, e.g.
+  exports).**
+
+Each dropdown offers (none), the default, and the codes Two lists at rate 0
+for your country, as `CODE - name`: Two refuses any other code on a 0% line.
+A saved code that is no longer offered stays selected and is marked "not
+valid on 0% lines" or "no longer listed", so nothing saved disappears unseen.
+A changed row must take an offered code, or the table is not saved and a
+message says which code.
+
+**When the table shows.** Only when Two requires a code on 0% lines for your
+country: the country's code list says mandatory codes are enabled and one of
+the mandatory rates is 0. The country is the one on your Two merchant
+profile for the API key and environment of the scope you are editing. The
+code list is held for a day per country and environment, and a country with
+no code registry is held as an empty list. After a failure the list is not
+asked for again for five minutes, and the last list fetched is used
+meanwhile. **Diagnostics > Refresh merchant profile** expires the lists and
+reloads the page onto the button.
+
+Otherwise the section shows only what needs attention:
+
+- No API key: nothing.
+- Your merchant profile or the code list cannot be read: why, with the HTTP
+  status, or that the stored API key was rejected.
+- Saved codes while the table is hidden: a notice that they still apply at
+  checkout, or that some are not valid on 0% lines for your country, with
+  **Clear saved tax codes**.
+- A saved setting that cannot be read (below): a notice that Two is hidden at
+  checkout, with **Clear saved tax codes**.
+- At the default scope, when a website uses another API key or environment: a
+  notice to check the setting in each website's scope.
+
+**Clear saved tax codes** stores an empty mapping at the scope being saved and
+ignores any rows posted with it. Rows posted while the table is not shown
+change nothing; if your profile or the code list could not be read, a message
+says your edits were not saved.
 
 A product line uses its product's tax class (a configurable product, its
 child's). The shipping line uses Magento's **Tax Class for Shipping** (marked
@@ -299,7 +338,8 @@ no row set sends exactly what it sent before.
 value set with `config:set` that is not a JSON object of valid rows, is never
 read as "nothing mapped": Two is withheld from checkout, order create and an
 order edit that needs the rows are refused, and `TaxCodeMapUnreadable` is
-logged once per request until the setting is saved again. Capture, shipment
+logged once per request until the setting is saved again or cleared with
+**Clear saved tax codes**; the health checklist's payment method row says so. Capture, shipment
 and refund are never held over it: they send the codes recorded at placement,
 and a line that would need the rows goes without a code.
 
