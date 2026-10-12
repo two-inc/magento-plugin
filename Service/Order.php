@@ -234,7 +234,8 @@ abstract class Order
      * invoice_amount their sum, prepaid_amount the tenders and payable_amount
      * what is left to pay, the grand total, which gross_amount stays. With no
      * tenders the three prepaid fields are left out and the body is unchanged.
-     * Worked in cents so invoice = net + tax = payable + prepaid exactly.
+     * The prepaid fields are worked in cents from the rounded net and tax, so
+     * invoice = net + tax = payable + prepaid exactly.
      *
      * @param float $grandTotal what is left to pay
      * @param float $taxTotal
@@ -243,18 +244,19 @@ abstract class Order
      */
     public function orderAmounts(float $grandTotal, float $taxTotal, float $tendered): array
     {
-        $gross = (int)round($grandTotal * 100);
-        $tax = (int)round($taxTotal * 100);
-        $prepaid = (int)round($tendered * 100);
+        // Exactly the expressions a body with no tenders has always used, so it is byte for byte as before.
         $amounts = [
-            'gross_amount' => $this->roundAmt($gross / 100),
-            'net_amount' => $this->roundAmt(($gross + $prepaid - $tax) / 100),
-            'tax_amount' => $this->roundAmt($tax / 100),
+            'gross_amount' => $this->roundAmt($grandTotal),
+            'net_amount' => $this->roundAmt($grandTotal + $tendered - $taxTotal),
+            'tax_amount' => $this->roundAmt($taxTotal),
         ];
+        $prepaid = (int)round($tendered * 100);
         if ($prepaid > 0) {
-            $amounts['invoice_amount'] = $this->roundAmt(($gross + $prepaid) / 100);
-            $amounts['payable_amount'] = $amounts['gross_amount'];
+            $invoice = (int)round((float)$amounts['net_amount'] * 100) + (int)round((float)$amounts['tax_amount'] * 100);
+            $amounts['invoice_amount'] = $this->roundAmt($invoice / 100);
+            $amounts['payable_amount'] = $this->roundAmt(($invoice - $prepaid) / 100);
             $amounts['prepaid_amount'] = $this->roundAmt($prepaid / 100);
+            $amounts['gross_amount'] = $amounts['payable_amount'];
         }
 
         return $amounts;

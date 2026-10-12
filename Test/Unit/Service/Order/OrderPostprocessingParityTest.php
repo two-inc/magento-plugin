@@ -128,6 +128,11 @@ class OrderPostprocessingParityTest extends TestCase
                 'invoice_amount' => '150.00', 'payable_amount' => '140.00', 'prepaid_amount' => '10.00'], 'a gift card'],
             [0.0, 21.0, 150.0, ['gross_amount' => '0.00', 'net_amount' => '129.00', 'tax_amount' => '21.00',
                 'invoice_amount' => '150.00', 'payable_amount' => '0.00', 'prepaid_amount' => '150.00'], 'fully covered'],
+            // No tenders: byte for byte what staging's builders send for amounts below a cent.
+            [10.005, 1.004, 0.0, ['gross_amount' => '10.01', 'net_amount' => '9.00', 'tax_amount' => '1.00'], 'staging: sub-cent grand and tax'],
+            [99.995, 17.354, 0.0, ['gross_amount' => '100.00', 'net_amount' => '82.64', 'tax_amount' => '17.35'], 'staging: a rounding carry'],
+            [0.125, 0.0249, 0.0, ['gross_amount' => '0.13', 'net_amount' => '0.10', 'tax_amount' => '0.02'], 'staging: small amounts'],
+            [1234.565, 214.2649, 0.0, ['gross_amount' => '1234.57', 'net_amount' => '1020.30', 'tax_amount' => '214.26'], 'staging: large amounts'],
         ];
     }
 
