@@ -160,6 +160,15 @@ class HealthChecklist extends Field
             }
         }
         if ($reason === null) {
+            try {
+                $this->configRepository->getTaxCodeMap($storeId);
+            } catch (LocalizedException) {
+                $reason = (string)__(
+                    'the saved tax codes for 0% lines cannot be read. Use Clear saved tax codes under Order management > Tax, or save the table there.'
+                );
+            }
+        }
+        if ($reason === null) {
             $countryState = $this->supportedCountriesProvider->getState($storeId);
             if ($countryState === SupportedCountriesProvider::STATE_EMPTY) {
                 $reason = (string)__(

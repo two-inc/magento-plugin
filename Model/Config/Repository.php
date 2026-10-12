@@ -329,11 +329,11 @@ class Repository implements RepositoryInterface
                 $this->taxCodeMapReported = true;
                 $this->logRepository->addErrorLog(
                     'TaxCodeMapUnreadable',
-                    'The stored "Tax codes for 0% lines" value is not one the settings form writes; save it again.'
+                    'The stored "Tax codes for 0% lines" value is not one the settings form writes; save it again, or use "Clear saved tax codes".'
                 );
             }
             throw new LocalizedException(
-                __('The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.')
+                __('The saved tax codes for 0% lines cannot be read. Save them again, or clear them, in the payment settings.')
             );
         }
 
