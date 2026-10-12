@@ -204,7 +204,7 @@ foreach ($types as $type) {
     $result = $send($type, $payload, $context, null);
     $lineRefusal = [
         Hook::REQUEST_ORDER_CREATE => 'This order could not be placed. Please contact the merchant.',
-        Hook::REQUEST_ORDER_UPDATE => 'The order lines do not add up to the order total.',
+        Hook::REQUEST_ORDER_UPDATE => 'A line\'s tax does not match the tax rate the shop declared for it.',
     ][$type] ?? null;
     if ($subscriber === null && $lineRefusal !== null) {
         $check($refusedWith($result, $lineRefusal, true), "$type: the default handler refuses a composed line whose tax does not follow its rate");
