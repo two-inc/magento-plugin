@@ -1478,7 +1478,8 @@ items behind them on SKU, the name only breaking a tie, never by position
 shift classes. The admin section (TWO-26153) is decided by
 `Model\Config\TaxCodeSection` from the facts `TaxCodeSectionResolver` reads at
 the edited scope: the record's country and `Service\Api\TaxCodes::getList()`,
-which caches a country's answer a day, keeps its last answer with no expiry,
+which caches a country's answer a day, keeps its last answer in the flag
+table (a cache flush does not clear it),
 waits five minutes between failed fetches and caches 400
 `COUNTRY_NOT_SUPPORTED` as an empty list. The table shows only where the list
 says codes are mandatory at 0%; otherwise no row renders, so nothing posts.

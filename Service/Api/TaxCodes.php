@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Api;
 
 use Magento\Framework\App\CacheInterface;
+use Magento\Framework\FlagManager;
 use Magento\Framework\Serialize\Serializer\Json;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -23,8 +24,9 @@ use Two\Gateway\Model\Config\TaxCodeSection;
  * An answer is cached per country and environment for a day: the list
  * changes only when the API deploys. A country with no code registry (400
  * COUNTRY_NOT_SUPPORTED) is an answer too, cached the same way: no codes, not
- * mandatory. Every answer is also kept as the country's last answer, with no
- * expiry, and a failed fetch serves it whatever its age. Fetches for one
+ * mandatory. Every answer is also kept as the country's last answer in the
+ * flag table, which a cache flush does not clear, and a failed fetch serves it
+ * whatever its age. Fetches for one
  * country are at least RETRY_FLOOR apart, stamped before the call, so an
  * outage costs one attempt per floor rather than one per page load. An entry
  * cached without the metadata counts as none.
@@ -40,7 +42,7 @@ class TaxCodes
 
     private const ENDPOINT = '/v1/tax_codes/%s';
     private const CACHE_KEY_PREFIX = 'two_gateway_tax_codes_';
-    private const LAST_SUFFIX = '_last';
+    private const LAST_FLAG_PREFIX = 'two_gateway_tax_codes_last_';
     private const TRIED_SUFFIX = '_tried';
     private const CACHE_LIFETIME = 86400;
     private const RETRY_FLOOR = 300;
@@ -71,13 +73,20 @@ class TaxCodes
      */
     private $configRepository;
 
+    /**
+     * @var FlagManager
+     */
+    private $flagManager;
+
     public function __construct(
         Adapter $apiAdapter,
         CacheInterface $cache,
         Json $json,
         LogRepository $logRepository,
-        ConfigRepository $configRepository
+        ConfigRepository $configRepository,
+        FlagManager $flagManager
     ) {
+        $this->flagManager = $flagManager;
         $this->apiAdapter = $apiAdapter;
         $this->cache = $cache;
         $this->json = $json;
@@ -108,11 +117,12 @@ class TaxCodes
         // Sandbox and production answer separately; the list is the country's, whoever asks.
         $mode = $this->configRepository->getMode($scopeId, $scope);
         $cacheKey = self::CACHE_KEY_PREFIX . $countryCode . '_' . $mode;
-        $fresh = $this->load($cacheKey);
+        $fresh = self::valid($this->decode($this->cache->load($cacheKey)));
         if ($fresh !== null) {
             return $fresh;
         }
-        $last = $this->load($cacheKey . self::LAST_SUFFIX);
+        $lastFlag = self::LAST_FLAG_PREFIX . $countryCode . '_' . $mode;
+        $last = self::valid($this->flagManager->getFlagData($lastFlag));
         if ($this->cache->load($cacheKey . self::TRIED_SUFFIX) !== false) {
             return $last;
         }
@@ -129,9 +139,8 @@ class TaxCodes
         );
         $list = $this->answer($response);
         if ($list !== null) {
-            $serialised = $this->json->serialize($list);
-            $this->cache->save($serialised, $cacheKey, $this->tags(), self::CACHE_LIFETIME);
-            $this->cache->save($serialised, $cacheKey . self::LAST_SUFFIX, [TwoGateway::CACHE_TAG], null);
+            $this->cache->save($this->json->serialize($list), $cacheKey, $this->tags(), self::CACHE_LIFETIME);
+            $this->flagManager->saveFlag($lastFlag, $list);
 
             return $list;
         }
@@ -150,8 +159,8 @@ class TaxCodes
 
     /**
      * Expire every day-long answer and retry floor, as "Refresh merchant
-     * profile" does, so the next render asks again. The last answers are
-     * kept, so a fetch that then fails still shows them.
+     * profile" does, so the next render asks again. The last answers, in the
+     * flag table, are kept, so a fetch that then fails still shows them.
      */
     public function expire(): void
     {
@@ -196,20 +205,30 @@ class TaxCodes
     }
 
     /**
-     * @return array{codes: array, mandatory: bool}|null
+     * @param string|false $cached
+     * @return mixed
      */
-    private function load(string $key): ?array
+    private function decode($cached)
     {
-        $cached = $this->cache->load($key);
         if ($cached === false) {
             return null;
         }
         try {
-            $list = $this->json->unserialize($cached);
+            return $this->json->unserialize($cached);
         } catch (\InvalidArgumentException $e) {
             return null;
         }
+    }
 
+    /**
+     * An answer as this class stores it; anything else, such as an entry from
+     * before the metadata was kept, counts as none.
+     *
+     * @param mixed $list
+     * @return array{codes: array, mandatory: bool}|null
+     */
+    private static function valid($list): ?array
+    {
         return is_array($list) && is_array($list['codes'] ?? null) && is_bool($list['mandatory'] ?? null)
             ? $list : null;
     }

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Api;
 
 use Magento\Framework\App\CacheInterface;
+use Magento\Framework\FlagManager;
 use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -41,6 +42,9 @@ class TaxCodesTest extends TestCase
     /** @var array<string, array{0: string, 1: array, 2: int|null}> */
     private $store = [];
 
+    /** @var array<string, mixed> the flag table */
+    private $flags = [];
+
     /**
      * @dataProvider answers
      */
@@ -55,7 +59,8 @@ class TaxCodesTest extends TestCase
         $this->assertSame(0, $status, $description);
         $this->assertSame(86400, $this->store['two_gateway_tax_codes_ES_sandbox'][2], $description);
         $this->assertSame(['TWO_GATEWAY', 'TWO_GATEWAY_TAX_CODES'], $this->store['two_gateway_tax_codes_ES_sandbox'][1], $description);
-        $this->assertSame([['TWO_GATEWAY'], null], array_slice($this->store['two_gateway_tax_codes_ES_sandbox_last'], 1), $description);
+        $this->assertSame($expected, $this->flags['two_gateway_tax_codes_last_ES_sandbox'], $description . ': kept in the flag table, which a cache flush does not clear');
+        $this->assertArrayNotHasKey('two_gateway_tax_codes_ES_sandbox_last', $this->store, $description);
         $this->assertSame(300, $this->store['two_gateway_tax_codes_ES_sandbox_tried'][2], $description);
     }
 
@@ -81,7 +86,7 @@ class TaxCodesTest extends TestCase
         $adapter->expects($this->once())->method('executeWithStatus')->willReturn($response);
         $held = ['codes' => self::ES, 'mandatory' => true];
         if ($last) {
-            $this->store['two_gateway_tax_codes_ES_sandbox_last'] = [json_encode($held), [], null];
+            $this->flags['two_gateway_tax_codes_last_ES_sandbox'] = $held;
         }
         $service = $this->service($adapter);
         $status = -1;
@@ -134,7 +139,7 @@ class TaxCodesTest extends TestCase
     {
         $cache = $this->createMock(CacheInterface::class);
         $cache->expects($this->once())->method('clean')->with(['TWO_GATEWAY_TAX_CODES']);
-        (new TaxCodes($this->createMock(Adapter::class), $cache, new Json(), $this->createMock(LogRepository::class), $this->createMock(ConfigRepository::class)))
+        (new TaxCodes($this->createMock(Adapter::class), $cache, new Json(), $this->createMock(LogRepository::class), $this->createMock(ConfigRepository::class), $this->createMock(FlagManager::class)))
             ->expire();
     }
 
@@ -181,6 +186,15 @@ class TaxCodesTest extends TestCase
             return true;
         });
 
-        return new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class), $config);
+        $flags = $this->createMock(FlagManager::class);
+        $flags->method('getFlagData')->willReturnCallback(function ($code) {
+            return $this->flags[$code] ?? null;
+        });
+        $flags->method('saveFlag')->willReturnCallback(function ($code, $value) {
+            $this->flags[$code] = $value;
+            return true;
+        });
+
+        return new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class), $config, $flags);
     }
 }
