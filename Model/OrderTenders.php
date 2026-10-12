@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model;
 
-use Magento\Framework\DataObject;
 use Magento\Quote\Model\Quote;
 use Two\Gateway\Api\OrderTendersInterface;
 
@@ -50,7 +49,7 @@ class OrderTenders implements OrderTendersInterface
      */
     public function collect($entity): array
     {
-        if (!$entity instanceof DataObject) {
+        if (!is_object($entity) || !method_exists($entity, 'getData')) {
             return [];
         }
         $tenders = [];
