@@ -444,4 +444,4 @@
 "The order lines do not add up to the order total.","Las líneas del pedido no suman el total del pedido."
 "The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.","No se pueden leer los códigos de impuesto guardados para las líneas al 0%. Vuelve a guardarlos en la configuración de pago."
 "A line's tax does not match the tax rate the shop declared for it.","El impuesto de una línea no coincide con el tipo impositivo que la tienda declaró para ella."
-"The prepaid part of this request could not be worked out: Two's record of the order could not be read. Try again.","No se ha podido calcular la parte prepagada de esta solicitud: no se ha podido leer el registro del pedido en Two. Inténtalo de nuevo."
+"The prepaid part of this request could not be worked out: the order could not be read from %1. Try again.","No se ha podido calcular la parte prepagada de esta solicitud: no se ha podido leer el pedido en %1. Inténtalo de nuevo."

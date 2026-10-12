@@ -10,6 +10,7 @@ namespace Two\Gateway\Service\Order;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order;
 use Throwable;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -47,9 +48,15 @@ class PrepaidLedger
      */
     private $adapter;
 
-    public function __construct(Adapter $adapter)
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
+    public function __construct(Adapter $adapter, BrandRegistryInterface $brandRegistry)
     {
         $this->adapter = $adapter;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -158,7 +165,8 @@ class PrepaidLedger
         }
         if (!is_array($response) || isset($response['error_code']) || isset($response['http_status'])) {
             throw new LocalizedException(__(
-                'The prepaid part of this request could not be worked out: Two\'s record of the order could not be read. Try again.'
+                'The prepaid part of this request could not be worked out: the order could not be read from %1. Try again.',
+                $this->brandRegistry->getProductName()
             ));
         }
 

@@ -444,4 +444,4 @@
 "The order lines do not add up to the order total.","De orderregels tellen niet op tot het ordertotaal."
 "The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.","De opgeslagen belastingcodes voor regels met 0% kunnen niet worden gelezen. Sla ze opnieuw op in de betalingsinstellingen."
 "A line's tax does not match the tax rate the shop declared for it.","De belasting van een regel komt niet overeen met het belastingtarief dat de winkel ervoor heeft opgegeven."
-"The prepaid part of this request could not be worked out: Two's record of the order could not be read. Try again.","Het vooruitbetaalde deel van dit verzoek kon niet worden bepaald: de gegevens van de bestelling bij Two konden niet worden gelezen. Probeer het opnieuw."
+"The prepaid part of this request could not be worked out: the order could not be read from %1. Try again.","Het vooruitbetaalde deel van dit verzoek kon niet worden bepaald: de bestelling kon niet worden gelezen bij %1. Probeer het opnieuw."
