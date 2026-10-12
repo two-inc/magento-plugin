@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\Backend\TaxCodeMap as TaxCodeMapBackend;
@@ -120,9 +121,12 @@ class TaxCodeResolver
      * @param array $lineItems composed lines, keys kept
      * @param Order $order the order the lines belong to
      * @param array $items order items by line key, for product lines whose order_item_id is not an id yet
+     * @param bool $mapRequired whether an unreadable tax code map refuses (a create or an edit), or
+     *                          leaves the lines it would resolve uncoded (a fulfilment or refund, TWO-26309)
      * @return array
+     * @throws LocalizedException when the map is required, a line needs it, and it cannot be read
      */
-    public function apply(array $lineItems, Order $order, array $items = []): array
+    public function apply(array $lineItems, Order $order, array $items = [], bool $mapRequired = true): array
     {
         $placing = !$order->getId();
         $stored = $placing ? null : self::decodeStored($order->getData(self::STORED_CODES));
@@ -150,10 +154,11 @@ class TaxCodeResolver
             }
             $storeKey = $this->storeKey($line, $item ?: null);
 
-            if ($stored !== null && $storeKey !== null && array_key_exists($storeKey, $stored)) {
+            // A line placed with a code keeps it; one placed uncoded is resolved again (TWO-26309).
+            if ($stored !== null && $storeKey !== null && is_string($stored[$storeKey] ?? null)) {
                 $code = $stored[$storeKey];
             } else {
-                $context = $context ?? $this->context($order);
+                $context = $context ?? $this->context($order, $mapRequired);
                 $classId = $this->lineClass($line, $item ?: null, $context);
                 if ($classId === null) {
                     $keyless[$key] = $storeKey;
@@ -165,7 +170,7 @@ class TaxCodeResolver
                 }
             }
             $lineItems[$key] = $this->code($lineItems[$key], $code);
-            if ($placing && $storeKey !== null) {
+            if ($placing && $storeKey !== null && $code !== null) {
                 $record[$storeKey] = $code;
             }
         }
@@ -173,7 +178,7 @@ class TaxCodeResolver
         foreach ($keyless as $key => $storeKey) {
             $code = count($shared) === 1 ? (string)key($shared) : null;
             $lineItems[$key] = $this->code($lineItems[$key], $code);
-            if ($placing && $storeKey !== null) {
+            if ($placing && $storeKey !== null && $code !== null) {
                 $record[$storeKey] = $code;
             }
         }
@@ -186,6 +191,26 @@ class TaxCodeResolver
         }
 
         return $lineItems;
+    }
+
+    /**
+     * The code steps 1 to 3 give a 0% shipping line taxed by core's shipping
+     * tax class at the order's addresses, for the postprocessing context's
+     * fallback_shipping_tax_code (TWO-26309). Null when the class is None,
+     * the rate there is not 0%, or the matched row is (none).
+     *
+     * @param Order $order
+     * @return string|null
+     * @throws LocalizedException when the tax code map cannot be read
+     */
+    public function shippingFallbackCode(Order $order): ?string
+    {
+        $classId = $this->configRepository->getShippingTaxClassId((int)$order->getStoreId());
+        if ($classId === null || $classId <= 0) {
+            return null;
+        }
+
+        return $this->resolve($order, $classId, $this->context($order));
     }
 
     /**
@@ -300,7 +325,7 @@ class TaxCodeResolver
     /**
      * Everything resolution reads from the order and the configuration, read once per payload.
      */
-    private function context(Order $order): array
+    private function context(Order $order, bool $mapRequired = true): array
     {
         $storeId = (int)$order->getStoreId();
         $billing = $order->getBillingAddress();
@@ -308,7 +333,15 @@ class TaxCodeResolver
         $buyerCountry = $billing ? strtoupper(trim((string)$billing->getCountryId())) : '';
         $buyerPostcode = $billing ? (string)$billing->getPostcode() : '';
         $buyerVat = self::buyerVatNumber($order);
-        $map = $this->configRepository->getTaxCodeMap($storeId);
+        try {
+            $map = $this->configRepository->getTaxCodeMap($storeId);
+        } catch (LocalizedException $e) {
+            if ($mapRequired) {
+                throw $e;
+            }
+            // Already reported by the repository; a fulfilment or refund is never held over it.
+            $map = [];
+        }
 
         return [
             'store_id' => $storeId,

@@ -26,9 +26,11 @@ interface OrderPostprocessingShopMatchInterface
     /**
      * Refuse as the default handler would.
      *
-     * Each check applies to the line the plugin built it for, and only while
-     * $result still carries that line unchanged: a line you edited, replaced
-     * or removed is yours.
+     * Each line check applies to the line the plugin built it for, and only
+     * while $result still carries that line unchanged: a line you edited,
+     * replaced or removed is yours. The lines of $result are also compared
+     * with the order's totals plus its tenders (TWO-26309); to leave that
+     * out, use OrderPostprocessingShopMatchLinesInterface::checkLines().
      *
      * @param array $result The payload you are about to return.
      * @param array $payload The payload as the plugin composed it: process()'s $payload argument.

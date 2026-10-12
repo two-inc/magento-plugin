@@ -49,6 +49,8 @@ class TwoApiKeyGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->createMock(LogRepository::class),
+            // A readable tax code map: not this test's subject (TWO-26309).
+            'configRepository' => $this->createMock(\Two\Gateway\Api\Config\RepositoryInterface::class),
             // Not this test's subject: the fee quote concedes.
             'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),

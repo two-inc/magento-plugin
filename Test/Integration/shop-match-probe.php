@@ -197,10 +197,20 @@ foreach ($types as $type) {
         }
     }
 
-    // No line tax reconcile on any request: Two's API validates it (TWO-26284).
+    // The declared-rate check is a shop-match check on create and update (TWO-26309): with no
+    // subscriber a composed line whose tax does not follow its rate is refused; a subscriber owns it,
+    // and every other request leaves it to Two's API (TWO-26284).
     [$payload, $context] = $request($type, 6.09, true);
     $result = $send($type, $payload, $context, null);
-    $check($result === $payload, "$type: a composed line whose tax does not follow its rate is sent as composed");
+    $lineRefusal = [
+        Hook::REQUEST_ORDER_CREATE => 'This order could not be placed. Please contact the merchant.',
+        Hook::REQUEST_ORDER_UPDATE => 'A line\'s tax does not match the tax rate the shop declared for it.',
+    ][$type] ?? null;
+    if ($subscriber === null && $lineRefusal !== null) {
+        $check($refusedWith($result, $lineRefusal, true), "$type: the default handler refuses a composed line whose tax does not follow its rate");
+    } else {
+        $check($result === $payload, "$type: a composed line whose tax does not follow its rate is sent as composed");
+    }
 
     if ($subscriber === null) {
         continue;

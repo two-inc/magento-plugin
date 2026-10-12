@@ -51,6 +51,29 @@ class TaxCodeMap extends Value
     }
 
     /**
+     * A stored value as the form writes it (TWO-26309): blank, or a JSON
+     * object of valid rows. Null for anything else, which is never read as
+     * "nothing mapped".
+     *
+     * @param mixed $value
+     * @return array<string, string>|null
+     */
+    public static function read($value): ?array
+    {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return [];
+        }
+        $decoded = is_string($value) ? json_decode($value) : null;
+        if (!$decoded instanceof \stdClass) {
+            return null;
+        }
+        $rows = (array)$decoded;
+        $map = self::normalise($value);
+
+        return count($map) === count($rows) ? $map : null;
+    }
+
+    /**
      * The usable entries of a stored or posted value. Also the read path, so a
      * value from `config:set` or an import passes the same rules.
      *

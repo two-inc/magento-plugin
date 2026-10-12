@@ -1236,8 +1236,8 @@ dependency that way and relying on DI to fill it in gets you a silent
 (value null) instead of `"_i_"` (instance); that is the check.
 
 `Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool`,
-`Service\Order::$taxCodeResolver` and `Service\Order::$creditmemoCollectionFactory`
-are all declared optional for constructor BC and all named explicitly in
+`Service\Order::$taxCodeResolver`, `Service\Order::$creditmemoCollectionFactory`,
+`Service\Order::$tenderReader` and `Service\Order::$prepaidLedger` are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 
@@ -1279,8 +1279,9 @@ placed under (TWO-26073), and the line's tax must reconcile with it within
 (TWO-26276): the builders compose the line with `getTaxRateShipping($entity,
 false)`, and the postprocessing hook's default handler runs
 `assertShippingTaxFallback()` after the hook, unless a subscriber took it over. A declared rate, 0% included, is always sent
-as is and never checked by the plugin. A refund relays the rate without the
-check. The plugin has no shipping tax setting of its own.
+as is and never checked by the plugin. A refund relays the rate, and when the
+placement record says the fallback supplied it, the refunded shipping's tax must
+reconcile with that rate (`assertRefundShippingTaxFallback()`, TWO-26309). The plugin has no shipping tax setting of its own.
 
 Magento 2.4.7 core records a 0% shipping rate on the quote only when shipping
 prices exclude tax (`getAppliedTaxes()` skips 0% on the tax-inclusive path),
@@ -1290,14 +1291,17 @@ the case on `sales_order`: `two_shipping_tax_rate_source` (`declared`/`none`)
 and `two_shipping_tax_rate` (percent; the declared rate, or for `none` the
 fallback's resolved rate, NULL when the fallback was blank). Every later
 request reads that record and never the current configuration; a `none` with a
-rate is re-checked against it (except on refund). Both NULL is an order placed
+rate is re-checked against it, on refund too. Both NULL is an order placed
 before the record existed, which resolves live as at placement.
 
-The plugin does not reconcile a line other than shipping against its own
-declared rate and net, on any request, with or without a subscriber: whether a
-payload adds up is for Two's API to validate (TWO-26284). Do not add such a check
-back after the hook; only a shop-match check, which compares with shop data the
-API cannot see, belongs there.
+Other lines are reconciled against their declared rate only as a shop-match
+check (TWO-26309): on create and update, in the default handler, on a line the
+plugin composed from Magento's own figures and only while the payload still
+carries it unchanged, so a mismatch means the shop's tax does not match the
+rate it declared. A subscriber owns its own lines, and every other request
+leaves line arithmetic to Two's API (TWO-26284). Do not add any other line
+check after the hook: only a shop-match check, which compares with shop data
+the API cannot see, belongs there.
 
 ## The postprocessing hook's checks: shop-match only
 
@@ -1307,9 +1311,19 @@ JSON-encoded) and lets a shop-match refusal through. Whether the payload adds
 up is left to Two's API (TWO-26284).
 
 Shop-match checks ask whether what the plugin built matches the shop.
-`Service\Order\ShopMatchChecks` holds them (today the shipping tax fallback
-reconcile), exposed as `Api\OrderPostprocessingShopMatchInterface` for a
-subscriber that opts back in. They run in the hook's default handler,
+`Service\Order\ShopMatchChecks` holds them (TWO-26309): the shipping tax
+fallback reconcile, each other composed line's tax against its declared rate
+(create and update), and the lines against the order's grand total plus its
+tenders (refused on create and update, logged on intent). It is exposed as
+`Api\OrderPostprocessingShopMatchInterface::check()` for a subscriber that opts
+back in, and as `Api\OrderPostprocessingShopMatchLinesInterface::checkLines()`
+for one that wants the single-line checks only; the second is its own
+interface so a class implementing the first is not broken. Every refusal the
+checks raise is recorded in `Service\Order\ShopMatchRefusals`, and
+`OrderPostprocessor` passes through only those: a `ShopMatchRefusedException`
+a subscriber constructs is `HOOK_FAILED`. Failure logs carry the exception's
+class and throw site, never its message. The change log is Debug Mode only,
+compact and redacted, and never an order comment. They run in the hook's default handler,
 `Plugin\OrderPostprocessing\ShopMatchDefaultHandler`, a plugin named
 `two_gateway_shop_match_checks`, which stands down and logs
 `OrderPostprocessingShopMatchDelegated` when any other handler is registered.
@@ -1326,6 +1340,41 @@ state. A shop-match refusal is a `ShopMatchRefusedException`, which
 `OrderPostprocessor` lets through its catch-all, so it never reads as
 `HOOK_FAILED`. Do not move a shop-match check back into a builder, where a
 subscriber cannot take it over.
+
+## Tenders are declared to Two as prepaid
+
+A tender (gift card, store credit, reward points) paid part of the order
+outside its lines, so Magento's grand total is the lines less the tenders
+(TWO-26309). `Api\OrderTendersInterface` lists them (`Model\OrderTenders`
+reads Adobe Commerce's `gift_cards_amount`, `customer_balance_amount` and
+`reward_currency_amount`, and the quote's `*_used` fields, as plain data, so
+Open Source reads none); a merchant adds others with an `after` plugin.
+`Service\Order\TenderReader` normalises them once per entity. Every builder
+reconciles the lines against grand total plus tenders, and an order body
+carries `invoice_amount`, `payable_amount` (the grand total, equal to
+`gross_amount`) and `prepaid_amount` only when there are tenders
+(`Service\Order::orderAmounts()`), so a body with none is byte for byte as
+before. Fulfilments and refunds on an order with tenders declare their prepaid
+from Two's own ledger, read before sending (`Service\Order\PrepaidLedger`):
+the order's prepaid, less what earlier fulfilments declared, adjusted by what
+refunds declared, bounded so Two's unfulfilled rest never holds negative
+prepaid or more prepaid than invoice. Within those bounds a fulfilment declares
+the tenders Magento still holds (less every memo's, online or offline) not yet
+declared, and a refund what its memo returned. Do not replay Magento's history
+instead: an offline memo moves Magento and never Two, which is how the earlier
+front-loading broke. An order placed with tenders before they were declared
+has prepaid 0 at Two: `Service\Order::declaredTenders()` answers 0 for it, so
+every builder sends it exactly what it was sent before (lines reconciled
+against the grand total, no prepaid fields), edits included. The ledger reads
+the root order: Two refuses an edit of a partly fulfilled root and the plugin
+only addresses the root, so the remainder is always the root less its
+completed fulfilments. `PrepaidLedgerSequenceTest` simulates Two's ledger over
+every sequence of shipments, offline memos and refunds on a few orders, with
+an oracle that what the buyer owes Two equals the live lines less the tenders
+kept wherever Two can follow (an offline memo of a fulfilled line, or one that
+pulls back declared tenders, it cannot), and
+`TwoAmountRulesContractTest` runs every body through a port of Two's amount
+rules: keep both in step with the API.
 
 ## A 0% line carries a tax code, resolved in the builder
 
@@ -1399,7 +1448,13 @@ Two rules hold the invariants and should not be loosened:
     configured country: the API rejects a code whose country differs from the
     Two merchant's.
 
-Placement stores what each 0% line resolved to, "no code" included, in
+An unreadable stored map (anything the form could not have written) throws
+from `Repository::getTaxCodeMap()` (TWO-26309): `isAvailable()` withholds Two,
+and create, or an edit with a line needing the map, refuses. Capture, shipment
+and refund pass `mapRequired` false: recorded codes go as placed and a line
+needing the map goes uncoded, so a broken setting never blocks a refund.
+
+Placement stores the code each 0% line resolved to, only where it got one, in
 `sales_order.two_tax_codes` (product lines keyed `item:<quote_item_id>`, then
 `shipping`, `surcharge`, and one shared `fee` key for every other `OTHER` or
 `BUYER_FEE` line), the same pattern as the shipping rate record. Fee lines
@@ -1412,8 +1467,9 @@ that list. A record written before the key existed shares the codes its
 recorded lines carry instead, other than `fee`'s; with none, or disagreeing
 ones, no code. Edit, capture, shipment and refund read the record and
 never resolve those lines
-again; a line it does not cover, or an order placed before it existed,
-resolves live. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
+again; a line it does not cover (placed with no code, added since), or an
+order placed before it existed, resolves live. A `null` an older record holds
+counts as not covered. Only `PHYSICAL` and `DIGITAL` lines are looked up as order
 items, so a fee provider's numeric id is never taken for one, and a product
 line no item matches has no class, so step 4. At placement
 the items have no id, so `ComposeOrder` matches its product lines to the

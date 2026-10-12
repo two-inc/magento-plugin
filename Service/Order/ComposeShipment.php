@@ -32,7 +32,7 @@ class ComposeShipment extends OrderService
      */
     public function execute(Order\Shipment $shipment, Order $order): array
     {
-        return $this->payload($this->getLineItemsShipment($order, $shipment), $order);
+        return $this->withPrepaid($this->payload($this->getLineItemsShipment($order, $shipment), $order), $order);
     }
 
     /**
@@ -55,8 +55,35 @@ class ComposeShipment extends OrderService
             $items[] = $line;
         }
 
-        return $this->payload($items, $order);
+        return $this->withPrepaid($this->payload($items, $order), $order);
     }
+
+    /**
+     * Declare the prepaid part of a fulfilment on an order with tenders
+     * (TWO-26309): see Service\Order::fulfilmentPrepaid(). With no tenders
+     * the body is unchanged.
+     *
+     * @param array $payload a partial built by payload()
+     * @param Order $order
+     * @return array
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    private function withPrepaid(array $payload, Order $order): array
+    {
+        if ($payload['line_items'] === [] || $this->declaredTenders($order, $order) <= 0) {
+            return $payload;
+        }
+        $invoice = (int)round((float)$payload['net_amount'] * 100) + (int)round((float)$payload['tax_amount'] * 100);
+        $prepaid = $this->fulfilmentPrepaid($order, $invoice);
+        $payload['invoice_amount'] = $this->roundAmt($invoice / 100);
+        $payload['payable_amount'] = $this->roundAmt(($invoice - $prepaid) / 100);
+        $payload['prepaid_amount'] = $this->roundAmt($prepaid / 100);
+        $payload['gross_amount'] = $payload['payable_amount'];
+        ksort($payload);
+
+        return $payload;
+    }
+
 
     /**
      * @param Order $order
@@ -95,17 +122,7 @@ class ComposeShipment extends OrderService
      */
     private function getChargeLinesNetOfRefunds(Order $order): array
     {
-        // A fresh query, not $order->getCreditmemosCollection(): the order
-        // caches that collection once loaded, and the memo being saved in this
-        // same refund (the one moving the order into the fulfil-on status) is
-        // not in it when OtherCharges::collect() loaded it first. A cancelled
-        // memo refunded nothing.
-        $memos = [];
-        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
-            if ($memo->getId() && (int)$memo->getState() !== Creditmemo::STATE_CANCELED) {
-                $memos[] = $memo;
-            }
-        }
+        $memos = $this->savedMemos($order);
 
         $lines = [];
         $surchargeNet = (float)$order->getTwoSurchargeAmount();
@@ -134,7 +151,7 @@ class ComposeShipment extends OrderService
             $lines[] = $this->remainderOf($feeLine, $refundedFees[(string)($feeLine['order_item_id'] ?? '')] ?? 0.0);
         }
 
-        $residual = $this->getOtherChargesLineOrder($order);
+        $residual = $this->getOtherChargesLineOrder($order, $this->declaredTenders($order, $order));
         if ($residual) {
             $refundedCharge = 0.0;
             foreach ($memos as $memo) {

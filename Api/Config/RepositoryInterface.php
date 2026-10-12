@@ -191,6 +191,8 @@ interface RepositoryInterface
      * @param int|null $storeId
      *
      * @return array<string, string>
+     * @throws \Magento\Framework\Exception\LocalizedException when the stored value is not one the
+     *         settings form writes (TWO-26309); it is never read as "nothing mapped"
      */
     public function getTaxCodeMap(?int $storeId = null): array;
 

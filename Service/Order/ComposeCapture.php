@@ -43,19 +43,32 @@ class ComposeCapture extends OrderService
         $lineItems = $this->reconcileOtherCharges(
             $lineItems,
             $invoice,
-            (float)$invoice->getGrandTotal(),
+            (float)$invoice->getGrandTotal() + $this->declaredTenders($invoice, $order),
             (float)$invoice->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
-            'gross_amount' => $this->roundAmt($invoice->getGrandTotal()),
             'line_items' => $lineItems,
-            'net_amount' => $this->roundAmt($invoice->getGrandTotal() - $invoice->getTaxAmount()),
-            'tax_amount' => $this->roundAmt($invoice->getTaxAmount()),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
+        // On an order with tenders the invoice declares its prepaid part from
+        // Two's record of the order (TWO-26309): its lines are its grand total
+        // plus the tenders Magento took off it, and what is not prepaid is payable.
+        $tendered = $this->declaredTenders($invoice, $order);
+        $prepaid = 0.0;
+        if ($this->declaredTenders($order, $order) > 0) {
+            $lines = (int)round((float)$invoice->getGrandTotal() * 100) + (int)round($tendered * 100);
+            $prepaid = $this->fulfilmentPrepaid($order, $lines) / 100;
+        }
+        $amounts = $this->orderAmounts(
+            (float)$invoice->getGrandTotal() + $tendered - $prepaid,
+            (float)$invoice->getTaxAmount(),
+            $prepaid
+        );
+        $reqBody += $amounts;
+        ksort($reqBody);
         return $reqBody;
     }
 

@@ -1169,6 +1169,18 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // TWO-26309: order create refuses on an unreadable tax code map, so
+        // withhold Two here rather than after the buyer submits.
+        try {
+            $this->configRepository->getTaxCodeMap($storeId);
+        } catch (LocalizedException) {
+            // Debug, not error: the config repository already reported it once.
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: saved tax codes unreadable', $this->_code),
+                []
+            );
+            return false;
+        }
         // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
         // Core's admin gate cannot judge an empty country, so only the merchant

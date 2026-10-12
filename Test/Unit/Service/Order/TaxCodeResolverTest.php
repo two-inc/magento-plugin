@@ -403,15 +403,22 @@ class TaxCodeResolverTest extends TestCase
     }
 
     /**
-     * Placement recorded no code; a mapping set since is ignored.
+     * TWO-26309: placement records only the codes lines got, so a line placed
+     * uncoded is resolved again on every later request, against the mapping
+     * set since.
      *
      * @dataProvider recordedNoCodePayloads
      */
-    public function testARecordedNoCodeStaysNoCode(string $payload, array $expected): void
+    public function testALinePlacedUncodedIsResolvedAgain(string $payload, array $expected): void
     {
         $order = $this->order([['simple', 0.0]], ['ES', '28001'], 'ES', true);
         $this->composer(ComposeOrder::class, 'ES', [])->execute($order, 'ref', []);
         $this->save($order);
+        $this->assertNotContains(
+            null,
+            (array)json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true),
+            'no line is recorded as "no code"'
+        );
 
         $map = ['5' => self::EXPORT, '9' => self::EXPORT];
         $this->assertSame($expected, $this->codes($this->{$payload}($order, 'ES', $map)), $payload);
@@ -420,11 +427,11 @@ class TaxCodeResolverTest extends TestCase
     public static function recordedNoCodePayloads(): array
     {
         return [
-            ['capture', [null, null]],
-            ['shipment', [null, null]],
-            // The adjustment was never placed: no line was coded at placement, so it has nothing to share.
-            ['refund', [null, null, null]],
-            ['edit', [null, null]],
+            ['capture', [self::EXPORT, self::EXPORT]],
+            ['shipment', [self::EXPORT, self::EXPORT]],
+            // The adjustment shares the code the lines resolved to now (step 4).
+            ['refund', [self::EXPORT, self::EXPORT, self::EXPORT]],
+            ['edit', [self::EXPORT, self::EXPORT]],
         ];
     }
 
