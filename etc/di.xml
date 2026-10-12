@@ -98,6 +98,8 @@
     </type>
     <preference for="Two\Gateway\Api\OrderTendersInterface"
                 type="Two\Gateway\Model\OrderTenders"/>
+    <preference for="Two\Gateway\Api\OrderPostprocessingShopMatchLinesInterface"
+                type="Two\Gateway\Service\Order\ShopMatchChecks"/>
     <preference for="Two\Gateway\Api\OrderPostprocessingShopMatchInterface"
                 type="Two\Gateway\Service\Order\ShopMatchChecks"/>
     <!--

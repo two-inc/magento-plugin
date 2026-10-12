@@ -99,6 +99,9 @@ trait PostprocessorFactory
         foreach ([ComposeOrder::class, ComposeCapture::class] as $class) {
             $composer = $this->getMockBuilder($class)->disableOriginalConstructor()->onlyMethods([])->getMock();
             (new \ReflectionProperty(OrderService::class, 'logRepository'))->setValue($composer, $log);
+            // The plugin's own tender reader, as DI wires it (TWO-26309).
+            (new \ReflectionProperty(OrderService::class, 'tenderReader'))
+                ->setValue($composer, new \Two\Gateway\Service\Order\TenderReader(new \Two\Gateway\Model\OrderTenders(), $log));
             $composers[] = $composer;
         }
 

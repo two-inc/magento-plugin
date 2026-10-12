@@ -7,13 +7,13 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
-use InvalidArgumentException;
 use LogicException;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
 use Two\Gateway\Api\OrderPostprocessingShopMatchInterface;
+use Two\Gateway\Api\OrderPostprocessingShopMatchLinesInterface;
 use Two\Gateway\Exception\ShopMatchRefusedException;
 
 /**
@@ -29,14 +29,14 @@ use Two\Gateway\Exception\ShopMatchRefusedException;
  *   create and update: the line is Magento's own figures, so a mismatch means
  *   the shop's tax does not match the rate it declared.
  *
- * On the whole order (scope SCOPE_ALL only): the payload's lines must add up
+ * On the whole order (check() only, not checkLines()): the payload's lines must add up
  * to the order's totals plus its tenders, gross, net and tax each, on intent
  * (logged only: the create checks it again), create and update.
  *
  * Refused in the buyer's wording on intent and create, the merchant's on
  * update and capture.
  */
-class ShopMatchChecks implements OrderPostprocessingShopMatchInterface
+class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPostprocessingShopMatchLinesInterface
 {
     private const SHIPPING_LINE = 'shipping';
 
@@ -98,15 +98,33 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface
      * @inheritDoc
      * @throws LogicException when the context lacks the order or invoice a line was built from
      */
-    public function check(array $result, array $payload, array $context, string $scope = self::SCOPE_ALL): void
+    public function check(array $result, array $payload, array $context): void
     {
-        if ($scope !== self::SCOPE_ALL && $scope !== self::SCOPE_LINES) {
-            throw new InvalidArgumentException(sprintf('Unknown shop-match scope "%s".', $scope));
-        }
+        $this->run($result, $payload, $context, true);
+    }
+
+    /**
+     * @inheritDoc
+     * @throws LogicException when the context lacks the order or invoice a line was built from
+     */
+    public function checkLines(array $result, array $payload, array $context): void
+    {
+        $this->run($result, $payload, $context, false);
+    }
+
+    /**
+     * @param array $result
+     * @param array $payload
+     * @param array $context
+     * @param bool $wholeOrder
+     * @return void
+     */
+    private function run(array $result, array $payload, array $context, bool $wholeOrder): void
+    {
         try {
             $this->checkShippingLine($result, $payload, $context);
             $this->checkLineRates($result, $payload, $context);
-            if ($scope === self::SCOPE_ALL) {
+            if ($wholeOrder) {
                 $this->checkWholeOrder($result, $context);
             }
         } catch (ShopMatchRefusedException $e) {

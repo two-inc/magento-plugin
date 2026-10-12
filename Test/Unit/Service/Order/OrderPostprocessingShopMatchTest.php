@@ -142,7 +142,7 @@ class OrderPostprocessingShopMatchTest extends TestCase
             {
                 $result = ($this->edit)($result);
                 // The line checks only: these edits move the lines off the order's totals on purpose.
-                $this->shopMatch->check($result, $payload, $context, $this->shopMatch::SCOPE_LINES);
+                $this->shopMatch->checkLines($result, $payload, $context);
 
                 return $result;
             }
