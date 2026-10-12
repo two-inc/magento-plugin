@@ -258,7 +258,8 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPos
         if (!$order instanceof Order || $lines === []) {
             return;
         }
-        $tendered = $this->composeOrder->getTenderTotal($order);
+        // As the body declared them: none for an order placed before tenders were declared (TWO-26309).
+        $tendered = $this->composeOrder->declaredTenders($order, $order);
         $tax = round((float)$order->getTaxAmount(), 2);
         $gross = round((float)$order->getGrandTotal() + $tendered, 2);
         $expected = ['gross' => $gross, 'net' => round($gross - $tax, 2), 'tax' => $tax];

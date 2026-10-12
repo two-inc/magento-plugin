@@ -261,6 +261,40 @@ class OrderPostprocessingParityTest extends TestCase
     }
 
     /**
+     * The whole-order check on an edit counts the tenders the body declared
+     * (TWO-26309): an order placed before tenders were declared is edited
+     * with lines that add up to its grand total alone, as before, and passes.
+     *
+     * @dataProvider editedOrders
+     */
+    public function testAnEditIsCheckedAgainstTheTendersItDeclares(
+        float $grand,
+        float $giftCard,
+        ?int $twoPrepaid,
+        ?string $refusal,
+        string $description
+    ): void {
+        $this->twoPrepaid = $twoPrepaid;
+        $context = self::context(Hook::REQUEST_ORDER_UPDATE, $grand, $giftCard);
+
+        $this->assertCheck($refusal, fn () => $this->checks()->check(self::payload(), self::payload(), $context), $description);
+    }
+
+    public static function editedOrders(): array
+    {
+        $refused = 'The order lines do not add up to the order total.';
+
+        return [
+            [150.0, 0.0, null, null, 'a new order, no tender'],
+            [140.0, 10.0, null, null, 'a new order with a gift card: its lines carry the card'],
+            [150.0, 0.0, 0, null, 'an order placed before, no tender'],
+            // Placed before: the edit's lines add up to the grand total alone, 150 here, with a 10 card on the order.
+            [150.0, 10.0, 0, null, 'an order placed before, with a gift card: lines to the grand total, accepted'],
+            [140.0, 10.0, 0, $refused, 'placed before, lines that carry the card: no longer the grand total, refused'],
+        ];
+    }
+
+    /**
      * Only the plugin's own refusal passes through; one a subscriber builds
      * itself is a fault in its code, logged by class and throw site only.
      *

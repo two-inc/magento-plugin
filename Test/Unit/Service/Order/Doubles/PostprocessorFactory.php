@@ -28,6 +28,9 @@ use Two\Gateway\Service\Order\TaxCodeResolver;
  */
 trait PostprocessorFactory
 {
+    /** @var int|null the prepaid Two holds for the order, in cents; null: the order's own tenders (a new order) */
+    protected $twoPrepaid = null;
+
     private function buildPostprocessor(
         ?Hook $hook = null,
         ?ConfigRepository $config = null,
@@ -102,10 +105,41 @@ trait PostprocessorFactory
             // The plugin's own tender reader, as DI wires it (TWO-26309).
             (new \ReflectionProperty(OrderService::class, 'tenderReader'))
                 ->setValue($composer, new \Two\Gateway\Service\Order\TenderReader(new \Two\Gateway\Model\OrderTenders(), $log));
+            (new \ReflectionProperty(OrderService::class, 'prepaidLedger'))->setValue($composer, $this->ledgerStandIn($composer));
             $composers[] = $composer;
         }
 
         return new ShopMatchChecks($composers[0], $composers[1], $log, $this->shopMatchRefusals());
+    }
+
+    /** Two's record of the order: its prepaid as $this->twoPrepaid says, nothing fulfilled yet. */
+    private function ledgerStandIn(OrderService $composer): \Two\Gateway\Service\Order\PrepaidLedger
+    {
+        $test = $this;
+
+        return new class ($test, $composer) extends \Two\Gateway\Service\Order\PrepaidLedger {
+            private $test;
+            private $composer;
+
+            public function __construct($test, $composer)
+            {
+                $this->test = $test;
+                $this->composer = $composer;
+            }
+
+            public function read(\Magento\Sales\Model\Order $order): array
+            {
+                $prepaid = $this->test->twoPrepaidFor($order, $this->composer);
+
+                return ['invoice' => 0, 'prepaid' => $prepaid, 'fulfilled_invoice' => 0, 'fulfilled_prepaid' => 0,
+                    'refunded_prepaid' => 0, 'refunded_amount' => 0];
+            }
+        };
+    }
+
+    public function twoPrepaidFor(\Magento\Sales\Model\Order $order, OrderService $composer): int
+    {
+        return $this->twoPrepaid ?? (int)round($composer->getTenderTotal($order) * 100);
     }
 
     /** One record per test, shared by the checks and the postprocessor as DI shares it. */
