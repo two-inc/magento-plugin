@@ -189,7 +189,7 @@ class TaxCodeMap extends Field
                     break;
                 case TaxCodeSection::NOTICE_SCOPE:
                     $notices[] = ['notice', (string)__(
-                        'Some websites use another API key or environment, so their merchant country and tax codes may differ: check this setting in each website\'s scope.'
+                        'Some websites or store views below this scope use another API key or environment, so their merchant country and tax codes may differ: check this setting in each of their scopes.'
                     )];
                     break;
                 case TaxCodeSection::NOTICE_SAVED_VALID:

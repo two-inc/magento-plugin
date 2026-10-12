@@ -254,8 +254,9 @@ Otherwise the section shows only what needs attention:
   **Clear saved tax codes**.
 - A saved setting that cannot be read (below): a notice that Two is hidden at
   checkout, with **Clear saved tax codes**.
-- At the default scope, when a website uses another API key or environment: a
-  notice to check the setting in each website's scope.
+- At the default or a website scope, when a website or store view below it
+  uses another API key or environment: a notice to check the setting in each
+  of their scopes, since they inherit this mapping.
 
 **Clear saved tax codes** stores an empty mapping at the scope being saved and
 ignores any rows posted with it. Rows posted while the table is not shown

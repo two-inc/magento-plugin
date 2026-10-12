@@ -89,7 +89,7 @@ class TaxCodeSectionResolver
         $map = TaxCodeMapBackend::read($saved);
         $facts['readable'] = $map !== null;
         $facts['entries'] = $map ?? [];
-        $facts['scope_differs'] = $this->websitesDiffer($scopeId, $scope);
+        $facts['scope_differs'] = $this->scopesBelowDiffer($scopeId, $scope);
 
         $record = $this->recordProvider->getRecord($scopeId, $scope);
         $country = is_string($record['country_code'] ?? null) ? strtoupper(trim($record['country_code'])) : '';
@@ -108,21 +108,32 @@ class TaxCodeSectionResolver
     }
 
     /**
-     * At the default scope, whether a website carries another API key or
-     * environment, so its merchant, and its country's codes, may differ from
-     * what this scope shows. A website or store view scope has one key.
+     * Whether a scope below this one carries another API key or environment:
+     * at the default scope any website or store view, at a website scope its
+     * own store views. Such a scope inherits this map while its merchant, and
+     * its country's codes, may differ from what this scope shows.
      */
-    private function websitesDiffer(?int $scopeId, string $scope): bool
+    private function scopesBelowDiffer(?int $scopeId, string $scope): bool
     {
-        if ($scope !== ScopeConfigInterface::SCOPE_TYPE_DEFAULT) {
+        if ($scope !== ScopeConfigInterface::SCOPE_TYPE_DEFAULT && $scope !== ScopeInterface::SCOPE_WEBSITE) {
             return false;
         }
         $key = $this->configRepository->getApiKey($scopeId, $scope);
         $mode = $this->configRepository->getMode($scopeId, $scope);
-        foreach ($this->storeManager->getWebsites() as $website) {
-            $id = (int)$website->getId();
-            if ($this->configRepository->getApiKey($id, ScopeInterface::SCOPE_WEBSITE) !== $key
-                || $this->configRepository->getMode($id, ScopeInterface::SCOPE_WEBSITE) !== $mode
+        $below = [];
+        if ($scope === ScopeConfigInterface::SCOPE_TYPE_DEFAULT) {
+            foreach ($this->storeManager->getWebsites() as $website) {
+                $below[] = [(int)$website->getId(), ScopeInterface::SCOPE_WEBSITE];
+            }
+        }
+        foreach ($this->storeManager->getStores() as $store) {
+            if ($scope === ScopeConfigInterface::SCOPE_TYPE_DEFAULT || (int)$store->getWebsiteId() === $scopeId) {
+                $below[] = [(int)$store->getId(), ScopeInterface::SCOPE_STORE];
+            }
+        }
+        foreach ($below as [$id, $type]) {
+            if ($this->configRepository->getApiKey($id, $type) !== $key
+                || $this->configRepository->getMode($id, $type) !== $mode
             ) {
                 return true;
             }

@@ -93,7 +93,7 @@ class TaxCodeMapTest extends TestCase
             [['rejected' => true] + self::state('profile_error'), ['Two rejected the stored API key; check API key and Environment.'], ['<select', 'Clear saved'], 'E1b'],
             [self::state('list_error', [], false, 0), ['Could not check whether Two requires tax codes for your country (Spain, HTTP -)'], ['<select'], 'E2 with no status'],
             [self::state('rows', ['N3'], true), ['<select', 'clear them to restore it'], [], 'N3 above the rows'],
-            [self::state('rows', ['SCOPE']), ['Some websites use another API key or environment'], ['Clear saved'], 'the scope notice'],
+            [self::state('rows', ['SCOPE']), ['Some websites or store views below this scope use another API key or environment'], ['Clear saved'], 'the scope notice'],
         ];
     }
 

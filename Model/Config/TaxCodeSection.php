@@ -19,8 +19,8 @@ namespace Two\Gateway\Model\Config;
  *   otherwise                     notice         the saved mapping's standing, else hidden
  *
  * On top of every view but hidden: an unreadable saved mapping (N3, with
- * Clear), and, at the default scope, websites whose API key or environment
- * differs from it (SCOPE).
+ * Clear), and, at a default or website scope, websites or store views below it
+ * whose API key or environment differs (SCOPE).
  */
 class TaxCodeSection
 {
@@ -36,7 +36,7 @@ class TaxCodeSection
     public const NOTICE_SAVED_VALID = 'N1';
     /** A saved code is unlisted, or not at 0%, for the country. */
     public const NOTICE_SAVED_INVALID = 'N2';
-    /** A website below the default scope uses another API key or environment. */
+    /** A website or store view below the edited scope uses another API key or environment. */
     public const NOTICE_SCOPE = 'SCOPE';
 
     /**
