@@ -180,6 +180,20 @@ namespace Magento\Config\Block\System\Config\Form {
                 return 'element-html';
             }
 
+            /** As core: a scope below default offers "Use Website" / "Use Default" / "Use system value". */
+            protected function _isInheritCheckboxRequired(AbstractElement $element)
+            {
+                return $element->getCanUseWebsiteValue() || $element->getCanUseDefaultValue()
+                    || $element->getCanRestoreToDefault();
+            }
+
+            /** As core's markup: its own cell, toggling the value cell before it. */
+            protected function _renderInheritCheckbox(AbstractElement $element)
+            {
+                return '<td class="use-default"><input id="' . $element->getHtmlId() . '_inherit" type="checkbox"'
+                    . ($element->getInherit() == 1 ? ' checked="checked"' : '') . '/></td>';
+            }
+
             /**
              * @param string $route
              * @param array $params

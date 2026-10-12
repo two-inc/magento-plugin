@@ -10,44 +10,51 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Framework\Locale\ResolverInterface as LocaleResolver;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Tax\Model\TaxClass\Source\Product as ProductTaxClassSource;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\Backend\TaxCodeMap as TaxCodeMapBackend;
-use Two\Gateway\Service\Api\TaxCodes;
-use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Model\Config\TaxCodeSection;
+use Two\Gateway\Model\Config\TaxCodeSectionResolver;
 use Two\Gateway\Service\Order\ZeroTaxRates;
 
 /**
- * The rows of "Tax codes for 0% lines" (TWO-24877, TWO-26153), each with a
- * dropdown of the Two tax codes for the merchant's country plus "(none)".
- * Every product tax class has a row for a buyer in another EU country with a
- * VAT number, one per 0% tax rate its tax rules use (labelled by the rate's
- * code, country and postcode), and one for an address no rule matches.
+ * "Tax codes for 0% lines" (TWO-24877, TWO-26153), rendered as
+ * TaxCodeSection decides for the scope being edited: no row at all while it
+ * is hidden, else one wide row holding its notices and, while the API requires
+ * codes for the merchant's country, a table with one row per product tax
+ * class and the cases as columns: a VAT-registered buyer in another EU state,
+ * each 0% tax rate the class's rules use, and an address no rule matches.
  *
  * The whole map posts as one hidden field of JSON, which
  * Two_Gateway/js/tax-code-map rewrites from the dropdowns, so a shop with many
- * rates never runs into PHP's max_input_vars. It starts as the saved map, so
- * a save without the script, or while the code list cannot be read, keeps it.
- * Saved rows the form does not show (a rate since deleted or no longer 0%)
- * are carried in the field so a save keeps them.
+ * rates never runs into PHP's max_input_vars. It starts as the saved map, and
+ * carries saved rows the table does not show (a rate since deleted or no
+ * longer 0%) so a save keeps them. "Clear saved tax codes" is a checkbox of
+ * the same name placed after it, so when ticked it is the value posted.
  */
 class TaxCodeMap extends Field
 {
+    /** A code's capitals run wider than the "0" a ch measures. */
+    private const CH_PER_CHAR = 1.1;
+
     /**
      * @var StoreManagerInterface
      */
     private $storeManager;
 
     /**
-     * @var RecordProvider
+     * @var TaxCodeSectionResolver
      */
-    private $recordProvider;
+    private $sectionResolver;
 
     /**
-     * @var TaxCodes
+     * @var AdminScope
      */
-    private $taxCodes;
+    private $adminScope;
 
     /**
      * @var ProductTaxClassSource
@@ -64,90 +71,218 @@ class TaxCodeMap extends Field
      */
     private $zeroTaxRates;
 
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
+    /**
+     * @var LocaleResolver
+     */
+    private $localeResolver;
+
     public function __construct(
         Context $context,
         StoreManagerInterface $storeManager,
-        RecordProvider $recordProvider,
-        TaxCodes $taxCodes,
+        TaxCodeSectionResolver $sectionResolver,
+        AdminScope $adminScope,
         ProductTaxClassSource $taxClassSource,
         ConfigRepository $configRepository,
         ZeroTaxRates $zeroTaxRates,
+        BrandRegistryInterface $brandRegistry,
+        LocaleResolver $localeResolver,
         array $data = []
     ) {
         $this->storeManager = $storeManager;
-        $this->recordProvider = $recordProvider;
-        $this->taxCodes = $taxCodes;
+        $this->sectionResolver = $sectionResolver;
+        $this->adminScope = $adminScope;
         $this->taxClassSource = $taxClassSource;
         $this->configRepository = $configRepository;
         $this->zeroTaxRates = $zeroTaxRates;
+        $this->brandRegistry = $brandRegistry;
+        $this->localeResolver = $localeResolver;
         parent::__construct($context, $data);
     }
 
     /**
      * @inheritDoc
      */
-    protected function _getElementHtml(AbstractElement $element)
+    public function render(AbstractElement $element)
     {
-        $saved = TaxCodeMapBackend::normalise($element->getValue());
-        $name = (string)$element->getName();
-        $htmlId = (string)$element->getHtmlId();
-        $storeId = $this->scopeStoreId();
-        $record = $storeId !== null ? $this->recordProvider->getRecord($storeId) : null;
-        $country = is_string($record['country_code'] ?? null) ? $record['country_code'] : '';
-        $codes = $country !== '' ? $this->taxCodes->getSelectable($country, $storeId) : null;
+        $request = $this->getRequest();
+        [$scopeId, $scope] = $this->adminScope->fromCodes($request->getParam('store'), $request->getParam('website'));
+        $state = $this->sectionResolver->resolve($scopeId, $scope, $element->getValue());
+        if ($state['view'] === TaxCodeSection::VIEW_HIDDEN) {
+            // No row and so nothing posted: the stored mapping is left exactly as it is.
+            return '';
+        }
+        $inherit = $this->_isInheritCheckboxRequired($element);
+        $disabled = $inherit && (int)$element->getInherit() === 1;
 
-        if ($codes === null) {
-            return '<p class="message message-warning">' . $this->escapeHtml(
-                __('The tax code list could not be loaded, so the saved choices are kept unchanged. Check the API key, then reload this page.')
-            ) . '</p>' . $this->field($name, $htmlId, $saved, $saved);
+        return sprintf(
+            '<tr id="row_%s"><td colspan="2" class="value two-tax-code-section">%s</td>%s<td></td></tr>',
+            $this->escapeHtmlAttr((string)$element->getHtmlId()),
+            $this->panel($element, $state, $disabled),
+            $inherit ? $this->_renderInheritCheckbox($element) : ''
+        );
+    }
+
+    /**
+     * @param array $state TaxCodeSection::state()
+     */
+    private function panel(AbstractElement $element, array $state, bool $disabled): string
+    {
+        $html = sprintf(
+            '<h4 class="two-tax-code-section__title">%s</h4>',
+            $this->escapeHtml((string)$element->getLabel())
+        );
+        foreach ($this->notices($state) as [$level, $text]) {
+            $html .= sprintf(
+                '<div class="message message-%1$s %1$s"><div>%2$s</div></div>',
+                $level,
+                $this->escapeHtml($text)
+            );
+        }
+        if ($state['view'] === TaxCodeSection::VIEW_ROWS) {
+            $html .= sprintf('<p class="note">%s</p>', $this->escapeHtml((string)__(
+                '%1 requires a tax code on every 0% line for your country (%2): choose one for each case below. A case left on (none) sends no code, and %1 refuses the line. Shipping takes the rows of the Tax Class for Shipping, marked (shipping), and a line with no tax class takes the code the order\'s other 0% lines share. Northern Ireland counts as EU for goods only: in a services class\'s EU column, don\'t choose an intra-community services code.',
+                $this->brandRegistry->getProductName(),
+                $this->countryName($state['country'])
+            )));
+            $html .= $this->table($element, $state['codes'], $disabled);
+        }
+        if ($state['clear']) {
+            $html .= sprintf(
+                '<p><label><input type="checkbox" class="admin__control-checkbox" name="%s" value="%s"%s/> %s</label></p>',
+                $this->escapeHtmlAttr((string)$element->getName()),
+                TaxCodeMapBackend::CLEAR,
+                $disabled ? ' disabled="disabled"' : '',
+                $this->escapeHtml(__('Clear saved tax codes'))
+            );
         }
 
-        // Core's None is class 0, which the repository reports as null.
-        $shippingClassId = (int)($this->configRepository->getShippingTaxClassId($storeId) ?? 0);
-        $zeroRates = $this->zeroTaxRates->byClass();
-        $carried = $saved;
-        $rows = '';
-        foreach ($this->taxClassSource->getAllOptions(true) as $class) {
-            $classId = (int)$class['value'];
-            $label = (string)$class['label'];
-            if ($classId === $shippingClassId) {
-                $label = (string)__('%1 (shipping)', $label);
-            }
-            $classRows = [
-                TaxCodeMapBackend::exemptKey($classId) => (string)__('Buyer in another EU country with a VAT number'),
-            ];
-            foreach ($zeroRates[$classId] ?? [] as $rate) {
-                $where = in_array($rate['postcode'], ['', '*'], true)
-                    ? $rate['country'] : $rate['country'] . ', ' . $rate['postcode'];
-                $rateKey = TaxCodeMapBackend::rateKey($classId, $rate['code']);
-                $classRows[$rateKey] = sprintf('%s (%s)', $rate['code'], $where);
-            }
-            $classRows[TaxCodeMapBackend::noRuleKey($classId)] = (string)__('No rule for the address');
+        return $html;
+    }
 
-            $first = true;
-            foreach ($classRows as $key => $rowLabel) {
-                $rows .= sprintf(
-                    '<tr>%s<td>%s</td><td><select class="select admin__control-select" data-key="%s">%s</select>'
-                    . '</td></tr>',
-                    $first ? sprintf('<td rowspan="%d">%s</td>', count($classRows), $this->escapeHtml($label)) : '',
-                    $this->escapeHtml($rowLabel),
-                    $this->escapeHtmlAttr((string)$key),
-                    $this->options($codes, $saved[$key] ?? '')
+    /**
+     * Why the rows are not shown, then the section's notices, each as [level, text].
+     *
+     * @param array $state TaxCodeSection::state()
+     * @return array<int, array{0: string, 1: string}>
+     */
+    private function notices(array $state): array
+    {
+        $notices = [];
+        $error = TaxCodeSection::error($state, $this->brandRegistry->getProductName(), $this->countryName($state['country']));
+        if ($error !== null) {
+            $notices[] = ['warning', $error];
+        }
+        $brand = $this->brandRegistry->getProductName();
+        $country = $this->countryName($state['country']);
+        foreach ($state['notices'] as $notice) {
+            switch ($notice) {
+                case TaxCodeSection::NOTICE_UNREADABLE:
+                    $notices[] = ['error', (string)__(
+                        'Saved tax codes can\'t be read, so %1 is hidden at checkout; clear them to restore it.',
+                        $brand
+                    )];
+                    break;
+                case TaxCodeSection::NOTICE_SCOPE:
+                    $notices[] = ['notice', (string)__(
+                        'Some websites use another API key or environment, so their merchant country and tax codes may differ: check this setting in each website\'s scope.'
+                    )];
+                    break;
+                case TaxCodeSection::NOTICE_SAVED_VALID:
+                    $notices[] = ['notice', (string)__(
+                        'Saved tax codes still apply at checkout, though %1 does not require them for your country (%2).',
+                        $brand,
+                        $country
+                    )];
+                    break;
+                case TaxCodeSection::NOTICE_SAVED_INVALID:
+                    $notices[] = ['warning', (string)__(
+                        'Some saved tax codes are not valid on 0% lines for your country (%1), so %2 refuses orders that use them.',
+                        $country,
+                        $brand
+                    )];
+                    break;
+            }
+        }
+
+        return $notices;
+    }
+
+    /**
+     * The mapping as a table, one row per product tax class. Every select
+     * offers (none) and the listed codes at rate 0, plus a saved code that is
+     * not one of them, marked, so nothing saved disappears unseen.
+     *
+     * @param array<int, array{code: string, name: string, rate: string}> $codes
+     */
+    private function table(AbstractElement $element, array $codes, bool $disabled): string
+    {
+        $saved = TaxCodeMapBackend::read($element->getValue()) ?? [];
+        $htmlId = (string)$element->getHtmlId();
+        $options = [];
+        foreach (TaxCodeSection::zeroRated($codes) as $entry) {
+            $name = trim($entry['name']);
+            $options[$entry['code']] = $entry['code'] . ($name !== '' ? ' - ' . $name : '');
+        }
+        $listed = array_column($codes, 'code');
+        $classes = $this->classes();
+        $longest = 0;
+        foreach (array_merge(array_keys($options), array_values($saved)) as $code) {
+            $longest = max($longest, strlen((string)$code));
+        }
+        // Wide enough to show the longest code when closed, as goods and services codes can differ only at the
+        // end; the name after the code may clip. The rest is the select's padding and arrow.
+        $width = sprintf('min-width:calc(%dch + 3em);max-width:100%%;', (int)ceil($longest * self::CH_PER_CHAR));
+
+        $carried = $saved;
+        $body = '';
+        foreach ($classes as $classId => $class) {
+            $exempt = TaxCodeMapBackend::exemptKey($classId);
+            $none = TaxCodeMapBackend::noRuleKey($classId);
+            $rates = '';
+            foreach ($class['rates'] as $key => $label) {
+                $rates .= sprintf(
+                    '<div class="two-tax-code-section__rate"><div class="note">%s</div>%s</div>',
+                    $this->escapeHtml($label),
+                    $this->select($key, $class['name'] . ': ' . self::caption('rates') . ': ' . $label, $saved, $options, $listed, $width, $disabled)
                 );
-                $first = false;
                 unset($carried[$key]);
             }
+            if ($rates === '') {
+                $rates = sprintf('<span class="note">%s</span>', $this->escapeHtml(__('No 0% tax rate in this class')));
+            }
+            unset($carried[$exempt], $carried[$none]);
+            $body .= sprintf(
+                '<tr><th scope="row">%s</th><td>%s</td><td>%s</td><td>%s</td></tr>',
+                $this->escapeHtml($class['name']),
+                $this->select($exempt, $class['name'] . ': ' . self::caption('exempt'), $saved, $options, $listed, $width, $disabled),
+                $rates,
+                $this->select($none, $class['name'] . ': ' . self::caption('none'), $saved, $options, $listed, $width, $disabled)
+            );
         }
 
         return sprintf(
-            '<div id="%s_rows"><table class="admin__control-table"><thead><tr><th>%s</th><th>%s</th><th>%s</th>'
+            '<input type="hidden" id="%s" name="%s" value="%s" data-carried="%s"%s/>',
+            $this->escapeHtmlAttr($htmlId),
+            $this->escapeHtmlAttr((string)$element->getName()),
+            $this->escapeHtmlAttr((string)json_encode((object)$saved)),
+            $this->escapeHtmlAttr((string)json_encode((object)$carried)),
+            $disabled ? ' disabled="disabled"' : ''
+        ) . sprintf(
+            '<div id="%s_rows" style="overflow-x:auto;"><table class="admin__control-table" style="width:100%%;">'
+            . '<thead><tr><th scope="col">%s</th><th scope="col">%s</th><th scope="col">%s</th><th scope="col">%s</th>'
             . '</tr></thead><tbody>%s</tbody></table></div>',
             $this->escapeHtmlAttr($htmlId),
             $this->escapeHtml(__('Tax class')),
-            $this->escapeHtml(__('Line')),
-            $this->escapeHtml(__('Tax code')),
-            $rows
-        ) . $this->field($name, $htmlId, $saved, $carried) . sprintf(
+            $this->escapeHtml(self::caption('exempt')),
+            $this->escapeHtml(self::caption('rates')),
+            $this->escapeHtml(self::caption('none')),
+            $body
+        ) . sprintf(
             '<script type="text/x-magento-init">%s</script>',
             (string)json_encode(
                 ['#' . $htmlId . '_rows' => ['Two_Gateway/js/tax-code-map' => ['input' => $htmlId]]],
@@ -157,47 +292,80 @@ class TaxCodeMap extends Field
     }
 
     /**
-     * The one posted field: the saved map as JSON, plus the saved rows the
-     * form does not show, which the script keeps when it rewrites the field.
+     * Every product tax class (None included) with its 0% rates, labelled by
+     * the rate's code, country and postcode.
      *
-     * @param array<string, string> $saved row key => code
-     * @param array<string, string> $carried row key => code
+     * @return array<int, array{name: string, rates: array<string, string>}>
      */
-    private function field(string $name, string $htmlId, array $saved, array $carried): string
+    private function classes(): array
     {
-        return sprintf(
-            '<input type="hidden" id="%s" name="%s" value="%s" data-carried="%s"/>',
-            $this->escapeHtmlAttr($htmlId),
-            $this->escapeHtmlAttr($name),
-            $this->escapeHtmlAttr((string)json_encode((object)$saved)),
-            $this->escapeHtmlAttr((string)json_encode((object)$carried))
-        );
+        // Core's None is class 0, which the repository reports as null.
+        $shippingClassId = (int)($this->configRepository->getShippingTaxClassId($this->scopeStoreId()) ?? 0);
+        $zeroRates = $this->zeroTaxRates->byClass();
+        $classes = [];
+        foreach ($this->taxClassSource->getAllOptions(true) as $class) {
+            $classId = (int)$class['value'];
+            $name = (string)$class['label'];
+            if ($classId === $shippingClassId) {
+                $name = (string)__('%1 (shipping)', $name);
+            }
+            $rates = [];
+            foreach ($zeroRates[$classId] ?? [] as $rate) {
+                $where = in_array($rate['postcode'], ['', '*'], true)
+                    ? $rate['country'] : $rate['country'] . ', ' . $rate['postcode'];
+                $rates[TaxCodeMapBackend::rateKey($classId, $rate['code'])] = sprintf('%s (%s)', $rate['code'], $where);
+            }
+            $classes[$classId] = ['name' => $name, 'rates' => $rates];
+        }
+
+        return $classes;
     }
 
     /**
-     * "(none)" first, then the list; a saved code the list no longer has stays selectable.
+     * @param array<string, string> $saved
+     * @param array<string, string> $options code => label, the codes offered for 0% lines
+     * @param string[] $listed every code the list holds, at any rate
      */
-    private function options(array $codes, string $selected): string
-    {
-        $options = ['' => (string)__('(none)')];
-        foreach ($codes as $entry) {
-            $name = trim($entry['name']);
-            // A rated display name already ends in its rate, "(21%)"; only an unrated one gets it appended.
-            $rated = preg_match('/\([^()]*%\)$/', $name) === 1;
-            $rate = !$rated && is_numeric($entry['rate']) ? ' (' . (float)$entry['rate'] * 100 . '%)' : '';
-            $options[$entry['code']] = trim($entry['code'] . ' ' . $name) . $rate;
+    private function select(
+        string $key,
+        string $name,
+        array $saved,
+        array $options,
+        array $listed,
+        string $width,
+        bool $disabled
+    ): string {
+        $current = $saved[$key] ?? '';
+        $options = ['' => (string)__('(none)')] + $options;
+        $marker = '';
+        if ($current !== '' && !isset($options[$current])) {
+            $marker = in_array($current, $listed, true)
+                ? (string)__('not valid on 0% lines') : (string)__('no longer listed');
+            $options[$current] = $current . ' (' . $marker . ')';
         }
-        if ($selected !== '' && !isset($options[$selected])) {
-            $options[$selected] = $selected;
-        }
-
-        $html = '';
+        $markerId = 'two-tax-code-marker-' . md5($key);
+        $html = sprintf(
+            '<select class="select admin__control-select" data-key="%s" style="%s" aria-label="%s"%s%s>',
+            $this->escapeHtmlAttr($key),
+            $width,
+            $this->escapeHtmlAttr($name),
+            $marker !== '' ? ' aria-describedby="' . $markerId . '"' : '',
+            $disabled ? ' disabled="disabled"' : ''
+        );
         foreach ($options as $value => $label) {
             $html .= sprintf(
                 '<option value="%s"%s>%s</option>',
                 $this->escapeHtmlAttr((string)$value),
-                (string)$value === $selected ? ' selected="selected"' : '',
+                (string)$value === $current ? ' selected="selected"' : '',
                 $this->escapeHtml($label)
+            );
+        }
+        $html .= '</select>';
+        if ($marker !== '') {
+            $html .= sprintf(
+                '<div id="%s" class="note two-tax-code-section__marker">%s</div>',
+                $markerId,
+                $this->escapeHtml($current . ': ' . $marker)
             );
         }
 
@@ -205,8 +373,37 @@ class TaxCodeMap extends Field
     }
 
     /**
-     * The store the admin scope switcher points at: the store, the website's
-     * default store, or the default store view.
+     * A column of the table: `exempt`, `rates` or `none`.
+     */
+    private static function caption(string $column): string
+    {
+        switch ($column) {
+            case 'exempt':
+                return (string)__('VAT-registered buyer, other EU state');
+            case 'rates':
+                return (string)__('Your 0% tax rates');
+            default:
+                return (string)__('Buyer\'s address does not map to a tax rule (no tax charged, e.g. exports)');
+        }
+    }
+
+    /**
+     * The country's name in the admin's language, falling back to its ISO code.
+     */
+    private function countryName(string $iso): string
+    {
+        if ($iso === '' || !class_exists(\Locale::class)) {
+            return $iso;
+        }
+        $name = \Locale::getDisplayRegion('-' . $iso, (string)$this->localeResolver->getLocale());
+
+        return is_string($name) && $name !== '' && $name !== $iso ? $name : $iso;
+    }
+
+    /**
+     * The store the admin scope switcher points at, for the Tax Class for
+     * Shipping mark: the store, the website's default store, or the default
+     * store view.
      */
     private function scopeStoreId(): ?int
     {

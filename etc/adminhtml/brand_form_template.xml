@@ -543,7 +543,7 @@
             <group id="order_management" translate="label" type="text" sortOrder="10"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
-                <label>Order management</label>
+                <label>Status mapping</label>
                 <field id="fulfill_trigger" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
@@ -563,6 +563,12 @@
                     </depends>
                     <config_path>payment/{{code}}/fulfill_order_status</config_path>
                 </field>
+            </group>
+            <!-- TWO-26153: tax settings under their own caption. -->
+            <group id="tax" translate="label" type="text" sortOrder="20"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Tax</label>
                 <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
@@ -571,11 +577,10 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>
                 </field>
-                <field id="tax_code_map" translate="label comment" type="text" sortOrder="40"
+                <field id="tax_code_map" translate="label" type="text" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Tax codes for 0% lines</label>
-                    <comment>Optional. The tax code to send on lines taxed at 0%, for each product tax class: one row for a buyer in another EU country (Monaco and Northern Ireland included) with a VAT number, one per 0% tax rate the class's tax rules use, and one for an address no tax rule matches. Shipping takes the rows of the shipping tax class. A fee line with no tax class takes the code the order's other 0% lines share. A row left at (none) sends no code. The plugin never refuses an order over a tax code; the API checks every code it receives.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\TaxCodeMap</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\TaxCodeMap</backend_model>
                     <config_path>payment/{{code}}/tax_code_map</config_path>

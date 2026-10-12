@@ -17,94 +17,133 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\TaxCodes;
 
 /**
- * TWO-24877: the mapping dropdown's code list, and the stored mapping's format.
+ * TWO-24877, TWO-26153: the code list the tax code section offers, with whether
+ * codes are mandatory at 0%, and the stored mapping's format.
  */
 class TaxCodesTest extends TestCase
 {
-    private const RESPONSE = [
-        'data' => [
-            ['code' => 'ES_IVA_STANDARD', 'rate' => '0.21', 'display_name' => 'IVA general',
-                'requires_exemption_reason' => false, 'exemption_reason_code' => null],
-            ['code' => 'ES_IVA_EXPORT', 'rate' => '0', 'display_name' => 'Exportación',
-                'requires_exemption_reason' => true, 'exemption_reason_code' => 'VATEX-EU-G'],
-            ['code' => 'ES_IVA_EXEMPT_OTHER', 'rate' => '0', 'display_name' => 'Exenta otros',
-                'requires_exemption_reason' => true, 'exemption_reason_code' => null],
-        ],
-        'country_code' => 'ES',
-        'metadata' => ['mandatory_tax_codes_enabled' => true, 'mandatory_tax_rates' => ['0']],
+    private const DATA = [
+        ['code' => 'ES_IVA_STANDARD', 'rate' => '0.21', 'display_name' => 'IVA general',
+            'requires_exemption_reason' => false, 'exemption_reason_code' => null],
+        ['code' => 'ES_IVA_EXPORT', 'rate' => '0', 'display_name' => 'Exportación',
+            'requires_exemption_reason' => true, 'exemption_reason_code' => 'VATEX-EU-G'],
+        ['code' => 'ES_IVA_EXEMPT_OTHER', 'rate' => '0', 'display_name' => 'Exenta otros',
+            'requires_exemption_reason' => true, 'exemption_reason_code' => null],
+        ['code' => 'ES_IVA_EXEMPT_BLANK', 'rate' => '0', 'display_name' => 'Exenta',
+            'requires_exemption_reason' => true, 'exemption_reason_code' => ''],
     ];
 
-    public function testListsEveryCodeExceptThoseNeedingACallerReasonAndCachesTheAnswer(): void
+    private const ES = [
+        ['code' => 'ES_IVA_STANDARD', 'name' => 'IVA general', 'rate' => '0.21'],
+        ['code' => 'ES_IVA_EXPORT', 'name' => 'Exportación', 'rate' => '0'],
+    ];
+
+    /** @var array<string, array{0: string, 1: array, 2: int|null}> */
+    private $store = [];
+
+    /**
+     * @dataProvider answers
+     */
+    public function testAnAnswerIsCachedADayAndKeptAsTheLastAnswer(array $response, array $expected, string $description): void
     {
         $adapter = $this->createMock(Adapter::class);
-        $adapter->expects($this->once())->method('execute')
-            ->with('/v1/tax_codes/ES', [], 'GET', 3)->willReturn(self::RESPONSE);
-        $cache = $this->createMock(CacheInterface::class);
-        $cache->method('load')->willReturn(false);
-        $expected = [
-            ['code' => 'ES_IVA_STANDARD', 'name' => 'IVA general', 'rate' => '0.21'],
-            ['code' => 'ES_IVA_EXPORT', 'name' => 'Exportación', 'rate' => '0'],
+        $adapter->expects($this->once())->method('executeWithStatus')
+            ->with('/v1/tax_codes/ES', [], 'GET', 3, 'key', 'sandbox', 10)->willReturn($response);
+        $status = -1;
+
+        $this->assertSame($expected, $this->service($adapter)->getList('es', 3, null, $status), $description);
+        $this->assertSame(0, $status, $description);
+        $this->assertSame(86400, $this->store['two_gateway_tax_codes_ES_sandbox'][2], $description);
+        $this->assertSame(['TWO_GATEWAY', 'TWO_GATEWAY_TAX_CODES'], $this->store['two_gateway_tax_codes_ES_sandbox'][1], $description);
+        $this->assertSame([['TWO_GATEWAY'], null], array_slice($this->store['two_gateway_tax_codes_ES_sandbox_last'], 1), $description);
+        $this->assertSame(300, $this->store['two_gateway_tax_codes_ES_sandbox_tried'][2], $description);
+    }
+
+    public static function answers(): array
+    {
+        return [
+            [['status' => 200, 'body' => ['data' => self::DATA, 'metadata' => ['mandatory_tax_codes_enabled' => true, 'mandatory_tax_rates' => ['0']]]],
+                ['codes' => self::ES, 'mandatory' => true], 'mandatory at 0%; codes needing a reason with no default dropped'],
+            [['status' => 200, 'body' => ['data' => self::DATA, 'metadata' => ['mandatory_tax_codes_enabled' => true, 'mandatory_tax_rates' => ['0.21']]]],
+                ['codes' => self::ES, 'mandatory' => false], 'mandatory only above 0%'],
+            [['status' => 200, 'body' => ['data' => self::DATA]], ['codes' => self::ES, 'mandatory' => false], 'no metadata'],
+            [['status' => 400, 'body' => ['error_code' => 'COUNTRY_NOT_SUPPORTED', 'http_status' => 400]],
+                ['codes' => [], 'mandatory' => false], 'no registry is an answer: no codes, not mandatory'],
         ];
-        $cache->expects($this->once())->method('save')
-            ->with(json_encode($expected), 'two_gateway_tax_codes_ES_3_sandbox', ['TWO_GATEWAY'], 86400);
-
-        $this->assertSame($expected, $this->service($adapter, $cache)->getSelectable('es', 3));
-    }
-
-    public function testSandboxAndProductionAreCachedApart(): void
-    {
-        $adapter = $this->createMock(Adapter::class);
-        $adapter->method('execute')->willReturn(self::RESPONSE);
-        $keys = [];
-        $cache = $this->createMock(CacheInterface::class);
-        $cache->method('load')->willReturnCallback(static function ($key) use (&$keys) {
-            $keys[] = $key;
-            return false;
-        });
-        foreach (['sandbox', 'production'] as $mode) {
-            $config = $this->createMock(ConfigRepository::class);
-            $config->method('getMode')->willReturn($mode);
-            (new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class), $config))
-                ->getSelectable('ES', 1);
-        }
-
-        $this->assertSame(['two_gateway_tax_codes_ES_1_sandbox', 'two_gateway_tax_codes_ES_1_production'], $keys);
-    }
-
-    public function testACachedListIsServedWithoutACall(): void
-    {
-        $adapter = $this->createMock(Adapter::class);
-        $adapter->expects($this->never())->method('execute');
-        $cache = $this->createMock(CacheInterface::class);
-        $cache->method('load')->willReturn('[{"code":"ES_IVA_EXPORT","name":"","rate":"0"}]');
-
-        $this->assertSame(
-            [['code' => 'ES_IVA_EXPORT', 'name' => '', 'rate' => '0']],
-            $this->service($adapter, $cache)->getSelectable('ES', 1)
-        );
     }
 
     /**
-     * @dataProvider failedResponses
+     * @dataProvider failures
      */
-    public function testAFailureIsNullAndNotCached(array $response, string $description): void
+    public function testAFailureServesTheLastAnswerOrNothingAndWaitsOutTheFloor(array $response, bool $last, string $description): void
     {
         $adapter = $this->createMock(Adapter::class);
-        $adapter->method('execute')->willReturn($response);
-        $cache = $this->createMock(CacheInterface::class);
-        $cache->method('load')->willReturn(false);
-        $cache->expects($this->never())->method('save');
+        $adapter->expects($this->once())->method('executeWithStatus')->willReturn($response);
+        $held = ['codes' => self::ES, 'mandatory' => true];
+        if ($last) {
+            $this->store['two_gateway_tax_codes_ES_sandbox_last'] = [json_encode($held), [], null];
+        }
+        $service = $this->service($adapter);
+        $status = -1;
 
-        $this->assertNull($this->service($adapter, $cache)->getSelectable('ES', 1), $description);
+        $this->assertSame($last ? $held : null, $service->getList('ES', 1, null, $status), $description);
+        $this->assertSame($last ? 0 : (int)$response['status'], $status, $description);
+        $this->assertArrayNotHasKey('two_gateway_tax_codes_ES_sandbox', $this->store, $description);
+        $this->assertSame($last ? $held : null, $service->getList('ES', 1), $description . ': no second call inside the floor');
     }
 
-    public static function failedResponses(): array
+    public static function failures(): array
     {
         return [
-            [['error_code' => 'Country not supported', 'http_status' => 400], 'an unsupported country'],
-            [['http_status' => 503], 'an outage'],
-            [['country_code' => 'ES'], 'a body with no list'],
+            [['status' => 503, 'body' => ['http_status' => 503]], false, 'an outage, nothing held'],
+            [['status' => 503, 'body' => ['http_status' => 503]], true, 'an outage serves the last answer'],
+            [['status' => 400, 'body' => ['error_code' => 'OTHER', 'http_status' => 400]], false, 'any other 400 is a failure'],
+            [['status' => 200, 'body' => ['country_code' => 'ES']], false, 'a body with no list'],
+            [['status' => 0, 'body' => ['error_code' => 400]], true, 'a transport failure serves the last answer'],
         ];
+    }
+
+    public function testAFreshAnswerIsServedWithoutACallAndAnOldEntryWithoutMetadataIsNone(): void
+    {
+        $adapter = $this->createMock(Adapter::class);
+        $adapter->expects($this->once())->method('executeWithStatus')
+            ->willReturn(['status' => 200, 'body' => ['data' => []]]);
+        $this->store['two_gateway_tax_codes_ES_sandbox'] = ['{"codes":[],"mandatory":true}', [], 86400];
+        $this->store['two_gateway_tax_codes_FR_sandbox'] = ['[{"code":"FR_X","name":"","rate":"0"}]', [], 86400];
+        $service = $this->service($adapter);
+
+        $this->assertSame(['codes' => [], 'mandatory' => true], $service->getList('ES', 1), 'fresh: no call');
+        $this->assertSame(['codes' => [], 'mandatory' => false], $service->getList('FR', 1), 'an entry from before the metadata is fetched again');
+    }
+
+    public function testSandboxAndProductionAreCachedApartAndAWebsiteSendsNoStoreId(): void
+    {
+        $adapter = $this->createMock(Adapter::class);
+        $adapter->expects($this->exactly(2))->method('executeWithStatus')
+            ->with('/v1/tax_codes/ES', [], 'GET', null, 'key', $this->anything(), 10)
+            ->willReturn(['status' => 200, 'body' => ['data' => []]]);
+        foreach (['sandbox', 'production'] as $mode) {
+            $this->service($adapter, $mode)->getList('ES', 1, 'website');
+        }
+
+        $this->assertArrayHasKey('two_gateway_tax_codes_ES_sandbox', $this->store);
+        $this->assertArrayHasKey('two_gateway_tax_codes_ES_production', $this->store);
+    }
+
+    public function testExpireDropsTheDayLongAnswersAndFloorsAndKeepsTheLastAnswers(): void
+    {
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->expects($this->once())->method('clean')->with(['TWO_GATEWAY_TAX_CODES']);
+        (new TaxCodes($this->createMock(Adapter::class), $cache, new Json(), $this->createMock(LogRepository::class), $this->createMock(ConfigRepository::class)))
+            ->expire();
+    }
+
+    public function testAnInvalidCountryAsksNothing(): void
+    {
+        $adapter = $this->createMock(Adapter::class);
+        $adapter->expects($this->never())->method('executeWithStatus');
+
+        $this->assertNull($this->service($adapter)->getList('', 1));
     }
 
     /**
@@ -128,42 +167,19 @@ class TaxCodesTest extends TestCase
         ];
     }
 
-    /**
-     * TWO-26153: a posted map that is not a JSON object is refused, never saved as an empty map.
-     *
-     * @dataProvider postedMaps
-     */
-    public function testSaveRefusesAnUnreadablePost($posted, ?string $stored, string $description): void
-    {
-        $config = $this->createMock(\Magento\Framework\App\Config\ScopeConfigInterface::class);
-        $value = new TaxCodeMap(null, null, $config, null, null, null, ['value' => $posted]);
-        if ($stored === null) {
-            $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
-        }
-        $value->beforeSave();
-        $this->assertSame($stored, $value->getValue(), $description);
-    }
-
-    public static function postedMaps(): array
-    {
-        return [
-            ['{"5|none":"ES_IVA_EXPORT"}', '{"5|none":"ES_IVA_EXPORT"}', 'a whole map is stored'],
-            ['{}', '', 'every row on (none) stores nothing'],
-            ['', '', 'an emptied field stores nothing'],
-            ['{"5|none":"ES_IVA_EXP', null, 'a cut-off post is refused'],
-            ['"5|none"', null, 'JSON that is not an object is refused'],
-            ['[]', null, 'a JSON list is refused'],
-            ['["ES_IVA_EXPORT"]', null, 'a JSON list with entries is refused'],
-            [['5' => 'ES_IVA_EXPORT'], null, 'a form rendered before the upgrade (one field per class) is refused'],
-            [[['key' => '5|none', 'code' => 'ES_IVA_EXPORT']], null, 'a form posting key and code pairs is refused'],
-            [null, null, 'no value is refused'],
-        ];
-    }
-
-    private function service(Adapter $adapter, CacheInterface $cache): TaxCodes
+    private function service(Adapter $adapter, string $mode = 'sandbox'): TaxCodes
     {
         $config = $this->createMock(ConfigRepository::class);
-        $config->method('getMode')->willReturn('sandbox');
+        $config->method('getMode')->willReturn($mode);
+        $config->method('getApiKey')->willReturn('key');
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(function ($key) {
+            return $this->store[$key][0] ?? false;
+        });
+        $cache->method('save')->willReturnCallback(function ($data, $key, $tags = [], $lifetime = null) {
+            $this->store[$key] = [$data, $tags, $lifetime];
+            return true;
+        });
 
         return new TaxCodes($adapter, $cache, new Json(), $this->createMock(LogRepository::class), $config);
     }
