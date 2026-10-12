@@ -42,7 +42,8 @@ class TaxCodes
 
     private const ENDPOINT = '/v1/tax_codes/%s';
     private const CACHE_KEY_PREFIX = 'two_gateway_tax_codes_';
-    private const LAST_FLAG_PREFIX = 'two_gateway_tax_codes_last_';
+    /** Each country's last answer is the flag `<prefix><country>_<mode>`; uninstall deletes them. */
+    public const LAST_FLAG_PREFIX = 'two_gateway_tax_codes_last_';
     private const TRIED_SUFFIX = '_tried';
     private const CACHE_LIFETIME = 86400;
     private const RETRY_FLOOR = 300;
