@@ -106,7 +106,7 @@ class ComposeOrder extends OrderService
         $amounts = $this->orderAmounts(
             (float)$order->getGrandTotal(),
             (float)$order->getTaxAmount(),
-            $this->getTenderTotal($order)
+            $this->declaredTenders($order, $order)
         );
 
         // Compose the final payload for the API call. Fields that may
@@ -260,7 +260,7 @@ class ComposeOrder extends OrderService
         return $this->reconcileOtherCharges(
             $lineItems,
             $order,
-            (float)$order->getGrandTotal() + $this->getTenderTotal($order),
+            (float)$order->getGrandTotal() + $this->declaredTenders($order, $order),
             (float)$order->getTaxAmount()
         );
     }

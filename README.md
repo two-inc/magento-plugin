@@ -399,7 +399,14 @@ before sending (`GET /v1/order/<id>` and its `/fulfillments`):
   the rest of the refunded lines, so the two always sum to the lines.
 
 If Two's record cannot be read, the request is not sent and says so: the
-prepaid part is never guessed. The `order_intent` body is unchanged. An order with no tenders carries
+prepaid part is never guessed.
+
+An order placed with tenders before this version has no prepaid at Two and an
+invoice of the grand total alone. Every later request on it, edits included,
+is sent exactly as before: its lines reconciled against the grand total, its
+totals from the grand total, and no `invoice_amount`, `payable_amount` or
+`prepaid_amount`. The plugin tells such an order by the prepaid Two holds for
+it. The `order_intent` body is unchanged. An order with no tenders carries
 none of `invoice_amount`, `payable_amount` and `prepaid_amount`, and its bodies
 are as they always were.
 

@@ -210,6 +210,7 @@ trait TenderOrderFixtures
         $order->setStoreId(1);
         $order->setOrderCurrencyCode('EUR');
         $order->setIncrementId('100000001');
+        $order->setData('two_order_id', 'two-1');
         $order->setShippingDescription('Flat Rate');
         $order->setShippingMethod('flatrate_flatrate');
         $order->setIsVirtual(0);

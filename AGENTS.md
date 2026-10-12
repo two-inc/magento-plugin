@@ -1362,8 +1362,17 @@ prepaid or more prepaid than invoice. Within those bounds a fulfilment declares
 the tenders Magento still holds (less every memo's, online or offline) not yet
 declared, and a refund what its memo returned. Do not replay Magento's history
 instead: an offline memo moves Magento and never Two, which is how the earlier
-front-loading broke. `PrepaidLedgerSequenceTest` simulates Two's ledger over
-every sequence of shipments, offline memos and refunds on a few orders, and
+front-loading broke. An order placed with tenders before they were declared
+has prepaid 0 at Two: `Service\Order::declaredTenders()` answers 0 for it, so
+every builder sends it exactly what it was sent before (lines reconciled
+against the grand total, no prepaid fields), edits included. The ledger reads
+the root order: Two refuses an edit of a partly fulfilled root and the plugin
+only addresses the root, so the remainder is always the root less its
+completed fulfilments. `PrepaidLedgerSequenceTest` simulates Two's ledger over
+every sequence of shipments, offline memos and refunds on a few orders, with
+an oracle that what the buyer owes Two equals the live lines less the tenders
+kept wherever Two can follow (an offline memo of a fulfilled line, or one that
+pulls back declared tenders, it cannot), and
 `TwoAmountRulesContractTest` runs every body through a port of Two's amount
 rules: keep both in step with the API.
 

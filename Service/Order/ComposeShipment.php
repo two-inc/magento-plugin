@@ -70,7 +70,7 @@ class ComposeShipment extends OrderService
      */
     private function withPrepaid(array $payload, Order $order): array
     {
-        if ($this->getTenderTotal($order) <= 0 || $payload['line_items'] === []) {
+        if ($payload['line_items'] === [] || $this->declaredTenders($order, $order) <= 0) {
             return $payload;
         }
         $invoice = (int)round((float)$payload['net_amount'] * 100) + (int)round((float)$payload['tax_amount'] * 100);
@@ -151,7 +151,7 @@ class ComposeShipment extends OrderService
             $lines[] = $this->remainderOf($feeLine, $refundedFees[(string)($feeLine['order_item_id'] ?? '')] ?? 0.0);
         }
 
-        $residual = $this->getOtherChargesLineOrder($order);
+        $residual = $this->getOtherChargesLineOrder($order, $this->declaredTenders($order, $order));
         if ($residual) {
             $refundedCharge = 0.0;
             foreach ($memos as $memo) {

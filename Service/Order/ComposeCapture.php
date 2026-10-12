@@ -43,7 +43,7 @@ class ComposeCapture extends OrderService
         $lineItems = $this->reconcileOtherCharges(
             $lineItems,
             $invoice,
-            (float)$invoice->getGrandTotal() + $this->getTenderTotal($invoice),
+            (float)$invoice->getGrandTotal() + $this->declaredTenders($invoice, $order),
             (float)$invoice->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
@@ -56,9 +56,9 @@ class ComposeCapture extends OrderService
         // On an order with tenders the invoice declares its prepaid part from
         // Two's record of the order (TWO-26309): its lines are its grand total
         // plus the tenders Magento took off it, and what is not prepaid is payable.
-        $tendered = $this->getTenderTotal($invoice);
+        $tendered = $this->declaredTenders($invoice, $order);
         $prepaid = 0.0;
-        if ($this->getTenderTotal($order) > 0) {
+        if ($this->declaredTenders($order, $order) > 0) {
             $lines = (int)round((float)$invoice->getGrandTotal() * 100) + (int)round($tendered * 100);
             $prepaid = $this->fulfilmentPrepaid($order, $lines) / 100;
         }

@@ -41,7 +41,7 @@ class ComposeRefund extends OrderService
         $lineItems = $this->reconcileOtherCharges(
             $lineItems,
             $creditmemo,
-            (float)$creditmemo->getGrandTotal() + $this->getTenderTotal($creditmemo),
+            (float)$creditmemo->getGrandTotal() + $this->declaredTenders($creditmemo, $order),
             (float)$creditmemo->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
@@ -66,8 +66,8 @@ class ComposeRefund extends OrderService
         // store credit) is refunded lines Two did not fund. It goes as the
         // prepaid part, up to the prepaid Two has fulfilled and not refunded;
         // the rest of the lines is the amount, so the two sum to the lines.
-        if ($this->getTenderTotal($order) > 0) {
-            $returned = (int)round($this->getTenderTotal($creditmemo) * 100);
+        if ($this->declaredTenders($order, $order) > 0) {
+            $returned = (int)round($this->declaredTenders($creditmemo, $order) * 100);
             $grand = (int)round((float)$creditmemo->getGrandTotal() * 100);
             $prepaid = $this->refundPrepaid($order, $returned, $grand + $returned);
             $result['amount'] = $this->roundAmt(($grand + $returned - $prepaid) / 100);

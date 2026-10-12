@@ -152,6 +152,11 @@ abstract class Order
     protected $prepaidLedger;
 
     /**
+     * @var \WeakMap|null Two's ledger per order, read once per request
+     */
+    private $ledgers;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -225,6 +230,7 @@ abstract class Order
      */
     public function fulfilmentPrepaid(OrderModel $order, int $invoice): int
     {
+        // Callers declare a prepaid part only where declaredTenders() found the tenders declared.
         return PrepaidLedger::fulfilmentPrepaid($this->twoLedger($order), $this->tendersKept($order), $invoice);
     }
 
@@ -240,6 +246,29 @@ abstract class Order
     public function refundPrepaid(OrderModel $order, int $returned, int $lines): int
     {
         return PrepaidLedger::refundPrepaid($this->twoLedger($order), $returned, $lines);
+    }
+
+    /**
+     * The tenders a body for $entity declares (TWO-26309): its own, unless
+     * the order was placed with Two before tenders were declared. Such an
+     * order has no prepaid at Two and an invoice of the grand total alone,
+     * so every request on it is sent exactly as it was then: the lines
+     * reconcile against the grand total and no prepaid part is declared.
+     * An order not yet placed with Two always declares its tenders.
+     *
+     * @param object|null $entity the order, or its invoice or credit memo
+     * @param OrderModel $order
+     * @return float
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function declaredTenders($entity, OrderModel $order): float
+    {
+        $tendered = $this->getTenderTotal($entity);
+        if ($tendered <= 0 || $this->getTenderTotal($order) <= 0 || !$order->getTwoOrderId()) {
+            return $tendered;
+        }
+
+        return $this->twoLedger($order)['prepaid'] > 0 ? $tendered : 0.0;
     }
 
     /**
@@ -297,8 +326,12 @@ abstract class Order
         if (!$this->prepaidLedger) {
             throw new LocalizedException(__('The prepaid ledger is not configured.'));
         }
+        $this->ledgers = $this->ledgers ?? new \WeakMap();
+        if (!isset($this->ledgers[$order])) {
+            $this->ledgers[$order] = $this->prepaidLedger->read($order);
+        }
 
-        return $this->prepaidLedger->read($order);
+        return $this->ledgers[$order];
     }
 
     /**
@@ -1711,7 +1744,7 @@ abstract class Order
      * @return array|null getOtherChargesLineItem() shape.
      * @throws LocalizedException
      */
-    public function getOtherChargesLineOrder(OrderModel $order): ?array
+    public function getOtherChargesLineOrder(OrderModel $order, ?float $tendered = null): ?array
     {
         $lineItems = $this->getKnownLineAmountsOrder($order);
         foreach ($this->getFeeLines($order) as $feeLine) {
@@ -1721,7 +1754,7 @@ abstract class Order
         return $this->getOtherChargesLineItem(
             $lineItems,
             $order,
-            (float)$order->getGrandTotal() + $this->getTenderTotal($order),
+            (float)$order->getGrandTotal() + ($tendered ?? $this->getTenderTotal($order)),
             (float)$order->getTaxAmount()
         );
     }

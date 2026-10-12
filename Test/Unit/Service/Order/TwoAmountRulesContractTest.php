@@ -72,6 +72,62 @@ class TwoAmountRulesContractTest extends TestCase
     }
 
     /**
+     * An order placed with Two before tenders were declared (TWO-26309): Two
+     * holds no prepaid and an invoice of the grand total alone. Every request
+     * on it is sent exactly as it was then: lines reconciled against the
+     * grand total, totals from the grand total, no prepaid fields. An order
+     * placed since declares its tenders on the same requests.
+     *
+     * @dataProvider placedOrders
+     */
+    public function testAnOrderPlacedBeforeTendersWereDeclaredIsSentAsBefore(string $build, bool $legacy): void
+    {
+        $card = ['gift_cards_amount' => 10.00];
+        $this->memos = [];
+        $this->shipments = [];
+        $order = $this->order($card);
+        if ($legacy) {
+            $this->ledger['prepaid'] = 0;
+            $this->ledger['invoice'] = 14000;
+        }
+        if ($build === 'refund') {
+            $this->ledger['fulfilled_invoice'] = $this->ledger['invoice'];
+            $this->ledger['fulfilled_prepaid'] = $this->ledger['prepaid'];
+        }
+        $body = $this->{$build}($order, $card);
+        $block = $body['partial'] ?? $body;
+
+        if (!$legacy) {
+            $this->assertArrayHasKey('prepaid_amount', $block, "$build: a new order declares its prepaid part");
+            return;
+        }
+        $this->assertSame([], array_intersect(['invoice_amount', 'payable_amount', 'prepaid_amount'], array_keys($block)), "$build: no prepaid fields");
+        $expected = [
+            'edit' => ['gross_amount' => '140.00', 'net_amount' => '119.00', 'tax_amount' => '21.00'],
+            'capture' => ['gross_amount' => '140.00', 'net_amount' => '119.00', 'tax_amount' => '21.00'],
+            'shipment' => ['gross_amount' => '89.50', 'net_amount' => '79.00', 'tax_amount' => '10.50'],
+            'refund' => ['amount' => '111.00'],
+        ][$build];
+        $this->assertSame($expected, array_intersect_key($block, $expected), "$build: totals as before");
+        $this->assertSame(
+            [],
+            array_values(array_filter($block['line_items'], static fn ($l) => ($l['order_item_id'] ?? '') === 'other_charges')),
+            "$build: no residual line"
+        );
+    }
+
+    public static function placedOrders(): array
+    {
+        $cases = [];
+        foreach (['edit', 'capture', 'shipment', 'refund'] as $build) {
+            $cases["$build, placed before"] = [$build, true];
+            $cases["$build, placed since"] = [$build, false];
+        }
+
+        return $cases;
+    }
+
+    /**
      * Several refunds of one order: each is its lines, and together they
      * return no more prepaid than the order declared.
      */
