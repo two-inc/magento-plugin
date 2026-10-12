@@ -133,8 +133,9 @@ class TaxCodeMap extends Field
     private function panel(AbstractElement $element, array $state, bool $disabled): string
     {
         $html = sprintf(
-            '<h4 class="two-tax-code-section__title">%s</h4>',
-            $this->escapeHtml((string)$element->getLabel())
+            '<h4 class="two-tax-code-section__title">%s%s</h4>',
+            $this->escapeHtml((string)$element->getLabel()),
+            $this->scopeLabel($element)
         );
         foreach ($this->notices($state) as [$level, $text]) {
             $html .= sprintf(
@@ -162,6 +163,24 @@ class TaxCodeMap extends Field
         }
 
         return $html;
+    }
+
+    /**
+     * The scope the setting is stored at ("[STORE VIEW]"), which core shows
+     * beside every field's label, and hides on a single-store install.
+     */
+    private function scopeLabel(AbstractElement $element): string
+    {
+        $label = (string)$element->getScopeLabel();
+        if (!$element->getScope() || $label === '' || $this->storeManager->isSingleStoreMode()) {
+            return '';
+        }
+
+        return sprintf(
+            ' <span class="two-tax-code-section__scope" data-config-scope="%1$s">%2$s</span>',
+            $this->escapeHtmlAttr($label),
+            $this->escapeHtml($label)
+        );
     }
 
     /**

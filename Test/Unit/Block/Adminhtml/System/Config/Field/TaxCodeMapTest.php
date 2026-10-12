@@ -110,6 +110,27 @@ class TaxCodeMapTest extends TestCase
         $this->assertStringContainsString('for your country (XX).', $html);
     }
 
+    /**
+     * @dataProvider scopeLabels
+     */
+    public function testTheHeadingCarriesTheScopeLabelAsCoreRowsDo(array $element, bool $singleStore, string $expected, string $description): void
+    {
+        $html = $this->render(self::state('rows'), '{}', $element, $singleStore);
+
+        $this->assertStringContainsString('<h4 class="two-tax-code-section__title">Tax codes for 0% lines' . $expected . '</h4>', $html, $description);
+    }
+
+    public static function scopeLabels(): array
+    {
+        $scoped = ['scope' => true, 'scopeLabel' => '[STORE VIEW]'];
+
+        return [
+            [$scoped, false, ' <span class="two-tax-code-section__scope" data-config-scope="[STORE VIEW]">[STORE VIEW]</span>', 'a multi-store shop sees the scope'],
+            [$scoped, true, '', 'single-store mode shows none, as core'],
+            [[], false, '', 'no scope, no label'],
+        ];
+    }
+
     public function testAHiddenSectionRendersNoRowSoNothingIsPosted(): void
     {
         $this->assertSame('', $this->render(self::state('hidden'), '{"2|none":"ES_IVA_EXPORT"}'));
@@ -137,7 +158,7 @@ class TaxCodeMapTest extends TestCase
             'codes' => self::CODES, 'rejected' => false, 'http' => $http];
     }
 
-    private function render(array $state, string $saved, array $element = []): string
+    private function render(array $state, string $saved, array $element = [], bool $singleStore = false): string
     {
         $context = new class extends Context {
             public function getRequest()
@@ -158,6 +179,7 @@ class TaxCodeMapTest extends TestCase
         };
         $storeManager = $this->createMock(StoreManagerInterface::class);
         $storeManager->method('getDefaultStoreView')->willReturn($store);
+        $storeManager->method('isSingleStoreMode')->willReturn($singleStore);
         $resolver = $this->createMock(TaxCodeSectionResolver::class);
         $resolver->method('resolve')->willReturn($state);
         $scope = $this->createMock(AdminScope::class);
