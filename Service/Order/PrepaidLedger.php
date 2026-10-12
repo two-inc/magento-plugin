@@ -34,6 +34,11 @@ use Two\Gateway\Service\Api\Adapter;
  *   yet refunded, and at least what keeps its amount within the payable Two
  *   has fulfilled and not yet refunded.
  *
+ * The remainder of an order Two has partly fulfilled is the root's figures
+ * less its completed fulfilments: the plugin addresses the root, and Two
+ * refuses an edit of a partly fulfilled root, so nothing the plugin sends can
+ * move the remainder apart from them.
+ *
  * Amounts are in cents.
  */
 class PrepaidLedger
