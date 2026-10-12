@@ -846,6 +846,27 @@ abstract class Order
     }
 
     /**
+     * The part of the order's shipping discount that falls on $entity's
+     * shipping (TWO-26309). Magento records the shipping discount on the
+     * order only, not on an invoice or credit memo, so a document carrying
+     * part of the shipping carries the same share of its discount.
+     *
+     * @param mixed $entity
+     * @param mixed $order
+     * @return float
+     */
+    private function shippingDiscountShare($entity, $order): float
+    {
+        $discount = $this->getDiscountAmountShipping($order);
+        $orderShipping = (float)$order->getShippingAmount();
+        if ($entity === $order || $discount <= 0 || $orderShipping <= 0) {
+            return $discount;
+        }
+
+        return $discount * min(1.0, (float)$entity->getShippingAmount() / $orderShipping);
+    }
+
+    /**
      * The refund's side of the shipping tax fallback (TWO-26309): when the
      * fallback supplied the order's shipping rate at placement, the shipping
      * a credit memo refunds must carry the tax that rate gives. Only the
@@ -950,7 +971,7 @@ abstract class Order
         $order = $this->shippingTaxRateOrder($entity);
         $tax = round($this->getTaxAmountShipping($entity), 2);
         $gross = $this->getUnitPriceShipping($entity);
-        $net = $gross - $this->getDiscountAmountShipping($order);
+        $net = $gross - $this->shippingDiscountShare($entity, $order);
         $discrepancy = min(abs($tax - $net * $rate), abs($tax - $gross * $rate));
         if ($discrepancy <= self::TAX_FORMULA_TOLERANCE) {
             return;

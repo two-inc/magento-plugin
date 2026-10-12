@@ -180,12 +180,17 @@ class OrderPostprocessingParityTest extends TestCase
         float $refundedTax,
         bool $edited,
         ?string $refusal,
-        string $description
+        string $description,
+        float $orderShipping = 29.00,
+        float $discount = 0.00,
+        float $refundedShipping = 29.00
     ): void {
         $context = self::context(Hook::REQUEST_REFUND);
         $context['order']->setData('two_shipping_tax_rate_source', $source);
         $context['order']->setData('two_shipping_tax_rate', $rate);
-        $context['creditmemo']->setData('shipping_amount', 29.00);
+        $context['order']->setData('shipping_amount', $orderShipping);
+        $context['order']->setData('shipping_discount_amount', $discount);
+        $context['creditmemo']->setData('shipping_amount', $refundedShipping);
         $context['creditmemo']->setData('shipping_tax_amount', $refundedTax);
         $payload = ['amount' => '29.00', 'line_items' => [self::payload()['line_items'][1]]];
         $result = $payload;
@@ -207,6 +212,12 @@ class OrderPostprocessingParityTest extends TestCase
             ['none', 21.0, 0.00, true, null, 'the subscriber changed the line: theirs'],
             ['declared', 0.0, 0.00, false, null, 'Magento recorded the rate: never the fallback\'s check'],
             ['none', null, 0.00, false, null, 'the fallback was blank at placement: nothing to check'],
+            // Shipping 20 at 25%, a 10 shipping discount: Magento keeps that discount on the order only.
+            ['none', 25.0, 1.25, false, null, 'half the discounted shipping refunded: half the discount', 20.00, 10.00, 10.00],
+            ['none', 25.0, 2.50, false, null, 'all the discounted shipping refunded', 20.00, 10.00, 20.00],
+            ['none', 25.0, 2.50, false, null, 'half the undiscounted shipping refunded', 20.00, 0.00, 10.00],
+            ['none', 25.0, 5.00, false, null, 'all the undiscounted shipping refunded', 20.00, 0.00, 20.00],
+            ['none', 25.0, 0.50, false, $refused, 'half the discounted shipping, with too little tax: refused', 20.00, 10.00, 10.00],
         ];
     }
 
