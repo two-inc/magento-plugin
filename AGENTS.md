@@ -1290,14 +1290,17 @@ the case on `sales_order`: `two_shipping_tax_rate_source` (`declared`/`none`)
 and `two_shipping_tax_rate` (percent; the declared rate, or for `none` the
 fallback's resolved rate, NULL when the fallback was blank). Every later
 request reads that record and never the current configuration; a `none` with a
-rate is re-checked against it (except on refund). Both NULL is an order placed
+rate is re-checked against it, on refund too. Both NULL is an order placed
 before the record existed, which resolves live as at placement.
 
-The plugin does not reconcile a line other than shipping against its own
-declared rate and net, on any request, with or without a subscriber: whether a
-payload adds up is for Two's API to validate (TWO-26284). Do not add such a check
-back after the hook; only a shop-match check, which compares with shop data the
-API cannot see, belongs there.
+Other lines are reconciled against their declared rate only as a shop-match
+check (TWO-26309): on create and update, in the default handler, on a line the
+plugin composed from Magento's own figures and only while the payload still
+carries it unchanged, so a mismatch means the shop's tax does not match the
+rate it declared. A subscriber owns its own lines, and every other request
+leaves line arithmetic to Two's API (TWO-26284). Do not add any other line
+check after the hook: only a shop-match check, which compares with shop data
+the API cannot see, belongs there.
 
 ## The postprocessing hook's checks: shop-match only
 
