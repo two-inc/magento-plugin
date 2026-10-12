@@ -66,10 +66,12 @@ class ComposeIntent
         $order = $order ?? $this->toOrder($quote);
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
+        // The lines carry what tenders paid (TWO-26309), so the net does too; gross stays what is left to pay.
+        $tendered = $this->composeOrder->getTenderTotal($order);
 
         return [
             'gross_amount' => $this->composeOrder->roundAmt($grossTotal),
-            'net_amount' => $this->composeOrder->roundAmt($grossTotal - $taxTotal),
+            'net_amount' => $this->composeOrder->roundAmt($grossTotal + $tendered - $taxTotal),
             'tax_amount' => $this->composeOrder->roundAmt($taxTotal),
             'currency' => (string)$quote->getQuoteCurrencyCode(),
             'line_items' => $this->composeOrder->composeLineItems($order),
