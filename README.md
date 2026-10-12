@@ -228,11 +228,11 @@ row per product tax class (including **None**) and the cases as columns:
   exports).**
 
 Each dropdown offers (none), which sends no code and is where every row
-starts, and the codes Two lists at rate 0 for your country, as
-`CODE - name`: Two refuses any other code on a 0% line. A saved code that is no longer offered stays selected and is marked "not
-valid on 0% lines" or "no longer listed", so nothing saved disappears unseen.
-A changed row must take an offered code, or the table is not saved and a
-message says which code.
+starts, and the codes Two lists at rate 0 for your country, as `CODE - name`:
+Two refuses any other code on a 0% line. A saved code that is no longer
+offered stays selected and is marked "not valid on 0% lines" or "no longer
+listed", so nothing saved disappears unseen. A changed row must take an
+offered code, or the table is not saved and a message says which code.
 
 **When the table shows.** Only when Two requires a code on 0% lines for your
 country: the country's code list says mandatory codes are enabled and one of
