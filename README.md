@@ -227,9 +227,9 @@ row per product tax class (including **None**) and the cases as columns:
 - **Buyer's address does not map to a tax rule (no tax charged, e.g.
   exports).**
 
-Each dropdown offers (none), the default, and the codes Two lists at rate 0
-for your country, as `CODE - name`: Two refuses any other code on a 0% line.
-A saved code that is no longer offered stays selected and is marked "not
+Each dropdown offers (none), which sends no code and is where every row
+starts, and the codes Two lists at rate 0 for your country, as
+`CODE - name`: Two refuses any other code on a 0% line. A saved code that is no longer offered stays selected and is marked "not
 valid on 0% lines" or "no longer listed", so nothing saved disappears unseen.
 A changed row must take an offered code, or the table is not saved and a
 message says which code.
