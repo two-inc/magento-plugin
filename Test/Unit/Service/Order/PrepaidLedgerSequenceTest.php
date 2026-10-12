@@ -26,6 +26,14 @@ use Two\Gateway\Service\Order\PrepaidLedger;
  * except where Two's own ledger leaves no other choice: a credit memo
  * refunded offline returns tenders Two never hears of.
  *
+ * The oracle, at the end of every sequence Two can follow: what the buyer
+ * owes Two, its fulfilled payable less what it refunded, is exactly the
+ * shipped lines not refunded less the tenders Magento kept. A model that
+ * declared too little prepaid would charge the buyer for what a tender paid.
+ * Two cannot follow an offline credit memo that refunds a line it fulfilled,
+ * or that pulls back tenders already declared to it as prepaid: Magento
+ * returns tenders first on every memo, and an offline memo never reaches Two.
+ *
  * Amounts are in cents. Magento returns tenders before the payment on every
  * credit memo, as Adobe Commerce does.
  */
@@ -43,6 +51,7 @@ class PrepaidLedgerSequenceTest extends TestCase
             'fulfilled_prepaid' => 0, 'refunded_prepaid' => 0, 'refunded_amount' => 0];
         $returned = 0;
         $state = array_fill(0, count($lines), 'open');
+        $followable = true;
         foreach ($events as $event) {
             [$kind, $i] = explode(':', $event);
             $line = $lines[(int)$i];
@@ -64,9 +73,15 @@ class PrepaidLedgerSequenceTest extends TestCase
                 $state[(int)$i] = 'shipped';
                 continue;
             }
+            if ($kind === 'offline' && $state[(int)$i] === 'shipped') {
+                $followable = false;
+            }
             // A credit memo: Magento returns the tenders first.
             $back = min($card - $returned, $line);
             $returned += $back;
+            if ($kind === 'offline' && $two['fulfilled_prepaid'] - $two['refunded_prepaid'] > $card - $returned) {
+                $followable = false;
+            }
             if ($kind === 'online') {
                 $prepaid = PrepaidLedger::refundPrepaid($two, $back, $line);
                 $amount = $line - $prepaid;
@@ -84,6 +99,17 @@ class PrepaidLedgerSequenceTest extends TestCase
             $state[(int)$i] = 'refunded';
         }
         $this->assertLessThanOrEqual($two['prepaid'], $two['fulfilled_prepaid'], "$description: never past the order's prepaid");
+        if ($followable) {
+            $live = 0;
+            foreach ($state as $i => $lineState) {
+                $live += $lineState === 'shipped' ? $lines[$i] : 0;
+            }
+            $this->assertSame(
+                $live - ($card - $returned),
+                $two['fulfilled_invoice'] - $two['fulfilled_prepaid'] - $two['refunded_amount'],
+                "$description: the buyer owes Two the live lines less the tenders kept"
+            );
+        }
     }
 
     public static function sequences(): array
