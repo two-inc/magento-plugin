@@ -46,6 +46,12 @@ trait TenderOrderFixtures
     /** @var Shipment[] the order's shipments, in creation order */
     public $shipments = [];
 
+    /**
+     * @var array Two's record of the order, as PrepaidLedger::read() returns it: the
+     *            create's invoice and prepaid, then what fulfilments and refunds Two accepted
+     */
+    public $ledger = [];
+
     /** @var bool whether the composers resolve tax codes, over a stored map that cannot be read */
     protected $unreadableMap = false;
 
@@ -105,6 +111,7 @@ trait TenderOrderFixtures
     protected function secondShipment(Order $order): array
     {
         $this->shipments[] = $this->shipmentOf(5);
+        $this->fulfilled(8950, min($this->ledger['prepaid'], 8950));
 
         return $this->ship($order, 6);
     }
@@ -131,10 +138,11 @@ trait TenderOrderFixtures
         return $this->composer(ComposeShipment::class, $order)->executeNetOfRefunds($order);
     }
 
-    /** Both units refunded, with the tenders the memo returns off its grand total. */
+    /** Both units refunded after the whole order was fulfilled, with the tenders the memo returns off its grand total. */
     protected function refund(Order $order, array $tenders): array
     {
         $order->setData('id', 7);
+        $this->fulfilled(15000, $this->ledger['prepaid']);
         $creditmemo = new Creditmemo();
         $creditmemo->setItems([$this->item(['order_item_id' => 1, 'qty' => 2, 'row_total' => 100.00,
             'tax_amount' => 21.00, 'tax_percent' => 21.0, 'name' => 'Item 1', 'sku' => 'SKU1'])]);
@@ -232,6 +240,9 @@ trait TenderOrderFixtures
         $order->setGrandTotal(150.00 - self::sum($tenders));
         $order->setTaxAmount(21.00);
         self::setTenders($order, $tenders);
+        // Two's record as the create left it.
+        $this->ledger = ['invoice' => 15000, 'prepaid' => (int)round(self::sum($tenders) * 100),
+            'fulfilled_invoice' => 0, 'fulfilled_prepaid' => 0, 'refunded_prepaid' => 0, 'refunded_amount' => 0];
 
         return $order;
     }
@@ -309,6 +320,7 @@ trait TenderOrderFixtures
             'feeLineProviderPool' => new FeeLineProviderPool([]),
             'tenderReader' => new TenderReader(new OrderTenders(), $log),
             'creditmemoCollectionFactory' => $this->memoCollectionFactory(),
+            'prepaidLedger' => $this->twoLedger(),
         ];
         if ($this->unreadableMap) {
             $records = $this->createMock(RecordProvider::class);
@@ -321,6 +333,31 @@ trait TenderOrderFixtures
         $service->configRepository = $config;
 
         return $service;
+    }
+
+    /** Two accepted a fulfilment of $invoice cents declaring $prepaid cents. */
+    protected function fulfilled(int $invoice, int $prepaid): void
+    {
+        $this->ledger['fulfilled_invoice'] += $invoice;
+        $this->ledger['fulfilled_prepaid'] += $prepaid;
+    }
+
+    /** Stands in for Two's record of the order: read() answers $this->ledger. */
+    private function twoLedger(): \Two\Gateway\Service\Order\PrepaidLedger
+    {
+        return new class ($this) extends \Two\Gateway\Service\Order\PrepaidLedger {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
+            }
+
+            public function read(Order $order): array
+            {
+                return $this->test->ledger;
+            }
+        };
     }
 
     private function ship(Order $order, int $id): array

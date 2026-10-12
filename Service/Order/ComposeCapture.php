@@ -53,12 +53,19 @@ class ComposeCapture extends OrderService
             'line_items' => $lineItems,
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
-        // The invoice's own share of the order's tenders, which Magento takes
-        // off the first invoices, is declared as prepaid (TWO-26309).
+        // On an order with tenders the invoice declares its prepaid part from
+        // Two's record of the order (TWO-26309): its lines are its grand total
+        // plus the tenders Magento took off it, and what is not prepaid is payable.
+        $tendered = $this->getTenderTotal($invoice);
+        $prepaid = 0.0;
+        if ($this->getTenderTotal($order) > 0) {
+            $lines = (int)round((float)$invoice->getGrandTotal() * 100) + (int)round($tendered * 100);
+            $prepaid = $this->fulfilmentPrepaid($order, $lines) / 100;
+        }
         $amounts = $this->orderAmounts(
-            (float)$invoice->getGrandTotal(),
+            (float)$invoice->getGrandTotal() + $tendered - $prepaid,
             (float)$invoice->getTaxAmount(),
-            $this->getTenderTotal($invoice)
+            $prepaid
         );
         $reqBody += $amounts;
         ksort($reqBody);

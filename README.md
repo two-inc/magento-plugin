@@ -381,13 +381,25 @@ tenders declared as already paid. Two funds only what is left:
 | `prepaid_amount` | The tenders |
 | `payable_amount`, `gross_amount` | The grand total: `invoice_amount` less `prepaid_amount` |
 
-That holds for `order_create`, `order_update` and a partial `capture`. An
-invoice capture declares the invoice's own share of the tenders, which Magento
-takes off the first invoices; a partial shipment declares what the tenders
-have left, up to its own lines, so the rest of the order never carries more
-prepaid than invoice. A `refund` carries `prepaid_amount` too: what the credit
-memo returns to the tenders, so `amount` plus `prepaid_amount` is the refunded
-lines. The `order_intent` body is unchanged. An order with no tenders carries
+That holds for `order_create` and `order_update`. A partial `capture` (an
+invoice, a shipment, or the fulfilment after refunds) and a `refund` declare
+their prepaid part from Two's own record of the order, which the plugin reads
+before sending (`GET /v1/order/<id>` and its `/fulfillments`):
+
+- A fulfilment declares the tenders Magento still holds as paid (the order's,
+  less what every credit memo returned to them, online or offline) that no
+  earlier fulfilment has declared, up to its own lines. Two's rules then bound
+  it: never more than Two's prepaid has left unfulfilled, and never so little
+  that the unfulfilled rest holds more prepaid than invoice. A credit memo
+  refunded offline never reaches Two, so a later fulfilment can be held to the
+  prepaid Two still expects.
+- A refund declares what its credit memo returned to the tenders, up to the
+  prepaid Two has fulfilled and not refunded, and at least what keeps its
+  `amount` within the payable Two has fulfilled and not refunded. `amount` is
+  the rest of the refunded lines, so the two always sum to the lines.
+
+If Two's record cannot be read, the request is not sent and says so: the
+prepaid part is never guessed. The `order_intent` body is unchanged. An order with no tenders carries
 none of `invoice_amount`, `payable_amount` and `prepaid_amount`, and its bodies
 are as they always were.
 

@@ -79,13 +79,16 @@ class TwoAmountRulesContractTest extends TestCase
     {
         $card = ['gift_cards_amount' => 30.00];
         $order = $this->order($card);
-        $bodies = [$this->refundOneUnit($order, $card), $this->refundOneUnit($order, [])];
+        $this->fulfilled(15000, 3000);
+        $bodies = [$this->refundOneUnit($order, $card)];
+        $this->ledger['refunded_prepaid'] += 3000;
+        $bodies[] = $this->refundOneUnit($order, []);
         $returned = 0;
         foreach ($bodies as $i => $body) {
             $this->assertSame([], self::ruleFailures($body, 'refund', 30.00), "refund $i");
             $returned += (int)round((float)($body['prepaid_amount'] ?? 0) * 100);
         }
-        $this->assertSame(['30.00', null], [$bodies[0]['prepaid_amount'] ?? null, $bodies[1]['prepaid_amount'] ?? null]);
+        $this->assertSame(['30.00', '0.00'], [$bodies[0]['prepaid_amount'] ?? null, $bodies[1]['prepaid_amount'] ?? null]);
         $this->assertLessThanOrEqual(3000, $returned, 'no more prepaid back than the order declared');
     }
 

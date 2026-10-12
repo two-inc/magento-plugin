@@ -63,11 +63,15 @@ class ComposeRefund extends OrderService
             $result['tax_subtotals'] = $taxSubtotals;
         }
         // TWO-26309: what the credit memo returns to a tender (a gift card,
-        // store credit) is refunded lines Two did not fund: it goes as the
-        // prepaid part, so amount plus prepaid_amount is the refunded lines.
-        $tendered = $this->getTenderTotal($creditmemo);
-        if ($tendered > 0) {
-            $result['prepaid_amount'] = $this->roundAmt($tendered);
+        // store credit) is refunded lines Two did not fund. It goes as the
+        // prepaid part, up to the prepaid Two has fulfilled and not refunded;
+        // the rest of the lines is the amount, so the two sum to the lines.
+        if ($this->getTenderTotal($order) > 0) {
+            $returned = (int)round($this->getTenderTotal($creditmemo) * 100);
+            $grand = (int)round((float)$creditmemo->getGrandTotal() * 100);
+            $prepaid = $this->refundPrepaid($order, $returned, $grand + $returned);
+            $result['amount'] = $this->roundAmt(($grand + $returned - $prepaid) / 100);
+            $result['prepaid_amount'] = $this->roundAmt($prepaid / 100);
         }
         return $result;
     }

@@ -32,11 +32,7 @@ class ComposeShipment extends OrderService
      */
     public function execute(Order\Shipment $shipment, Order $order): array
     {
-        return $this->withPrepaid(
-            $this->payload($this->getLineItemsShipment($order, $shipment), $order),
-            $order,
-            $this->fulfilledBefore($order, $shipment)
-        );
+        return $this->withPrepaid($this->payload($this->getLineItemsShipment($order, $shipment), $order), $order);
     }
 
     /**
@@ -59,63 +55,26 @@ class ComposeShipment extends OrderService
             $items[] = $line;
         }
 
-        return $this->withPrepaid($this->payload($items, $order), $order, 0.0);
+        return $this->withPrepaid($this->payload($items, $order), $order);
     }
 
     /**
-     * The order's saved credit memos that refunded something.
-     *
-     * A fresh query, not $order->getCreditmemosCollection(): the order caches
-     * that collection once loaded, and the memo being saved in this same
-     * refund (the one moving the order into the fulfil-on status) is not in it
-     * when OtherCharges::collect() loaded it first. A cancelled memo refunded
-     * nothing.
-     *
-     * @param Order $order
-     * @return Creditmemo[]
-     */
-    private function savedMemos(Order $order): array
-    {
-        if (!$this->creditmemoCollectionFactory) {
-            // Null only where a test skipped the constructor; etc/di.xml names it.
-            return [];
-        }
-        $memos = [];
-        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
-            if ($memo->getId() && (int)$memo->getState() !== Creditmemo::STATE_CANCELED) {
-                $memos[] = $memo;
-            }
-        }
-
-        return $memos;
-    }
-
-    /**
-     * Declare the order's tenders on its first fulfilments (TWO-26309): each
-     * partial takes as prepaid what the tenders have left, up to its own
-     * lines, so the part of the order not yet fulfilled never carries more
-     * prepaid than invoice. Magento takes tenders off the first invoices the
-     * same way. What the credit memos already returned to the tenders (Magento
-     * refunds a gift card or store credit before the payment) is no longer
-     * paid, so it comes off first. With no tenders the body is unchanged.
+     * Declare the prepaid part of a fulfilment on an order with tenders
+     * (TWO-26309): see Service\Order::fulfilmentPrepaid(). With no tenders
+     * the body is unchanged.
      *
      * @param array $payload a partial built by payload()
      * @param Order $order
-     * @param float $fulfilledBefore the lines' gross of the partials sent before this one
      * @return array
+     * @throws LocalizedException when Two's record of the order cannot be read
      */
-    private function withPrepaid(array $payload, Order $order, float $fulfilledBefore): array
+    private function withPrepaid(array $payload, Order $order): array
     {
-        $tendered = (int)round($this->getTenderTotal($order) * 100);
-        if ($tendered <= 0 || $payload['line_items'] === []) {
+        if ($this->getTenderTotal($order) <= 0 || $payload['line_items'] === []) {
             return $payload;
         }
-        foreach ($this->savedMemos($order) as $memo) {
-            $tendered -= (int)round($this->getTenderTotal($memo) * 100);
-        }
-        $tendered = max(0, $tendered);
         $invoice = (int)round((float)$payload['net_amount'] * 100) + (int)round((float)$payload['tax_amount'] * 100);
-        $prepaid = max(0, min($tendered - min($tendered, (int)round($fulfilledBefore * 100)), $invoice));
+        $prepaid = $this->fulfilmentPrepaid($order, $invoice);
         $payload['invoice_amount'] = $this->roundAmt($invoice / 100);
         $payload['payable_amount'] = $this->roundAmt(($invoice - $prepaid) / 100);
         $payload['prepaid_amount'] = $this->roundAmt($prepaid / 100);
@@ -125,32 +84,6 @@ class ComposeShipment extends OrderService
         return $payload;
     }
 
-    /**
-     * The lines' gross of the order's shipments before this one, each
-     * composed as its own partial was. Only read for an order with tenders.
-     *
-     * @param Order $order
-     * @param Order\Shipment $shipment
-     * @return float
-     */
-    private function fulfilledBefore(Order $order, Order\Shipment $shipment): float
-    {
-        if ($this->getTenderTotal($order) <= 0) {
-            return 0.0;
-        }
-        $sum = 0.0;
-        foreach ($order->getShipmentsCollection() as $previous) {
-            $id = (int)$previous->getId();
-            if ($id === 0 || $id === (int)$shipment->getId() || ($shipment->getId() && $id > (int)$shipment->getId())) {
-                continue;
-            }
-            foreach ($this->getLineItemsShipment($order, $previous) as $line) {
-                $sum += (float)$line['gross_amount'];
-            }
-        }
-
-        return round($sum, 2);
-    }
 
     /**
      * @param Order $order

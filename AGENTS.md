@@ -1236,8 +1236,8 @@ dependency that way and relying on DI to fill it in gets you a silent
 (value null) instead of `"_i_"` (instance); that is the check.
 
 `Service\Order::$orderTaxManagement`, `Service\Order::$feeLineProviderPool`,
-`Service\Order::$taxCodeResolver`, `Service\Order::$creditmemoCollectionFactory`
-and `Service\Order::$tenderReader` are all declared optional for constructor BC and all named explicitly in
+`Service\Order::$taxCodeResolver`, `Service\Order::$creditmemoCollectionFactory`,
+`Service\Order::$tenderReader` and `Service\Order::$prepaidLedger` are all declared optional for constructor BC and all named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 
@@ -1354,10 +1354,18 @@ reconciles the lines against grand total plus tenders, and an order body
 carries `invoice_amount`, `payable_amount` (the grand total, equal to
 `gross_amount`) and `prepaid_amount` only when there are tenders
 (`Service\Order::orderAmounts()`), so a body with none is byte for byte as
-before. Shipment partials front-load the tenders so the unfulfilled rest never
-has more prepaid than invoice; a refund's `prepaid_amount` is the credit memo's
-tenders. `TwoAmountRulesContractTest` runs every body through a port of Two's
-amount rules: keep it in step with the API.
+before. Fulfilments and refunds on an order with tenders declare their prepaid
+from Two's own ledger, read before sending (`Service\Order\PrepaidLedger`):
+the order's prepaid, less what earlier fulfilments declared, adjusted by what
+refunds declared, bounded so Two's unfulfilled rest never holds negative
+prepaid or more prepaid than invoice. Within those bounds a fulfilment declares
+the tenders Magento still holds (less every memo's, online or offline) not yet
+declared, and a refund what its memo returned. Do not replay Magento's history
+instead: an offline memo moves Magento and never Two, which is how the earlier
+front-loading broke. `PrepaidLedgerSequenceTest` simulates Two's ledger over
+every sequence of shipments, offline memos and refunds on a few orders, and
+`TwoAmountRulesContractTest` runs every body through a port of Two's amount
+rules: keep both in step with the API.
 
 ## A 0% line carries a tax code, resolved in the builder
 

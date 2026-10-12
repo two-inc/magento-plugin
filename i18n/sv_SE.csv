@@ -444,3 +444,4 @@
 "The order lines do not add up to the order total.","Orderraderna summerar inte till ordersumman."
 "The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.","De sparade skattekoderna för rader med 0 % kan inte läsas. Spara dem igen i betalningsinställningarna."
 "A line's tax does not match the tax rate the shop declared for it.","Skatten på en rad stämmer inte med skattesatsen som butiken angav för den."
+"The prepaid part of this request could not be worked out: Two's record of the order could not be read. Try again.","Den förbetalda delen av den här begäran kunde inte beräknas: Twos uppgifter om ordern kunde inte läsas. Försök igen."

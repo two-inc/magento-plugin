@@ -39,6 +39,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order\TaxCodeResolver;
+use Two\Gateway\Service\Order\PrepaidLedger;
 use Two\Gateway\Service\Order\TenderReader;
 
 /**
@@ -146,6 +147,11 @@ abstract class Order
     protected $tenderReader;
 
     /**
+     * @var PrepaidLedger|null
+     */
+    protected $prepaidLedger;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -165,6 +171,7 @@ abstract class Order
      * @param TaxCodeResolver|null $taxCodeResolver
      * @param CreditmemoCollectionFactory|null $creditmemoCollectionFactory
      * @param TenderReader|null $tenderReader
+     * @param PrepaidLedger|null $prepaidLedger
      */
     public function __construct(
         Image $imageHelper,
@@ -183,7 +190,8 @@ abstract class Order
         CustomerRepositoryInterface $customerRepository,
         ?TaxCodeResolver $taxCodeResolver = null,
         ?CreditmemoCollectionFactory $creditmemoCollectionFactory = null,
-        ?TenderReader $tenderReader = null
+        ?TenderReader $tenderReader = null,
+        ?PrepaidLedger $prepaidLedger = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -202,6 +210,95 @@ abstract class Order
         $this->taxCodeResolver = $taxCodeResolver;
         $this->creditmemoCollectionFactory = $creditmemoCollectionFactory;
         $this->tenderReader = $tenderReader;
+        $this->prepaidLedger = $prepaidLedger;
+    }
+
+    /**
+     * The prepaid part a fulfilment of $invoice declares (TWO-26309), from
+     * Two's record of the order and the tenders Magento still holds as paid.
+     * See PrepaidLedger.
+     *
+     * @param OrderModel $order
+     * @param int $invoice the fulfilment's lines, in cents
+     * @return int cents
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function fulfilmentPrepaid(OrderModel $order, int $invoice): int
+    {
+        return PrepaidLedger::fulfilmentPrepaid($this->twoLedger($order), $this->tendersKept($order), $invoice);
+    }
+
+    /**
+     * The prepaid part a refund declares (TWO-26309). See PrepaidLedger.
+     *
+     * @param OrderModel $order
+     * @param int $returned what the memo returned to the tenders, in cents
+     * @param int $lines the refund's lines, in cents
+     * @return int cents
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function refundPrepaid(OrderModel $order, int $returned, int $lines): int
+    {
+        return PrepaidLedger::refundPrepaid($this->twoLedger($order), $returned, $lines);
+    }
+
+    /**
+     * The tenders Magento still holds as paid, in cents: the order's, less
+     * what every saved credit memo returned to them, online or offline.
+     *
+     * @param OrderModel $order
+     * @return int
+     */
+    public function tendersKept(OrderModel $order): int
+    {
+        $kept = PrepaidLedger::cents($this->getTenderTotal($order));
+        foreach ($this->savedMemos($order) as $memo) {
+            $kept -= PrepaidLedger::cents($this->getTenderTotal($memo));
+        }
+
+        return max(0, $kept);
+    }
+
+    /**
+     * The order's saved credit memos that refunded something.
+     *
+     * A fresh query, not $order->getCreditmemosCollection(): the order caches
+     * that collection once loaded, and the memo being saved in this same
+     * refund (the one moving the order into the fulfil-on status) is not in it
+     * when OtherCharges::collect() loaded it first. A cancelled memo refunded
+     * nothing.
+     *
+     * @param OrderModel $order
+     * @return CreditmemoModel[]
+     */
+    protected function savedMemos(OrderModel $order): array
+    {
+        if (!$this->creditmemoCollectionFactory) {
+            // Null only where a test skipped the constructor; etc/di.xml names it.
+            return [];
+        }
+        $memos = [];
+        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
+            if ($memo->getId() && (int)$memo->getState() !== CreditmemoModel::STATE_CANCELED) {
+                $memos[] = $memo;
+            }
+        }
+
+        return $memos;
+    }
+
+    /**
+     * @param OrderModel $order
+     * @return array
+     * @throws LocalizedException
+     */
+    private function twoLedger(OrderModel $order): array
+    {
+        if (!$this->prepaidLedger) {
+            throw new LocalizedException(__('The prepaid ledger is not configured.'));
+        }
+
+        return $this->prepaidLedger->read($order);
     }
 
     /**
