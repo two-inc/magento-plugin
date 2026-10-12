@@ -46,7 +46,8 @@ class PrepaidLedger
     /** Two's states for a fulfilment it counts as done. */
     private const COMPLETED = ['FULFILLING', 'FULFILLED', 'DELIVERED', 'REFUNDED'];
 
-    private const READ_TIMEOUT_SECONDS = 10;
+    /** Each of the two reads; together they keep to the 10 s bound the module's other reads use. */
+    private const READ_TIMEOUT_SECONDS = 5;
 
     /**
      * @var Adapter
