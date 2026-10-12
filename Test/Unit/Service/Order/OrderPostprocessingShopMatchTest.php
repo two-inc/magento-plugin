@@ -80,7 +80,7 @@ class OrderPostprocessingShopMatchTest extends TestCase
         $this->assertSame($this->payload($requestType), $sent, $description);
         $this->assertSame([], $this->errorLog, $description);
         $this->assertSame(
-            [['request_type' => $requestType, 'trigger' => 'test', 'handlers' => [self::FIXTURE => Subscriber::class]]],
+            [['request_type' => $requestType, 'trigger' => 'test', 'subject' => null, 'handlers' => [self::FIXTURE => Subscriber::class]]],
             $this->debugEntries('OrderPostprocessingShopMatchDelegated'),
             $description
         );
@@ -141,7 +141,8 @@ class OrderPostprocessingShopMatchTest extends TestCase
             public function afterProcess(Hook $subject, array $result, array $payload, array $context): array
             {
                 $result = ($this->edit)($result);
-                $this->shopMatch->check($result, $payload, $context);
+                // The line checks only: these edits move the lines off the order's totals on purpose.
+                $this->shopMatch->check($result, $payload, $context, $this->shopMatch::SCOPE_LINES);
 
                 return $result;
             }
@@ -331,6 +332,9 @@ class OrderPostprocessingShopMatchTest extends TestCase
             'entity_id' => 7,
             'store_id' => 1,
             'increment_id' => '000000042',
+            // The order's own totals, which the whole-order check compares the lines with (TWO-26309).
+            'grand_total' => 150.00,
+            'tax_amount' => 21.00,
             'shipping_amount' => 29.00,
             'shipping_discount_amount' => 0.00,
             'shipping_tax_amount' => 0.00,

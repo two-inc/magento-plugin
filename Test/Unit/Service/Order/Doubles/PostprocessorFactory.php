@@ -6,7 +6,6 @@ namespace Two\Gateway\Test\Unit\Service\Order\Doubles;
 use Magento\Customer\Api\GroupRepositoryInterface;
 use Magento\Framework\DataObject;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
-use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -18,7 +17,10 @@ use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\Order\PostprocessingSubscribers;
+use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ShopMatchChecks;
+use Two\Gateway\Service\Order\ShopMatchRefusals;
+use Two\Gateway\Service\Order\TaxCodeResolver;
 
 /**
  * A real OrderPostprocessor; by default with no subscriber, the hook's own binding. hookChain()
@@ -52,13 +54,17 @@ trait PostprocessorFactory
             (new \ReflectionProperty(OrderService::class, $property))->setValue($orderService, $value);
         }
 
+        $hook = $hook ?? new OrderPostprocessing();
+
         return new OrderPostprocessor(
             $orderService,
             $config,
             $log,
-            $hook ?? new OrderPostprocessing(),
-            new HistoryFactory(),
-            $historyRepository ?? $this->createMock(OrderStatusHistoryRepositoryInterface::class)
+            $hook,
+            new PostprocessingSubscribers($hook instanceof HookChain ? $hook->pluginList() : $this->emptyPluginList()),
+            $this->shopMatchRefusals(),
+            $this->twoAdapter ?? $this->createMock(Adapter::class),
+            $this->createMock(TaxCodeResolver::class)
         );
     }
 
@@ -96,6 +102,20 @@ trait PostprocessorFactory
             $composers[] = $composer;
         }
 
-        return new ShopMatchChecks(...$composers);
+        return new ShopMatchChecks($composers[0], $composers[1], $log, $this->shopMatchRefusals());
+    }
+
+    /** One record per test, shared by the checks and the postprocessor as DI shares it. */
+    private function shopMatchRefusals(): ShopMatchRefusals
+    {
+        static $refusals = [];
+        $key = spl_object_id($this);
+
+        return $refusals[$key] ??= new ShopMatchRefusals();
+    }
+
+    private function emptyPluginList(): \Magento\Framework\Interception\PluginListInterface
+    {
+        return (new HookChain())->pluginList();
     }
 }

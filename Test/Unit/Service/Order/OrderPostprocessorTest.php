@@ -97,14 +97,19 @@ class OrderPostprocessorTest extends TestCase
         foreach (self::expectations()[$expected] as $pointer => $value) {
             $this->assertSame($value, self::at($sent, $pointer), $description . ' ' . $pointer);
         }
-        $this->assertCount(1, $this->comments, $description);
-        $this->assertStringContainsString('/line_items/1/', $this->comments[0], $description);
+        // TWO-26309: no order comment; the change goes to the debug log, with Debug Mode on.
+        $this->assertSame([], $this->comments, $description);
         $changed = $this->debugEntries('OrderPostprocessingChanged');
         $this->assertCount(1, $changed, $description);
         $this->assertStringContainsString(
             '/line_items/1/net_amount',
-            implode(' ', array_keys($changed[0]['diff'])),
-            $description . ': the debug log keys each change by its JSON pointer'
+            implode(' ', array_column($changed[0]['diff'], 'path')),
+            $description . ': the debug log names each change by its JSON pointer'
+        );
+        $this->assertSame(
+            ['two_order_postprocessing_fixture' => Subscriber::class],
+            $changed[0]['subscribers'],
+            $description . ': and the merchant handlers'
         );
     }
 
@@ -194,9 +199,11 @@ class OrderPostprocessorTest extends TestCase
     }
 
     /**
-     * The plugin no longer reconciles a line's tax with its rate on any request
-     * (TWO-26284): a line whose tax does not follow its rate and net is sent,
-     * composed or returned by a subscriber, and Two's API validates it.
+     * The plugin does not reconcile a subscriber's line with its rate
+     * (TWO-26284): a line whose tax does not follow its rate and net is sent
+     * once a subscriber owns the checks, and Two's API validates it. With no
+     * subscriber the default handler refuses a mistaxed composed line
+     * (TWO-26309, OrderPostprocessingParityTest).
      *
      * @dataProvider mistaxedCases
      */
@@ -235,8 +242,6 @@ class OrderPostprocessorTest extends TestCase
     public static function mistaxedCases(): array
     {
         return [
-            [Hook::REQUEST_ORDER_CREATE, 'order', false, null, true, 'create, no subscriber, a mistaxed composed line'],
-            [Hook::REQUEST_ORDER_UPDATE, 'order', false, null, true, 'update, no subscriber, a mistaxed composed line'],
             [Hook::REQUEST_ORDER_CREATE, 'order', true, null, true, 'create, a subscriber that passes a mistaxed composed line on'],
             [Hook::REQUEST_ORDER_CREATE, 'order', true, Subscriber::MODE_RESPLIT, true, 'create, a subscriber that re-splits shipping and leaves the mistaxed line'],
             [Hook::REQUEST_ORDER_CREATE, 'order', true, Subscriber::MODE_LINES_DO_NOT_ADD_UP, false, 'create, a subscriber whose lines do not add up'],
@@ -328,8 +333,14 @@ class OrderPostprocessorTest extends TestCase
         $base = [
             'request_type' => 'refund',
             'trigger' => 'test',
-            'endpoint' => '/v1/order/{id}/refund',
+            // The real path, with Two's id (TWO-26309).
+            'endpoint' => '/v1/order/two-1/refund',
             'contract_version' => 1,
+            'fallback_shipping_tax_code' => null,
+            // The GET for them fails in this test: null, never a guess.
+            'order_lines' => null,
+            'order_refunds' => null,
+            'order_tenders' => [],
         ];
 
         return [
@@ -344,6 +355,11 @@ class OrderPostprocessorTest extends TestCase
         $order = new Order();
         $order->setData('store_id', 1);
         $order->setData('entity_id', 7);
+        $order->setData('increment_id', '000000042');
+        $order->setData('two_order_id', 'two-1');
+        // The order's own totals, which the whole-order check compares the lines with (TWO-26309).
+        $order->setData('grand_total', 150.00);
+        $order->setData('tax_amount', 21.00);
         // Placed with the shipping tax fallback blank: no shop-match check applies.
         $order->setData('two_shipping_tax_rate_source', 'none');
 
@@ -361,6 +377,7 @@ class OrderPostprocessorTest extends TestCase
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getShippingTaxClassId')->willReturn($taxClass);
         $config->method('isShippingTaxFallbackEnabled')->willReturn($fallback);
+        $config->method('isDebugMode')->willReturn(true);
 
         $log = $this->createMock(LogRepository::class);
         $log->method('addErrorLog')->willReturnCallback(function (string $type, $data) {

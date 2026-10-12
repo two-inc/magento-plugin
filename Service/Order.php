@@ -269,9 +269,16 @@ abstract class Order
      * @param OrderModel $order
      * @param bool $orderLines true when $lineItems starts with getLineItemsOrder()'s product
      *                         lines, whose items have no id yet at placement
+     * @param bool $mapRequired true for a create or an edit, which an unreadable tax code map
+     *                          refuses; a fulfilment or refund sends such lines uncoded instead
      * @return array
      */
-    public function applyTaxCodes(array $lineItems, OrderModel $order, bool $orderLines = false): array
+    public function applyTaxCodes(
+        array $lineItems,
+        OrderModel $order,
+        bool $orderLines = false,
+        bool $mapRequired = false
+    ): array
     {
         // Null only where a test skipped the constructor; etc/di.xml names it.
         if (!$this->taxCodeResolver) {
@@ -279,7 +286,7 @@ abstract class Order
         }
         $items = $orderLines ? $this->matchLineItemSources($lineItems, $order) : [];
 
-        return $this->taxCodeResolver->apply($lineItems, $order, $items);
+        return $this->taxCodeResolver->apply($lineItems, $order, $items, $mapRequired);
     }
 
     /**
@@ -868,7 +875,7 @@ abstract class Order
      *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
      * @param bool $reconcile
-     * @param bool $log false to resolve again without a second debug line
+     * @param bool $log false to resolve again without a second warning line
      * @return array{0: string, 1: float|null}
      * @throws LocalizedException
      */
@@ -892,14 +899,17 @@ abstract class Order
             $this->assertShippingTaxReconciles($entity, $rate);
         }
         if ($log) {
-            $this->logRepository->addDebugLog(
+            // To the error log, as a warning (TWO-26309): the shop is relying on the fallback, which must
+            // show without Debug Mode.
+            $this->logRepository->addErrorLog(
                 'ShippingTaxRateFallback',
                 sprintf(
-                    'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
-                    . 'Magento recorded no rate for the shipping line.',
+                    'Warning: shipping on %s has no tax rate from Magento; assuming shipping tax class %d '
+                    . 'at %.6F%% for the whole shipping charge of %.2F.',
+                    $entity->getIncrementId() ? 'entity ' . $entity->getIncrementId() : 'the cart',
+                    $taxClassId,
                     $rate * 100,
-                    $entity->getIncrementId(),
-                    $taxClassId
+                    (float)$entity->getShippingAmount() + (float)$entity->getShippingTaxAmount()
                 )
             );
         }

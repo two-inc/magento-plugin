@@ -114,6 +114,8 @@ class TwoWithholdingLogTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'stubAvailableInBase' => $knob !== 'core_refuses',
             'logRepository' => $logRepository,
+            // A readable tax code map: not this test's subject (TWO-26309).
+            'configRepository' => $this->createMock(\Two\Gateway\Api\Config\RepositoryInterface::class),
             // Not this test's subject: the fee quote concedes.
             'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'apiKeyStatus' => $apiKeyStatus,

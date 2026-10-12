@@ -74,9 +74,26 @@ class ShopMatchDefaultHandler
         $this->logRepository->addDebugLog('OrderPostprocessingShopMatchDelegated', [
             'request_type' => $context['request_type'] ?? null,
             'trigger' => $context['trigger'] ?? null,
+            // Names the subject, so a support read finds the order (TWO-26309).
+            'subject' => $this->subject($context),
             'handlers' => $handlers,
         ]);
 
         return $result;
+    }
+
+    /**
+     * @param array $context
+     * @return string|null `order <increment id>` or `quote <id>`
+     */
+    private function subject(array $context): ?string
+    {
+        $order = $context['order'] ?? null;
+        if (is_object($order) && method_exists($order, 'getIncrementId') && $order->getIncrementId()) {
+            return 'order ' . $order->getIncrementId();
+        }
+        $quote = $context['quote'] ?? null;
+
+        return is_object($quote) && method_exists($quote, 'getId') && $quote->getId() ? 'quote ' . $quote->getId() : null;
     }
 }

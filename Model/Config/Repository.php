@@ -104,6 +104,11 @@ class Repository implements RepositoryInterface
     private $logRepository;
 
     /**
+     * @var bool whether this request has reported an unreadable tax code map
+     */
+    private $taxCodeMapReported = false;
+
+    /**
      * Keyed by scoped path and value, so one request reports one bad method once.
      *
      * @var array<string,bool>
@@ -317,7 +322,22 @@ class Repository implements RepositoryInterface
      */
     public function getTaxCodeMap(?int $storeId = null): array
     {
-        return TaxCodeMapBackend::normalise($this->getConfig($this->path('tax_code_map'), $storeId));
+        $map = TaxCodeMapBackend::read($this->getConfig($this->path('tax_code_map'), $storeId));
+        if ($map === null) {
+            // TWO-26309: an order is never built on a mapping nobody chose. Reported once per request.
+            if (!$this->taxCodeMapReported) {
+                $this->taxCodeMapReported = true;
+                $this->logRepository->addErrorLog(
+                    'TaxCodeMapUnreadable',
+                    'The stored "Tax codes for 0% lines" value is not one the settings form writes; save it again.'
+                );
+            }
+            throw new LocalizedException(
+                __('The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.')
+            );
+        }
+
+        return $map;
     }
 
     /**

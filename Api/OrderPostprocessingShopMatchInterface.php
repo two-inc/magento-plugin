@@ -23,18 +23,31 @@ use Two\Gateway\Exception\ShopMatchRefusedException;
  */
 interface OrderPostprocessingShopMatchInterface
 {
+    /** Every shop-match check, the whole-order one included. */
+    public const SCOPE_ALL = 'all';
+
+    /**
+     * Only the checks made for single lines (TWO-26309): for a subscriber
+     * that declares its own split of the order, so the whole-order comparison
+     * with the shop's totals cannot refuse that split.
+     */
+    public const SCOPE_LINES = 'lines';
+
     /**
      * Refuse as the default handler would.
      *
-     * Each check applies to the line the plugin built it for, and only while
-     * $result still carries that line unchanged: a line you edited, replaced
-     * or removed is yours.
+     * Each line check applies to the line the plugin built it for, and only
+     * while $result still carries that line unchanged: a line you edited,
+     * replaced or removed is yours. With SCOPE_ALL the lines of $result are
+     * also compared with the order's totals plus its tenders.
      *
      * @param array $result The payload you are about to return.
      * @param array $payload The payload as the plugin composed it: process()'s $payload argument.
      * @param array $context process()'s $context argument.
+     * @param string $scope SCOPE_ALL or SCOPE_LINES.
      * @return void
      * @throws ShopMatchRefusedException with the refusal the shop's figures earn
+     * @throws \InvalidArgumentException for any other scope
      */
-    public function check(array $result, array $payload, array $context): void;
+    public function check(array $result, array $payload, array $context, string $scope = self::SCOPE_ALL): void;
 }
