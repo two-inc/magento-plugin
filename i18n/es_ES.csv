@@ -443,3 +443,4 @@
 "%1 fulfilled the order, but the order could not be saved. Reason: %2","%1 ha cumplido el pedido, pero no se ha podido guardar el pedido. Motivo: %2"
 "The order lines do not add up to the order total.","Las líneas del pedido no suman el total del pedido."
 "The saved tax codes for 0% lines cannot be read. Save them again in the payment settings.","No se pueden leer los códigos de impuesto guardados para las líneas al 0%. Vuelve a guardarlos en la configuración de pago."
+"A line's tax does not match the tax rate the shop declared for it.","El impuesto de una línea no coincide con el tipo impositivo que la tienda declaró para ella."

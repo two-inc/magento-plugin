@@ -191,19 +191,6 @@ class SalesOrderAddressUpdate implements ObserverInterface
         // buyer skipped them (TWO-25386) — so they must be coalesced
         // here. Re-composing with '' is correct: the composer applies
         // the same omit rule again on the way back out.
-        return $this->compositeOrder->execute(
-            $order,
-            $order->getTwoOrderReference(),
-            [
-                'companyName' => $additionalInformation['buyer']['company']['company_name'],
-                'telephone' => $additionalInformation['buyer']['representative']['phone_number'],
-                'companyId' => $additionalInformation['buyer']['company']['organization_number'],
-                'department' => $additionalInformation['buyer_department'] ?? '',
-                'project' => $additionalInformation['buyer_project'] ?? '',
-                'isEdit' => true,
-                'placedTerms' => $placedTerms,
-            ]
-        );
         // TWO-25386: merchant_reference, merchant_additional_info and
         // shipping_details are deliberately never part of this
         // request.
@@ -220,7 +207,20 @@ class SalesOrderAddressUpdate implements ObserverInterface
         // decision here is to leave all three out unconditionally.
         // Note that shipping_details is delivery/tracking metadata,
         // not the buyer's shipping address: shipping_address is a
-        // different field and is composed as usual, above.
+        // different field and is composed as usual, below.
+        return $this->compositeOrder->execute(
+            $order,
+            $order->getTwoOrderReference(),
+            [
+                'companyName' => $additionalInformation['buyer']['company']['company_name'],
+                'telephone' => $additionalInformation['buyer']['representative']['phone_number'],
+                'companyId' => $additionalInformation['buyer']['company']['organization_number'],
+                'department' => $additionalInformation['buyer_department'] ?? '',
+                'project' => $additionalInformation['buyer_project'] ?? '',
+                'isEdit' => true,
+                'placedTerms' => $placedTerms,
+            ]
+        );
     }
 
     /**

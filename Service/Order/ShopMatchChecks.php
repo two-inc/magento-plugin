@@ -222,7 +222,7 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPos
                 $off,
                 $tolerance
             ));
-            throw new ShopMatchRefusedException($this->refusalMessage($requestType));
+            throw new ShopMatchRefusedException($this->refusalMessage($requestType, false));
         }
     }
 
@@ -285,18 +285,25 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPos
             return;
         }
         $this->logRepository->addErrorLog('ShopMatchWholeOrderRefused', $log);
-        throw new ShopMatchRefusedException($this->refusalMessage($requestType));
+        throw new ShopMatchRefusedException($this->refusalMessage($requestType, true));
     }
 
     /**
+     * The buyer's wording on intent and create; on update, the merchant's, naming the check.
+     *
      * @param string $requestType
+     * @param bool $wholeOrder
      * @return \Magento\Framework\Phrase
      */
-    private function refusalMessage(string $requestType)
+    private function refusalMessage(string $requestType, bool $wholeOrder)
     {
-        return $requestType === Hook::REQUEST_ORDER_UPDATE
+        if ($requestType !== Hook::REQUEST_ORDER_UPDATE) {
+            return __('This order could not be placed. Please contact the merchant.');
+        }
+
+        return $wholeOrder
             ? __('The order lines do not add up to the order total.')
-            : __('This order could not be placed. Please contact the merchant.');
+            : __('A line\'s tax does not match the tax rate the shop declared for it.');
     }
 
     /**
