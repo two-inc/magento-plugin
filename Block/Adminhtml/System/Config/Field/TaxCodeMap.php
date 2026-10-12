@@ -388,11 +388,12 @@ class TaxCodeMap extends Field
     }
 
     /**
-     * The country's name in the admin's language, falling back to its ISO code.
+     * The country's name in the admin's language, falling back to its ISO
+     * code, including where PHP has no intl extension to name it.
      */
     private function countryName(string $iso): string
     {
-        if ($iso === '' || !class_exists(\Locale::class)) {
+        if ($iso === '' || !class_exists(\Locale::class, false) || !method_exists(\Locale::class, 'getDisplayRegion')) {
             return $iso;
         }
         $name = \Locale::getDisplayRegion('-' . $iso, (string)$this->localeResolver->getLocale());

@@ -27,6 +27,12 @@ class TaxCodeMapTest extends TestCase
 {
     private const NAME = 'groups[tax][fields][tax_code_map][value]';
 
+    /** The admin's name for ES; the ISO code where PHP cannot name it (no intl). */
+    private static function spain(): string
+    {
+        return class_exists(\Locale::class, false) ? 'Spain' : 'ES';
+    }
+
     private const CODES = [
         ['code' => 'ES_IVA_EXPORT', 'name' => 'Exportación', 'rate' => '0'],
         ['code' => 'ES_IVA_INTRA_COMMUNITY_SERVICES', 'name' => 'Intracomunitaria', 'rate' => '0'],
@@ -41,7 +47,7 @@ class TaxCodeMapTest extends TestCase
         );
 
         $this->assertStringContainsString('<h4 class="two-tax-code-section__title">Tax codes for 0% lines</h4>', $html, 'the title is a heading');
-        $this->assertStringContainsString('Two requires a tax code on every 0% line for your country (Spain)', $html);
+        $this->assertStringContainsString('Two requires a tax code on every 0% line for your country (' . self::spain() . ')', $html);
         foreach (['Tax class', 'VAT-registered buyer, other EU state', 'Your 0% tax rates', 'Buyer\'s address does not map to a tax rule (no tax charged, e.g. exports)'] as $column) {
             $this->assertStringContainsString('<th scope="col">' . $column . '</th>', $html, $column);
         }
@@ -87,14 +93,21 @@ class TaxCodeMapTest extends TestCase
         $clear = '<input type="checkbox" class="admin__control-checkbox" name="' . self::NAME . '" value="__clear__"/> Clear saved tax codes';
 
         return [
-            [self::state('notice', ['N1'], true), ['still apply at checkout, though Two does not require them for your country (Spain)', $clear], ['<select', '<input type="hidden"'], 'N1 with Clear and no table'],
-            [self::state('notice', ['N2'], true), ['message-warning', 'Some saved tax codes are not valid on 0% lines for your country (Spain), so Two refuses orders that use them.', $clear], ['<select'], 'N2 with Clear'],
+            [self::state('notice', ['N1'], true), ['still apply at checkout, though Two does not require them for your country (' . self::spain() . ')', $clear], ['<select', '<input type="hidden"'], 'N1 with Clear and no table'],
+            [self::state('notice', ['N2'], true), ['message-warning', 'Some saved tax codes are not valid on 0% lines for your country (' . self::spain() . '), so Two refuses orders that use them.', $clear], ['<select'], 'N2 with Clear'],
             [self::state('profile_error', ['N3'], true, 503), ['Could not read your merchant details from Two (HTTP 503)', 'message-error', 'Saved tax codes can\'t be read, so Two is hidden at checkout; clear them to restore it.', $clear], ['<select'], 'E1 with N3 and Clear'],
             [['rejected' => true] + self::state('profile_error'), ['Two rejected the stored API key; check API key and Environment.'], ['<select', 'Clear saved'], 'E1b'],
-            [self::state('list_error', [], false, 0), ['Could not check whether Two requires tax codes for your country (Spain, HTTP -)'], ['<select'], 'E2 with no status'],
+            [self::state('list_error', [], false, 0), ['Could not check whether Two requires tax codes for your country (' . self::spain() . ', HTTP -)'], ['<select'], 'E2 with no status'],
             [self::state('rows', ['N3'], true), ['<select', 'clear them to restore it'], [], 'N3 above the rows'],
             [self::state('rows', ['SCOPE']), ['Some websites or store views below this scope use another API key or environment'], ['Clear saved'], 'the scope notice'],
         ];
+    }
+
+    public function testACountryWithNoNameShowsItsCode(): void
+    {
+        $html = $this->render(['country' => 'XX'] + self::state('notice', ['N1'], true), '{}');
+
+        $this->assertStringContainsString('for your country (XX).', $html);
     }
 
     public function testAHiddenSectionRendersNoRowSoNothingIsPosted(): void
