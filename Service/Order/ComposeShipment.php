@@ -32,7 +32,11 @@ class ComposeShipment extends OrderService
      */
     public function execute(Order\Shipment $shipment, Order $order): array
     {
-        return $this->payload($this->getLineItemsShipment($order, $shipment), $order);
+        return $this->withPrepaid(
+            $this->payload($this->getLineItemsShipment($order, $shipment), $order),
+            $order,
+            $this->fulfilledBefore($order, $shipment)
+        );
     }
 
     /**
@@ -55,7 +59,63 @@ class ComposeShipment extends OrderService
             $items[] = $line;
         }
 
-        return $this->payload($items, $order);
+        return $this->withPrepaid($this->payload($items, $order), $order, 0.0);
+    }
+
+    /**
+     * Declare the order's tenders on its first fulfilments (TWO-26309): each
+     * partial takes as prepaid what the tenders have left, up to its own
+     * lines, so the part of the order not yet fulfilled never carries more
+     * prepaid than invoice. Magento takes tenders off the first invoices the
+     * same way. With no tenders the body is unchanged.
+     *
+     * @param array $payload a partial built by payload()
+     * @param Order $order
+     * @param float $fulfilledBefore the lines' gross of the partials sent before this one
+     * @return array
+     */
+    private function withPrepaid(array $payload, Order $order, float $fulfilledBefore): array
+    {
+        $tendered = (int)round($this->getTenderTotal($order) * 100);
+        if ($tendered <= 0 || $payload['line_items'] === []) {
+            return $payload;
+        }
+        $invoice = (int)round((float)$payload['net_amount'] * 100) + (int)round((float)$payload['tax_amount'] * 100);
+        $prepaid = max(0, min($tendered - min($tendered, (int)round($fulfilledBefore * 100)), $invoice));
+        $payload['invoice_amount'] = $this->roundAmt($invoice / 100);
+        $payload['payable_amount'] = $this->roundAmt(($invoice - $prepaid) / 100);
+        $payload['prepaid_amount'] = $this->roundAmt($prepaid / 100);
+        $payload['gross_amount'] = $payload['payable_amount'];
+        ksort($payload);
+
+        return $payload;
+    }
+
+    /**
+     * The lines' gross of the order's shipments before this one, each
+     * composed as its own partial was. Only read for an order with tenders.
+     *
+     * @param Order $order
+     * @param Order\Shipment $shipment
+     * @return float
+     */
+    private function fulfilledBefore(Order $order, Order\Shipment $shipment): float
+    {
+        if ($this->getTenderTotal($order) <= 0) {
+            return 0.0;
+        }
+        $sum = 0.0;
+        foreach ($order->getShipmentsCollection() as $previous) {
+            $id = (int)$previous->getId();
+            if ($id === 0 || $id === (int)$shipment->getId() || ($shipment->getId() && $id > (int)$shipment->getId())) {
+                continue;
+            }
+            foreach ($this->getLineItemsShipment($order, $previous) as $line) {
+                $sum += (float)$line['gross_amount'];
+            }
+        }
+
+        return round($sum, 2);
     }
 
     /**

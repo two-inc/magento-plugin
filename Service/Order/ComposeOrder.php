@@ -103,9 +103,11 @@ class ComposeOrder extends OrderService
         $selectedTermDays = $isEdit ? 0 : $this->getSelectedTermDays($additionalData, $storeId);
 
         $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order, true);
-        $grossTotal = (float)$order->getGrandTotal();
-        $taxTotal = (float)$order->getTaxAmount();
-        $netTotal = $grossTotal - $taxTotal;
+        $amounts = $this->orderAmounts(
+            (float)$order->getGrandTotal(),
+            (float)$order->getTaxAmount(),
+            $this->getTenderTotal($order)
+        );
 
         // Compose the final payload for the API call. Fields that may
         // legitimately be blank are NOT listed here — they go through the
@@ -116,9 +118,7 @@ class ComposeOrder extends OrderService
             'buyer' => $this->getBuyer($order, $additionalData),
             'currency' => $order->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($order)),
-            'gross_amount' => $this->roundAmt($grossTotal),
-            'net_amount' => $this->roundAmt($netTotal),
-            'tax_amount' => $this->roundAmt($taxTotal),
+            ...$amounts,
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
             'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
             'invoice_type' => 'FUNDED_INVOICE',
@@ -255,11 +255,12 @@ class ComposeOrder extends OrderService
         // Reconcile any known third-party fee (via a registered
         // FeeLineProviderInterface) and, failing that, any genuinely
         // untaxed residual. See Order::reconcileOtherCharges() docblock.
-        // Grand total already includes surcharge from Total Collector.
+        // Grand total already includes surcharge from Total Collector. The
+        // lines carry what tenders paid, which the grand total does not (TWO-26309).
         return $this->reconcileOtherCharges(
             $lineItems,
             $order,
-            (float)$order->getGrandTotal(),
+            (float)$order->getGrandTotal() + $this->getTenderTotal($order),
             (float)$order->getTaxAmount()
         );
     }

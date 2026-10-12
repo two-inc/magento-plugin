@@ -43,19 +43,25 @@ class ComposeCapture extends OrderService
         $lineItems = $this->reconcileOtherCharges(
             $lineItems,
             $invoice,
-            (float)$invoice->getGrandTotal(),
+            (float)$invoice->getGrandTotal() + $this->getTenderTotal($invoice),
             (float)$invoice->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
-            'gross_amount' => $this->roundAmt($invoice->getGrandTotal()),
             'line_items' => $lineItems,
-            'net_amount' => $this->roundAmt($invoice->getGrandTotal() - $invoice->getTaxAmount()),
-            'tax_amount' => $this->roundAmt($invoice->getTaxAmount()),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
+        // The invoice's own share of the order's tenders, which Magento takes
+        // off the first invoices, is declared as prepaid (TWO-26309).
+        $amounts = $this->orderAmounts(
+            (float)$invoice->getGrandTotal(),
+            (float)$invoice->getTaxAmount(),
+            $this->getTenderTotal($invoice)
+        );
+        $reqBody += $amounts;
+        ksort($reqBody);
         return $reqBody;
     }
 

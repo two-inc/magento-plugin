@@ -39,6 +39,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order\TaxCodeResolver;
+use Two\Gateway\Service\Order\TenderReader;
 
 /**
  * Abstract order class
@@ -140,6 +141,11 @@ abstract class Order
     protected $creditmemoCollectionFactory;
 
     /**
+     * @var TenderReader|null
+     */
+    protected $tenderReader;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -158,6 +164,7 @@ abstract class Order
      * @param CustomerRepositoryInterface $customerRepository
      * @param TaxCodeResolver|null $taxCodeResolver
      * @param CreditmemoCollectionFactory|null $creditmemoCollectionFactory
+     * @param TenderReader|null $tenderReader
      */
     public function __construct(
         Image $imageHelper,
@@ -175,7 +182,8 @@ abstract class Order
         BrandRegistryInterface $brandRegistry,
         CustomerRepositoryInterface $customerRepository,
         ?TaxCodeResolver $taxCodeResolver = null,
-        ?CreditmemoCollectionFactory $creditmemoCollectionFactory = null
+        ?CreditmemoCollectionFactory $creditmemoCollectionFactory = null,
+        ?TenderReader $tenderReader = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -193,6 +201,63 @@ abstract class Order
         $this->customerRepository = $customerRepository;
         $this->taxCodeResolver = $taxCodeResolver;
         $this->creditmemoCollectionFactory = $creditmemoCollectionFactory;
+        $this->tenderReader = $tenderReader;
+    }
+
+    /**
+     * The entity's tenders (TWO-26309): gift cards, store credit and the like,
+     * which paid part of it outside its lines. See TenderReader.
+     *
+     * @param object|null $entity an order, quote, invoice or credit memo
+     * @return array<int, array{type: string, label: string, amount: string, source: string}>
+     */
+    public function getTenders($entity): array
+    {
+        // Null only where a test skipped the constructor; etc/di.xml names it.
+        return $this->tenderReader ? $this->tenderReader->read($entity) : [];
+    }
+
+    /**
+     * @param object|null $entity
+     * @return float the sum of the entity's tenders, 2dp
+     */
+    public function getTenderTotal($entity): float
+    {
+        return TenderReader::total($this->getTenders($entity));
+    }
+
+    /**
+     * The amounts an order body (create, edit, partial fulfilment) declares
+     * (TWO-26309). The lines carry what the tenders paid and the grand total
+     * does not, so with tenders the invoice covers the full lines and the
+     * tenders are declared as already paid: net and tax are the lines',
+     * invoice_amount their sum, prepaid_amount the tenders and payable_amount
+     * what is left to pay, the grand total, which gross_amount stays. With no
+     * tenders the three prepaid fields are left out and the body is unchanged.
+     * Worked in cents so invoice = net + tax = payable + prepaid exactly.
+     *
+     * @param float $grandTotal what is left to pay
+     * @param float $taxTotal
+     * @param float $tendered
+     * @return array<string, string>
+     */
+    public function orderAmounts(float $grandTotal, float $taxTotal, float $tendered): array
+    {
+        $gross = (int)round($grandTotal * 100);
+        $tax = (int)round($taxTotal * 100);
+        $prepaid = (int)round($tendered * 100);
+        $amounts = [
+            'gross_amount' => $this->roundAmt($gross / 100),
+            'net_amount' => $this->roundAmt(($gross + $prepaid - $tax) / 100),
+            'tax_amount' => $this->roundAmt($tax / 100),
+        ];
+        if ($prepaid > 0) {
+            $amounts['invoice_amount'] = $this->roundAmt(($gross + $prepaid) / 100);
+            $amounts['payable_amount'] = $amounts['gross_amount'];
+            $amounts['prepaid_amount'] = $this->roundAmt($prepaid / 100);
+        }
+
+        return $amounts;
     }
 
     /**
@@ -1507,7 +1572,7 @@ abstract class Order
         return $this->getOtherChargesLineItem(
             $lineItems,
             $order,
-            (float)$order->getGrandTotal(),
+            (float)$order->getGrandTotal() + $this->getTenderTotal($order),
             (float)$order->getTaxAmount()
         );
     }
