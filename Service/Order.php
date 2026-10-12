@@ -846,6 +846,25 @@ abstract class Order
     }
 
     /**
+     * The refund's side of the shipping tax fallback (TWO-26309): when the
+     * fallback supplied the order's shipping rate at placement, the shipping
+     * a credit memo refunds must carry the tax that rate gives. Only the
+     * placement record decides: an order placed with a declared rate, a blank
+     * fallback, or before the record existed is not checked.
+     *
+     * @param CreditmemoModel $creditmemo
+     * @return void
+     * @throws ShopMatchRefusedException when the refunded shipping's tax does not reconcile with the rate
+     */
+    public function assertRefundShippingTaxFallback($creditmemo): void
+    {
+        $recorded = $this->recordedShippingTaxRate($this->shippingTaxRateOrder($creditmemo));
+        if ($recorded !== null && $recorded[0] === self::SHIPPING_RATE_NONE && $recorded[1] !== null) {
+            $this->assertShippingTaxReconciles($creditmemo, $recorded[1]);
+        }
+    }
+
+    /**
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
      * @return OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel the order carrying the record
      */

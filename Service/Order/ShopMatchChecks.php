@@ -9,6 +9,7 @@ namespace Two\Gateway\Service\Order;
 
 use LogicException;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Creditmemo;
 use Magento\Sales\Model\Order\Invoice;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
@@ -24,7 +25,8 @@ use Two\Gateway\Exception\ShopMatchRefusedException;
  * built unchanged:
  * - a shipping line whose rate the shipping tax fallback supplied must carry
  *   the tax Magento charged at that rate (TWO-26117), on intent, create,
- *   update and capture;
+ *   update and capture; and the shipping a refund returns, against the rate
+ *   the fallback gave at placement (TWO-26309);
  * - every other line's tax must reconcile with its declared rate and net, on
  *   create and update: the line is Magento's own figures, so a mismatch means
  *   the shop's tax does not match the rate it declared.
@@ -141,8 +143,16 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPos
     private function checkShippingLine(array $result, array $payload, array $context): void
     {
         $requestType = (string)($context['request_type'] ?? '');
-        $composed = $this->shippingLine($this->lines($payload, $requestType));
+        $composed = $this->shippingLine($this->lines($payload, $requestType), $requestType === Hook::REQUEST_REFUND);
         if ($composed === null || !$this->carries($this->lines($result, $requestType), $composed)) {
+            return;
+        }
+        if ($requestType === Hook::REQUEST_REFUND) {
+            $creditmemo = $context['creditmemo'] ?? null;
+            if (!$creditmemo instanceof Creditmemo) {
+                throw new LogicException('The refund context carries no credit memo to check the shipping line against.');
+            }
+            $this->composeCapture->assertRefundShippingTaxFallback($creditmemo);
             return;
         }
 
@@ -162,7 +172,7 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPos
                 $service = $this->composeCapture;
                 break;
             default:
-                // A refund relays its parent line's rate unchecked; the rest carry no lines.
+                // The rest carry no lines.
                 return;
         }
 
@@ -322,12 +332,16 @@ class ShopMatchChecks implements OrderPostprocessingShopMatchInterface, OrderPos
 
     /**
      * @param array $lines
+     * @param bool $byType a refund's shipping line carries no order_item_id, only its type
      * @return array|null
      */
-    private function shippingLine(array $lines): ?array
+    private function shippingLine(array $lines, bool $byType = false): ?array
     {
         foreach ($lines as $line) {
-            if (is_array($line) && ($line['order_item_id'] ?? null) === self::SHIPPING_LINE) {
+            if (is_array($line) && ($byType
+                ? ($line['type'] ?? null) === 'SHIPPING_FEE'
+                : ($line['order_item_id'] ?? null) === self::SHIPPING_LINE)
+            ) {
                 return $line;
             }
         }

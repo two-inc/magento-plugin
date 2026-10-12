@@ -1279,8 +1279,9 @@ placed under (TWO-26073), and the line's tax must reconcile with it within
 (TWO-26276): the builders compose the line with `getTaxRateShipping($entity,
 false)`, and the postprocessing hook's default handler runs
 `assertShippingTaxFallback()` after the hook, unless a subscriber took it over. A declared rate, 0% included, is always sent
-as is and never checked by the plugin. A refund relays the rate without the
-check. The plugin has no shipping tax setting of its own.
+as is and never checked by the plugin. A refund relays the rate, and when the
+placement record says the fallback supplied it, the refunded shipping's tax must
+reconcile with that rate (`assertRefundShippingTaxFallback()`, TWO-26309). The plugin has no shipping tax setting of its own.
 
 Magento 2.4.7 core records a 0% shipping rate on the quote only when shipping
 prices exclude tax (`getAppliedTaxes()` skips 0% on the tax-inclusive path),

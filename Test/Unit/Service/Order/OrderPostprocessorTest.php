@@ -317,7 +317,7 @@ class OrderPostprocessorTest extends TestCase
         $this->postprocessor($fallback, $taxClass)->process(
             Hook::REQUEST_REFUND,
             self::refundPayload(),
-            $this->context() + ['creditmemo' => 'memo']
+            array_merge($this->context(), ['creditmemo' => 'memo'])
         );
 
         $context = Subscriber::$calls[0]['context'];
@@ -364,7 +364,10 @@ class OrderPostprocessorTest extends TestCase
         $order->setData('two_shipping_tax_rate_source', 'none');
 
         // The order stands in as the converted quote an intent carries too.
-        return ['trigger' => 'test', 'endpoint' => '/v1/order/{id}/refund', 'order' => $order, 'intent_order' => $order];
+        $creditmemo = new \Magento\Sales\Model\Order\Creditmemo();
+        $creditmemo->setOrder($order);
+
+        return ['trigger' => 'test', 'endpoint' => '/v1/order/{id}/refund', 'order' => $order, 'intent_order' => $order, 'creditmemo' => $creditmemo];
     }
 
     /**

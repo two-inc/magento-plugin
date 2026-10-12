@@ -191,10 +191,13 @@ so this record is what update, capture, shipment and refund read, never the
 current configuration: a later change to the fallback or the tax rules does not
 move an order already placed. An order placed before this record existed has
 both empty and resolves as it would at placement. A refund takes the order's
-shipping rate and does not re-check the tax it carries.
+shipping rate; when the fallback supplied it at placement, the shipping the
+credit memo refunds must carry the tax that rate gives, within 0.02
+(TWO-26309). An order placed before the record existed is not checked on refund.
 
 This reconcile is a shop-match check: it runs after the postprocessing hook,
-in the plugin's default handler, on order intent, create, update and capture.
+in the plugin's default handler, on order intent, create, update, capture and
+refund.
 A subscriber on the hook takes it over, and it does not run unless the
 subscriber opts back in (see "Stable extension contract: order
 postprocessing").
@@ -454,7 +457,8 @@ line the plugin built while the payload still carries it unchanged:
 
 - a shipping line whose rate the shipping tax fallback supplied must carry the
   tax Magento charged at that rate (see "Shipping tax fallback"), on order
-  intent, create, update and capture;
+  intent, create, update and capture, and the shipping a refund returns
+  against the rate the fallback gave at placement;
 - every other line's tax must follow its declared rate and net (or, with tax
   applied before discount, net plus discount), on create and update. The line
   is Magento's own figures, so a mismatch means the shop's tax does not match

@@ -160,10 +160,53 @@ class OrderPostprocessingParityTest extends TestCase
     {
         return [
             [Hook::REQUEST_ORDER_CREATE, false, 'This order could not be placed. Please contact the merchant.', 'create: refused'],
-            [Hook::REQUEST_ORDER_UPDATE, false, 'The order lines do not add up to the order total.', 'update: refused'],
+            [Hook::REQUEST_ORDER_UPDATE, false, 'A line\'s tax does not match the tax rate the shop declared for it.', 'update: refused, naming the check'],
             [Hook::REQUEST_ORDER_CREATE, true, null, 'the subscriber changed the line: theirs'],
             [Hook::REQUEST_CAPTURE, false, null, 'capture: not a declared-rate request'],
             [Hook::REQUEST_REFUND, false, null, 'refund: never'],
+        ];
+    }
+
+    /**
+     * The refund's side of the shipping tax fallback (TWO-26309): with the
+     * fallback recorded at placement, the shipping a memo refunds must carry
+     * the tax the recorded rate gives.
+     *
+     * @dataProvider refundShippingCases
+     */
+    public function testARefundsShippingFollowsTheRateTheFallbackGaveAtPlacement(
+        string $source,
+        ?float $rate,
+        float $refundedTax,
+        bool $edited,
+        ?string $refusal,
+        string $description
+    ): void {
+        $context = self::context(Hook::REQUEST_REFUND);
+        $context['order']->setData('two_shipping_tax_rate_source', $source);
+        $context['order']->setData('two_shipping_tax_rate', $rate);
+        $context['creditmemo']->setData('shipping_amount', 29.00);
+        $context['creditmemo']->setData('shipping_tax_amount', $refundedTax);
+        $payload = ['amount' => '29.00', 'line_items' => [self::payload()['line_items'][1]]];
+        $result = $payload;
+        if ($edited) {
+            $result['line_items'][0]['tax_amount'] = '6.09';
+        }
+
+        $this->assertCheck($refusal, fn () => $this->checks()->check($result, $payload, $context), $description);
+    }
+
+    public static function refundShippingCases(): array
+    {
+        $refused = 'Shipping tax on this order does not match the rate of the Tax Class for Shipping '
+            . '(Stores > Configuration > Sales > Tax > Tax Classes), which applies because Magento recorded no shipping tax rate.';
+
+        return [
+            ['none', 21.0, 6.09, false, null, 'the refunded tax follows the placement rate'],
+            ['none', 21.0, 0.00, false, $refused, 'it does not: refused'],
+            ['none', 21.0, 0.00, true, null, 'the subscriber changed the line: theirs'],
+            ['declared', 0.0, 0.00, false, null, 'Magento recorded the rate: never the fallback\'s check'],
+            ['none', null, 0.00, false, null, 'the fallback was blank at placement: nothing to check'],
         ];
     }
 
@@ -458,7 +501,10 @@ class OrderPostprocessingParityTest extends TestCase
             $order->setData($key, $value);
         }
 
-        return ['trigger' => 'test', 'endpoint' => 'test', 'order' => $order, 'intent_order' => $order, 'request_type' => $requestType];
+        $creditmemo = new Order\Creditmemo();
+        $creditmemo->setOrder($order);
+
+        return ['trigger' => 'test', 'endpoint' => 'test', 'order' => $order, 'intent_order' => $order, 'creditmemo' => $creditmemo, 'request_type' => $requestType];
     }
 
     /** One product at 21% and 29.00 of untaxed shipping: 150.00 of lines. */

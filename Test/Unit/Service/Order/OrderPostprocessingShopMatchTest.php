@@ -205,7 +205,8 @@ class OrderPostprocessingShopMatchTest extends TestCase
             [Hook::REQUEST_ORDER_CREATE, 'order', $reconciles, 'the charged tax follows the fallback rate'],
             [Hook::REQUEST_CAPTURE, 'invoice', $reconciles, 'the same on a capture'],
             [Hook::REQUEST_ORDER_CREATE, 'order', $declared, 'Magento recorded the rate: never the fallback\'s check'],
-            [Hook::REQUEST_REFUND, 'order', [], 'a refund relays its parent line\'s rate unchecked'],
+            [Hook::REQUEST_REFUND, 'order', $reconciles, 'a refund whose shipping follows the placement fallback rate'],
+            [Hook::REQUEST_REFUND, 'order', $declared, 'a refund of shipping Magento recorded a rate for: never the fallback\'s check'],
         ];
     }
 
@@ -343,7 +344,11 @@ class OrderPostprocessingShopMatchTest extends TestCase
         ] as $key => $value) {
             $order->setData($key, array_key_exists($key, $record) ? $record[$key] : $value);
         }
-        $context = ['trigger' => 'test', 'endpoint' => 'test'];
+        $creditmemo = new \Magento\Sales\Model\Order\Creditmemo();
+        $creditmemo->setOrder($order);
+        $creditmemo->setData('shipping_amount', 29.00);
+        $creditmemo->setData('shipping_tax_amount', $order->getData('shipping_tax_amount'));
+        $context = ['trigger' => 'test', 'endpoint' => 'test', 'creditmemo' => $creditmemo];
 
         switch ($subject) {
             case 'intent_order':
