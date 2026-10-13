@@ -385,8 +385,9 @@ The default implementation returns the payload unchanged. Plugins chain by
 **Parameters.**
 
 - `$payload`: the complete request body exactly as it would be sent, amounts as
-  2dp decimal strings: `line_items`, `tax_subtotals`, `net_amount`,
-  `tax_amount`, `gross_amount`, buyer, addresses and the rest. A partial
+  2dp decimal strings: `line_items`, `tax_subtotals` (only while Validate tax
+  subtotals is on), `net_amount`, `tax_amount`, `gross_amount`, buyer,
+  addresses and the rest. A partial
   capture carries its lines under `partial`; a refund carries `amount`. A
   request with no body (confirm, cancel, whole-order capture) is `[]`. A 0%
   line may carry `tax_code` (see "Tax codes on 0% lines"); a subscriber may
