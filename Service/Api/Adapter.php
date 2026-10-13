@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Api;
 
 use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\App\ObjectManager;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -18,6 +19,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
+use Two\Gateway\Logger\ErrorLogger;
 
 /**
  * Api Adapter
@@ -47,8 +49,11 @@ class Adapter
     /** @var ApiTranslatorInterface */
     private $apiTranslator;
 
-    /** @var LoggerInterface the plugin's error log (di.xml), for refused order requests */
+    /** @var LoggerInterface|null the plugin's error log (di.xml), for refused order requests */
     private $refusalLogger;
+
+    /** @var string what the next call is for ("quote 42"), named in its refusal line */
+    private $logSubject = '';
 
     public function __construct(
         ConfigRepository $configRepository,
@@ -56,7 +61,7 @@ class Adapter
         CurlFactory $curlFactory,
         LogRepository $logRepository,
         ApiTranslatorInterface $apiTranslator,
-        LoggerInterface $refusalLogger
+        ?LoggerInterface $refusalLogger = null
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -64,6 +69,18 @@ class Adapter
         $this->logRepository = $logRepository;
         $this->apiTranslator = $apiTranslator;
         $this->refusalLogger = $refusalLogger;
+    }
+
+    /**
+     * This adapter, naming what its calls are for in the line logged when the
+     * API refuses one ("quote 42"). A copy, so the shared adapter is left as
+     * it was.
+     */
+    public function withLogSubject(string $subject): self
+    {
+        $copy = clone $this;
+        $copy->logSubject = $subject;
+        return $copy;
     }
 
     /**
@@ -79,8 +96,6 @@ class Adapter
      *        a candidate key against a mode submitted in the same admin save
      * @param int|null $timeoutSeconds Total time this call may take, for a caller that must bound
      *        its own wall clock — an admin save or a storefront render
-     * @param string $logSubject What the call is for ("quote 42"), named in the line logged
-     *        when the API refuses an order request
      * @return array
      */
     public function execute(
@@ -90,8 +105,7 @@ class Adapter
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null,
-        ?int $timeoutSeconds = null,
-        string $logSubject = ''
+        ?int $timeoutSeconds = null
     ): array {
         return $this->executeWithStatus(
             $endpoint,
@@ -100,8 +114,7 @@ class Adapter
             $storeId,
             $apiKeyOverride,
             $modeOverride,
-            $timeoutSeconds,
-            $logSubject
+            $timeoutSeconds
         )['body'];
     }
 
@@ -120,8 +133,7 @@ class Adapter
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null,
-        ?int $timeoutSeconds = null,
-        string $logSubject = ''
+        ?int $timeoutSeconds = null
     ): array {
         try {
             $mode = $modeOverride
@@ -221,11 +233,11 @@ class Adapter
                     $decoded = json_decode($body, true) ?: [];
                     $decoded['http_status'] = $result->status;
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
-                    $this->logRefusal($method, $endpoint, $result, $logSubject);
+                    $this->logRefusal($method, $endpoint, $result, $this->logSubject);
                     return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
-                    $this->logRefusal($method, $endpoint, $result, $logSubject);
+                    $this->logRefusal($method, $endpoint, $result, $this->logSubject);
                     // This used to throw a LocalizedException, which this
                     // method's own catch-all immediately converted into
                     // exactly the array below minus `http_status` — the
@@ -291,10 +303,20 @@ class Adapter
             $this->rejectionReason($result->body)
         );
         if (strpos($endpoint, '/v1/order_intent') === 0) {
-            $this->refusalLogger->warning($message);
+            $this->refusalLogger()->warning($message);
         } else {
-            $this->refusalLogger->error($message);
+            $this->refusalLogger()->error($message);
         }
+    }
+
+    private function refusalLogger(): LoggerInterface
+    {
+        // di.xml names the error logger; a subclass or a caller predating
+        // the argument gets the same one from the object manager.
+        if ($this->refusalLogger === null) {
+            $this->refusalLogger = ObjectManager::getInstance()->get(ErrorLogger::class);
+        }
+        return $this->refusalLogger;
     }
 
     /**

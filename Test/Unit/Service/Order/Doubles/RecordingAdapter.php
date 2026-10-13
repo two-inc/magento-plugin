@@ -32,8 +32,7 @@ class RecordingAdapter extends Adapter
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null,
-        ?int $timeoutSeconds = null,
-        string $logSubject = ''
+        ?int $timeoutSeconds = null
     ): array {
         $this->calls[] = [
             'endpoint' => $endpoint,

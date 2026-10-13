@@ -331,7 +331,9 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute(
+        // The adapter logs a refusal with the API's reason (TWO-26259,
+        // TWO-26340); the quote identifies the order, which has no id yet.
+        $response = $this->apiAdapter->withLogSubject('quote ' . $order->getQuoteId())->execute(
             '/v1/order',
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_ORDER_CREATE,
@@ -339,10 +341,7 @@ class Two extends AbstractMethod
                 ['trigger' => 'checkout', 'endpoint' => '/v1/order', 'order' => $order]
             ),
             'POST',
-            (int)$order->getStoreId(),
-            // The adapter logs a refusal with the API's reason (TWO-26259,
-            // TWO-26340); the quote identifies the order, which has no id yet.
-            logSubject: 'quote ' . $order->getQuoteId()
+            (int)$order->getStoreId()
         );
         $error = $this->getErrorFromResponse($response, true);
         if ($error) {

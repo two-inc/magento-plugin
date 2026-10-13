@@ -741,7 +741,7 @@ class AdapterTest extends TestCase
         );
         $this->logRepository->expects($this->never())->method('addErrorLog');
 
-        $this->adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1, logSubject: 'quote 42');
+        $this->adapter->withLogSubject('quote 42')->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1);
     }
 
     public function testRefusalReasonFallsBackToTheRawBody(): void
@@ -753,5 +753,46 @@ class AdapterTest extends TestCase
             ->with('POST /v1/order/abc/refund refused by the API (HTTP 502): Bad gateway');
 
         $this->adapter->execute('/v1/order/abc/refund', [], 'POST', 1);
+    }
+
+    /**
+     * A subject names one call chain only: the shared adapter, which every
+     * other caller is handed, keeps logging without one.
+     */
+    public function testALogSubjectLeavesTheSharedAdapterAlone(): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(400);
+        $this->curl->method('getBody')->willReturn('{"error_message":"Order is invalid"}');
+        $messages = [];
+        $this->refusalLogger->method('error')->willReturnCallback(function ($message) use (&$messages) {
+            $messages[] = $message;
+        });
+
+        $this->adapter->withLogSubject('quote 42');
+        $this->adapter->execute('/v1/order', [], 'POST', 1);
+
+        $this->assertSame(['POST /v1/order refused by the API (HTTP 400): Order is invalid'], $messages);
+    }
+
+    /**
+     * The adapter is extended outside this module, so its public signatures
+     * stay as they were: execute() and executeWithStatus() take the same
+     * seven parameters, and the refusal logger is optional.
+     *
+     * @dataProvider unchangedSignatures
+     */
+    public function testThePublicSignaturesAreUnchanged(string $method, int $parameters): void
+    {
+        $this->assertSame($parameters, (new \ReflectionMethod(Adapter::class, $method))->getNumberOfParameters(), $method);
+        $this->assertSame(5, (new \ReflectionMethod(Adapter::class, '__construct'))->getNumberOfRequiredParameters());
+    }
+
+    public static function unchangedSignatures(): array
+    {
+        return [
+            'execute' => ['execute', 7],
+            'executeWithStatus' => ['executeWithStatus', 7],
+        ];
     }
 }
