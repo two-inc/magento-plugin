@@ -61,7 +61,7 @@ image's code, which tracks `main`.
 click-through, a screenshot. Point it at the other shop and it silently reports
 on `main`: the run stays green for as long as the two branches happen to agree
 and turns red, at the first specification that moved, against a storefront still
-serving the widget the branch deleted (ABN-509). Confirm which code a shop has
+serving the widget the branch deleted. Confirm which code a shop has
 from the git-sync container's checked-out HEAD; `pub/static/deployed_version.txt`
 answers with an HTML 404 page on these shops and settles nothing.
 
@@ -147,7 +147,7 @@ break correctness — almost always yes; register globally instead.
 
 **The module is not verified against an installation configured with a
 database table prefix, and its direct `core_config_data` queries do not
-survive one** (ABN-558). The gap is tolerated because no merchant has reported
+survive one**. The gap is tolerated because no merchant has reported
 it; closing it is an audit of every raw query plus a prefixed-install test run,
 a project of its own. Nothing guards it, so a new query inherits the gap
 silently.

@@ -28,7 +28,7 @@ use Two\Gateway\Test\Unit\Service\Order\Doubles\RecordingAdapter;
 use Two\Gateway\Test\Unit\Service\Order\Doubles\RecordingSurchargeCalculator;
 
 /**
- * ABN-546. The gate prices the charged term on the request being judged;
+ * The gate prices the charged term on the request being judged;
  * anything short of a refusal concedes the method.
  */
 class FeeQuoteGateTest extends TestCase

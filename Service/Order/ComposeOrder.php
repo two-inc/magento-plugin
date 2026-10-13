@@ -317,7 +317,7 @@ class ComposeOrder extends OrderService
         }
 
         // No offered term resolves to 0, which no offered set contains — an
-        // unresolvable merchant record must not compose an order (ABN-493).
+        // unresolvable merchant record must not compose an order.
         $resolved = $selected > 0 ? $selected : (int)$this->configRepository->getDefaultPaymentTerm($storeId);
         if ($selected === 0 && !$this->configRepository->isBuyerTermAvailable($resolved, $storeId)) {
             $this->logRepository->addErrorLog(

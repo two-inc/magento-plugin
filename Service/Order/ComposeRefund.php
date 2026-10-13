@@ -130,7 +130,7 @@ class ComposeRefund extends OrderService
         }
 
         if ((float)$creditmemo->getTwoSurchargeAmount() > 0) {
-            // order_item_id is not interpreted by the API (ABN-554); matching
+            // order_item_id is not interpreted by the API; matching
             // ComposeOrder keeps the fee line traceable across payloads.
             $items['surcharge'] = $this->getSurchargeLine(
                 (float)$creditmemo->getTwoSurchargeAmount(),

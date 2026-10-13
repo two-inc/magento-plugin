@@ -1098,8 +1098,8 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // The only upstream failure that may withhold the method (ABN-519), and
-        // only on a DEFINITIVE rejection (ABN-533): an outage falls through to
+        // The only upstream failure that may withhold the method, and
+        // only on a DEFINITIVE rejection: an outage falls through to
         // the cached merchant record, which is sufficient to keep serving the
         // buyer, rather than emptying checkout minutes into every incident.
         //
@@ -1178,7 +1178,7 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // ABN-546: no later request is guaranteed to notice an unpriceable fee.
+        // No later request is guaranteed to notice an unpriceable fee.
         if (!$this->feeQuoteGate->isQuotable($quote, $storeId)) {
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),

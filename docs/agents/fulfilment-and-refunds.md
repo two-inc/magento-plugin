@@ -185,8 +185,7 @@ surcharge being refunded, left the memo short against its own lines so this
 collector refused the fee there, and on the last memo — where core assigns the
 allowance in full — it over-refunded VAT on a surcharge share the merchant had
 held back. Both baselines are capped by what the charge still has refundable,
-since the allowance core assigns covers every unitemized charge at once
-(ABN-560).
+since the allowance core assigns covers every unitemized charge at once.
 
 How much core granted THIS fee is read the way `ComposeRefund` reads it — the
 memo's tax less the tax of every line composition itemizes (items, shipping,

@@ -21,7 +21,7 @@ use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
  * Save-time guard on the API key field (TWO-25503).
  *
  * A rejected key must not replace a working one, and must not cost the
- * merchant the rest of the form either (ABN-495). Anything short of a
+ * merchant the rest of the form either. Anything short of a
  * definitive rejection saves as submitted, so an outage cannot lock a
  * merchant out of configuring their first key.
  */

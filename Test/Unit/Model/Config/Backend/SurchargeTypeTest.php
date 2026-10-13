@@ -196,7 +196,7 @@ class SurchargeTypeTest extends TestCase
     }
 
     /**
-     * ABN-497: the section-save half also refuses a stored never-taxed
+     * The section-save half also refuses a stored never-taxed
      * treatment. Only for a save the treatment field is part of — a save
      * without it cannot overwrite the stored value, and refusing one would
      * brick the section for a brand that suppresses the field or a scope

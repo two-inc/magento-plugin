@@ -22,7 +22,7 @@ use Two\Gateway\Model\Config\StoredTerm;
  * Refuses a section save that would leave an unusable custom term in effect at the scope saved, in
  * the one shape the field's own backend model never sees: a scope holding no row of its own renders
  * the row inherited and disabled, so it posts its inherit flag and no value. What is refused over
- * there is the value the page displayed (ABN-522).
+ * there is the value the page displayed.
  */
 class RefuseUnusableCustomTerm
 {

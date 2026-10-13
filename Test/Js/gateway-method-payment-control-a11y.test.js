@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554: the payment tile's controls must state what they are and which
+ * The payment tile's controls must state what they are and which
  * option is chosen. These specs pin the term chips as a radio group whose
  * checked state follows the selection and whose keyboard behaviour matches the
  * role it advertises, and pin an accessible name onto the method radio and the

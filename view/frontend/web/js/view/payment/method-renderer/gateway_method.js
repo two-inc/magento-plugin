@@ -463,13 +463,13 @@ define([
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
         },
         // Per payment code: a store offering several brands renders a tile each,
-        // and one id would describe every button from the same region (ABN-563).
+        // and one id would describe every button from the same region.
         orderIntentDeclinedRegionId: function () {
             return 'two-order-intent-declined-' + this.getCode();
         },
         // Same reason as the region id above: every ARIA association in this
         // template is keyed on the payment code, or a second brand tile's
-        // controls point at the first tile's text (ABN-554).
+        // controls point at the first tile's text.
         aboutTooltipId: function () {
             return 'two-about-tooltip-' + this.getCode();
         },
@@ -578,7 +578,7 @@ define([
          * The chips' own view models: a PLAIN array, each chip reading its fee
          * through a computed of its own. A `foreach` over a recomputed array
          * rebuilds every chip node, and a rebuilt chip drops the focus the
-         * keyboard traversal put on it (ABN-554), while the fees still have to
+         * keyboard traversal put on it, while the fees still have to
          * follow every totals change.
          *
          * @param {Array<number>} terms offered day counts
@@ -629,7 +629,7 @@ define([
         /**
          * A chip's visible text. An end-of-month term falls due that many days
          * after the end of the month, so a bare day count states the wrong due
-         * date for it (ABN-554).
+         * date for it.
          *
          * @param {number} days
          * @returns {string}
@@ -665,7 +665,7 @@ define([
             return template.split('%1').join(days).split('%2').join(feeText);
         },
         // The one definition of a selected term, so the chip's tick and its
-        // aria-checked state cannot drift apart (ABN-554).
+        // aria-checked state cannot drift apart.
         isTermChecked: function (days) {
             return days === this.selectedTerm();
         },
@@ -685,8 +685,8 @@ define([
             return days === this.focusableTerm() ? 0 : -1;
         },
         /**
-         * The radio-group keyboard contract the chips' roles advertise
-         * (ABN-554). Returning true is what keeps every other key, Tab and the
+         * The radio-group keyboard contract the chips' roles advertise.
+         * Returning true is what keeps every other key, Tab and the
          * browser's own modifier shortcuts included, working: knockout
          * suppresses an event's default action unless the handler says otherwise.
          *
@@ -1280,7 +1280,7 @@ define([
             }
 
             // Belt to the button binding: the order is composed on the
-            // selection (ABN-550).
+            // selection.
             if (!this.isTermReconciled()) {
                 this.showErrorMessage(this.termStatusMessage());
                 return;
@@ -1464,7 +1464,7 @@ define([
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
          * (TWO-25326). Never '' — it explains the disabled Place Order button,
-         * so a brand withholding its own wording gets the platform's (ABN-563).
+         * so a brand withholding its own wording gets the platform's.
          */
         resolveOrderIntentDeclinedNotice: function () {
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||

@@ -21,7 +21,7 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
- * ABN-546: the fee-quote verdict reaches isAvailable(), and a withhold is
+ * The fee-quote verdict reaches isAvailable(), and a withhold is
  * silent apart from one debug line. FeeQuoteGateTest owns the verdict itself.
  */
 class TwoFeeQuoteGateTest extends TestCase

@@ -242,7 +242,7 @@ define([
      * Phrases the framework-free capture modules ask their host for by name.
      * Magento builds js-translation.json by scanning for literal `$t()` calls,
      * so a phrase reaches the dictionary — and the buyer's own language — only
-     * if it is spelled out here (ABN-555).
+     * if it is spelled out here.
      *
      * @returns {Object<string, string>}
      */

@@ -15,7 +15,7 @@ interface RepositoryInterface
     /** Magento payment-method code (canonical, brand-independent). */
     public const CODE = 'two_payment';
 
-    /** Preferred default term, in days, when no explicit default resolves (ABN-548). */
+    /** Preferred default term, in days, when no explicit default resolves. */
     public const PREFERRED_DEFAULT_TERM = 30;
 
     // Brand-bound values (PROVIDER, PROVIDER_FULL_NAME, PRODUCT_NAME,
@@ -362,7 +362,7 @@ interface RepositoryInterface
 
     /**
      * Get default payment term, or null when the merchant offers no term at
-     * all - no day count may be invented for that state (ABN-544).
+     * all - no day count may be invented for that state.
      *
      * @param int|null $storeId
      *

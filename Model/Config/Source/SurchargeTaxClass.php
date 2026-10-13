@@ -113,7 +113,7 @@ class SurchargeTaxClass implements OptionSourceInterface
         $options = [
             ['value' => '', 'label' => __('-- Select surcharge tax treatment --')],
         ];
-        // Read at the scope being edited, not through one of its stores (ABN-530).
+        // Read at the scope being edited, not through one of its stores.
         [$scopeId, $scope] = $this->adminScope->fromCodes(
             $this->request->getParam('store'),
             $this->request->getParam('website')

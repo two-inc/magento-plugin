@@ -102,7 +102,7 @@ class ApiKeyStatus
      */
     private const FAILURE_CACHE_LIFETIME = 60;
 
-    /** The verdict gates every cart and checkout render, so a verification may not outlast a page (ABN-535). */
+    /** The verdict gates every cart and checkout render, so a verification may not outlast a page. */
     private const FETCH_TIMEOUT_SECONDS = 10;
 
     /**
@@ -253,7 +253,7 @@ class ApiKeyStatus
     /**
      * True only for a DEFINITIVE rejection of the stored key: Two said no, or
      * there is no key to say no to. Every other failure category is false —
-     * ABN-533: a 5xx, a timeout or a malformed answer says nothing about the
+     * A 5xx, a timeout or a malformed answer says nothing about the
      * key, and treating it as a rejection took the payment method off
      * correctly-configured shops within one CACHE_LIFETIME of any outage.
      */

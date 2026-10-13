@@ -17,7 +17,7 @@ lasts until the buyer touches an address field.
 sentence is the buyer's only account of a control that has gone dead, so
 `resolveOrderIntentDeclinedNotice()` falls back to platform copy wherever
 `<intent_declined_notice_enabled>` withholds the brand's own — the rule the
-order-intent error notice already followed (ABN-563). A shipped overlay
+order-intent error notice already followed. A shipped overlay
 withholds it, which is how a declined buyer came to face a disabled button and
 an empty tile. The brand switch chooses the wording; it cannot choose silence,
 and re-widening it to suppression reopens the defect.
@@ -41,7 +41,7 @@ The chips are `button` elements carrying `role="radio"` inside a `radiogroup`,
 and they implement that role's whole keyboard contract: the group is a single
 tab stop — one chip at a time carries `tabindex="0"` — and the arrow keys move
 the checked term and the focus together, Home and End jump to the ends, and both
-ends wrap (ABN-554). Both halves or neither: roles without the keyboard
+ends wrap. Both halves or neither: roles without the keyboard
 behaviour advertise something the group does not do, which is its own defect.
 
 `onTermKeydown` returns true on every key it does not act on, because knockout's
@@ -120,7 +120,7 @@ background, padding and font because the multi-term chips are buttons too.
 
 The order is composed on the term the chips show as selected, so a selection
 the server has not confirmed it priced the quote on can be charged against a
-total the summary never showed (ABN-550). `surchargeModel.termStatusMessage()`
+total the summary never showed. `surchargeModel.termStatusMessage()`
 is the whole invariant: it names the reason placement is refused — a call in
 flight, or a selection no `/select-term` confirmed — and is empty only when the
 chips agree with the priced quote. `isTermReconciled()` is that string being

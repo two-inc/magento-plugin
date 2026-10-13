@@ -39,7 +39,7 @@ the panel's query row and the registered-company chip; the panel itself still
 opens, because the chips inside it are the buyer's only route to manual entry and
 the sole-trader flow, and the company field never carries the native `disabled`
 flag. Anything that closes or refuses the panel on an uncovered country leaves a
-buyer there with no way to name their company at all (ABN-525).
+buyer there with no way to name their company at all.
 
 **The chip row is shown whenever it offers a mode the buyer is not already in**,
 not merely whenever it holds two chips. A lone chip for the current mode is no
@@ -53,8 +53,8 @@ that carries this control.
 
 **Wherever the mode leaves no query row, a printable key keeps the caret on the
 company field.** The panel opens onto a chip there and a chip is a `<button>`,
-which swallows text, so the character was lost with nothing on screen to say so
-(ABN-554). Both routes in are covered: a key pressed on the chip itself, and a
+which swallows text, so the character was lost with nothing on screen to say so.
+Both routes in are covered: a key pressed on the chip itself, and a
 key pressed on the field, whose own opener would otherwise park the caret on the
 chip before the character arrives. Space and Enter are excluded, since both
 activate the focused chip. The field's `input` handler then leaves the buyer's
@@ -64,8 +64,8 @@ since no search there can ever run.
 
 **Closing the panel puts focus back on the company field** — Escape, a pointer
 press outside, a company adopted from the results, manual entry taking the field
-over, or the capture controller closing it when the hosted signup answers
-(ABN-554). The field's own focus opener is held off for that one programmatic
+over, or the capture controller closing it when the hosted signup answers.
+The field's own focus opener is held off for that one programmatic
 focus alone, so any keydown on the field, a click on it, or focus arriving from
 anywhere else brings the popover straight back; a flag left set is a popover that
 never reopens.
@@ -74,8 +74,7 @@ never reopens.
 flight**, and the pointer and keyboard openers stay live throughout. A browser
 re-fires `focus` and `focusin` on whatever the opener window still holds when it
 regains focus, which is the field the launch parked focus on — and by then the
-popup is gone, so nothing read at that moment tells the re-fire from the buyer
-(ABN-554).
+popup is gone, so nothing read at that moment tells the re-fire from the buyer.
 
 **The hold ends on a focus pair on the field, and on nothing timed.** A pair with
 the window's own `focus` beside it is that window's return — measured in a live
@@ -101,14 +100,14 @@ is what holds focus, and the popover is drawn over the control below the field
 out at all. The field needs its own binding because it is the panel's SIBLING,
 not a descendant: a mode change, and the sole-trader signup launch that parks
 focus there while the popover is deliberately held open, both leave the
-dismissal key on a node the panel's handler never sees (ABN-554).
+dismissal key on a node the panel's handler never sees.
 
 **A press on the panel's own dead space is a no-op.** Its default action would
 blur the caret out of the query field and leave the open popover holding
 nothing, so the press is cancelled — except on a control, which a press is
 entitled to focus, and except on a scrollbar, where cancelling would stop the
 drag scrolling the results. The outside-press close is a different gesture and
-unaffected: it is a press the panel does not contain (ABN-554).
+unaffected: it is a press the panel does not contain.
 
 **A pointer press outside the popover takes focus back only where the press left
 it nowhere**, and one tick later rather than in the handler: the press's own
@@ -126,7 +125,7 @@ focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
 **Only one popover is open, page-wide.** Opening one closes whichever other one
 was open, enforced at open time rather than inferred from focus leaving the
 first: a real pointer press on a second capture need not deliver a focus event
-to the control it hits (ABN-510). The popover that closes gives its own field's
+to the control it hits. The popover that closes gives its own field's
 tab stop back before the newly opened one takes its. A pointer press outside the
 open popover closes it too, with the company field counted as inside the
 control.
@@ -149,20 +148,20 @@ A `focusin` the browser re-fires on window return counts as the buyer focusing
 that control, so an alt-tab back onto a control is classified like any other
 arrival. Opening the popup blurs whatever held focus for exactly that reason.
 A popover left on screen around a document focusing nothing reaches no keystroke
-at all, so the launch parks that focus on the company field one tick later
-(ABN-554). That one control is exempt from the rules above for the whole
+at all, so the launch parks that focus on the company field one tick later.
+That one control is exempt from the rules above for the whole
 flight: the window losing focus to the popup blurs the field, and a buyer
 clicking back into the checkout would otherwise end their own enrolment.
 
 **The close is only abandonment while the checkout is still in sole-trader
-mode** (ABN-565). The popup's close is noticed by a 300ms poll, so a chip the
+mode**. The popup's close is noticed by a 300ms poll, so a chip the
 buyer activated while the signup was up has already written the mode it asked
 for by the time the poll runs — and a poll that returned to registered search
 regardless swallowed that action. Manual entry was the visible loss: the field
 came back a registered-search combobox with the registered chip pressed.
 
 **Closing the signup with nothing captured gives focus back, but only where
-focus is still unplaced** (ABN-561). A close that left `document.activeElement`
+focus is still unplaced**. A close that left `document.activeElement`
 on the body or nothing at all has nowhere for the buyer to be, and the company
 field takes it. The flight's own park is dropped before that is read, so what
 it judges is the unplaced focus the launch left. A close the buyer caused by
@@ -193,7 +192,7 @@ the handler that hid it, so focus still reads as the input inside the sync. A
 chip-only rule missed the case entirely, because a pointer buyer's focus was
 never on the chip. Focus is placed again only where the sync itself took the
 holder away, so focus the buyer put elsewhere is left alone: inside the panel
-where it is still open, on the company field where it is not (ABN-554).
+where it is still open, on the company field where it is not.
 
 The reclaim decision is read BEFORE returning to registered mode, which can
 remount the panel and so unplace focus the buyer had put somewhere themselves.

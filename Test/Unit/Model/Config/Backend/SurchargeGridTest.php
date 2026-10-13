@@ -412,7 +412,7 @@ class SurchargeGridTest extends TestCase
     /**
      * The merchant's fixed-fee cap is read at the scope being saved, and the FX lookup
      * that converts it is given a store id only when that scope is a store view — a
-     * website id is not a store id (ABN-530).
+     * website id is not a store id.
      *
      * @dataProvider capScopes
      */
@@ -649,7 +649,7 @@ class SurchargeGridTest extends TestCase
      * A stored fixed amount now over the merchant's cap must not refuse the
      * save while the Fixed column is hidden: the cap is FX-converted from a
      * merchant setting that can fall below a value that was legal when it was
-     * entered, and the cell is on no screen (ABN-558).
+     * entered, and the cell is on no screen.
      */
     public function testProductionAfterSaveSkipsTheFixedCeilingWhileThatColumnIsHidden(): void
     {

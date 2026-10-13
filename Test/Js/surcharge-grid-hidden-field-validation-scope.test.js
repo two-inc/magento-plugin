@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-558. Magento's admin validator does not ignore `:hidden`, so a grid cell
+ * Magento's admin validator does not ignore `:hidden`, so a grid cell
  * hidden as irrelevant still refuses the save. The refusal itself is correct
  * and must survive wherever the cell is on screen.
  */

@@ -12,11 +12,11 @@ recognised; the buyer country; the fee quote for the term being charged; then an
 Amasty store view returns true early, deferring only the minimum-order gate to
 the client; then the platform and merchant minimum-order gate.
 
-**The api-key verdict is the gate the ruling puts that power in** (ABN-519), and
-only its definitive-rejection categories withhold (ABN-533). Do not widen it
+**The api-key verdict is the gate the ruling puts that power in**, and
+only its definitive-rejection categories withhold. Do not widen it
 back to every failure category, and do not add a further gate that withholds
 because a call to Two failed; both are defects the rule exists to stop coming
-back. The buyer fee quote is the one named exception (ABN-546): a term whose
+back. The buyer fee quote is the one named exception: a term whose
 fee cannot be priced cannot be charged, so `Service\Order\FeeQuoteGate` prices
 it rather than wait to be told — the term-chip endpoints answer after the
 payment list has rendered, and the totals collector prices only once this
@@ -82,7 +82,7 @@ narrow case of a table that was never fetched, or a cache flushed while Two is
 unreachable. The rate table's own refresh-on-read is bounded at 10 seconds, as
 the merchant record's fetch and the api-key verification are, so a table past
 its refresh interval cannot hold a storefront render longer than that while an
-outage runs (ABN-535).
+outage runs.
 
 The FX gate is not simply removable: it exists because an unresolvable rate used
 to throw inside the totals collector and error the whole checkout, which is

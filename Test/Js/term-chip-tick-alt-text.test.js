@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554. jsdom resolves no pseudo-element content, so what is pinned here is
+ * Jsdom resolves no pseudo-element content, so what is pinned here is
  * the declaration in the shipped stylesheet; that the tick stays out of the
  * selected chip's accessible name is proven from the AX tree in Chrome.
  */

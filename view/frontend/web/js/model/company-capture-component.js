@@ -453,7 +453,7 @@
     /**
      * Withdraw the registry search on a billing country it does not cover,
      * rather than let the buyer search and fail. The popover itself stays
-     * open to manual entry and the sole-trader route (ABN-525). Fails OPEN:
+     * open to manual entry and the sole-trader route. Fails OPEN:
      * a host with no `supportedCountriesUrl` wired up, or an errored fetch,
      * leaves the search offered everywhere.
      *
@@ -1130,7 +1130,7 @@
     /**
      * The buyer abandoned signup with nothing captured. The signup launch
      * blurred whatever held focus (TWO-25658), so the company field takes it
-     * back unless the buyer has since placed it themselves (ABN-561).
+     * back unless the buyer has since placed it themselves.
      *
      * @param {object} [options] `returnFocus: false` where focus has been handed
      *        to another capture's signup
@@ -1138,7 +1138,7 @@
     CompanyCaptureComponent.prototype.abandonSoleTrader = function (options) {
         if (this._identity.soleTraderAdopted()) return;
         // A mode asked for since the popup was raised is the buyer's answer, not
-        // abandonment to overwrite (ABN-565).
+        // abandonment to overwrite.
         if (this._identity.captureMode() !== 'soletrader') return;
         // Read before registeredMode(), which can remount the panel and so
         // unplace focus the buyer had put somewhere.

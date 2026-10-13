@@ -154,7 +154,7 @@ class CompanyLookup implements CompanyLookupInterface
      * exists to stop. Omitted rather than failing a lookup the buyer is
      * mid-typing.
      *
-     * ABN-533: the verdict carries a merchant only on a success, so a
+     * The verdict carries a merchant only on a success, so a
      * fall-through takes the short name off the never-expiring record instead
      * of dropping to unscoped lookups for the duration of an outage.
      *

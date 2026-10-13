@@ -18,7 +18,7 @@ use Two\Gateway\Model\Config\FieldGate\EndOfMonth;
 use Two\Gateway\Model\Config\StoredTerm;
 
 /**
- * Names End-of-Month semantics in the custom-days help text only where that type is stored (ABN-495).
+ * Names End-of-Month semantics in the custom-days help text only where that type is stored.
  */
 class PaymentTermsCustomDays implements CommentInterface
 {

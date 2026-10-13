@@ -194,7 +194,7 @@ class ConfigProvider implements ConfigProviderInterface
         // the active brand by scanning `window.checkoutConfig.payment` for a
         // subtree carrying a truthy `redirectUrlCookieCode`, and both mount
         // only when that resolves. So it must ask exactly the question
-        // Two::isAvailable() asks — a rejected key, or no key (ABN-533) — or
+        // Two::isAvailable() asks (a rejected key, or no key), or
         // an outage leaves the method offered with no config to render it.
         //
         // No store id is passed, matching every other configRepository read
@@ -268,10 +268,9 @@ class ConfigProvider implements ConfigProviderInterface
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'availableBuyerTerms' => $this->configRepository->getAllBuyerTerms(),
                     // The chip text has to name the term type: an end-of-month
-                    // term falls due that many days after the end of the month
-                    // (ABN-554).
+                    // term falls due that many days after the end of the month.
                     'isEndOfMonthTerms' => $this->configRepository->getPaymentTermsType() === PaymentTermsType::END_OF_MONTH,
-                    // 0, not a day count, when no term is offered (ABN-544).
+                    // 0, not a day count, when no term is offered.
                     'defaultPaymentTerm' => $defaultPaymentTerm,
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $defaultPaymentTerm,
@@ -345,8 +344,7 @@ class ConfigProvider implements ConfigProviderInterface
                     // Bound `html:` by the renderer, and every part of it -
                     // the sentence, the link text - is an admin-editable
                     // translation. The escaper keeps the one anchor this
-                    // sentence is built around and drops everything else
-                    // (ABN-554).
+                    // sentence is built around and drops everything else.
                     'paymentTermsMessage' => $this->htmlEscaper->escape(__(
                         'I accept the %1 and authorize %2 to process my data automatically.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
@@ -440,8 +438,7 @@ class ConfigProvider implements ConfigProviderInterface
      * the approved one (TWO-25326).
      *
      * `null` here is NOT silence: gateway_method.js substitutes platform
-     * wording, because this sentence explains a disabled Place Order button
-     * (ABN-563).
+     * wording, because this sentence explains a disabled Place Order button.
      *
      * This is the "not approved" business outcome only (a clean response
      * with `approved: false`) — a technical/HTTP failure is a different

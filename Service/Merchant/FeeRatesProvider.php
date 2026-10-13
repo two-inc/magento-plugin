@@ -21,7 +21,7 @@ use Two\Gateway\Service\Api\Adapter;
  *
  * An empty fee reads as "this term carries no fee", so a failed fetch may not
  * answer with nothing: the cached set is served instead and the caller is told
- * it is not current, so the admin screen can say so (ABN-512). The entry does
+ * it is not current, so the admin screen can say so. The entry does
  * not expire — only a successful fetch replaces it.
  *
  * Keyed on mode + API key + buyer country + the requested terms, since every

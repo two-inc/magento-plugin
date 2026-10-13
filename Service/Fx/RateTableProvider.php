@@ -57,7 +57,7 @@ class RateTableProvider
     /** Seconds between fetch attempts after a failure. */
     private const FAILURE_COOLDOWN = 300;
 
-    /** The read path is reached from a storefront render, so a fetch may not outlast a page (ABN-535). */
+    /** The read path is reached from a storefront render, so a fetch may not outlast a page. */
     private const FETCH_TIMEOUT_SECONDS = 10;
 
     /**

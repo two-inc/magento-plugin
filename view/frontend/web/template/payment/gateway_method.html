@@ -14,8 +14,8 @@
             />
             <div class="two-title-block">
                 <div class="two-title-row">
-                    <!-- The method radio takes its accessible name from this label
-                         (ABN-554); the subtitle and the about control stay outside
+                    <!-- The method radio takes its accessible name from this label;
+the subtitle and the about control stay outside
                          it so neither is read as part of the name. -->
                     <label
                         class="two-payment-title"
@@ -57,14 +57,14 @@
             <!-- A `span`, not a `label`: it names the chip group through
                  aria-labelledby, and a `label` names a single form control.
                  Outside both branches: the chip text states only the term, so
-                 a lone chip is unnamed without it (ABN-554). -->
+                 a lone chip is unnamed without it. -->
             <span class="label" data-bind="attr: {id: termGroupLabelId()}">
                 <span data-bind="i18n: 'Selected payment terms'"></span>
             </span>
             <!-- ko if: showTermSelector -->
             <!-- A radio group, not a row of buttons: the roles come with the
-                 single tab stop and the arrow keys, or they describe nothing
-                 (ABN-554). -->
+                 single tab stop and the arrow keys, or they describe nothing.
+-->
             <div
                 class="two-term-chips__container"
                 role="radiogroup"
@@ -111,7 +111,7 @@
                 <!-- A sole offered term is not a choice, so the chip is a
                      disabled button: ARIA forbids naming a role-less element,
                      which left its explanatory name reaching a tooltip and no
-                     screen reader (ABN-554). -->
+                     screen reader. -->
                 <button
                     type="button"
                     class="two-term-chip two-term-chip--single"
@@ -158,7 +158,7 @@
             (<intent_approved_notice_enabled> false in brand.xml) yields no
             element at all rather than an empty wrapper. The DECLINED notice has
             no such state — resolveOrderIntentDeclinedNotice() falls back to
-            platform wording (ABN-563). Class names match the PrestaShop /
+            platform wording. Class names match the PrestaShop /
             WooCommerce surfaces so the four platforms stay greppable;
             `declined` is a new modifier alongside the existing `approved` one.
         -->
@@ -204,7 +204,7 @@
         ></div>
         <!-- /ko -->
         <!-- Rendered unconditionally: a `role="alert"` created together with
-             its own text is announced inconsistently (ABN-563). -->
+             its own text is announced inconsistently. -->
         <div
             class="two-order-intent-declined-region"
             role="alert"
@@ -404,7 +404,7 @@
                 </div>
                 <!-- ko if: isPaymentTermsEnabled -->
                 <div class="payment-method-content terms-container">
-                    <!-- aria-labelledby rather than a wrapping label (ABN-554):
+                    <!-- aria-labelledby rather than a wrapping label:
                          the consent sentence carries the terms link, and a link
                          inside a label makes activation ambiguous. -->
                     <input
