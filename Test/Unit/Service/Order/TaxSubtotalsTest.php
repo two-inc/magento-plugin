@@ -39,7 +39,7 @@ class TaxSubtotalsTest extends TestCase
         // Given the setting off; When composing; Then null, so the payload
         // builders omit the key rather than sending an empty list.
         $this->assertNull(
-            $this->orderService(false)->getTaxSubtotals([$this->line('0.250000', '100.00', '25.00')])
+            $this->orderService(false)->getTaxSubtotals([$this->line('0.250000', '100.00', '25.00')], 1)
         );
     }
 
@@ -51,7 +51,7 @@ class TaxSubtotalsTest extends TestCase
             $this->line('0.250000', '100.00', '25.00'),
             $this->line('0.250000', '50.00', '12.50'),
             $this->line('0.120000', '200.00', '24.00'),
-        ]);
+        ], 1);
 
         $this->assertSame(
             [
@@ -71,7 +71,7 @@ class TaxSubtotalsTest extends TestCase
     {
         $result = $this->orderService(true)->getTaxSubtotals([
             $this->line('0.000000', '80.00', '0.00'),
-        ]);
+        ], 1);
 
         $this->assertSame(
             [['taxable_amount' => '80.00', 'tax_amount' => '0.00', 'tax_rate' => '0.000000']],
@@ -81,6 +81,6 @@ class TaxSubtotalsTest extends TestCase
 
     public function testNoLinesYieldNoSubtotals(): void
     {
-        $this->assertSame([], $this->orderService(true)->getTaxSubtotals([]));
+        $this->assertSame([], $this->orderService(true)->getTaxSubtotals([], 1));
     }
 }

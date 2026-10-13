@@ -51,7 +51,7 @@ class ComposeCapture extends OrderService
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
             'line_items' => $lineItems,
-            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
+            'tax_subtotals' => $this->getTaxSubtotals($lineItems, (int)$order->getStoreId()),
         ];
         // On an order with tenders the invoice declares its prepaid part from
         // Two's record of the order (TWO-26309): its lines are its grand total

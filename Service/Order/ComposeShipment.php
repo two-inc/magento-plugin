@@ -217,7 +217,7 @@ class ComposeShipment extends OrderService
             'line_items' => array_values($shipmentItems),
             'net_amount' => $this->getSum($shipmentItems, 'net_amount'),
             'tax_amount' => $this->getSum($shipmentItems, 'tax_amount'),
-            'tax_subtotals' => $this->getTaxSubtotals($shipmentItems),
+            'tax_subtotals' => $this->getTaxSubtotals($shipmentItems, (int)$order->getStoreId()),
         ];
     }
 

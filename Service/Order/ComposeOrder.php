@@ -119,7 +119,7 @@ class ComposeOrder extends OrderService
             'currency' => $order->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($order)),
             ...$amounts,
-            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
+            'tax_subtotals' => $this->getTaxSubtotals($lineItems, $storeId),
             'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,

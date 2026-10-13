@@ -39,6 +39,11 @@ class TaxSubtotalsPayloadKeyTest extends TestCase
         'tax_rate' => '0.250000',
     ];
 
+    private const ORDER_STORE = 3;
+
+    /** @var bool the setting at the order's store; every other scope has the opposite */
+    private $atOrderStore = true;
+
     private const EXPECTED_SUBTOTALS = [
         ['taxable_amount' => '100.00', 'tax_amount' => '25.00', 'tax_rate' => '0.250000'],
     ];
@@ -65,10 +70,40 @@ class TaxSubtotalsPayloadKeyTest extends TestCase
         $this->assertSame(self::EXPECTED_SUBTOTALS, $payload['tax_subtotals'], "$composer: shape");
     }
 
-    private function compose(string $composer): array
+    /**
+     * TWO-26340: "Validate tax subtotals" is read at the order's store, not
+     * at default scope. Given the setting differs between the order's store
+     * and every other scope; When each composer runs; Then the order's
+     * store decides whether the breakdown is sent.
+     *
+     * @dataProvider storeScopeProvider
+     */
+    public function testTheSettingIsReadAtTheOrdersStore(string $composer, bool $atOrderStore): void
     {
+        $payload = $this->compose($composer, $atOrderStore);
+
+        if ($atOrderStore) {
+            $this->assertSame(self::EXPECTED_SUBTOTALS, $payload['tax_subtotals'] ?? null, "$composer: on at the order's store");
+        } else {
+            $this->assertNull($payload['tax_subtotals'] ?? null, "$composer: off at the order's store");
+        }
+    }
+
+    public static function storeScopeProvider(): array
+    {
+        $cases = [];
+        foreach (self::composerProvider() as $name => [$composer]) {
+            $cases["$name, on at the order's store"] = [$composer, true];
+            $cases["$name, off at the order's store"] = [$composer, false];
+        }
+        return $cases;
+    }
+
+    private function compose(string $composer, bool $atOrderStore = true): array
+    {
+        $this->atOrderStore = $atOrderStore;
         $order = new Order();
-        $order->setStoreId(1);
+        $order->setStoreId(self::ORDER_STORE);
         $order->setGrandTotal(125.00);
         $order->setTaxAmount(25.00);
         $order->setOrderCurrencyCode('EUR');
@@ -118,7 +153,9 @@ class TaxSubtotalsPayloadKeyTest extends TestCase
         $service->method('getOtherChargesLineItem')->willReturn(null);
 
         $config = $this->createMock(ConfigRepository::class);
-        $config->method('isTaxSubtotalsEnabled')->willReturn(true);
+        $config->method('isTaxSubtotalsEnabled')->willReturnCallback(
+            fn ($storeId = null) => $storeId === self::ORDER_STORE ? $this->atOrderStore : !$this->atOrderStore
+        );
         $config->method('getVendorSiteName')->willReturn('');
         $config->method('getAllBuyerTerms')->willReturn([30]);
         $config->method('isBuyerTermAvailable')->willReturn(true);
