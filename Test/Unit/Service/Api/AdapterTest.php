@@ -795,4 +795,42 @@ class AdapterTest extends TestCase
             'executeWithStatus' => ['executeWithStatus', 7],
         ];
     }
+
+    /**
+     * Given a call that gets no response; Then the failure is logged whatever
+     * the setting, and with debug logging on the request it was making, key
+     * redacted, as WooCommerce does.
+     *
+     * @dataProvider transportFailureCases
+     */
+    public function testATransportFailureLogsTheRequestOnlyWithDebugOn(bool $debug, int $withRequest): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn($debug);
+        $this->curl->method('post')->willThrowException(new \RuntimeException('Connection timed out'));
+        $requests = [];
+        $this->logRepository->method('addErrorLog')->willReturnCallback(function ($type, $data) use (&$requests) {
+            if (is_array($data) && isset($data['request'])) {
+                $requests[] = [$type, $data['request']['body'], $data['request']['headers']['X-API-Key']];
+            }
+        });
+
+        $this->adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1);
+
+        $this->assertSame(
+            array_fill(0, $withRequest, [
+                'POST /v1/order: transport failure: Connection timed out',
+                ['buyer' => 'Jane Doe'],
+                '[REDACTED]',
+            ]),
+            $requests
+        );
+    }
+
+    public static function transportFailureCases(): array
+    {
+        return [
+            'debug off' => [false, 0],
+            'debug on' => [true, 1],
+        ];
+    }
 }

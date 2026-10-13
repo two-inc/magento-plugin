@@ -135,6 +135,7 @@ class Adapter
         ?string $modeOverride = null,
         ?int $timeoutSeconds = null
     ): array {
+        $call = null;
         try {
             $mode = $modeOverride
                 ?: ($storeId !== null ? $this->configRepository->getMode($storeId) : null);
@@ -269,6 +270,7 @@ class Adapter
                 sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
                 $exception->getMessage()
             );
+            $this->logTransportFailure($method, $endpoint, $payload, $call, $exception, $storeId);
             return [
                 'status' => 0,
                 'body' => [
@@ -367,22 +369,10 @@ class Adapter
         if (!$this->configRepository->isDebugMode($storeId)) {
             return;
         }
-        $headers = $call->headers;
-        $redact = array_change_key_case($this->configRepository->getCustomHeaders($storeId), CASE_LOWER);
-        $redact['x-api-key'] = true;
-        foreach (array_keys($headers) as $name) {
-            if (isset($redact[strtolower((string)$name)])) {
-                $headers[$name] = '[REDACTED]';
-            }
-        }
         $rawBody = $result->body;
         $decodedBody = json_decode($rawBody, true);
         $context = [
-            'request' => [
-                'url' => $call->url,
-                'headers' => $headers,
-                'body' => $payload,
-            ],
+            'request' => $this->requestContext($payload, $call, $storeId),
             'response' => [
                 'status_code' => $result->status,
                 'headers' => $result->headers,
@@ -395,6 +385,54 @@ class Adapter
         } else {
             $this->logRepository->addDebugLog($message, $context);
         }
+    }
+
+    /**
+     * With debug logging on, a call that got no response logs the request
+     * it was making, as an exchange does; the failure itself is logged
+     * whatever the setting.
+     */
+    private function logTransportFailure(
+        string $method,
+        string $endpoint,
+        array $payload,
+        ?ApiCall $call,
+        Throwable $exception,
+        ?int $storeId
+    ): void {
+        if (!$this->configRepository->isDebugMode($storeId)) {
+            return;
+        }
+        $this->logRepository->addErrorLog(
+            sprintf('%s %s: transport failure: %s', $method, $endpoint, $exception->getMessage()),
+            [
+                'request' => $this->requestContext($payload, $call, $storeId),
+                'response' => ['status_code' => null, 'headers' => null, 'body' => null],
+            ]
+        );
+    }
+
+    /**
+     * The request as logged: its URL, its headers with the API key and every
+     * custom header value redacted, and its body.
+     */
+    private function requestContext(array $payload, ?ApiCall $call, ?int $storeId): array
+    {
+        $headers = $call !== null ? $call->headers : null;
+        if ($headers !== null) {
+            $redact = array_change_key_case($this->configRepository->getCustomHeaders($storeId), CASE_LOWER);
+            $redact['x-api-key'] = true;
+            foreach (array_keys($headers) as $name) {
+                if (isset($redact[strtolower((string)$name)])) {
+                    $headers[$name] = '[REDACTED]';
+                }
+            }
+        }
+        return [
+            'url' => $call !== null ? $call->url : null,
+            'headers' => $headers,
+            'body' => $payload,
+        ];
     }
 
     private function translatorFailure(string $phase, Throwable $e, string $endpoint, string $method): array
