@@ -17,7 +17,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * TWO-25386, including the checkout-visibility row.
+ * TWO-25386, plus the checkout-visibility row.
  */
 class HealthChecklistTest extends TestCase
 {

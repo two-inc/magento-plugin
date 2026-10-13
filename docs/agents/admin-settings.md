@@ -173,7 +173,7 @@ withdrew has no matching option, so the select reads Automatic.
 
 **The admin surfaces that NAME the default term resolve it, never read the
 select.** With Automatic selected the select carries no day count, while the
-surcharge grid still has to disable the row differential mode prices against —
+surcharge grid still has to disable the row differential mode prices against,
 showing its stored amounts, which a disabled cell never posts anyway,
 and the differential option still has to name it. `SurchargeGrid` and
 `Two_Gateway/js/default-term` each apply the resolver's order — the JS from the
