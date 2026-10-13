@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Two — Magento 2 Payment Plugin</h1>
 
-B2B Buy Now, Pay Later for Magento 2.3.3+. This plugin integrates [Two](https://www.two.inc/) as a payment method, letting merchants offer invoice-based checkout with flexible net terms.
+B2B Buy Now, Pay Later for Magento 2.4.6+ on PHP 8.2+. This plugin integrates [Two](https://www.two.inc/) as a payment method, letting merchants offer invoice-based checkout with flexible net terms.
 
 ## What it does
 
