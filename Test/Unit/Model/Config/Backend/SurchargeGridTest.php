@@ -268,7 +268,7 @@ class SurchargeGridTest extends TestCase
      * calculator rounds to 2dp before sending, so 0.001 arrives as a hard cap
      * of 0.00 and suppresses the whole fee. Refusing it is what makes the
      * "rounding direction cannot decide whether a configured cap survives"
-     * claim in AGENTS.md true rather than aspirational.
+     * claim true rather than aspirational (TWO-25289).
      */
     public function testProductionValidatorRefusesASubCentLimit(): void
     {
