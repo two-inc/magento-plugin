@@ -349,9 +349,15 @@ class Two extends AbstractMethod
         }
 
         if ($response['status'] !== 'APPROVED') {
+            // The status and reason only: the response carries the buyer's
+            // details, which are logged only with debug logging on.
             $this->logRepository->addDebugLog(
                 sprintf('Order was not accepted by %s', $this->brandRegistry->getProductName()),
-                $response
+                [
+                    'quote_id' => $order->getQuoteId(),
+                    'status' => $response['status'] ?? null,
+                    'decline_reason' => $response['decline_reason'] ?? null,
+                ]
             );
             // Surface the minimum when the decline is attributable to it:
             // primarily by the API's machine-readable decline reason

@@ -55,6 +55,29 @@ class TwoAuthorizeLoggingTest extends TestCase
         $this->assertSame([], $this->logged, 'the adapter\'s line is the only one');
     }
 
+    public function testANotAcceptedCreateLogsItsStatusAndReasonOnly(): void
+    {
+        $this->authorize([
+            'status' => 'REJECTED',
+            'decline_reason' => 'BUYER_CREDIT_LIMIT',
+            'buyer' => ['representative' => ['email' => 'jane@example.test']],
+            'billing_address' => ['street_address' => '1 High Street'],
+        ]);
+
+        $notAccepted = array_values(array_filter(
+            $this->logged,
+            fn (array $entry): bool => strpos($entry[1], 'Order was not accepted') === 0
+        ));
+        $this->assertSame(
+            [['debug', 'Order was not accepted by Two', [
+                'quote_id' => 42,
+                'status' => 'REJECTED',
+                'decline_reason' => 'BUYER_CREDIT_LIMIT',
+            ]]],
+            $notAccepted
+        );
+    }
+
     /**
      * Runs authorize() against a create that answers $response, recording
      * every line the log repository is given.
