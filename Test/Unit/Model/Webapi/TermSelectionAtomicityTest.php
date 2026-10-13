@@ -201,10 +201,6 @@ class TermSelectionAtomicityTest extends TestCase
             {
             }
 
-            public function addWarningLog(string $type, $data)
-            {
-            }
-
             public function addLog(string $type, $data)
             {
             }

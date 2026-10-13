@@ -830,7 +830,8 @@ class RecordProviderTest extends TestCase
         $calls = [];
         $this->apiAdapter->method('execute')->willReturnCallback(
             function (string $endpoint, array $payload, string $method, ...$identity) use (&$calls) {
-                $calls[] = $identity;
+                // The store, key, mode and timeout; the log subject is not this test's concern.
+                $calls[] = array_slice($identity, 0, 4);
                 return ['id' => 'abc-123'];
             }
         );

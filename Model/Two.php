@@ -339,11 +339,13 @@ class Two extends AbstractMethod
                 ['trigger' => 'checkout', 'endpoint' => '/v1/order', 'order' => $order]
             ),
             'POST',
-            (int)$order->getStoreId()
+            (int)$order->getStoreId(),
+            // The adapter logs a refusal with the API's reason (TWO-26259,
+            // TWO-26340); the quote identifies the order, which has no id yet.
+            logSubject: 'quote ' . $order->getQuoteId()
         );
         $error = $this->getErrorFromResponse($response, true);
         if ($error) {
-            $this->logOrderCreateRefusal($order, $response);
             throw new LocalizedException($error);
         }
 
@@ -478,33 +480,6 @@ class Two extends AbstractMethod
             return $message;
         }
         return __('%1 [Trace ID: %2]', $message, $traceID);
-    }
-
-    /**
-     * Record why the order create was refused, for the merchant (TWO-26259).
-     *
-     * The buyer sees only what getErrorFromResponse() chose to show, which for
-     * a refused order is a generic notice. The error message and details are
-     * the part that says what to fix, so they go to the merchant's error log
-     * whatever the buyer was shown.
-     *
-     * @param Order $order
-     * @param array $response
-     * @return void
-     */
-    private function logOrderCreateRefusal(Order $order, array $response): void
-    {
-        $this->logRepository->addErrorLog(
-            'Order create refused',
-            [
-                'quote_id' => $order->getQuoteId(),
-                'error_code' => $response['error_code'] ?? null,
-                'error_message' => $response['error_message'] ?? null,
-                'error_details' => $response['error_details'] ?? null,
-                'error_json' => $response['error_json'] ?? null,
-                'error_trace_id' => $response['error_trace_id'] ?? null,
-            ]
-        );
     }
 
     /**

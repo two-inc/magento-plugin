@@ -45,14 +45,14 @@ class ErrorLogger extends Logger
      *
      * @param string $type
      * @param mixed $data
-     * @param int $level a Monolog level, error unless said otherwise
+     *
      */
-    public function addLog(string $type, $data, int $level = self::ERROR)
+    public function addLog(string $type, $data)
     {
         if (is_array($data) || is_object($data)) {
-            $this->addRecord($level, $type . ': ' . $this->json->serialize($data));
+            $this->addRecord(static::ERROR, $type . ': ' . $this->json->serialize($data));
         } else {
-            $this->addRecord($level, $type . ': ' . $data);
+            $this->addRecord(static::ERROR, $type . ': ' . $data);
         }
     }
 }

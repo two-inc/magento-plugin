@@ -18,6 +18,7 @@ use Two\Gateway\Model\Webapi\OrderIntent;
 use Two\Gateway\Service\Address\IsoRegionResolver;
 use Two\Gateway\Service\Address\RegionDirectory;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -106,7 +107,8 @@ class ProxiedRegistryCallsTest extends TestCase
             $brand,
             $curlFactory,
             $this->createMock(LogRepository::class),
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->createMock(LoggerInterface::class)
         );
     }
 

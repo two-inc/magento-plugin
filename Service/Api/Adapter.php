@@ -9,6 +9,7 @@ namespace Two\Gateway\Service\Api;
 
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use Psr\Log\LoggerInterface;
 use Throwable;
 use Two\Gateway\Api\ApiCall;
 use Two\Gateway\Api\ApiResult;
@@ -46,18 +47,23 @@ class Adapter
     /** @var ApiTranslatorInterface */
     private $apiTranslator;
 
+    /** @var LoggerInterface the plugin's error log (di.xml), for refused order requests */
+    private $refusalLogger;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         CurlFactory $curlFactory,
         LogRepository $logRepository,
-        ApiTranslatorInterface $apiTranslator
+        ApiTranslatorInterface $apiTranslator,
+        LoggerInterface $refusalLogger
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->curlFactory = $curlFactory;
         $this->logRepository = $logRepository;
         $this->apiTranslator = $apiTranslator;
+        $this->refusalLogger = $refusalLogger;
     }
 
     /**
@@ -73,6 +79,8 @@ class Adapter
      *        a candidate key against a mode submitted in the same admin save
      * @param int|null $timeoutSeconds Total time this call may take, for a caller that must bound
      *        its own wall clock — an admin save or a storefront render
+     * @param string $logSubject What the call is for ("quote 42"), named in the line logged
+     *        when the API refuses an order request
      * @return array
      */
     public function execute(
@@ -82,7 +90,8 @@ class Adapter
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null,
-        ?int $timeoutSeconds = null
+        ?int $timeoutSeconds = null,
+        string $logSubject = ''
     ): array {
         return $this->executeWithStatus(
             $endpoint,
@@ -91,7 +100,8 @@ class Adapter
             $storeId,
             $apiKeyOverride,
             $modeOverride,
-            $timeoutSeconds
+            $timeoutSeconds,
+            $logSubject
         )['body'];
     }
 
@@ -110,7 +120,8 @@ class Adapter
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null,
-        ?int $timeoutSeconds = null
+        ?int $timeoutSeconds = null,
+        string $logSubject = ''
     ): array {
         try {
             $mode = $modeOverride
@@ -210,11 +221,11 @@ class Adapter
                     $decoded = json_decode($body, true) ?: [];
                     $decoded['http_status'] = $result->status;
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
-                    $this->logRefusal($method, $endpoint, $result);
+                    $this->logRefusal($method, $endpoint, $result, $logSubject);
                     return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
-                    $this->logRefusal($method, $endpoint, $result);
+                    $this->logRefusal($method, $endpoint, $result, $logSubject);
                     // This used to throw a LocalizedException, which this
                     // method's own catch-all immediately converted into
                     // exactly the array below minus `http_status` — the
@@ -263,7 +274,7 @@ class Adapter
      * An intent is refused routinely (no order yet, a rate limit), so it is
      * only a warning. Reads (GET) are not order requests.
      */
-    private function logRefusal(string $method, string $endpoint, ApiResult $result): void
+    private function logRefusal(string $method, string $endpoint, ApiResult $result, string $subject): void
     {
         if ($result->status < 400
             || strtoupper($method) === 'GET'
@@ -272,16 +283,17 @@ class Adapter
             return;
         }
         $message = sprintf(
-            '%s %s refused by the API (HTTP %d): %s',
+            '%s %s refused by the API (HTTP %d)%s: %s',
             $method,
             $endpoint,
             $result->status,
+            $subject !== '' ? ' for ' . $subject : '',
             $this->rejectionReason($result->body)
         );
         if (strpos($endpoint, '/v1/order_intent') === 0) {
-            $this->logRepository->addWarningLog($message, null);
+            $this->refusalLogger->warning($message);
         } else {
-            $this->logRepository->addErrorLog($message, null);
+            $this->refusalLogger->error($message);
         }
     }
 
@@ -308,7 +320,11 @@ class Adapter
                 $parts[] = $loc . $error['msg'];
             }
         }
-        return $parts === [] ? substr($raw, 0, 500) : implode('; ', array_unique($parts));
+        $reason = $parts === [] ? substr($raw, 0, 500) : implode('; ', array_unique($parts));
+        if (isset($body['error_trace_id']) && is_string($body['error_trace_id']) && $body['error_trace_id'] !== '') {
+            $reason .= ' [Trace ID: ' . $body['error_trace_id'] . ']';
+        }
+        return $reason;
     }
 
     /**

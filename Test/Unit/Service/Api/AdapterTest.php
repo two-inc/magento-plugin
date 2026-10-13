@@ -16,6 +16,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\ApiTranslator\PassthroughTrait;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 
 class AdapterTest extends TestCase
 {
@@ -31,6 +32,9 @@ class AdapterTest extends TestCase
     /** @var BrandRegistryInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $brandRegistry;
 
+    /** @var LoggerInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $refusalLogger;
+
     /** @var Adapter */
     private $adapter;
 
@@ -40,6 +44,7 @@ class AdapterTest extends TestCase
         $this->curl = $this->createMock(Curl::class);
         $this->logRepository = $this->createMock(LogRepository::class);
         $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $this->refusalLogger = $this->createMock(LoggerInterface::class);
         $this->brandRegistry->method('getProductName')->willReturn('Two');
 
         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
@@ -54,7 +59,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
     }
 
@@ -239,7 +245,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
 
         $result = $adapter->execute('/v1/order');
@@ -367,7 +374,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            $translator
+            $translator,
+            $this->refusalLogger
         );
         $adapter->execute('/v1/order', ['x' => 1]);
 
@@ -392,7 +400,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            $translator
+            $translator,
+            $this->refusalLogger
         );
         $result = $adapter->execute('/v1/order');
 
@@ -440,7 +449,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
         $adapter->execute('/v1/order', ['amount' => 100]);
 
@@ -608,7 +618,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
         $adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 7);
 
@@ -660,10 +671,20 @@ class AdapterTest extends TestCase
         );
 
         $logged = [];
-        foreach (['addErrorLog' => 'error', 'addWarningLog' => 'warning', 'addDebugLog' => 'debug'] as $fn => $lvl) {
-            $this->logRepository->method($fn)->willReturnCallback(
-                function ($type, $data) use (&$logged, $lvl) {
-                    $logged[] = [$lvl, $type, $data];
+        $this->logRepository->method('addDebugLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                $logged[] = ['debug', $type, $data];
+            }
+        );
+        $this->logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                $logged[] = ['error log repository', $type, $data];
+            }
+        );
+        foreach (['error', 'warning'] as $lvl) {
+            $this->refusalLogger->method($lvl)->willReturnCallback(
+                function ($message, array $context = []) use (&$logged, $lvl) {
+                    $logged[] = [$lvl, $message, $context ?: null];
                 }
             );
         }
@@ -704,13 +725,32 @@ class AdapterTest extends TestCase
         ];
     }
 
+    /**
+     * A refused create names its quote and carries the API's trace id, in
+     * the one line logged for it.
+     */
+    public function testARefusedCreateNamesItsQuoteAndTraceId(): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(400);
+        $this->curl->method('getBody')->willReturn(
+            '{"error_code":"ORDER_INVALID","error_message":"Order is invalid","error_trace_id":"trace-1"}'
+        );
+        $this->refusalLogger->expects($this->once())->method('error')->with(
+            'POST /v1/order refused by the API (HTTP 400) for quote 42: ORDER_INVALID; Order is invalid [Trace ID: trace-1]'
+        );
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1, logSubject: 'quote 42');
+    }
+
     public function testRefusalReasonFallsBackToTheRawBody(): void
     {
         $this->configRepository->method('isDebugMode')->willReturn(false);
         $this->curl->method('getStatus')->willReturn(502);
         $this->curl->method('getBody')->willReturn('Bad gateway');
-        $this->logRepository->expects($this->once())->method('addErrorLog')
-            ->with('POST /v1/order/abc/refund refused by the API (HTTP 502): Bad gateway', null);
+        $this->refusalLogger->expects($this->once())->method('error')
+            ->with('POST /v1/order/abc/refund refused by the API (HTTP 502): Bad gateway');
 
         $this->adapter->execute('/v1/order/abc/refund', [], 'POST', 1);
     }

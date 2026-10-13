@@ -61,14 +61,6 @@ class Repository implements LogRepositoryInterface
     /**
      * @inheritDoc
      */
-    public function addWarningLog(string $type, $data)
-    {
-        $this->errorLogger->addLog($type, $data, ErrorLogger::WARNING);
-    }
-
-    /**
-     * @inheritDoc
-     */
     public function addLog(string $type, $data)
     {
         if ($this->config->isDebugMode()) {
