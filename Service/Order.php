@@ -1876,12 +1876,16 @@ abstract class Order
     }
 
     /**
+     * The per-rate tax breakdown, or null when "Validate tax subtotals" is
+     * off for the order's store.
+     *
      * @param array $lineItems
-     * @return array
+     * @param int|null $storeId the order's store, whose setting decides
+     * @return array|null
      */
-    public function getTaxSubtotals(array $lineItems): ?array
+    public function getTaxSubtotals(array $lineItems, ?int $storeId = null): ?array
     {
-        if (!$this->configRepository->isTaxSubtotalsEnabled()) {
+        if (!$this->configRepository->isTaxSubtotalsEnabled($storeId)) {
             return null;
         }
         $taxSubtotals = [];

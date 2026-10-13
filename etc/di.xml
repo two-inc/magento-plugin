@@ -130,6 +130,11 @@
     <preference for="Two\Gateway\Api\ApiTranslatorInterface"
                 type="Two\Gateway\Model\ApiTranslator\NullApiTranslator"/>
 
+    <type name="Two\Gateway\Service\Api\Adapter">
+        <arguments>
+            <argument name="refusalLogger" xsi:type="object">Two\Gateway\Logger\ErrorLogger</argument>
+        </arguments>
+    </type>
     <type name="Two\Gateway\Logger\ErrorLogger">
         <arguments>
             <argument name="name" xsi:type="string">TwoError</argument>

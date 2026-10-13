@@ -573,7 +573,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Validate tax subtotals</label>
-                    <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
+                    <comment>If you choose Yes, a per-tax-rate tax_subtotals breakdown is sent in order creation, order edit, fulfilment and refund payloads for validation against the order lines. If you choose No, tax_subtotals is omitted from those payloads.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>
                 </field>

@@ -216,6 +216,11 @@ a line falls under and sends the code you chose for it. **Order management >
 Tax** holds **Validate tax subtotals** and **Tax codes for 0% lines**;
 **Order management > Status mapping** holds the fulfilment settings.
 
+**Validate tax subtotals** (default Yes, set per store view) sends a per-rate
+`tax_subtotals` breakdown with order creation, order edits, fulfilments and
+refunds, for validation against the order lines. With No it is sent on none of
+them. The setting is read at the order's store view.
+
 **The table.** "Tax codes for 0% lines" spans the width of the form, with one
 row per product tax class (including **None**) and the cases as columns:
 
@@ -380,8 +385,9 @@ The default implementation returns the payload unchanged. Plugins chain by
 **Parameters.**
 
 - `$payload`: the complete request body exactly as it would be sent, amounts as
-  2dp decimal strings: `line_items`, `tax_subtotals`, `net_amount`,
-  `tax_amount`, `gross_amount`, buyer, addresses and the rest. A partial
+  2dp decimal strings: `line_items`, `tax_subtotals` (only while Validate tax
+  subtotals is on), `net_amount`, `tax_amount`, `gross_amount`, buyer,
+  addresses and the rest. A partial
   capture carries its lines under `partial`; a refund carries `amount`. A
   request with no body (confirm, cancel, whole-order capture) is `[]`. A 0%
   line may carry `tax_code` (see "Tax codes on 0% lines"); a subscriber may
@@ -513,9 +519,10 @@ subscriber's code.
 
 **What you return is sent.** The payload goes out as your subscriber returns
 it, and Two's API validates it as it validates any request, including whether
-its lines and totals add up. If the API rejects your payload, its
-response is written to `var/log/two/debug.log` and its message is shown to the
-admin for an admin action, or to the buyer at checkout.
+its lines and totals add up. If the API rejects your payload, its message is
+shown to the admin for an admin action, or to the buyer at checkout. The API's
+reason is always written to `var/log/two/error.log` (as a warning for an order
+intent), and with Debug Mode on the request and response are written there too.
 
 **Checks.** After the hook the plugin refuses a request only for a fault in
 your subscriber's code (it throws, returns something other than an array, or

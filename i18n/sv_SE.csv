@@ -191,7 +191,7 @@
 "%1 days - fixed amount: maximum is %2.","%1 dagar - fast belopp: maximum är %2."
 "%1 days - percentage: maximum is %2.","%1 dagar - procent: maximum är %2."
 "30 days","30 dagar"
-"Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).","Lägg till valfri tax_subtotals-metadata i orderskapandets payload för att tillämpa ytterligare validering (rekommenderas)."
+"If you choose Yes, a per-tax-rate tax_subtotals breakdown is sent in order creation, order edit, fulfilment and refund payloads for validation against the order lines. If you choose No, tax_subtotals is omitted from those payloads.","Om du väljer Ja skickas en tax_subtotals-uppdelning per momssats i nyttolasten för att skapa, ändra, leverera och återbetala ordrar, för validering mot orderraderna. Om du väljer Nej utesluts tax_subtotals från dessa nyttolaster."
 "All Allowed Countries","Alla tillåtna länder"
 "Amounts are shown in %1.","Belopp visas i %1."
 "Cannot convert surcharge from %1 to %2: no exchange rate is currently available.","Det går inte att konvertera tilläggsavgiften från %1 till %2: ingen växelkurs är tillgänglig just nu."

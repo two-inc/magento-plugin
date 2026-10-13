@@ -51,8 +51,12 @@ class ComposeCapture extends OrderService
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
             'line_items' => $lineItems,
-            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
+        // "Validate tax subtotals" off: the key is left out, not sent as null.
+        $taxSubtotals = $this->getTaxSubtotals($lineItems, (int)$order->getStoreId());
+        if ($taxSubtotals !== null) {
+            $reqBody['tax_subtotals'] = $taxSubtotals;
+        }
         // On an order with tenders the invoice declares its prepaid part from
         // Two's record of the order (TWO-26309): its lines are its grand total
         // plus the tenders Magento took off it, and what is not prepaid is payable.

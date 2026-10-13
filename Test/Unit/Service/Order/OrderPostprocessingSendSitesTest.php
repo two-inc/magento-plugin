@@ -327,6 +327,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
     private function adapter(): Adapter
     {
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withLogSubject')->willReturnSelf();
         // A GET is a read with no body, so the hook does not cover it.
         $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = [], string $method = 'POST'): array {
             if ($method !== 'GET') {

@@ -58,7 +58,7 @@ class ComposeRefund extends OrderService
             'currency' => $order->getOrderCurrencyCode(),
             'line_items' => $lineItems,
         ];
-        $taxSubtotals = $this->getTaxSubtotals($lineItems);
+        $taxSubtotals = $this->getTaxSubtotals($lineItems, (int)$order->getStoreId());
         if ($taxSubtotals) {
             $result['tax_subtotals'] = $taxSubtotals;
         }
