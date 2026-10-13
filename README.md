@@ -863,7 +863,13 @@ make test
 
 # End-to-end API tests (requires a valid API key)
 make test-e2e TWO_API_KEY=<your-key>
+# Order tests also need a staging test buyer, as JSON; without one they skip
+export TWO_E2E_BUYER='{"currency": "GBP", "buyer": {...}, "billing_address": {...}, "shipping_address": {...}}'
 ```
+
+CI runs the same suite against staging in `.github/workflows/staging-api.yml`
+with `TWO_E2E_REQUIRED=1`, which turns a missing key or buyer into a failure
+rather than a skip.
 
 ### Other useful targets
 

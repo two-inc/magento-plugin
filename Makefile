@@ -247,11 +247,11 @@ test: test-image
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
 
-## Run end-to-end API tests (requires TWO_API_KEY)
+## Run end-to-end API tests (requires TWO_API_KEY; TWO_E2E_BUYER for order tests)
+# Passed through by name, so make never echoes the key and the buyer JSON keeps its quotes.
 test-e2e: test-image
 	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app \
-		-e TWO_API_KEY=$(TWO_API_KEY) \
-		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
+		-e TWO_API_KEY -e TWO_API_BASE_URL -e TWO_E2E_BUYER -e TWO_E2E_REQUIRED \
 		$(TEST_IMAGE) bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
