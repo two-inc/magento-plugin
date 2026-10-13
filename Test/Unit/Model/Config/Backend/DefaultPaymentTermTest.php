@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Backend\DefaultPaymentTerm;
 
 /**
- * Save-time rule for "Default payment terms" (ABN-495): a default outside the
+ * Save-time rule for "Default payment terms": a default outside the
  * terms being saved alongside it was stored verbatim and only masked at read
  * time, so the admin screen kept showing a default the checkout never used.
  */

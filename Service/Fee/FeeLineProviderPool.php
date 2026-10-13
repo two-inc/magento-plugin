@@ -102,8 +102,7 @@ class FeeLineProviderPool
      * Order::getTaxSubtotals() (keys directly on every line) and
      * everywhere this line eventually reaches Two's API payload.
      * order_item_id/type are set by every other line builder here;
-     * order_item_id is traceability only, not interpreted by the API
-     * (ABN-554).
+     * order_item_id is traceability only, not interpreted by the API.
      *
      * @param mixed $line
      * @return bool

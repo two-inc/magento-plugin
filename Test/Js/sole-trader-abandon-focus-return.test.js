@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-561: closing the sole-trader signup window with nothing captured left
+ * Closing the sole-trader signup window with nothing captured left
  * focus on the document body, because launching it blurs whatever held focus
  * (TWO-25658) and nothing gave it back.
  *
@@ -77,7 +77,7 @@ describe('closing the sole-trader signup returns focus (ABN-561)', function () {
         function (adopted, focusElsewhere, handedOver, remountUnplaces, expectedRestores) {
             const ctx = loadComponentWithPanelDouble();
             // The mode the popup was raised in, which is the only one the close
-            // is this flow's to answer for (ABN-565).
+            // is this flow's to answer for.
             ctx.component.identity().captureMode('soletrader');
             ctx.component.identity().soleTraderAdopted(adopted);
             // After the load, which resets the fixture.

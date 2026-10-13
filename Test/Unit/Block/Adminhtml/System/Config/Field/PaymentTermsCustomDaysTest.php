@@ -21,7 +21,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * The deprecated custom term is offered as keep-or-remove, never as free entry, and each option
- * carries the server's own normalisation as data-two-term (ABN-522).
+ * carries the server's own normalisation as data-two-term.
  *
  * Attributes are read back through a parser, not matched as literals: the real escapeHtmlAttr
  * emits numeric entities for brackets.

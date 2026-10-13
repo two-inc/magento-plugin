@@ -115,7 +115,7 @@ class ComposeOrderPaymentTermTest extends TestCase
     /**
      * No selection is not a failed selection: the checkout never sent one, so
      * the default applies — and when there is no default, no term is invented
-     * for the order either (ABN-544).
+     * for the order either.
      *
      * @param int[] $availableTerms
      * @dataProvider noSelectionProvider

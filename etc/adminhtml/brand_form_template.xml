@@ -429,7 +429,7 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Custom payment terms (days)</label>
                     <comment model="Two\Gateway\Model\Config\Comment\PaymentTermsCustomDays"/>
-                    <!-- Deprecated: hidden unless a value is stored (etc/adminhtml/di.xml gate), and removable but not changeable. ABN-522. -->
+                    <!-- Deprecated: hidden unless a value is stored (etc/adminhtml/di.xml gate), and removable but not changeable. -->
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays</backend_model>
                     <config_path>payment/{{code}}/payment_terms_duration_days</config_path>

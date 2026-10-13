@@ -18,7 +18,7 @@ use Two\Gateway\Model\Config\Source\SurchargeType;
 
 /**
  * Whether the buyer fee for the term a checkout would be charged for can be
- * priced right now (ABN-546).
+ * priced right now.
  *
  * The quote happens on the request being judged, because no later request is
  * guaranteed to notice an unpriceable fee: the term-chip endpoints answer

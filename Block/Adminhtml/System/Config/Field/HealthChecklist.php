@@ -133,7 +133,7 @@ class HealthChecklist extends Field
     }
 
     /**
-     * Why the payment method is absent from the payment list (ABN-518). Only
+     * Why the payment method is absent from the payment list. Only
      * reasons decidable without a basket are judged; a basket-dependent one is
      * named as a constraint instead.
      *
@@ -391,7 +391,7 @@ class HealthChecklist extends Field
      * refresh is running. A read that had to stand in for the cron, and one
      * that could not resolve a record at all, both leave a mark a scheduled
      * run clears — the record's own stamp cannot answer that, because a
-     * stand-in moves it (ABN-519).
+     * stand-in moves it.
      *
      * @return array{label: string, ok: bool, value: string}
      */

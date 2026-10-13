@@ -73,7 +73,7 @@ class OrderIntent implements OrderIntentInterface
         }
 
         $storeId = $this->quoteStoreId();
-        // ABN-533: only a definitive rejection refuses. An unreachable or
+        // Only a definitive rejection refuses. An unreachable or
         // erroring Two says nothing about the key, and this route is reachable
         // whenever the tile is offered, so refusing here would put a red
         // unavailability notice on a correctly configured checkout. Judged
@@ -84,7 +84,7 @@ class OrderIntent implements OrderIntentInterface
         }
         // The verdict's own merchant, else the never-expiring record's: the
         // verdict carries one only on a success, and an unresolvable record
-        // must not refuse an intent by itself (ABN-519). Neither resolving is
+        // must not refuse an intent by itself. Neither resolving is
         // the one state with no identity to send.
         $identity = $this->settingsProvider
             ->identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)

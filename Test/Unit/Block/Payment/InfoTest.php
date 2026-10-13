@@ -19,7 +19,7 @@ use Two\Gateway\Block\Payment\Info;
 /**
  * The order id row on the native admin Payment Information section must
  * carry the active brand's product name in its label, not a hardcoded
- * "Two" — this is what lets a brand overlay (e.g. ABN) get its own
+ * "Two": this is what lets a brand overlay get its own
  * "<brand> order id" label for free from BrandRegistryInterface instead
  * of needing its own suppression/override.
  */

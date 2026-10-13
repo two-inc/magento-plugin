@@ -17,7 +17,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * TWO-25386, and ABN-518 for the checkout-visibility row.
+ * TWO-25386, including the checkout-visibility row.
  */
 class HealthChecklistTest extends TestCase
 {
@@ -241,8 +241,6 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518.
-     *
      * @dataProvider checkoutVisibilityStates
      */
     public function testTheCheckoutVisibilityRowNamesTheActiveReason(
@@ -431,7 +429,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518: the row has to judge the same store the checkout gate would,
+     * The row has to judge the same store the checkout gate would,
      * not the default scope, on a website- or store-view-scoped page.
      *
      * @dataProvider scopeParams
@@ -709,7 +707,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-533 narrowed which categories withhold the payment method from the
+     * A later change narrowed which categories withhold the payment method from the
      * BUYER. The admin's own verdict is unchanged: anything short of a
      * verified key still reads "Not verified" here.
      *

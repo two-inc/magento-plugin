@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-550: the order is composed on the term the chips show as selected, so a
+ * The order is composed on the term the chips show as selected, so a
  * selection the server has not confirmed it priced the quote on can be charged
  * against a total the summary never showed. Placement is refused until the two
  * agree, and a /select-term the server did not take puts the chips back and

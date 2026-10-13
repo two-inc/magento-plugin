@@ -36,13 +36,13 @@ validation message.
 Degrading a junk value to a working default is the failure this replaces: it
 prices an order under a configuration nobody chose, and nobody is told.
 
-**An unresolvable merchant record does NOT withhold the payment method**
-(ABN-519). A record fetch that 5xxes, times out or finds the host unreachable
+**An unresolvable merchant record does NOT withhold the payment method**.
+A record fetch that 5xxes, times out or finds the host unreachable
 says nothing about whether the API key works, and only the api-key verification
 verdict may take the method off the storefront. The record's consumers each
 degrade to their own "nothing configured" behaviour instead: the read path
 offers no buyer term, and order composition refuses to fall back to the nominal
-default term rather than pricing an order under terms nobody granted (ABN-495).
+default term rather than pricing an order under terms nobody granted.
 So a buyer can reach placement and be refused there — accepted, and the cost of
 never hiding the method for a reason unrelated to the key. A 200 carrying no
 merchant record counts as unresolved: a proxy, a captive portal or a maintenance
@@ -62,7 +62,7 @@ submitted key.
 One key configured against sandbox on one store view and production on another must
 not share a slot, or a store view serves the other environment's merchant.
 
-**An admin surface reads the record at the scope its form is editing** (ABN-530).
+**An admin surface reads the record at the scope its form is editing**.
 The API key field is website-scoped, so a website carries its own key and its own
 offerable terms; flattening a website form to a store id judged the edit against
 the default scope's merchant and silently dropped a stored term. Config reads take
@@ -74,7 +74,7 @@ override the key, which makes the answer depend on which child was picked.
 thing this module lets replace it (a cache backend under a memory-pressure
 eviction policy is its own matter), so a key that stops verifying costs the
 merchant nothing beyond the buyer-facing payment method: every admin control the
-record drives keeps rendering indefinitely (ABN-519). The motivating case is a
+record drives keeps rendering indefinitely. The motivating case is a
 merchant running two shops who rotates their key and updates only one — the
 forgotten shop must lose the tile and nothing else, however long the key stays
 wrong. Do not reintroduce a TTL on the record or its success stamp.
@@ -89,7 +89,7 @@ never cached as the record and never moves the stamp: last-known-good is served 
 re-fetch is bounded, so an outage is not a fetch per read. The admin health
 checklist reports both an absent-on-read mark and a stamp the record has outlived.
 
-**That last-known-good DOES keep the method on offer through an outage** (ABN-533).
+**That last-known-good DOES keep the method on offer through an outage**.
 The availability chain reaches the api-key verification verdict before it reaches
 the record, and only a DEFINITIVE rejection there withholds: `invalid_key` (Two
 said no) and `not_configured` (there is no key). `unreachable`, `service_error`,
@@ -114,7 +114,7 @@ stop working, and they report success while dropping nothing. Declaring the type
 is what makes a targeted clean possible at all — a config clean does not touch
 these records.
 
-**The admin fee column is a cached last-known-good set too** (ABN-512). The fee
+**The admin fee column is a cached last-known-good set too**. The fee
 beside each payment term is fetched live per render, and an empty fee means that
 term carries no fee — so a failed fetch may never leave the column blank and
 silent. The last set retrieved for that merchant, buyer country and term list is
@@ -142,7 +142,7 @@ enumeration does not walk fails rather than going uncompared.
 the synthesised sections (`HidePaymentSection` hides the static Two ones), so a
 model wired in `system.xml` alone is a save-time guard, an option list or a field
 renderer that exists on a Two-only install and on no overlay — the invariant holds
-everywhere it is tested and nowhere a partner runs. That is how ABN-497 shipped a
+everywhere it is tested and nowhere a partner runs. That is how one release shipped a
 surcharge tax treatment that could not be saved blank on Two and could on every
 brand. `BrandFormModelWiringParityTest` compares all three slots across every
 shared section and is the guard against the next one.
@@ -156,12 +156,12 @@ of month (TWO-25656); a merchant not on it is not offered it.
 **With nothing offered there is no default term.** `getDefaultPaymentTerm()`
 returns null rather than a day count, and no caller substitutes one: the term
 set is offered empty and the buyer is refused at order placement rather than at
-selection (ABN-544).
+selection.
 
 **The default term prefers 30 days.** `getDefaultPaymentTerm()` resolves the
 admin's stored default, then the merchant record's own default term, then 30,
 then the shortest offered term — each honoured only while it is in the offered
-set (ABN-548). The differential surcharge baseline reads the same resolver, so
+set. The differential surcharge baseline reads the same resolver, so
 the reference term it prices against moves with the preference.
 
 **Nothing but the admin synthesises a stored default term.** The field's first
@@ -174,7 +174,7 @@ withdrew has no matching option, so the select reads Automatic.
 **The admin surfaces that NAME the default term resolve it, never read the
 select.** With Automatic selected the select carries no day count, while the
 surcharge grid still has to disable the row differential mode prices against —
-showing its stored amounts, which a disabled cell never posts anyway (ABN-554) —
+showing its stored amounts, which a disabled cell never posts anyway,
 and the differential option still has to name it. `SurchargeGrid` and
 `Two_Gateway/js/default-term` each apply the resolver's order — the JS from the
 ticked terms plus the merchant's own default term, published as

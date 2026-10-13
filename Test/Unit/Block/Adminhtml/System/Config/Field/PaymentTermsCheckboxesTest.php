@@ -215,7 +215,7 @@ class PaymentTermsCheckboxesTest extends TestCase
 
     /**
      * Published to the browser so the admin JS can name the term the checkout
-     * will preselect while the field reads Automatic (ABN-548).
+     * will preselect while the field reads Automatic.
      *
      * @dataProvider merchantDefaultTermProvider
      */

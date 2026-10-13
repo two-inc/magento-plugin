@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-591. jsdom's `getComputedStyle` resolves the cascade by source order and
+ * Jsdom's `getComputedStyle` resolves the cascade by source order and
  * weighs no specificity, so `chip-palette.test.js` cannot tell a rule that wins
  * on score from one that wins on position — a higher-scoring rule inserted
  * above the chip block would repaint every chip in a browser and leave that
@@ -697,7 +697,7 @@ describe('the chip cascade is decided by weight, not by position (ABN-591)', () 
  * a host theme, which jsdom never loads: `button:hover` scores 0-1-1 and takes
  * the label from the base rule at 0-1-0, but not from the hover rule itself. The
  * theme is modelled here instead, last in source order, so only weight can hold
- * the label (ABN-598).
+ * the label.
  */
 describe('a theme cannot repaint the unselected chip label (ABN-598)', () => {
     test.each([

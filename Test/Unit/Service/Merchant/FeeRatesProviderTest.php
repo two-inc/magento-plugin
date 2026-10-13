@@ -14,7 +14,7 @@ use Two\Gateway\Service\Merchant\FeeRatesProvider;
 /**
  * The admin fee column used to blank on any upstream failure, which reads as
  * "this term has no fee". The last retrieved set is kept instead, and the
- * caller is told whether what it got is current (ABN-512).
+ * caller is told whether what it got is current.
  */
 class FeeRatesProviderTest extends TestCase
 {

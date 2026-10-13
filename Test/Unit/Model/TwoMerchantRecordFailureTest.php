@@ -18,8 +18,7 @@ use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 /**
  * A merchant-record fetch that fails says nothing about whether the API key
  * works, so it must not take the payment method off the storefront. The
- * api-key verification verdict is the only upstream failure that withholds
- * (ABN-519).
+ * api-key verification verdict is the only upstream failure that withholds.
  */
 class TwoMerchantRecordFailureTest extends TestCase
 {

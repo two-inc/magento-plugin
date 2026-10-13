@@ -6,8 +6,8 @@ define([], function () {
     /**
      * The term the checkout will preselect, mirroring
      * Repository::getDefaultPaymentTerm() so the admin's surcharge grid and
-     * the differential label can name it while the field reads Automatic
-     * (ABN-548). 0 when nothing is offered.
+     * the differential label can name it while the field reads Automatic.
+     *0 when nothing is offered.
      *
      * `candidates` is intersected with `merchantOffered` here rather than by
      * each caller: the legacy custom-term field can name a day the merchant's

@@ -548,7 +548,7 @@ class ProxiedRegistryCallsTest extends TestCase
     }
 
     /**
-     * ABN-533. This route is reachable whenever the tile is offered, so only a
+     * This route is reachable whenever the tile is offered, so only a
      * definitive rejection may refuse an intent — a transient failure relays
      * the never-expiring record's identity instead, and refusing would put a
      * red unavailability notice on a correctly configured checkout.
@@ -732,7 +732,7 @@ class ProxiedRegistryCallsTest extends TestCase
 
     /**
      * A registry lookup is never failed over the verdict — the buyer may be
-     * mid-typing. ABN-533: a transient failure keeps the merchant attribution
+     * mid-typing. A transient failure keeps the merchant attribution
      * too, off the never-expiring record, so lookups stay merchant-scoped for
      * the duration of an outage instead of going out unscoped.
      *

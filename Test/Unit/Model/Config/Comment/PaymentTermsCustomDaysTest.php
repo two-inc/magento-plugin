@@ -18,7 +18,7 @@ use Two\Gateway\Model\Config\FieldGate\EndOfMonth;
  * The help text under "Custom payment terms (days)". End-of-Month semantics
  * are named only where End of Month is stored at the scope being edited — the
  * selector carrying that choice is hidden under Standard, so its wording
- * cannot explain the field (ABN-495).
+ * cannot explain the field.
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {

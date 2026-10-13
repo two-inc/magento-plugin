@@ -11,7 +11,7 @@ use Two\Gateway\Model\Ui\AnchorOnlyHtmlEscaper;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 
 /**
- * The two brand-supplied checkout link targets (ABN-496). '' means "render
+ * The two brand-supplied checkout link targets. '' means "render
  * nothing", so the empty-URL rows are the ones that matter: an anchor with an
  * empty href would point the buyer at the checkout page itself.
  */

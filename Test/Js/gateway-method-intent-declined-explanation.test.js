@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-563: a declined order intent disables the Place Order button, so the
+ * A declined order intent disables the Place Order button, so the
  * buyer must be told why. These specs pin the sentence being present, correct
  * and carried by a live region — and that no brand configuration can withhold
  * it, which is the state the defect was reported from.

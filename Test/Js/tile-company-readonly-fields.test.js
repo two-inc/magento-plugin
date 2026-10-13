@@ -1021,7 +1021,7 @@ describe('the notices are gated on their own observables, not on capture', () =>
         // Suppressing both means ConfigProvider ships neither copy object — the
         // config here carries no notice keys at all. The approval goes quiet;
         // the decline falls back to platform wording, because it explains a
-        // disabled Place Order button (ABN-563).
+        // disabled Place Order button.
         const { renderer } = loadTile();
 
         renderer.initOrderIntentApprovedNotice({});

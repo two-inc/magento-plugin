@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-591. The unbranded chip palette — payment-term chips and company-mode
+ * The unbranded chip palette: payment-term chips and company-mode
  * chips alike, in every state, on the one stylesheet both Luma and Amasty
  * load.
  *
