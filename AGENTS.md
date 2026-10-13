@@ -1475,11 +1475,18 @@ line no item matches has no class, so step 4. At placement
 the items have no id, so `ComposeOrder` matches its product lines to the
 items behind them on SKU, the name only breaking a tie, never by position
 (`matchLineItemSources()`), so a plugin that reorders or adds lines cannot
-shift classes. The dropdown list comes from
-`Service\Api\TaxCodes` (cached a day, failure not cached, no built-in list);
-the hidden field starts as the saved map, so a save while that list cannot be
-read keeps it, and it carries saved rows the form no longer shows (a rate
-deleted or raised above 0%).
+shift classes. The admin section (TWO-26153) is decided by
+`Model\Config\TaxCodeSection` from the facts `TaxCodeSectionResolver` reads at
+the edited scope: the record's country and `Service\Api\TaxCodes::getList()`,
+which caches a country's answer a day, keeps its last answer in the flag
+table (a cache flush does not clear it),
+waits five minutes between failed fetches and caches 400
+`COUNTRY_NOT_SUPPORTED` as an empty list. The table shows only where the list
+says codes are mandatory at 0%; otherwise no row renders, so nothing posts.
+The backend model stores rows only while the table shows, and "Clear saved
+tax codes" posts `TaxCodeMap::CLEAR` in place of the map and stores `{}`. The
+hidden field starts as the saved map and carries saved rows the table no
+longer shows (a rate deleted or raised above 0%).
 
 ## An unitemized fee is reconciled per entity, and refundable
 

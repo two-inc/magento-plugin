@@ -289,6 +289,43 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
+     * TWO-26153: an unreadable tax code map withholds the method (TWO-26309), and the row says where to clear it.
+     *
+     * @dataProvider taxCodeMaps
+     */
+    public function testTheCheckoutVisibilityRowNamesAnUnreadableTaxCodeMap(bool $readable, bool $expectedOk, string $expectedFragment): void
+    {
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        if ($readable) {
+            $this->configRepository->method('getTaxCodeMap')->willReturn([]);
+        } else {
+            $this->configRepository->method('getTaxCodeMap')
+                ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unreadable')));
+        }
+        $this->supportedCountriesProvider->method('getState')->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+        $this->scopeConfig->method('getValue')->willReturn('');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertSame($expectedOk, $row['ok']);
+        $this->assertStringContainsString($expectedFragment, $row['value']);
+    }
+
+    public static function taxCodeMaps(): array
+    {
+        return [
+            'readable' => [true, true, 'Shown at checkout'],
+            'unreadable' => [false, false, 'Use Clear saved tax codes under Order management > Tax'],
+        ];
+    }
+
+    /**
      * @return array<string, array{0: bool, 1: string, 2: string|null, 3: string,
      *     4: array<string,mixed>|null, 5: array<string,mixed>|null, 6: bool, 7: bool, 8: string, 9: string}>
      */

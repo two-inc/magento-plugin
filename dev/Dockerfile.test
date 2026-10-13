@@ -1,5 +1,7 @@
 # python3 for dev/debrand-grep.sh, which Test/Unit/Dev/DebrandGrepTest.php shells out to; php:8.2-cli ships none.
+# intl, which Magento requires, so the admin renders country names as a shop does.
 FROM php:8.2-cli
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 \
+    && apt-get install -y --no-install-recommends python3 libicu-dev \
+    && docker-php-ext-install intl \
     && rm -rf /var/lib/apt/lists/*

@@ -187,6 +187,8 @@ require_once __DIR__ . '/Stubs/PaymentMethod.php';
 // Admin/storefront message channel with real adder signatures, so a call to
 // it is mockable; per-symbol guard lives inside the stub file.
 require_once __DIR__ . '/Stubs/MessageManager.php';
+// The flag table, where the tax code section keeps each country's last code list.
+require_once __DIR__ . '/Stubs/FlagManager.php';
 
 // View asset repository with a real getUrl(), so the checkout tile's icon URL
 // is mockable; per-symbol guard lives inside the stub file.
