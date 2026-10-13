@@ -113,7 +113,6 @@ class Adapter
         ?int $timeoutSeconds = null
     ): array {
         try {
-            $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
             $mode = $modeOverride
                 ?: ($storeId !== null ? $this->configRepository->getMode($storeId) : null);
             $url = $this->configRepository->addVersionDataInURL(
@@ -204,25 +203,16 @@ class Adapter
                 } else {
                     $decoded = json_decode($body, true);
                 }
-                $this->logRepository->addDebugLog(
-                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
-                    $decoded
-                );
+                $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
                 return ['status' => $result->status, 'body' => $decoded];
             } else {
                 if ($body) {
                     $decoded = json_decode($body, true) ?: [];
                     $decoded['http_status'] = $result->status;
-                    $this->logRepository->addDebugLog(
-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
-                        $decoded
-                    );
+                    $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
                     return ['status' => $result->status, 'body' => $decoded];
                 } else {
-                    $this->logRepository->addDebugLog(
-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
-                        'Invalid API response.'
-                    );
+                    $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
                     // This used to throw a LocalizedException, which this
                     // method's own catch-all immediately converted into
                     // exactly the array below minus `http_status` — the
@@ -261,6 +251,54 @@ class Adapter
                     'error_message' => $exception->getMessage(),
                 ],
             ];
+        }
+    }
+
+    /**
+     * Logs one API exchange, request and response together, only when the
+     * store's "Enable debug logging" is on: the bodies carry buyer details.
+     * The API key and every custom header value are redacted. A refused
+     * call (HTTP 400 and above) goes to the error log, the rest to the
+     * debug log.
+     */
+    private function logExchange(
+        string $method,
+        string $endpoint,
+        array $payload,
+        ApiCall $call,
+        ApiResult $result,
+        ?int $storeId
+    ): void {
+        if (!$this->configRepository->isDebugMode($storeId)) {
+            return;
+        }
+        $headers = $call->headers;
+        $redact = array_change_key_case($this->configRepository->getCustomHeaders($storeId), CASE_LOWER);
+        $redact['x-api-key'] = true;
+        foreach (array_keys($headers) as $name) {
+            if (isset($redact[strtolower((string)$name)])) {
+                $headers[$name] = '[REDACTED]';
+            }
+        }
+        $rawBody = $result->body;
+        $decodedBody = json_decode($rawBody, true);
+        $context = [
+            'request' => [
+                'url' => $call->url,
+                'headers' => $headers,
+                'body' => $payload,
+            ],
+            'response' => [
+                'status_code' => $result->status,
+                'headers' => $result->headers,
+                'body' => json_last_error() === JSON_ERROR_NONE ? $decodedBody : $rawBody,
+            ],
+        ];
+        $message = sprintf('%s %s', $method, $endpoint);
+        if ($result->status >= 400) {
+            $this->logRepository->addErrorLog($message, $context);
+        } else {
+            $this->logRepository->addDebugLog($message, $context);
         }
     }
 

@@ -553,4 +553,82 @@ class AdapterTest extends TestCase
             ],
         ];
     }
+
+    // ── Debug logging ───────────────────────────────────────────────────
+
+    /**
+     * Given the store's "Enable debug logging" setting; When a call returns
+     * a given status; Then the request and response bodies are logged only
+     * with debug on, once, with the key and custom header values redacted,
+     * a refusal going to the error log and the rest to the debug log.
+     *
+     * @dataProvider debugLoggingCases
+     */
+    public function testExchangeIsLoggedOnlyWithDebugOn(
+        bool $debug,
+        int $status,
+        int $debugLogs,
+        int $errorLogs,
+        string $description
+    ): void {
+        $configRepository = $this->createMock(ConfigRepository::class);
+        $configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
+        $configRepository->method('addVersionDataInURL')->willReturnArgument(0);
+        $configRepository->method('getApiKey')->willReturn('test-key');
+        $configRepository->method('getCustomHeaders')->willReturn(['X-WAF-TOKEN' => 'waf-token']);
+        $configRepository->method('isDebugMode')->with(7)->willReturn($debug);
+
+        $this->curl->method('getStatus')->willReturn($status);
+        $this->curl->method('getBody')->willReturn('{"buyer":"Jane Doe"}');
+        $this->curl->method('getHeaders')->willReturn(['X-Trace' => 't1']);
+
+        $logged = ['debug' => [], 'error' => []];
+        $logRepository = $this->createMock(LogRepository::class);
+        $logRepository->method('addDebugLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                $logged['debug'][] = [$type, $data];
+            }
+        );
+        $logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                $logged['error'][] = [$type, $data];
+            }
+        );
+
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+        $adapter = new Adapter(
+            $configRepository,
+            $this->brandRegistry,
+            $curlFactory,
+            $logRepository,
+            new NullApiTranslator()
+        );
+        $adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 7);
+
+        $this->assertCount($debugLogs, $logged['debug'], $description);
+        $this->assertCount($errorLogs, $logged['error'], $description);
+        foreach (array_merge($logged['debug'], $logged['error']) as [$type, $data]) {
+            $this->assertSame('POST /v1/order', $type, $description);
+            $this->assertSame(['buyer' => 'Jane Doe'], $data['request']['body'], $description);
+            $this->assertSame('[REDACTED]', $data['request']['headers']['X-API-Key'], $description);
+            $this->assertSame('[REDACTED]', $data['request']['headers']['X-WAF-TOKEN'], $description);
+            $this->assertSame($status, $data['response']['status_code'], $description);
+            $this->assertSame(['buyer' => 'Jane Doe'], $data['response']['body'], $description);
+            $this->assertSame(['X-Trace' => 't1'], $data['response']['headers'], $description);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: int, 2: int, 3: int, 4: string}>
+     */
+    public static function debugLoggingCases(): array
+    {
+        return [
+            'debug off, success' => [false, 200, 0, 0, 'no body is logged with debug off'],
+            'debug off, refused' => [false, 422, 0, 0, 'no body is logged with debug off, even on a refusal'],
+            'debug on, success' => [true, 200, 1, 0, 'a success is one debug log entry'],
+            'debug on, refused' => [true, 422, 0, 1, 'a refusal is one error log entry'],
+        ];
+    }
 }

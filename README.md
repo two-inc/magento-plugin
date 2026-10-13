@@ -513,9 +513,9 @@ subscriber's code.
 
 **What you return is sent.** The payload goes out as your subscriber returns
 it, and Two's API validates it as it validates any request, including whether
-its lines and totals add up. If the API rejects your payload, its
-response is written to `var/log/two/debug.log` and its message is shown to the
-admin for an admin action, or to the buyer at checkout.
+its lines and totals add up. If the API rejects your payload, its message is
+shown to the admin for an admin action, or to the buyer at checkout, and with
+Debug Mode on the request and response are written to `var/log/two/error.log`.
 
 **Checks.** After the hook the plugin refuses a request only for a fault in
 your subscriber's code (it throws, returns something other than an array, or
