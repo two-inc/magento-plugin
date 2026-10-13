@@ -83,4 +83,13 @@ class TaxSubtotalsTest extends TestCase
     {
         $this->assertSame([], $this->orderService(true)->getTaxSubtotals([], 1));
     }
+
+    /**
+     * TWO-26340: a caller outside the plugin that names no store still gets
+     * an answer, at the current scope, as before the store was passed.
+     */
+    public function testAStoreIsOptional(): void
+    {
+        $this->assertSame([], $this->orderService(true)->getTaxSubtotals([]));
+    }
 }

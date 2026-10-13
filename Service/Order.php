@@ -1880,10 +1880,10 @@ abstract class Order
      * off for the order's store.
      *
      * @param array $lineItems
-     * @param int $storeId the order's store, whose setting decides
+     * @param int|null $storeId the order's store, whose setting decides
      * @return array|null
      */
-    public function getTaxSubtotals(array $lineItems, int $storeId): ?array
+    public function getTaxSubtotals(array $lineItems, ?int $storeId = null): ?array
     {
         if (!$this->configRepository->isTaxSubtotalsEnabled($storeId)) {
             return null;
