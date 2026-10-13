@@ -208,33 +208,58 @@ class TaxCodeResolverTest extends TestCase
     }
 
     /**
-     * A record written before it listed the shared codes gives a line with no
-     * class the one code its recorded lines carry (the fee line aside), and
-     * no code when they disagree or carry none.
+     * TWO-26340: step 4 pools only the codes of lines on this request: a
+     * recorded code while the record lists its line as coded by steps 1 to 3,
+     * and a code resolved now. A record with no such list shares the one code
+     * every other 0% line here carries. Placement codes as before and records
+     * the list. Items 1 and 2 are goods (class 5, quote items 101 and 102).
      *
-     * @dataProvider recordWithNoSharedKeyCases
+     * @dataProvider stepFourPoolCases
      */
-    public function testARecordWithNoSharedKeySharesItsRecordedCodes(string $record, ?string $expected, string $description): void
-    {
+    public function testStepFourPoolsThisRequestsLines(
+        ?array $record,
+        array $lines,
+        array $map,
+        array $expected,
+        ?array $recorded,
+        string $description
+    ): void {
         $order = $this->order([['simple', 0.0], ['simple', 0.0]], ['US', '10001'], 'US');
-        $this->save($order);
-        $order->setData(TaxCodeResolver::STORED_CODES, $record);
+        if ($record !== null) {
+            $this->save($order);
+            $order->setData(TaxCodeResolver::STORED_CODES, json_encode($record, JSON_FORCE_OBJECT));
+        }
+        $fixtures = [
+            'A' => ['order_item_id' => 1, 'type' => 'PHYSICAL', 'tax_rate' => '0.00'],
+            'B' => ['order_item_id' => 2, 'type' => 'PHYSICAL', 'tax_rate' => '0.00'],
+            'fee' => ['order_item_id' => 'other_charges', 'type' => 'OTHER', 'tax_rate' => '0.00'],
+            'unmatched' => ['order_item_id' => 'NEW-SKU', 'type' => 'PHYSICAL', 'tax_rate' => '0.00'],
+            'adjustment' => ['order_item_id' => 'adjustment', 'type' => 'OTHER', 'tax_rate' => '0.00'],
+        ];
+        $resolver = new TaxCodeResolver($this->config($map), $this->records('ES'), $this->shopRates());
+        $items = ['A' => $order->itemsById[1], 'B' => $order->itemsById[2]];
 
-        // Two items, then the adjustment, then shipping (class 9, unmapped).
-        $codes = $this->codes($this->refund($order, 'ES', []));
-        $this->assertSame($expected, $codes[2], $description);
+        $sent = $resolver->apply(array_combine($lines, array_map(static fn (string $line) => $fixtures[$line], $lines)), $order, $items);
+
+        $this->assertSame($expected, $this->codes($sent), $description);
+        if ($recorded !== null) {
+            $this->assertSame($recorded, json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true), $description);
+            $this->assertStringContainsString('"mapped":[', (string)$order->getData(TaxCodeResolver::STORED_CODES), 'mapped is a JSON list');
+        }
     }
 
-    public static function recordWithNoSharedKeyCases(): array
+    public static function stepFourPoolCases(): array
     {
-        $export = self::EXPORT;
-        $art20 = self::ART20;
+        $e = self::EXPORT;
+        $a = self::ART20;
         return [
-            ["{\"item:101\":\"$export\",\"item:102\":\"$export\"}", self::EXPORT, 'recorded codes that agree are shared'],
-            ["{\"item:101\":\"$export\",\"item:102\":null}", self::EXPORT, 'a line recorded with no code does not make them disagree'],
-            ["{\"item:101\":\"$export\",\"item:102\":\"$art20\"}", null, 'recorded codes that disagree give no code'],
-            ["{\"item:101\":null,\"item:102\":null,\"fee\":\"$art20\"}", null, 'no recorded code (the fee line aside) gives no code'],
-            ['{}', null, 'an empty record gives no code'],
+            [['item:101' => $e, 'fee' => $e, 'mapped' => ['item:101']], ['fee', 'unmatched'], [], [$e, null], null, 'the source line removed: the fee keeps its code, a new keyless line gets none'],
+            [['item:101' => $e, 'item:102' => $a, 'mapped' => ['item:101', 'item:102']], ['B', 'unmatched'], [], [$a, $a], null, 'a remaining mapped line shares its code; a removed one no longer disagrees'],
+            [['item:101' => $e, 'item:102' => $a, 'mapped' => ['item:101', 'item:102']], ['B', 'adjustment'], [], [$a, $a], null, 'the refund adjustment pools this request only'],
+            [['item:101' => $e, 'fee' => $a], ['A', 'fee', 'unmatched'], [], [$e, $a, null], null, 'no key list: codes on this request that disagree give none'],
+            [['item:101' => $e], ['A', 'B', 'unmatched'], [], [$e, null, null], null, 'no key list: a line here with no code gives none'],
+            [['item:101' => $e, 'item:102' => $a], ['A', 'unmatched'], [], [$e, $e], null, 'no key list: the one code this request carries, the removed line aside'],
+            [null, ['A', 'unmatched', 'fee'], ['5' => $e], [$e, $e, $e], ['item:101' => $e, 'fee' => $e, 'mapped' => ['item:101']], 'placement codes as before and records which lines steps 1 to 3 coded'],
         ];
     }
 
@@ -506,7 +531,7 @@ class TaxCodeResolverTest extends TestCase
 
         $this->assertSame([self::ART20, self::EXPORT], $this->codes($create['line_items']));
         $this->assertSame(
-            ['item:101' => self::ART20, 'item:102' => self::EXPORT, 'shared' => [self::ART20, self::EXPORT]],
+            ['item:101' => self::ART20, 'item:102' => self::EXPORT, 'mapped' => ['item:101', 'item:102']],
             json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true)
         );
     }

@@ -30,7 +30,8 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * 3. No rate matched: the class's no-rule row.
  * 4. A line with no class (fee lines of type OTHER, a flat-rate payment terms
  *    fee, the refund adjustment, a product line no item matched) takes the one
- *    code the order's lines coded by steps 1 to 3 share; none if they disagree.
+ *    code this request's lines coded by steps 1 to 3 share; none if they
+ *    disagree.
  * 5. Otherwise no code. The plugin never refuses an order over a missing code:
  *    Two's API validates what is sent.
  *
@@ -45,9 +46,12 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * than resolving again, so a changed address, mapping or product tax class
  * never moves a placed order. A line the record does not cover (an order placed
  * before it existed, or a line placement never sent, such as a refund
- * adjustment) is resolved as at placement, step 4 sharing the codes steps 1
- * to 3 gave at placement (SHARED_KEY). A record written before that key
- * existed shares the codes its recorded lines carry, the `fee` line aside.
+ * adjustment) is resolved as at placement. Step 4 shares only the codes of
+ * lines on this request: a recorded code counts while the record lists its
+ * line as coded by steps 1 to 3 (MAPPED_KEY), so a code placement gave a line
+ * the request no longer carries is never shared (TWO-26340). A record written
+ * before that list existed shares the one code every other 0% line on the
+ * request carries, and none when they disagree or one has none.
  *
  * Lines at any other rate are left exactly as composed.
  */
@@ -74,11 +78,11 @@ class TaxCodeResolver
     private const FEE_KEY = 'fee';
 
     /**
-     * The record key listing the codes steps 1 to 3 gave at placement, which a
-     * later request's lines with no class share (step 4); absent when there
-     * were none.
+     * The record key listing the line keys whose codes steps 1 to 3 gave at
+     * placement: the only recorded codes a later request's lines with no class
+     * share (step 4), and only while their line is on that request.
      */
-    private const SHARED_KEY = 'shared';
+    private const MAPPED_KEY = 'mapped';
 
     /** The line types the composers give product lines; nothing else is an order item. */
     private const PRODUCT_LINE_TYPES = ['PHYSICAL', 'DIGITAL'];
@@ -130,15 +134,15 @@ class TaxCodeResolver
     {
         $placing = !$order->getId();
         $stored = $placing ? null : self::decodeStored($order->getData(self::STORED_CODES));
+        // The record's keys whose codes steps 1 to 3 gave; null for a record written before it listed them.
+        $storedMapped = is_array($stored[self::MAPPED_KEY] ?? null) ? array_values($stored[self::MAPPED_KEY]) : null;
         $context = null;
         $record = [];
-        // Step 4's pool: the codes steps 1 to 3 gave, here and at placement.
-        $shared = [];
-        foreach ($this->recordedShared($stored) as $code) {
-            if (is_string($code)) {
-                $shared[$code] = true;
-            }
-        }
+        // Step 4's pool: the codes steps 1 to 3 gave this request's lines, here or at placement (TWO-26340).
+        $pool = [];
+        $mappedKeys = [];
+        // Every code this request's lines with a class carry, "no code" included, for a record with no key list.
+        $carried = [];
         $keyless = [];
 
         foreach ($lineItems as $key => $line) {
@@ -157,6 +161,9 @@ class TaxCodeResolver
             // A line placed with a code keeps it; one placed uncoded is resolved again (TWO-26309).
             if ($stored !== null && $storeKey !== null && is_string($stored[$storeKey] ?? null)) {
                 $code = $stored[$storeKey];
+                if ($storedMapped !== null && in_array($storeKey, $storedMapped, true)) {
+                    $pool[$code] = true;
+                }
             } else {
                 $context = $context ?? $this->context($order, $mapRequired);
                 $classId = $this->lineClass($line, $item ?: null, $context);
@@ -166,28 +173,36 @@ class TaxCodeResolver
                 }
                 $code = $this->resolve($order, $classId, $context);
                 if ($code !== null) {
-                    $shared[$code] = true;
+                    $pool[$code] = true;
+                    if ($storeKey !== null) {
+                        $mappedKeys[$storeKey] = true;
+                    }
                 }
             }
+            $carried[(string)$code] = true;
             $lineItems[$key] = $this->code($lineItems[$key], $code);
             if ($placing && $storeKey !== null && $code !== null) {
                 $record[$storeKey] = $code;
             }
         }
 
+        if ($stored !== null && $storedMapped === null) {
+            // A record with no key list cannot say which codes step 4 gave: the one code every other 0% line
+            // here carries, none when they disagree or one has none.
+            $pool = isset($carried['']) ? [] : $carried;
+        }
+        $shared = count($pool) === 1 ? (string)key($pool) : null;
         foreach ($keyless as $key => $storeKey) {
-            $code = count($shared) === 1 ? (string)key($shared) : null;
-            $lineItems[$key] = $this->code($lineItems[$key], $code);
-            if ($placing && $storeKey !== null && $code !== null) {
-                $record[$storeKey] = $code;
+            $lineItems[$key] = $this->code($lineItems[$key], $shared);
+            if ($placing && $storeKey !== null && $shared !== null) {
+                $record[$storeKey] = $shared;
             }
         }
 
-        if ($placing && $shared !== []) {
-            $record[self::SHARED_KEY] = array_keys($shared);
-        }
         if ($placing) {
-            $order->setData(self::STORED_CODES, (string)json_encode($record, JSON_FORCE_OBJECT));
+            $record[self::MAPPED_KEY] = array_keys($mappedKeys);
+            // Never empty and keyed by name, so it encodes as an object, with `mapped` as a list.
+            $order->setData(self::STORED_CODES, (string)json_encode($record));
         }
 
         return $lineItems;
@@ -271,27 +286,6 @@ class TaxCodeResolver
         $decoded = is_string($stored) && $stored !== '' ? json_decode($stored, true) : null;
 
         return is_array($decoded) ? $decoded : null;
-    }
-
-    /**
-     * Step 4's pool from a later request's record: its SHARED_KEY list, or, in
-     * a record written before that key existed, every code its lines carry
-     * other than the fee line's, which step 4 gave itself.
-     *
-     * @param array<string, mixed>|null $stored
-     * @return array
-     */
-    private function recordedShared(?array $stored): array
-    {
-        if ($stored === null) {
-            return [];
-        }
-        if (array_key_exists(self::SHARED_KEY, $stored)) {
-            return (array)$stored[self::SHARED_KEY];
-        }
-        unset($stored[self::FEE_KEY]);
-
-        return array_values($stored);
     }
 
     /**
