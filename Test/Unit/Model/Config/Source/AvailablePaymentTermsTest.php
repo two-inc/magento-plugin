@@ -14,7 +14,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * The empty option is what lets an admin leave the default term to the
  * checkout's resolver; without it the select can only name a day count
- * and posts one on every save (ABN-548).
+ * and posts one on every save.
  */
 class AvailablePaymentTermsTest extends TestCase
 {

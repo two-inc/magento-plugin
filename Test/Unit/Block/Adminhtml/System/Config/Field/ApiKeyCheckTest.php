@@ -52,7 +52,7 @@ class ApiKeyCheckTest extends TestCase
 
     /**
      * The API key is website-scoped, so the panel must verify the key of the scope its
-     * form is editing rather than the default scope's (ABN-530).
+     * form is editing rather than the default scope's.
      *
      * @dataProvider formScopes
      */

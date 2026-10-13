@@ -61,6 +61,21 @@ jobs:
           workload_identity_provider: ${{ vars.E2E_WIF_PROVIDER }}
       - uses: google-github-actions/setup-gcloud@v3
         if: ${{ vars.E2E_SA != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      # The store sits behind oauth2-proxy (PLAT-2550), which accepts this SA's
+      # Google ID token. A dedicated no-roles SA, since this repo is public.
+      # Fork PRs get no token and are stopped at the login page.
+      - name: Mint store ID token
+        id: store-token
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: google-github-actions/auth@v3
+        with:
+          service_account: gha-magento-plugin-e2e@two-beta.iam.gserviceaccount.com
+          workload_identity_provider: projects/128165521407/locations/global/workloadIdentityPools/github-actions-runner/providers/magento-plugin
+          token_format: id_token
+          id_token_audience: https://e2e.beta.two.inc
+          id_token_include_email: true
+          create_credentials_file: false
+          export_environment_variables: false
 
       - uses: actions/setup-node@v7
         with:
@@ -90,18 +105,32 @@ jobs:
           fi
 
       - name: Run Playwright e2e
+        # The store is behind oauth2-proxy, so fork PRs (no ID token) cannot reach it.
+        if: ${{ steps.store-token.outputs.id_token != '' }}
         # Inputs are passed via env (never interpolated into the script) to avoid
         # shell injection through the free-text grep filter.
         env:
           STORE_URL: ${{ github.event.inputs.store_url }}
+          STORE_ID_TOKEN: ${{ steps.store-token.outputs.id_token }}
           ADMIN_USER: ${{ vars.E2E_ADMIN_USER }}
           GREP: ${{ github.event.inputs.grep }}
+        # Playwright's failure call logs print request headers, and this repo's logs
+        # are public: redact cookie and authorization values. pipefail keeps a
+        # failing suite failing the step.
         run: |
-          if [ -n "$GREP" ]; then
-            npx playwright test -g "$GREP"
-          else
-            npx playwright test
-          fi
+          set -o pipefail
+          args=()
+          if [ -n "$GREP" ]; then args=(-g "$GREP"); fi
+          npx playwright test "${args[@]}" 2>&1 \
+            | sed -uE 's/((set-)?cookie|authorization)([:=]).*/\1\3 [redacted]/I'
+      # Failure screenshots only. This repo is public: traces and error-context.md
+      # record request headers, including the ID token and session cookies.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-results
+          path: e2e/test-results/**/*.png
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         if: always()
         with:

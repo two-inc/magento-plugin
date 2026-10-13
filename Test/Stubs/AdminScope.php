@@ -61,6 +61,9 @@ namespace Magento\Store\Model {
             public function getWebsites($withDefault = false, $codeKey = false);
 
             public function getGroup($groupId = null);
+
+            /** Core's switch that hides scope labels on a single-store install. */
+            public function isSingleStoreMode();
         }
     }
 }

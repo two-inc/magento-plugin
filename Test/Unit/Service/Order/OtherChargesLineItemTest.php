@@ -242,7 +242,7 @@ class OtherChargesLineItemTest extends TestCase
     }
 
     /**
-     * ABN-554: an unclaimed fee becomes a residual, and
+     * An unclaimed fee becomes a residual, and
      * Model\Total\Creditmemo\OtherCharges offers a residual to the merchant
      * to refund — which Amasty's own credit-memo collector is already doing.
      *

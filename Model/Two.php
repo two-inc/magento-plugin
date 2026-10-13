@@ -331,7 +331,9 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute(
+        // The adapter logs a refusal with the API's reason (TWO-26259,
+        // TWO-26340); the quote identifies the order, which has no id yet.
+        $response = $this->apiAdapter->withLogSubject('quote ' . $order->getQuoteId())->execute(
             '/v1/order',
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_ORDER_CREATE,
@@ -341,15 +343,21 @@ class Two extends AbstractMethod
             'POST',
             (int)$order->getStoreId()
         );
-        $error = $this->getErrorFromResponse($response);
+        $error = $this->getErrorFromResponse($response, true);
         if ($error) {
             throw new LocalizedException($error);
         }
 
         if ($response['status'] !== 'APPROVED') {
+            // The status and reason only: the response carries the buyer's
+            // details, which are logged only with debug logging on.
             $this->logRepository->addDebugLog(
                 sprintf('Order was not accepted by %s', $this->brandRegistry->getProductName()),
-                $response
+                [
+                    'quote_id' => $order->getQuoteId(),
+                    'status' => $response['status'] ?? null,
+                    'decline_reason' => $response['decline_reason'] ?? null,
+                ]
             );
             // Surface the minimum when the decline is attributable to it:
             // primarily by the API's machine-readable decline reason
@@ -482,11 +490,22 @@ class Two extends AbstractMethod
     /**
      * Get error from response
      *
-     * @param $response
+     * With $atOrderCreate, any refusal at status 400 or above names the
+     * fields the buyer can fix ("Phone Number is not valid."), chosen from
+     * the structured field path and never from the API's wording, unless the
+     * status is a server error (5xx), which is always generic; a
+     * validation failure naming no field we know shows the general error;
+     * else the same-company message, else a generic notice. A call that got
+     * no HTTP response shows the general error too. The API's own error message and trace id speak to
+     * the integration, not the buyer (TWO-26259), and the merchant finds them
+     * in the error log. Same order as the WooCommerce plugin.
+     *
+     * @param array $response
+     * @param bool $atOrderCreate whether the buyer sees this at place order
      *
      * @return Phrase|null
      */
-    public function getErrorFromResponse(array $response): ?Phrase
+    public function getErrorFromResponse(array $response, bool $atOrderCreate = false): ?Phrase
     {
         $tryAgainLater = __('Please try again later.');
         $generalError = __(
@@ -503,30 +522,40 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
-        $isClientError = isset($response['http_status']) && $response['http_status'] == 400;
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        $isClientError = $status === 400;
+        $sameCompany = __('The buyer and the seller are the same company.');
 
-        // Validation errors — user-facing, no trace ID
-        if ($isClientError && isset($response['error_json']) && is_array($response['error_json'])) {
-            $errs = [];
-            foreach ($response['error_json'] as $err) {
-                $fieldName = isset($err['loc'])
-                    ? $this->getFieldNameFromLoc(json_encode($err['loc']))
-                    : null;
-                $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+        $validation = $this->getValidationMessage($response);
 
-                if ($fieldName && $msg) {
-                    $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
-                } elseif ($fieldName) {
-                    $errs[] = __('%1 is not valid.', $fieldName);
-                } elseif ($msg) {
-                    $errs[] = $msg;
-                }
+        if ($atOrderCreate && $status !== null && $status >= 400) {
+            // A field the buyer can fix is named, in our own words; the
+            // validator's text never reaches the buyer, and the merchant
+            // finds it in the error log (TWO-26295).
+            // A server error is generic whatever it carries.
+            $fieldError = $status < 500 ? $this->getFieldErrorMessage($response) : null;
+            if ($fieldError !== null) {
+                return $fieldError;
             }
-            if (count($errs) > 0) {
-                // Wrap as a Phrase without re-running translation: each
-                // entry in $errs is already __()-translated.
-                return __('%1', join(' ', $errs));
+            if ($validation !== null && $status < 500) {
+                return $generalError;
             }
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return $sameCompany;
+            }
+            return __(
+                'Invoice purchase with %1 is not available for this order.',
+                $this->brandRegistry->getProductName()
+            );
+        }
+        if ($atOrderCreate && $status === null && isset($response['error_code'])) {
+            // No HTTP response at all: the transport error is not for the buyer.
+            return $generalError;
+        }
+
+        // Validation errors: user-facing, no trace ID
+        if ($isClientError && $validation !== null) {
+            return $validation;
         }
 
         if (isset($response['error_code'])) {
@@ -535,7 +564,7 @@ class Two extends AbstractMethod
 
             // User errors — no trace ID
             if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
-                $reason = __('The buyer and the seller are the same company.');
+                $reason = $sameCompany;
             }
             if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
                 return $reason instanceof Phrase ? $reason : __($reason);
@@ -553,7 +582,6 @@ class Two extends AbstractMethod
         // A non-2xx status with no error_code (a 405 or a gateway's HTML
         // error page) is still a failure. The adapter sets http_status on any
         // status other than 200/201/202 (TWO-26150).
-        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
         if ($status !== null && ($status < 200 || $status >= 300)) {
             $reason = $response['error_message'] ?? null;
             $message = __(
@@ -568,6 +596,142 @@ class Two extends AbstractMethod
     }
 
     /**
+     * What a BUYER is shown for a refused request outside order create
+     * (TWO-26295): the fields they can fix, the same-company message, or the
+     * general error. Never the API's own text. Null when the response is not
+     * a refusal.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    public function getBuyerErrorFromResponse(array $response): ?Phrase
+    {
+        if ($this->getErrorFromResponse($response) === null) {
+            return null;
+        }
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        // A server error is generic whatever it carries.
+        if ($status === null || $status < 500) {
+            $fieldError = $this->getFieldErrorMessage($response);
+            if ($fieldError !== null) {
+                return $fieldError;
+            }
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return __('The buyer and the seller are the same company.');
+            }
+        }
+        return __(
+            'Something went wrong with your request to %1. %2',
+            $this->brandRegistry->getProductName(),
+            __('Please try again later.')
+        );
+    }
+
+    /**
+     * "<Field> is not valid." for each field in a response's error_json whose
+     * path we recognise, or null when it names none (TWO-26295).
+     *
+     * Chosen from the path, never the message, so nothing the API wrote
+     * reaches the buyer.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    public function getFieldErrorMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $labels = [];
+        foreach ($response['error_json'] as $err) {
+            $label = is_array($err) && isset($err['loc']) && is_array($err['loc'])
+                ? $this->fieldLabelForLoc($err['loc'])
+                : null;
+            if ($label !== null) {
+                $labels[(string)$label] = (string)__('%1 is not valid.', $label);
+            }
+        }
+        if ($labels === []) {
+            return null;
+        }
+        // Each entry is already translated.
+        return __('%1', implode(' ', array_values($labels)));
+    }
+
+    /**
+     * Field path => buyer-facing label, for every field a buyer can fix. The
+     * path drops model-name segments a validator may insert (any segment
+     * starting with a capital letter), so the same field matches however the
+     * request was validated.
+     *
+     * @return array<string, Phrase>
+     */
+    public function getFieldErrorLabels(): array
+    {
+        return [
+            'buyer.representative.phone_number' => __('Phone Number'),
+            'buyer.company.organization_number' => __('Company Number'),
+            'buyer.representative.first_name' => __('First Name'),
+            'buyer.representative.last_name' => __('Last Name'),
+            'buyer.representative.email' => __('Email Address'),
+            'billing_address.street_address' => __('Street Address'),
+            'billing_address.city' => __('City'),
+            'billing_address.country' => __('Country'),
+            'billing_address.postal_code' => __('Zip/Postal Code'),
+        ];
+    }
+
+    /**
+     * @param array $loc a field path as the API reports it
+     * @return Phrase|null
+     */
+    private function fieldLabelForLoc(array $loc): ?Phrase
+    {
+        $segments = array_filter($loc, static function ($segment): bool {
+            return is_string($segment) && $segment !== '' && !preg_match('/^[A-Z]/', $segment);
+        });
+        return $this->getFieldErrorLabels()[implode('.', $segments)] ?? null;
+    }
+
+    /**
+     * The buyer-facing field messages in a response's error_json, if any.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    private function getValidationMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $errs = [];
+        foreach ($response['error_json'] as $err) {
+            $fieldName = isset($err['loc'])
+                ? $this->getFieldNameFromLoc(json_encode($err['loc']))
+                : null;
+            $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+
+            if ($fieldName && $msg) {
+                $entry = (string)__('%1: %2.', $fieldName, rtrim($msg, '.'));
+                // A message already ending in ? or ! keeps its own mark,
+                // not the template's full stop.
+                $errs[] = preg_match('/[!?]$/', $msg) ? preg_replace('/\.$/', '', $entry) : $entry;
+            } elseif ($fieldName) {
+                $errs[] = __('%1 is not valid.', $fieldName);
+            } elseif ($msg) {
+                $errs[] = preg_match('/[.!?]$/', $msg) ? $msg : $msg . '.';
+            }
+        }
+        $errs = array_values(array_unique(array_map('strval', $errs)));
+        if (count($errs) > 0) {
+            // Wrap as a Phrase without re-running translation: each
+            // entry in $errs is already __()-translated.
+            return __('%1', join(' ', $errs));
+        }
+        return null;
+    }
+
+    /**
      * Get human-readable field name from a pydantic error loc array.
      *
      * @param string $locStr JSON-encoded loc array, e.g. '["buyer","representative","phone_number"]'
@@ -575,22 +739,8 @@ class Two extends AbstractMethod
      */
     public function getFieldNameFromLoc(string $locStr): ?Phrase
     {
-        static $fieldNames = null;
-        if ($fieldNames === null) {
-            $fieldNames = [
-                '["buyer","representative","phone_number"]' => __('Phone Number'),
-                '["buyer","company","organization_number"]' => __('Company Number'),
-                '["buyer","representative","first_name"]' => __('First Name'),
-                '["buyer","representative","last_name"]' => __('Last Name'),
-                '["buyer","representative","email"]' => __('Email Address'),
-                '["billing_address","street_address"]' => __('Street Address'),
-                '["billing_address","city"]' => __('City'),
-                '["billing_address","country"]' => __('Country'),
-                '["billing_address","postal_code"]' => __('Zip/Postal Code'),
-            ];
-        }
-        $locStr = preg_replace('/\s+/', '', $locStr);
-        return $fieldNames[$locStr] ?? null;
+        $loc = json_decode($locStr, true);
+        return is_array($loc) ? $this->fieldLabelForLoc($loc) : null;
     }
 
     /**
@@ -607,17 +757,39 @@ class Two extends AbstractMethod
     }
 
     /**
+     * An admin Void: tells Two the order is cancelled.
+     *
      * @inheritDoc
      */
     public function void(InfoInterface $payment)
     {
-        return $this->cancel($payment);
+        return $this->cancelUpstream($payment);
     }
 
     /**
+     * Makes no call to Two (TWO-26298).
+     *
+     * Core reaches this only from Order::cancel(), which then dispatches
+     * `order_cancel_after`, and Observer\SalesOrderCancelAfter sends the
+     * cancel from there. Sending it here as well cancelled the Two order
+     * twice for every admin cancel. The observer is the one kept because it
+     * also runs when core treats the cancel as offline, and because it
+     * refuses the Magento cancel when Two does, keeping the two in step.
+     *
      * @inheritDoc
      */
     public function cancel(InfoInterface $payment)
+    {
+        return $this;
+    }
+
+    /**
+     * POST the Two order's cancel and record the outcome on the order.
+     *
+     * @param InfoInterface $payment
+     * @return $this
+     */
+    private function cancelUpstream(InfoInterface $payment)
     {
         /** @var Order $order */
         $order = $payment->getOrder();
@@ -765,8 +937,8 @@ class Two extends AbstractMethod
      */
     private function parseFulfillResponse(array $response, Order $order): void
     {
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
+        if (empty($response['fulfilled_order']) ||
+            empty($response['fulfilled_order']['id'])) {
             return;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
@@ -926,8 +1098,8 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // The only upstream failure that may withhold the method (ABN-519), and
-        // only on a DEFINITIVE rejection (ABN-533): an outage falls through to
+        // The only upstream failure that may withhold the method, and
+        // only on a DEFINITIVE rejection: an outage falls through to
         // the cached merchant record, which is sufficient to keep serving the
         // buyer, rather than emptying checkout minutes into every incident.
         //
@@ -977,6 +1149,18 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // TWO-26309: order create refuses on an unreadable tax code map, so
+        // withhold Two here rather than after the buyer submits.
+        try {
+            $this->configRepository->getTaxCodeMap($storeId);
+        } catch (LocalizedException) {
+            // Debug, not error: the config repository already reported it once.
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: saved tax codes unreadable', $this->_code),
+                []
+            );
+            return false;
+        }
         // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
         // Core's admin gate cannot judge an empty country, so only the merchant
@@ -994,7 +1178,7 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // ABN-546: no later request is guaranteed to notice an unpriceable fee.
+        // No later request is guaranteed to notice an unpriceable fee.
         if (!$this->feeQuoteGate->isQuotable($quote, $storeId)) {
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),

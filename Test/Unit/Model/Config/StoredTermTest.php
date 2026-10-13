@@ -7,7 +7,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\StoredTerm;
 
 /**
- * The single reading of a stored custom payment term (ABN-522). Test/Unit/Config/CustomTermParityTest
+ * The single reading of a stored custom payment term. Test/Unit/Config/CustomTermParityTest
  * pins each consumer to it.
  */
 class StoredTermTest extends TestCase

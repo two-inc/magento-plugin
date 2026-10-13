@@ -360,8 +360,8 @@ class AnchorOnlyHtmlEscaperTest extends TestCase
     }
 
     /**
-     * The admin accept/reject boundary is this escaper's own render boundary
-     * (ABN-554): entity-encoding plain text is not a change.
+     * The admin accept/reject boundary is this escaper's own render boundary:
+     * entity-encoding plain text is not a change.
      *
      * @dataProvider renderBoundaryRows
      */

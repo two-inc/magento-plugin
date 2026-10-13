@@ -42,6 +42,9 @@
      *        holding a billing address that is not its shipping one)
      * @param {function(function())} [options.watchBillingToggle] report every
      *        time billingIsDistinct()'s answer could have changed
+     * @param {function(): boolean} [options.shippingCountryIsBillingCountry]
+     *        whether the shipping address is in the billing address's country;
+     *        absent means yes (TWO-26295)
      */
     function CompanySourceResolver(options) {
         this._options = options || {};
@@ -70,7 +73,15 @@
     CompanySourceResolver.prototype.chosenIdentity = function () {
         const options = this._options;
         if (!options.billingIsDistinct()) return options.shipping;
-        return hasCompanyNumber(options.billing) ? options.billing : options.shipping;
+        if (hasCompanyNumber(options.billing)) return options.billing;
+        // TWO-26295: an organisation number belongs to its own country's
+        // registry, and the order goes out under the billing country, so a
+        // shipping company from another country is never the fallback: the API
+        // refuses the pair. The billing panel's own (number-less) capture
+        // stands instead, which asks the buyer for an invoice company.
+        const sameCountry = options.shippingCountryIsBillingCountry;
+        if (typeof sameCountry === 'function' && !sameCountry()) return options.billing;
+        return options.shipping;
     };
 
     /**

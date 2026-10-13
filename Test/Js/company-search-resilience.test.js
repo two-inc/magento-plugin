@@ -647,7 +647,7 @@ describe('what the panel paints for each outcome', () => {
         expect(row.textContent).toBe('Example Trading Ltd');
     });
 
-    // ABN-554. A row's label is registry-sourced markup, so it is rebuilt as
+    // A row's label is registry-sourced markup, so it is rebuilt as
     // nodes: the API's own `<mark><b>` pair becomes elements, everything else
     // stays text.
     test.each([

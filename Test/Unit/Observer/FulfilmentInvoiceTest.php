@@ -1,0 +1,367 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+namespace Two\Gateway\Test\Unit\Observer;
+
+use Magento\Framework\DataObject;
+use Magento\Framework\DB\TransactionFactory;
+use Magento\Framework\Event\Observer;
+use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
+use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Invoice;
+use Magento\Sales\Model\Order\Payment;
+use Magento\Sales\Model\Order\Status\HistoryFactory;
+use Magento\Sales\Model\OrderFactory;
+use Magento\Sales\Model\Service\InvoiceService;
+use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandOverlayRegistryInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Observer\InvoiceRegisteredOffline;
+use Two\Gateway\Observer\SalesOrderSaveAfter;
+use Two\Gateway\Observer\SalesOrderShipmentAfter;
+use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Invoice\UploadService;
+use Two\Gateway\Service\Order\ComposeShipment;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
+use Two\Gateway\Service\Order\OrderPostprocessor;
+use Two\Gateway\Test\Unit\Service\Order\BuildsStatusFulfilment;
+
+/**
+ * TWO-26302: the fulfil-on status tells Two exactly once, whether or not the
+ * merchant has already invoiced in Magento, and the plugin's own fulfilment
+ * invoices are flagged so they get no "Two was not notified" comment.
+ */
+class FulfilmentInvoiceTest extends TestCase
+{
+    use BuildsStatusFulfilment;
+
+    /** @var int */
+    private $fulfils = 0;
+
+    /** @var Invoice[] */
+    private $registered = [];
+
+    /** @var array[] */
+    private $payloads = [];
+
+    /**
+     * Each case saves the order in its fulfil-on status twice, in two requests. Items are
+     * [ordered, shipped, refunded, canceled?]; the partial column lists the net
+     * quantities sent, or null for a whole-order fulfilment.
+     *
+     * @dataProvider statusCases
+     */
+    public function testStatusChangeFulfilsOnce(
+        array $additionalInformation,
+        bool $hasInvoices,
+        float $leftToInvoice,
+        array $items,
+        float $shippingRefunded,
+        int $expectedFulfils,
+        ?array $expectedPartial,
+        int $expectedInvoices,
+        string $description
+    ): void {
+        $order = $this->order($additionalInformation, $hasInvoices, $items);
+        $order->setData('shipping_refunded', $shippingRefunded);
+        // Two saves in two requests, so only the persisted marker can stop the second.
+        $event = new FulfilmentObserver(new DataObject(['order' => $order]));
+        $this->statusObserver($leftToInvoice, $order)->execute($event);
+        $this->statusObserver($leftToInvoice, $order)->execute($event);
+
+        $this->assertSame($expectedFulfils, $this->fulfils, $description . ': fulfilments sent');
+        foreach ($this->payloads as $payload) {
+            $partial = isset($payload['partial'])
+                ? ['net' => $payload['partial']['net'], 'shipping' => $payload['partial']['shipping']]
+                : null;
+            $this->assertSame($expectedPartial, $partial, $description . ': fulfilment body');
+        }
+        $this->assertCount($expectedInvoices, $this->registered, $description . ': invoices created');
+        foreach ($this->registered as $invoice) {
+            $this->assertTrue(
+                (bool)$invoice->getData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER),
+                $description . ': invoice flagged'
+            );
+        }
+    }
+
+    public static function statusCases(): array
+    {
+        $fulfilled = ['marked_completed' => true];
+        $one = [[1, 1, 0]];
+        $netA = ['net' => ['A' => 1.0], 'shipping' => true];
+
+        return [
+            [[], false, 100.0, $one, 0.0, 1, null, 1, 'no invoice gives one fulfil and the plugin invoice'],
+            [[], true, 0.0, $one, 0.0, 1, null, 0, 'a manual offline invoice for everything still gives one fulfil'],
+            [[], true, 40.0, $one, 0.0, 1, null, 1, 'a partial manual invoice gives one fulfil and invoices the rest'],
+            [$fulfilled, true, 0.0, $one, 0.0, 0, null, 0, 'after the plugin\'s own fulfilment there is no second fulfil'],
+            [[], true, 0.0, [[1, 1, 0], [1, 0, 1]], 0.0, 1, $netA, 0, 'an item refunded unshipped is netted out'],
+            [[], true, 0.0, [[2, 2, 1]], 0.0, 1, ['net' => ['A' => 1.0], 'shipping' => true], 0, 'a shipped item refunded in part is netted out'],
+            [[], true, 0.0, $one, 5.0, 1, ['net' => ['A' => 1.0], 'shipping' => false], 0, 'refunded shipping is left out'],
+            [[], true, 0.0, [[1, 0, 1]], 5.0, 0, null, 0, 'everything refunded sends nothing'],
+            [[], true, 0.0, [[2, 1, 0, 1]], 0.0, 1, $netA, 0, 'cancelled quantity is netted out like a refund'],
+        ];
+    }
+
+    public function testAnUnshippedItemStillRefusesTheStatusChange(): void
+    {
+        $order = $this->order([], true, [[1, 1, 0], [1, 0, 0]]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->statusObserver(0.0, $order)->execute(new FulfilmentObserver(new DataObject(['order' => $order])));
+    }
+
+    /**
+     * The order stands in for its own row: no transaction is open, so the
+     * fulfilment runs inline on each save, from a "fresh" load that hands back
+     * the order as saved.
+     */
+    private function statusObserver(float $leftToInvoice, Order $order): SalesOrderSaveAfter
+    {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getFulfillTrigger')->willReturn('complete');
+        $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
+        $orderFactory = $this->getMockBuilder(OrderFactory::class)->addMethods(['create'])->getMock();
+        $orderFactory->method('create')->willReturn($order);
+
+        return new SalesOrderSaveAfter(
+            $this->buildStatusFulfilment([
+                'configRepository' => $config,
+                'apiAdapter' => $this->adapter(),
+                'historyFactory' => $this->historyFactory(),
+                'invoiceService' => $this->invoiceService($leftToInvoice),
+                'transactionFactory' => $this->transactionFactory(),
+                'overlayRegistry' => $this->overlay(),
+                'orderPostprocessor' => $this->passThrough(),
+                'composeShipment' => $this->composeShipment(),
+                'orderFactory' => $orderFactory,
+            ])
+        );
+    }
+
+    /**
+     * Stands in for the composer: records the net quantity per item and
+     * whether shipping went in, which is what the observer decides.
+     */
+    private function composeShipment(): ComposeShipment
+    {
+        $compose = $this->createMock(ComposeShipment::class);
+        $compose->method('executeNetOfRefunds')->willReturnCallback(static function (Order $order): array {
+            $net = [];
+            foreach ($order->getAllVisibleItems() as $item) {
+                $qty = $item->getQtyOrdered() - $item->getQtyRefunded() - $item->getQtyCanceled();
+                if ($qty > 0) {
+                    $net[$item->getSku()] = (float)$qty;
+                }
+            }
+            $shipping = $order->getShippingAmount() > 0 && (float)$order->getShippingRefunded() <= 0;
+
+            return ['line_items' => $net || $shipping ? [1] : [], 'net' => $net, 'shipping' => $shipping];
+        });
+
+        return $compose;
+    }
+
+    public function testShipmentFulfilmentFlagsItsInvoice(): void
+    {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getFulfillTrigger')->willReturn('shipment');
+        $order = $this->order([], false);
+        $order->setData('shipping_refunded', 0.0);
+
+        (new SalesOrderShipmentAfter(
+            $config,
+            $this->createMock(BrandRegistryInterface::class),
+            $this->adapter(),
+            $this->historyFactory(),
+            $this->createMock(OrderStatusHistoryRepositoryInterface::class),
+            $this->createMock(ComposeShipment::class),
+            $this->invoiceService(100.0),
+            $this->transactionFactory(),
+            $this->overlay(),
+            $this->createMock(UploadService::class),
+            $this->createMock(LogRepository::class),
+            $this->createMock(LifecycleEventDispatcher::class),
+            $this->passThrough()
+        ))->execute(new FulfilmentObserver(new DataObject(['shipment' => new DataObject(['order' => $order])])));
+
+        $this->assertSame(1, $this->fulfils);
+        $this->assertCount(1, $this->registered);
+        $this->assertTrue((bool)$this->registered[0]->getData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER));
+    }
+
+    private function order(array $additionalInformation, bool $hasInvoices, array $items = [[1, 1, 0]]): Order
+    {
+        $order = new class extends Order implements \Magento\Sales\Api\Data\OrderInterface {
+            public function getAllVisibleItems(): array
+            {
+                return $this->getData('visible_items');
+            }
+
+            public function load($id): self
+            {
+                return $this;
+            }
+        };
+        $visible = [];
+        foreach ($items as $i => $quantities) {
+            [$ordered, $shipped, $refunded, $canceled] = $quantities + [3 => 0];
+            // The DataObject stub keys its magic getters in camelCase.
+            $visible[] = new DataObject([
+                'sku' => chr(65 + $i),
+                'qtyOrdered' => $ordered,
+                'qtyShipped' => $shipped,
+                'qtyRefunded' => $refunded,
+                'qtyCanceled' => $canceled,
+            ]);
+        }
+        $order->setData('visible_items', $visible);
+        $order->setData('shipping_amount', 5.0);
+        $order->setData('entity_id', 7);
+        $order->setData('store_id', 1);
+        $order->setData('two_order_id', 'remote-order-id');
+        $order->setData('status', 'complete');
+        if ($hasInvoices) {
+            $order->setData('invoices', true);
+        }
+        $payment = new Payment();
+        $payment->setData('method', 'two_payment');
+        $payment->setData('method_instance', new FulfilmentMethodInstance());
+        $payment->setData('additional_information', $additionalInformation);
+        $order->setData('payment', $payment);
+
+        return $order;
+    }
+
+    private function adapter(): Adapter
+    {
+        $adapter = $this->createMock(Adapter::class);
+        $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = []): array {
+            $this->fulfils++;
+            $this->payloads[] = $payload;
+            return ['fulfilled_order' => ['id' => 'fulfilled-id']];
+        });
+
+        return $adapter;
+    }
+
+    private function invoiceService(float $leftToInvoice): InvoiceService
+    {
+        $service = $this->getMockBuilder(InvoiceService::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['prepareInvoice'])
+            ->getMock();
+        $service->method('prepareInvoice')->willReturnCallback(function () use ($leftToInvoice): Invoice {
+            $registered = &$this->registered;
+            $invoice = new class ($registered) extends Invoice {
+                /** @var array */
+                private $registered;
+
+                public function __construct(array &$registered)
+                {
+                    $this->registered = &$registered;
+                }
+
+                public function register(): self
+                {
+                    $this->registered[] = $this;
+                    return $this;
+                }
+
+                public function pay(): self
+                {
+                    return $this;
+                }
+            };
+            $invoice->setData('grand_total', $leftToInvoice);
+
+            return $invoice;
+        });
+
+        return $service;
+    }
+
+    private function historyFactory(): HistoryFactory
+    {
+        $factory = $this->getMockBuilder(HistoryFactory::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['create'])
+            ->getMock();
+        $factory->method('create')->willReturnCallback(static fn () => new \Magento\Sales\Model\Order\Status\History());
+
+        return $factory;
+    }
+
+    private function transactionFactory(): TransactionFactory
+    {
+        $transaction = new class {
+            public function addObject($object): self
+            {
+                return $this;
+            }
+
+            public function save(): self
+            {
+                return $this;
+            }
+        };
+        $factory = $this->getMockBuilder(TransactionFactory::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['create'])
+            ->getMock();
+        $factory->method('create')->willReturn($transaction);
+
+        return $factory;
+    }
+
+    private function overlay(): BrandOverlayRegistryInterface
+    {
+        $overlay = $this->createMock(BrandOverlayRegistryInterface::class);
+        $overlay->method('isTwoStackMethod')->willReturn(true);
+
+        return $overlay;
+    }
+
+    private function passThrough(): OrderPostprocessor
+    {
+        $postprocessor = $this->createMock(OrderPostprocessor::class);
+        $postprocessor->method('process')->willReturnArgument(1);
+
+        return $postprocessor;
+    }
+}
+
+class FulfilmentObserver extends Observer
+{
+    /** @var DataObject */
+    private $event;
+
+    public function __construct(DataObject $event)
+    {
+        $this->event = $event;
+    }
+
+    public function getEvent(): DataObject
+    {
+        return $this->event;
+    }
+}
+
+class FulfilmentMethodInstance
+{
+    /**
+     * @param mixed $response
+     * @return null
+     */
+    public function getErrorFromResponse($response)
+    {
+        return null;
+    }
+}

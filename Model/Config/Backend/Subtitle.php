@@ -22,8 +22,7 @@ use Two\Gateway\Model\Ui\AnchorOnlyHtmlEscaper;
  * generated brand forms - they are one field mechanism with two config paths.
  *
  * The tile emits the subtitle through AnchorOnlyHtmlEscaper, so anything that
- * escaper drops used to disappear at checkout with no merchant feedback
- * (ABN-554).
+ * escaper drops used to disappear at checkout with no merchant feedback.
  */
 class Subtitle extends Value
 {

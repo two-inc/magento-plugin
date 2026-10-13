@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <!--
+        CI fixture only (TWO-26276): the subscriber is disabled in crontab, so
+        the shop-match probe sees the default handler come back in that area
+        and stand down in every other.
+    -->
+    <type name="Two\Gateway\Api\OrderPostprocessingInterface">
+        <plugin name="two_order_postprocessing_fixture" disabled="true"/>
+    </type>
+</config>

@@ -15,7 +15,10 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Webapi\CompanyLookup;
 use Two\Gateway\Model\Webapi\OrderIntent;
+use Two\Gateway\Service\Address\IsoRegionResolver;
+use Two\Gateway\Service\Address\RegionDirectory;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -104,7 +107,8 @@ class ProxiedRegistryCallsTest extends TestCase
             $brand,
             $curlFactory,
             $this->createMock(LogRepository::class),
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->createMock(LoggerInterface::class)
         );
     }
 
@@ -155,13 +159,21 @@ class ProxiedRegistryCallsTest extends TestCase
         return $postprocessor;
     }
 
+    /**
+     * @param array<string, array<int, string>> $storeRegions country => region id => code
+     */
     private function companyLookup(
         string $status = ApiKeyStatus::OK,
         ?int $storeId = null,
-        ?array $merchantRecord = []
+        ?array $merchantRecord = [],
+        array $storeRegions = []
     ): CompanyLookup {
         $recordProvider = $this->createMock(RecordProvider::class);
         $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
+        $regionDirectory = $this->createMock(RegionDirectory::class);
+        $regionDirectory->method('forCountry')->willReturnCallback(
+            static fn(string $country) => $storeRegions[$country] ?? []
+        );
 
         return new CompanyLookup(
             $this->adapter(),
@@ -169,7 +181,8 @@ class ProxiedRegistryCallsTest extends TestCase
             new SettingsProvider($recordProvider),
             $this->rateLimiter(),
             $this->logRepository(),
-            $this->checkoutSession($storeId)
+            $this->checkoutSession($storeId),
+            new IsoRegionResolver($regionDirectory)
         );
     }
 
@@ -390,6 +403,29 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertSame('0', $query['offset']);
     }
 
+    public function testCompanyDetailAddsTheStoreRegionBesideTheIsoCodeItRelays(): void
+    {
+        // TWO-26263: the region is relayed as answered; a resolved one gains the
+        // store's own id and code beside it, an unresolved one gains nothing.
+        $this->stageUpstream(200, (string)json_encode(['name' => 'Example SL', 'addresses' => [
+            ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES'],
+            ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+            // TWO-26266: a bare code resolves too.
+            ['city' => 'ROMA', 'region' => 'RM', 'country' => 'IT'],
+        ]]));
+
+        $relayed = json_decode($this->companyLookup(ApiKeyStatus::OK, null, [], [
+            'ES' => [161 => 'Madrid'],
+            'IT' => [500 => 'RM'],
+        ])->get('lookup-1'), true);
+
+        $this->assertSame([
+            ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES', 'region_id' => 161, 'region_code' => 'Madrid'],
+            ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+            ['city' => 'ROMA', 'region' => 'RM', 'country' => 'IT', 'region_id' => 500, 'region_code' => 'RM'],
+        ], $relayed['body']['addresses']);
+    }
+
     public function testCompanyDetailEncodesTheLookupIdIntoThePath(): void
     {
         $this->companyLookup()->get('NO/123 456');
@@ -512,7 +548,7 @@ class ProxiedRegistryCallsTest extends TestCase
     }
 
     /**
-     * ABN-533. This route is reachable whenever the tile is offered, so only a
+     * This route is reachable whenever the tile is offered, so only a
      * definitive rejection may refuse an intent — a transient failure relays
      * the never-expiring record's identity instead, and refusing would put a
      * red unavailability notice on a correctly configured checkout.
@@ -696,7 +732,7 @@ class ProxiedRegistryCallsTest extends TestCase
 
     /**
      * A registry lookup is never failed over the verdict — the buyer may be
-     * mid-typing. ABN-533: a transient failure keeps the merchant attribution
+     * mid-typing. A transient failure keeps the merchant attribution
      * too, off the never-expiring record, so lookups stay merchant-scoped for
      * the duration of an outage instead of going out unscoped.
      *

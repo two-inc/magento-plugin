@@ -8,7 +8,9 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Api;
 
 use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\App\ObjectManager;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use Psr\Log\LoggerInterface;
 use Throwable;
 use Two\Gateway\Api\ApiCall;
 use Two\Gateway\Api\ApiResult;
@@ -17,6 +19,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
+use Two\Gateway\Logger\ErrorLogger;
 
 /**
  * Api Adapter
@@ -46,18 +49,38 @@ class Adapter
     /** @var ApiTranslatorInterface */
     private $apiTranslator;
 
+    /** @var LoggerInterface|null the plugin's error log (di.xml), for refused order requests */
+    private $refusalLogger;
+
+    /** @var string what the next call is for ("quote 42"), named in its refusal line */
+    private $logSubject = '';
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         CurlFactory $curlFactory,
         LogRepository $logRepository,
-        ApiTranslatorInterface $apiTranslator
+        ApiTranslatorInterface $apiTranslator,
+        ?LoggerInterface $refusalLogger = null
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->curlFactory = $curlFactory;
         $this->logRepository = $logRepository;
         $this->apiTranslator = $apiTranslator;
+        $this->refusalLogger = $refusalLogger;
+    }
+
+    /**
+     * This adapter, naming what its calls are for in the line logged when the
+     * API refuses one ("quote 42"). A copy, so the shared adapter is left as
+     * it was.
+     */
+    public function withLogSubject(string $subject): self
+    {
+        $copy = clone $this;
+        $copy->logSubject = $subject;
+        return $copy;
     }
 
     /**
@@ -112,8 +135,8 @@ class Adapter
         ?string $modeOverride = null,
         ?int $timeoutSeconds = null
     ): array {
+        $call = null;
         try {
-            $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
             $mode = $modeOverride
                 ?: ($storeId !== null ? $this->configRepository->getMode($storeId) : null);
             $url = $this->configRepository->addVersionDataInURL(
@@ -204,25 +227,18 @@ class Adapter
                 } else {
                     $decoded = json_decode($body, true);
                 }
-                $this->logRepository->addDebugLog(
-                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
-                    $decoded
-                );
+                $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
                 return ['status' => $result->status, 'body' => $decoded];
             } else {
                 if ($body) {
                     $decoded = json_decode($body, true) ?: [];
                     $decoded['http_status'] = $result->status;
-                    $this->logRepository->addDebugLog(
-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
-                        $decoded
-                    );
+                    $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
+                    $this->logRefusal($method, $endpoint, $result, $this->logSubject);
                     return ['status' => $result->status, 'body' => $decoded];
                 } else {
-                    $this->logRepository->addDebugLog(
-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
-                        'Invalid API response.'
-                    );
+                    $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
+                    $this->logRefusal($method, $endpoint, $result, $this->logSubject);
                     // This used to throw a LocalizedException, which this
                     // method's own catch-all immediately converted into
                     // exactly the array below minus `http_status` — the
@@ -254,6 +270,7 @@ class Adapter
                 sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
                 $exception->getMessage()
             );
+            $this->logTransportFailure($method, $endpoint, $payload, $call, $exception, $storeId);
             return [
                 'status' => 0,
                 'body' => [
@@ -262,6 +279,160 @@ class Adapter
                 ],
             ];
         }
+    }
+
+    /**
+     * Logs an order request the API refused, with the API's reason and never
+     * a body, whatever the debug setting: the merchant needs to know why an
+     * order, edit, fulfilment, refund, cancel or confirm did not go through.
+     * An intent is refused routinely (no order yet, a rate limit), so it is
+     * only a warning. Reads (GET) are not order requests.
+     */
+    private function logRefusal(string $method, string $endpoint, ApiResult $result, string $subject): void
+    {
+        if ($result->status < 400
+            || strtoupper($method) === 'GET'
+            || !preg_match('#^/v1/order(_intent)?(/|$)#', $endpoint)
+        ) {
+            return;
+        }
+        $message = sprintf(
+            '%s %s refused by the API (HTTP %d)%s: %s',
+            $method,
+            $endpoint,
+            $result->status,
+            $subject !== '' ? ' for ' . $subject : '',
+            $this->rejectionReason($result->body)
+        );
+        if (strpos($endpoint, '/v1/order_intent') === 0) {
+            $this->refusalLogger()->warning($message);
+        } else {
+            $this->refusalLogger()->error($message);
+        }
+    }
+
+    private function refusalLogger(): LoggerInterface
+    {
+        // di.xml names the error logger; a subclass or a caller predating
+        // the argument gets the same one from the object manager.
+        if ($this->refusalLogger === null) {
+            $this->refusalLogger = ObjectManager::getInstance()->get(ErrorLogger::class);
+        }
+        return $this->refusalLogger;
+    }
+
+    /**
+     * The API's own reason: its error code, message, details and each
+     * validation message, or the start of a body that is not the API's
+     * error shape.
+     */
+    private function rejectionReason(string $raw): string
+    {
+        $body = json_decode($raw, true);
+        if (!is_array($body)) {
+            return $raw === '' ? 'no response body' : substr($raw, 0, 500);
+        }
+        $parts = [];
+        foreach (['error_code', 'error_message', 'error_details'] as $key) {
+            if (isset($body[$key]) && is_string($body[$key]) && $body[$key] !== '') {
+                $parts[] = $body[$key];
+            }
+        }
+        foreach (is_array($body['error_json'] ?? null) ? $body['error_json'] : [] as $error) {
+            if (is_array($error) && isset($error['msg']) && is_string($error['msg'])) {
+                $loc = is_array($error['loc'] ?? null) ? implode('.', $error['loc']) . ': ' : '';
+                $parts[] = $loc . $error['msg'];
+            }
+        }
+        $reason = $parts === [] ? substr($raw, 0, 500) : implode('; ', array_unique($parts));
+        if (isset($body['error_trace_id']) && is_string($body['error_trace_id']) && $body['error_trace_id'] !== '') {
+            $reason .= ' [Trace ID: ' . $body['error_trace_id'] . ']';
+        }
+        return $reason;
+    }
+
+    /**
+     * Logs one API exchange, request and response together, only when the
+     * store's "Enable debug logging" is on: the bodies carry buyer details.
+     * The API key and every custom header value are redacted. A refused
+     * call (HTTP 400 and above) goes to the error log, the rest to the
+     * debug log.
+     */
+    private function logExchange(
+        string $method,
+        string $endpoint,
+        array $payload,
+        ApiCall $call,
+        ApiResult $result,
+        ?int $storeId
+    ): void {
+        if (!$this->configRepository->isDebugMode($storeId)) {
+            return;
+        }
+        $rawBody = $result->body;
+        $decodedBody = json_decode($rawBody, true);
+        $context = [
+            'request' => $this->requestContext($payload, $call, $storeId),
+            'response' => [
+                'status_code' => $result->status,
+                'headers' => $result->headers,
+                'body' => json_last_error() === JSON_ERROR_NONE ? $decodedBody : $rawBody,
+            ],
+        ];
+        $message = sprintf('%s %s', $method, $endpoint);
+        if ($result->status >= 400) {
+            $this->logRepository->addErrorLog($message, $context);
+        } else {
+            $this->logRepository->addDebugLog($message, $context);
+        }
+    }
+
+    /**
+     * With debug logging on, a call that got no response logs the request
+     * it was making, as an exchange does; the failure itself is logged
+     * whatever the setting.
+     */
+    private function logTransportFailure(
+        string $method,
+        string $endpoint,
+        array $payload,
+        ?ApiCall $call,
+        Throwable $exception,
+        ?int $storeId
+    ): void {
+        if (!$this->configRepository->isDebugMode($storeId)) {
+            return;
+        }
+        $this->logRepository->addErrorLog(
+            sprintf('%s %s: transport failure: %s', $method, $endpoint, $exception->getMessage()),
+            [
+                'request' => $this->requestContext($payload, $call, $storeId),
+                'response' => ['status_code' => null, 'headers' => null, 'body' => null],
+            ]
+        );
+    }
+
+    /**
+     * The request as logged: its URL, its headers with the API key and every
+     * custom header value redacted, and its body.
+     */
+    private function requestContext(array $payload, ?ApiCall $call, ?int $storeId): array
+    {
+        $headers = $call !== null ? $call->headers : null;
+        if ($headers !== null) {
+            $redact = array_change_key_case($this->configRepository->getCustomHeaders($storeId), CASE_LOWER);
+            $redact['x-api-key'] = true;
+            foreach (array_keys($headers) as $name) {
+                if (isset($redact[strtolower((string)$name)])) {
+                    $headers[$name] = '[REDACTED]';
+                }
+            }
+        }
+        return [
+            'url' => $call !== null ? $call->url : null,
+            'headers' => $headers,
+            'body' => $payload,
+        ];
     }
 
     private function translatorFailure(string $phase, Throwable $e, string $endpoint, string $method): array

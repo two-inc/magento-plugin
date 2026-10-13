@@ -102,10 +102,12 @@ class ComposeOrder extends OrderService
         $placedTerms = is_array($additionalData['placedTerms'] ?? null) ? $additionalData['placedTerms'] : null;
         $selectedTermDays = $isEdit ? 0 : $this->getSelectedTermDays($additionalData, $storeId);
 
-        $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order, true);
-        $grossTotal = (float)$order->getGrandTotal();
-        $taxTotal = (float)$order->getTaxAmount();
-        $netTotal = $grossTotal - $taxTotal;
+        $lineItems = $this->applyTaxCodes($this->composeLineItems($order), $order, true, true);
+        $amounts = $this->orderAmounts(
+            (float)$order->getGrandTotal(),
+            (float)$order->getTaxAmount(),
+            $this->declaredTenders($order, $order)
+        );
 
         // Compose the final payload for the API call. Fields that may
         // legitimately be blank are NOT listed here — they go through the
@@ -115,11 +117,9 @@ class ComposeOrder extends OrderService
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
             'buyer' => $this->getBuyer($order, $additionalData),
             'currency' => $order->getOrderCurrencyCode(),
-            'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($order)),
-            'gross_amount' => $this->roundAmt($grossTotal),
-            'net_amount' => $this->roundAmt($netTotal),
-            'tax_amount' => $this->roundAmt($taxTotal),
-            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
+            'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($order)),
+            ...$amounts,
+            'tax_subtotals' => $this->getTaxSubtotals($lineItems, $storeId),
             'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
@@ -142,6 +142,11 @@ class ComposeOrder extends OrderService
                 ),
             ],
         ];
+
+        // "Validate tax subtotals" off: the key is left out, not sent as null.
+        if ($payload['tax_subtotals'] === null) {
+            unset($payload['tax_subtotals']);
+        }
 
         // TWO-25386: these fields are optional and are omitted rather than sent
         // blank. Two different reasons, both real.
@@ -187,6 +192,12 @@ class ComposeOrder extends OrderService
         }
 
         if (!$isEdit) {
+            // Create only (TWO-26153): an edit that omits it keeps the number
+            // sent at placement, and a refund reads that stored number.
+            $buyerVatNumber = $this->getBuyerVatNumber($order);
+            if ($buyerVatNumber !== null) {
+                $payload['buyer_vat_number'] = $buyerVatNumber;
+            }
             // The edit-order schema has no available_terms.
             $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
         } elseif ($placedTerms === null) {
@@ -209,8 +220,7 @@ class ComposeOrder extends OrderService
 
     /**
      * The order's lines as the create request sends them, shared with order
-     * intent so both carry the same lines (TWO-26092). The line tax gate runs
-     * on them in OrderPostprocessor, before the hook.
+     * intent so both carry the same lines (TWO-26092).
      *
      * @param Order $order
      * @return array
@@ -244,36 +254,18 @@ class ComposeOrder extends OrderService
         }
 
         if ($surchargeAmount > 0) {
-            $description = $description ?: (string)__('Payment terms fee');
-            $taxRate = $taxRatePercent / 100;
-
-            $lineItems[] = [
-                'order_item_id' => 'surcharge',
-                'name' => $description,
-                'description' => $description,
-                'type' => 'BUYER_FEE',
-                'image_url' => '',
-                'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
-                'net_amount' => $this->roundAmt($surchargeAmount),
-                'tax_amount' => $this->roundAmt($surchargeTax),
-                'discount_amount' => '0.00',
-                'tax_rate' => $this->roundAmt($taxRate, 6),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
-                'unit_price' => $this->roundAmt($surchargeAmount, 6),
-                'quantity' => 1,
-                'quantity_unit' => 'sc',
-            ];
+            $lineItems[] = $this->getSurchargeLine($surchargeAmount, $surchargeTax, $description, $taxRatePercent);
         }
 
         // Reconcile any known third-party fee (via a registered
         // FeeLineProviderInterface) and, failing that, any genuinely
         // untaxed residual. See Order::reconcileOtherCharges() docblock.
-        // Grand total already includes surcharge from Total Collector.
+        // Grand total already includes surcharge from Total Collector. The
+        // lines carry what tenders paid, which the grand total does not (TWO-26309).
         return $this->reconcileOtherCharges(
             $lineItems,
             $order,
-            (float)$order->getGrandTotal(),
+            (float)$order->getGrandTotal() + $this->declaredTenders($order, $order),
             (float)$order->getTaxAmount()
         );
     }
@@ -325,7 +317,7 @@ class ComposeOrder extends OrderService
         }
 
         // No offered term resolves to 0, which no offered set contains — an
-        // unresolvable merchant record must not compose an order (ABN-493).
+        // unresolvable merchant record must not compose an order.
         $resolved = $selected > 0 ? $selected : (int)$this->configRepository->getDefaultPaymentTerm($storeId);
         if ($selected === 0 && !$this->configRepository->isBuyerTermAvailable($resolved, $storeId)) {
             $this->logRepository->addErrorLog(

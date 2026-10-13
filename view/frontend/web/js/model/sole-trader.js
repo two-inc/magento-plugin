@@ -341,7 +341,7 @@
         if (this.isPopupOpen()) this._popupWindow.close();
         this.stopPopupCloseWatcher();
         // With it goes the close poll that would have released the panel's opener hold,
-        // and a blocked re-open arms no replacement to release it later (ABN-554).
+        // and a blocked re-open arms no replacement to release it later.
         this.stopReturnToCheckoutWatcher();
 
         let params = `businessToken=${this.delegationToken}`;
@@ -488,7 +488,7 @@
             if (!win.closed) return;
             this.stopPopupCloseWatcher();
             // The close is bookkeeping: the field re-fire it will provoke comes with the
-            // window's return, which is unbounded from here (ABN-554).
+            // window's return, which is unbounded from here.
             this.stopReturnToCheckoutWatcher({ releaseOpener: false });
             // The handshake's buyer lookup can still be out; it owns the
             // outcome from here and will write whatever identity it resolves.
@@ -512,7 +512,7 @@
     };
 
     /**
-     * Put the focus the signup popup took onto the company field (ABN-554).
+     * Put the focus the signup popup took onto the company field.
      *
      * The blur above leaves the popover on screen around a document focusing
      * nothing, where no keystroke reaches any control. Deferred a tick so the
@@ -546,7 +546,7 @@
      * A focusin a browser re-fires on window return counts as the buyer focusing that
      * control, unless it is the field the launch parked focus on. The park stands for the
      * whole flight, because the window losing focus to the popup blurs that field and the
-     * return's re-fire is the first focus it gets back (ABN-554).
+     * return's re-fire is the first focus it gets back.
      */
     SoleTrader.prototype.watchForReturnToCheckout = function () {
         if (this._returnHandler) return;
@@ -582,13 +582,13 @@
      *
      * @param {object} [options] `{ releaseOpener: false }` where the popup's own
      *        disappearance is all that has happened, and the field's opener stays
-     *        held for the window return still to come (ABN-554).
+     *        held for the window return still to come.
      */
     SoleTrader.prototype.stopReturnToCheckoutWatcher = function (options) {
         const panel = this._component.panel();
         if (panel && !(options && options.releaseOpener === false)) panel.holdFieldOpener(false);
         // The flight's own park is not a place the buyer chose, so the abandon reclaim
-        // that follows reads the unplaced focus the launch actually left it (ABN-554).
+        // that follows reads the unplaced focus the launch actually left it.
         if (this._parkedFocus && document.activeElement === this._parkedFocus) this._parkedFocus.blur();
         this._parkedFocus = null;
         if (!this._returnHandler) return;

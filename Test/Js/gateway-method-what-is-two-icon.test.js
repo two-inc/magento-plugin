@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554: "what is Two" is one control — an icon that is itself the link to
+ * "what is Two" is one control: an icon that is itself the link to
  * the brand's about page, with a hover/focus tooltip describing it. Knockout
  * cannot run under Jest, so the markup is pinned as template text; the visual
  * open/close is a browser check.

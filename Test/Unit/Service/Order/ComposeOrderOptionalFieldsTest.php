@@ -48,7 +48,6 @@ class ComposeOrderOptionalFieldsTest extends TestCase
                 'getAddress',
                 'getBuyer',
                 'getTaxSubtotals',
-                'getDiscountAmountItem',
                 'getFeeLines',
                 'getOtherChargesLineItem',
             ])
@@ -58,7 +57,6 @@ class ComposeOrderOptionalFieldsTest extends TestCase
         $composeOrder->method('getAddress')->willReturn([]);
         $composeOrder->method('getBuyer')->willReturn([]);
         $composeOrder->method('getTaxSubtotals')->willReturn([]);
-        $composeOrder->method('getDiscountAmountItem')->willReturn(0.0);
         // Line-item reconciliation has its own coverage; stubbed out so this
         // test is about which keys reach the payload, nothing else.
         $composeOrder->method('getFeeLines')->willReturn([]);

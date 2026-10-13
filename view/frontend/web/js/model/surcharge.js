@@ -45,14 +45,14 @@ define([
     var isUpdating = ko.observable(false);
 
     // The term /select-term answered with re-collected totals for; anything else
-    // on the chips means the summary and the order can disagree (ABN-550).
+    // on the chips means the summary and the order can disagree.
     // Observable so the placement gate re-evaluates when it moves.
     var confirmedTerm = ko.observable(selectedTerm());
 
     // A /select-term the server would not take. Held until the buyer's next
     // chip click: the revert puts the chips back on the confirmed term, so
     // neither the tile's live region nor the placement gate can see the
-    // refusal in the terms themselves (ABN-550).
+    // refusal in the terms themselves.
     var termRefused = ko.observable(false);
 
     // A chip clicked while a /select-term is in flight, sent once that settles:
@@ -251,7 +251,7 @@ define([
      * Run fn, keeping a throwing totals subscriber or knockout binding from
      * aborting the rest of jQuery's callback chain — which would leave the
      * updating flag latched and the Place Order button disabled for the life of
-     * the page (ABN-550).
+     * the page.
      */
     function guarded(fn) {
         try {
@@ -264,7 +264,7 @@ define([
     /**
      * The reason placement is refused, or '' when the chips agree with the term
      * the quote is priced on. The placement gate is derived from this, so a
-     * disabled Place Order button can never be silent (ABN-550).
+     * disabled Place Order button can never be silent.
      */
     function termStatusMessage() {
         if (isUpdating()) {
@@ -285,7 +285,7 @@ define([
      * The response's own segments are never written into the quote: they carry
      * code/title/value only, and a summary component reading an extension
      * attribute off one throws inside knockout's notification, leaving the rest
-     * of the summary on the previous term's figures (ABN-554).
+     * of the summary on the previous term's figures.
      */
     function refreshSummary() {
         var mySeq = ++totalsRefreshSeq;
@@ -354,7 +354,7 @@ define([
 
         /**
          * Whether the chips' selection is the term the server confirmed it
-         * priced the quote on. Placement is refused while it is not (ABN-550).
+         * priced the quote on. Placement is refused while it is not.
          */
         isTermReconciled: function () {
             return termStatusMessage() === '';

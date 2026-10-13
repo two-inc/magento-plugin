@@ -242,7 +242,7 @@ define([
      * Phrases the framework-free capture modules ask their host for by name.
      * Magento builds js-translation.json by scanning for literal `$t()` calls,
      * so a phrase reaches the dictionary — and the buyer's own language — only
-     * if it is spelled out here (ABN-555).
+     * if it is spelled out here.
      *
      * @returns {Object<string, string>}
      */
@@ -552,6 +552,13 @@ define([
         billing: billingIdentity,
         resolved: resolvedIdentity,
         billingIsDistinct: billingIsDistinct,
+        // Fails open while either address has no country yet.
+        shippingCountryIsBillingCountry: function () {
+            const shipping = (quote.shippingAddress() || {}).countryId;
+            const billing = (quote.billingAddress() || {}).countryId;
+            if (!shipping || !billing) return true;
+            return String(shipping).toLowerCase() === String(billing).toLowerCase();
+        },
         watchBillingToggle: function (onChange) {
             // The checkbox itself, not a form re-render: core toggles the
             // billing form's visibility without necessarily rebuilding it.

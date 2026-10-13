@@ -154,6 +154,60 @@ class VerifyApiKeyTest extends TestCase
         ];
     }
 
+    /**
+     * @dataProvider merchantDetails
+     * @param array<string,mixed> $verdict
+     * @param array<string,mixed> $expected
+     */
+    public function testTheMerchantDetailsTravelWithTheVerdict(
+        array $verdict,
+        array $expected,
+        string $description
+    ): void {
+        $this->apiKeyStatus->method('verifyCandidate')->willReturn($verdict);
+
+        $response = $this->invoke(['api_key' => self::VALID_LENGTH_KEY]);
+
+        $this->assertSame($expected, array_intersect_key($response, array_flip(
+            ['merchant_id', 'merchant_short_name', 'definitive']
+        )), $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: array<string,mixed>, 2: string}>
+     */
+    public static function merchantDetails(): array
+    {
+        $merchant = ['id' => 'abc-123', 'short_name' => 'acme'];
+        return [
+            'verified' => [
+                ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => $merchant],
+                ['definitive' => false, 'merchant_id' => 'abc-123', 'merchant_short_name' => 'acme'],
+                'a verified candidate shows its merchant before save',
+            ],
+            'verified, no short name' => [
+                ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => ['id' => 'abc-123']],
+                ['definitive' => false, 'merchant_id' => 'abc-123', 'merchant_short_name' => ''],
+                'a missing short name comes back empty',
+            ],
+            'rejected' => [
+                ['status' => ApiKeyStatus::INVALID_KEY, 'code' => 401, 'merchant' => null],
+                ['definitive' => true],
+                'a rejected key clears the merchant and carries none',
+            ],
+            'service error' => [
+                ['status' => ApiKeyStatus::SERVICE_ERROR, 'code' => 503, 'merchant' => null],
+                ['definitive' => false],
+                'an outage judged nothing about the key, so the merchant stays',
+            ],
+            'unreachable' => [
+                ['status' => ApiKeyStatus::UNREACHABLE, 'code' => null, 'merchant' => null],
+                ['definitive' => false],
+                'a timeout judged nothing about the key, so the merchant stays',
+            ],
+        ];
+    }
+
     public function testTheCandidateKeyIsNeverEchoedBack(): void
     {
         $this->apiKeyStatus->method('verifyCandidate')->willReturn(

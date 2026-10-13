@@ -17,7 +17,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * TWO-25386, and ABN-518 for the checkout-visibility row.
+ * TWO-25386, plus the checkout-visibility row.
  */
 class HealthChecklistTest extends TestCase
 {
@@ -241,8 +241,6 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518.
-     *
      * @dataProvider checkoutVisibilityStates
      */
     public function testTheCheckoutVisibilityRowNamesTheActiveReason(
@@ -286,6 +284,43 @@ class HealthChecklistTest extends TestCase
         $this->assertSame('Payment method at checkout', $row['label'], $description);
         $this->assertSame($expectedOk, $row['ok'], $description);
         $this->assertStringContainsString($expectedFragment, $row['value'], $description);
+    }
+
+    /**
+     * TWO-26153: an unreadable tax code map withholds the method (TWO-26309), and the row says where to clear it.
+     *
+     * @dataProvider taxCodeMaps
+     */
+    public function testTheCheckoutVisibilityRowNamesAnUnreadableTaxCodeMap(bool $readable, bool $expectedOk, string $expectedFragment): void
+    {
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        if ($readable) {
+            $this->configRepository->method('getTaxCodeMap')->willReturn([]);
+        } else {
+            $this->configRepository->method('getTaxCodeMap')
+                ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unreadable')));
+        }
+        $this->supportedCountriesProvider->method('getState')->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+        $this->scopeConfig->method('getValue')->willReturn('');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertSame($expectedOk, $row['ok']);
+        $this->assertStringContainsString($expectedFragment, $row['value']);
+    }
+
+    public static function taxCodeMaps(): array
+    {
+        return [
+            'readable' => [true, true, 'Shown at checkout'],
+            'unreadable' => [false, false, 'Use Clear saved tax codes under Order management > Tax'],
+        ];
     }
 
     /**
@@ -394,7 +429,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518: the row has to judge the same store the checkout gate would,
+     * The row has to judge the same store the checkout gate would,
      * not the default scope, on a website- or store-view-scoped page.
      *
      * @dataProvider scopeParams
@@ -672,7 +707,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-533 narrowed which categories withhold the payment method from the
+     * A later change narrowed which categories withhold the payment method from the
      * BUYER. The admin's own verdict is unchanged: anything short of a
      * verified key still reads "Not verified" here.
      *

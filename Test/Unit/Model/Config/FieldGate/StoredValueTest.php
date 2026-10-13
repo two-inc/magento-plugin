@@ -9,7 +9,7 @@ use Two\Gateway\Model\Config\FieldGate\StoredValue;
 /**
  * The gate on the deprecated "Custom payment terms (days)": it renders for exactly the
  * merchants who already carry a value, and for nobody else. Junk renders too — a value that
- * cannot be parsed still has to be removable (ABN-522).
+ * cannot be parsed still has to be removable.
  */
 class StoredValueTest extends TestCase
 {
