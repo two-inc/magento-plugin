@@ -211,14 +211,19 @@ class ComposeShipment extends OrderService
         // below is summed directly from $shipmentItems, so they cannot
         // diverge from sum(line_items) by construction. There is no
         // independent grand-total column to reconcile against.
-        return [
+        $payload = [
             'discount_amount' => $this->getSum($shipmentItems, 'discount_amount'),
             'gross_amount' => $this->getSum($shipmentItems, 'gross_amount'),
             'line_items' => array_values($shipmentItems),
             'net_amount' => $this->getSum($shipmentItems, 'net_amount'),
             'tax_amount' => $this->getSum($shipmentItems, 'tax_amount'),
-            'tax_subtotals' => $this->getTaxSubtotals($shipmentItems, (int)$order->getStoreId()),
         ];
+        // "Validate tax subtotals" off: the key is left out, not sent as null.
+        $taxSubtotals = $this->getTaxSubtotals($shipmentItems, (int)$order->getStoreId());
+        if ($taxSubtotals !== null) {
+            $payload['tax_subtotals'] = $taxSubtotals;
+        }
+        return $payload;
     }
 
     /**

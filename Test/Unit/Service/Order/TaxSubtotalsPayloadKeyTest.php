@@ -85,7 +85,8 @@ class TaxSubtotalsPayloadKeyTest extends TestCase
         if ($atOrderStore) {
             $this->assertSame(self::EXPECTED_SUBTOTALS, $payload['tax_subtotals'] ?? null, "$composer: on at the order's store");
         } else {
-            $this->assertNull($payload['tax_subtotals'] ?? null, "$composer: off at the order's store");
+            // Left out, not sent as null (TWO-26340).
+            $this->assertFalse(array_key_exists('tax_subtotals', $payload), "$composer: off at the order's store");
         }
     }
 

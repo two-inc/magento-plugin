@@ -143,6 +143,11 @@ class ComposeOrder extends OrderService
             ],
         ];
 
+        // "Validate tax subtotals" off: the key is left out, not sent as null.
+        if ($payload['tax_subtotals'] === null) {
+            unset($payload['tax_subtotals']);
+        }
+
         // TWO-25386: these fields are optional and are omitted rather than sent
         // blank. Two different reasons, both real.
         //
