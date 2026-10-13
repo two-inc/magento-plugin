@@ -210,9 +210,11 @@ class Adapter
                     $decoded = json_decode($body, true) ?: [];
                     $decoded['http_status'] = $result->status;
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
+                    $this->logRefusal($method, $endpoint, $result);
                     return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
+                    $this->logRefusal($method, $endpoint, $result);
                     // This used to throw a LocalizedException, which this
                     // method's own catch-all immediately converted into
                     // exactly the array below minus `http_status` — the
@@ -252,6 +254,61 @@ class Adapter
                 ],
             ];
         }
+    }
+
+    /**
+     * Logs an order request the API refused, with the API's reason and never
+     * a body, whatever the debug setting: the merchant needs to know why an
+     * order, edit, fulfilment, refund, cancel or confirm did not go through.
+     * An intent is refused routinely (no order yet, a rate limit), so it is
+     * only a warning. Reads (GET) are not order requests.
+     */
+    private function logRefusal(string $method, string $endpoint, ApiResult $result): void
+    {
+        if ($result->status < 400
+            || strtoupper($method) === 'GET'
+            || !preg_match('#^/v1/order(_intent)?(/|$)#', $endpoint)
+        ) {
+            return;
+        }
+        $message = sprintf(
+            '%s %s refused by the API (HTTP %d): %s',
+            $method,
+            $endpoint,
+            $result->status,
+            $this->rejectionReason($result->body)
+        );
+        if (strpos($endpoint, '/v1/order_intent') === 0) {
+            $this->logRepository->addWarningLog($message, null);
+        } else {
+            $this->logRepository->addErrorLog($message, null);
+        }
+    }
+
+    /**
+     * The API's own reason: its error code, message, details and each
+     * validation message, or the start of a body that is not the API's
+     * error shape.
+     */
+    private function rejectionReason(string $raw): string
+    {
+        $body = json_decode($raw, true);
+        if (!is_array($body)) {
+            return $raw === '' ? 'no response body' : substr($raw, 0, 500);
+        }
+        $parts = [];
+        foreach (['error_code', 'error_message', 'error_details'] as $key) {
+            if (isset($body[$key]) && is_string($body[$key]) && $body[$key] !== '') {
+                $parts[] = $body[$key];
+            }
+        }
+        foreach (is_array($body['error_json'] ?? null) ? $body['error_json'] : [] as $error) {
+            if (is_array($error) && isset($error['msg']) && is_string($error['msg'])) {
+                $loc = is_array($error['loc'] ?? null) ? implode('.', $error['loc']) . ': ' : '';
+                $parts[] = $loc . $error['msg'];
+            }
+        }
+        return $parts === [] ? substr($raw, 0, 500) : implode('; ', array_unique($parts));
     }
 
     /**

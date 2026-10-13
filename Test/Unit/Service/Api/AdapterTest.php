@@ -586,12 +586,18 @@ class AdapterTest extends TestCase
         $logRepository = $this->createMock(LogRepository::class);
         $logRepository->method('addDebugLog')->willReturnCallback(
             function ($type, $data) use (&$logged) {
-                $logged['debug'][] = [$type, $data];
+                // Only entries carrying the exchange; a refusal's reason line has no data.
+                if ($data !== null) {
+                    $logged['debug'][] = [$type, $data];
+                }
             }
         );
         $logRepository->method('addErrorLog')->willReturnCallback(
             function ($type, $data) use (&$logged) {
-                $logged['error'][] = [$type, $data];
+                // Only entries carrying the exchange; a refusal's reason line has no data.
+                if ($data !== null) {
+                    $logged['error'][] = [$type, $data];
+                }
             }
         );
 
@@ -630,5 +636,82 @@ class AdapterTest extends TestCase
             'debug on, success' => [true, 200, 1, 0, 'a success is one debug log entry'],
             'debug on, refused' => [true, 422, 0, 1, 'a refusal is one error log entry'],
         ];
+    }
+
+    /**
+     * Given an order request the API refuses; When it returns, whatever the
+     * debug setting; Then one reason-only line is logged (a warning for an
+     * intent, an error for the rest), and no line for a read or a non-order
+     * call. The buyer's details never appear in it.
+     *
+     * @dataProvider refusalCases
+     */
+    public function testOrderRequestRefusalIsLoggedWithTheReason(
+        string $method,
+        string $endpoint,
+        ?string $level,
+        string $description
+    ): void {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(422);
+        $this->curl->method('getBody')->willReturn(
+            '{"error_code":"SCHEMA_ERROR","error_message":"Invalid order",'
+            . '"error_json":[{"loc":["buyer","email"],"msg":"field required"}],"buyer":"Jane Doe"}'
+        );
+
+        $logged = [];
+        foreach (['addErrorLog' => 'error', 'addWarningLog' => 'warning', 'addDebugLog' => 'debug'] as $fn => $lvl) {
+            $this->logRepository->method($fn)->willReturnCallback(
+                function ($type, $data) use (&$logged, $lvl) {
+                    $logged[] = [$lvl, $type, $data];
+                }
+            );
+        }
+
+        $this->adapter->execute($endpoint, ['buyer' => 'Jane Doe'], $method, 1);
+
+        if ($level === null) {
+            $this->assertSame([], $logged, $description);
+            return;
+        }
+        $this->assertSame(
+            [[
+                $level,
+                "$method $endpoint refused by the API (HTTP 422): "
+                    . 'SCHEMA_ERROR; Invalid order; buyer.email: field required',
+                null,
+            ]],
+            $logged,
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string|null, 3: string}>
+     */
+    public static function refusalCases(): array
+    {
+        return [
+            'create' => ['POST', '/v1/order', 'error', 'a refused create is an error'],
+            'edit' => ['PUT', '/v1/order/abc', 'error', 'a refused edit is an error'],
+            'fulfilment' => ['POST', '/v1/order/abc/fulfillments', 'error', 'a refused fulfilment is an error'],
+            'refund' => ['POST', '/v1/order/abc/refund', 'error', 'a refused refund is an error'],
+            'cancel' => ['POST', '/v1/order/abc/cancel', 'error', 'a refused cancel is an error'],
+            'confirm' => ['POST', '/v1/order/abc/confirm', 'error', 'a refused confirm is an error'],
+            'intent' => ['POST', '/v1/order_intent', 'warning', 'a refused intent is only a warning'],
+            'order read' => ['GET', '/v1/order/abc', null, 'a read is not an order request'],
+            'non-order call' => ['POST', '/v1/pricing/order/fee', null, 'a non-order endpoint is not logged'],
+        ];
+    }
+
+    public function testRefusalReasonFallsBackToTheRawBody(): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(502);
+        $this->curl->method('getBody')->willReturn('Bad gateway');
+        $this->logRepository->expects($this->once())->method('addErrorLog')
+            ->with('POST /v1/order/abc/refund refused by the API (HTTP 502): Bad gateway', null);
+
+        $this->adapter->execute('/v1/order/abc/refund', [], 'POST', 1);
     }
 }

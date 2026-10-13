@@ -22,6 +22,14 @@ interface RepositoryInterface
     public function addErrorLog(string $type, $data);
 
     /**
+     * Add a warning-level record to the error log
+     *
+     * @param string $type
+     * @param mixed $data
+     */
+    public function addWarningLog(string $type, $data);
+
+    /**
      * Add record to debug log
      *
      * @param string $type
