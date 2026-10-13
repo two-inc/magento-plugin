@@ -291,7 +291,7 @@ For each 0% line the first of these that matches decides:
    its class's **No rule for the address** row.
 4. **No tax class.** "Other charges" and fee-provider lines, a flat-rate
    payment terms fee, the refund adjustment line, and a product line the
-   plugin could not match to its item take the one code the order's 0% lines
+   plugin could not match to its item take the one code the request's 0% lines
    coded by steps 1 to 3 share. If those lines carry different codes, or
    none, the line gets no code.
 5. **Otherwise no code is sent.**
@@ -331,8 +331,8 @@ from your rows (steps 1 to 4 above). If your Two account is in Spain, set a
 code on every row your 0% lines fall under, or Two refuses those lines.
 Orders placed before this version keep the codes they recorded. On an order
 placed before the per-row settings, a later line with no tax class, such as a
-refund adjustment, takes the one code the order's recorded lines carry, and
-no code if they carry different codes or none.
+refund adjustment, takes the one code the request's other 0% lines carry, and
+no code if they carry different codes or one carries none.
 
 **The plugin never refuses; the API does.** A 0% line with no code is sent
 as is, and Two's API decides. For a Spanish merchant it refuses such a line,
@@ -356,7 +356,8 @@ which share one code whatever their id. Order edit, capture, shipment and
 refund send those codes, so a later change to the addresses, your rows or a
 product's tax class does not move a coded line. A line placed with no code is
 resolved again against your rows on each later request (TWO-26309). The refund adjustment line
-takes the code the lines coded by steps 1 to 3 shared at placement (step 4). These resolve afresh
+takes the one code the request's lines coded by steps 1 to 3 share (step 4), counting a
+line placed with a code only while the request still carries it (TWO-26340). These resolve afresh
 instead: a product line placement could not match to its item (its SKU was
 changed by another extension, or its item has no quote item), a fee line on
 an order that had none at placement, and every line of an order placed before

@@ -224,11 +224,14 @@ Placement stores the code each 0% line resolved to, only where it got one, in
 share a key because they all resolve alike (no class, so step 4) and because
 a fee can change id after placement: a provider that itemizes only a saved
 order leaves the create with an "Other charges" residual and the edit with its
-own line. The record's `shared` key lists the codes steps 1 to 3 gave at
-placement; the refund `adjustment` line is not recorded and takes step 4 over
-that list. A record written before the key existed shares the codes its
-recorded lines carry instead, other than `fee`'s; with none, or disagreeing
-ones, no code. Edit, capture, shipment and refund read the record and
+own line. The record's `mapped` key lists the line keys whose codes steps 1
+to 3 gave at placement. On a later request step 4 pools only this request's
+lines (TWO-26340): the recorded codes of lines present and listed there, plus
+codes resolved now, so a code placement gave a line the request no longer
+carries is never shared. The refund `adjustment` line is not recorded and
+takes step 4 over that pool. A record written before the key existed shares
+the one code every other 0% line on the request carries, and none when they
+disagree or one has none. Edit, capture, shipment and refund read the record and
 never resolve those lines
 again; a line it does not cover (placed with no code, added since), or an
 order placed before it existed, resolves live. A `null` an older record holds
