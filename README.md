@@ -216,6 +216,11 @@ a line falls under and sends the code you chose for it. **Order management >
 Tax** holds **Validate tax subtotals** and **Tax codes for 0% lines**;
 **Order management > Status mapping** holds the fulfilment settings.
 
+**Validate tax subtotals** (default Yes, set per store view) sends a per-rate
+`tax_subtotals` breakdown with order creation, order edits, fulfilments and
+refunds, for validation against the order lines. With No it is sent on none of
+them. The setting is read at the order's store view.
+
 **The table.** "Tax codes for 0% lines" spans the width of the form, with one
 row per product tax class (including **None**) and the cases as columns:
 

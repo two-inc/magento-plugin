@@ -191,7 +191,7 @@
 "%1 days - fixed amount: maximum is %2.","%1 dager - fast beløp: maksimum er %2."
 "%1 days - percentage: maximum is %2.","%1 dager - prosent: maksimum er %2."
 "30 days","30 dager"
-"Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).","Legg til valgfri tax_subtotals-metadata i ordreopprettelsens innhold for å håndheve ytterligere validering (anbefalt)."
+"If you choose Yes, a per-tax-rate tax_subtotals breakdown is sent in order creation, order edit, fulfilment and refund payloads for validation against the order lines. If you choose No, tax_subtotals is omitted from those payloads.","Hvis du velger Ja, blir en tax_subtotals-oppdeling per avgiftssats sendt i datainnholdet for ordreopprettelse, ordreendring, oppfyllelse og refusjon, for validering mot ordrelinjene. Hvis du velger Nei, utelates tax_subtotals fra dette datainnholdet."
 "All Allowed Countries","Alle tillatte land"
 "Amounts are shown in %1.","Beløpet vises i %1."
 "Cannot convert surcharge from %1 to %2: no exchange rate is currently available.","Kan ikke konvertere tilleggsavgift fra %1 til %2: ingen valutakurs er tilgjengelig for øyeblikket."

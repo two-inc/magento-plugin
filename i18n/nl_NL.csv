@@ -194,7 +194,7 @@
 "30 days","30 dagen"
 "60 days","60 dagen"
 "90 days","90 dagen"
-"Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).","Voeg optionele BTW-subtotalen toe aan order creatie data om extra validatie toe te passen (aanbevolen)."
+"If you choose Yes, a per-tax-rate tax_subtotals breakdown is sent in order creation, order edit, fulfilment and refund payloads for validation against the order lines. If you choose No, tax_subtotals is omitted from those payloads.","Als je Ja kiest, wordt een tax_subtotals-uitsplitsing per btw-tarief meegestuurd in de payloads voor het aanmaken, wijzigen, uitvoeren en terugbetalen van orders, ter validatie tegen de orderregels. Als je Nee kiest, worden tax_subtotals uit die payloads weggelaten."
 "All Allowed Countries","Alle toegestane landen"
 "Amounts are shown in %1.","Bedragen worden getoond in %1."
 "Developed by Magmodules.","Ontwikkeld door Magmodules."

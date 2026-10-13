@@ -191,7 +191,7 @@
 "%1 days - fixed amount: maximum is %2.","%1 días - importe fijo: el máximo es %2."
 "%1 days - percentage: maximum is %2.","%1 días - porcentaje: el máximo es %2."
 "30 days","30 días"
-"Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).","Añade metadatos opcionales tax_subtotals a la carga útil de creación del pedido para aplicar una validación adicional (recomendado)."
+"If you choose Yes, a per-tax-rate tax_subtotals breakdown is sent in order creation, order edit, fulfilment and refund payloads for validation against the order lines. If you choose No, tax_subtotals is omitted from those payloads.","Si seleccionas Sí, se enviará un desglose de tax_subtotals por tipo de impuesto en las cargas útiles de creación, edición, cumplimiento y reembolso de pedidos, para su validación frente a las líneas del pedido. Si seleccionas No, tax_subtotals se omitirá en esas cargas útiles."
 "All Allowed Countries","Todos los países permitidos"
 "Amounts are shown in %1.","Los importes se muestran en %1."
 "Cannot convert surcharge from %1 to %2: no exchange rate is currently available.","No se puede convertir el recargo de %1 a %2: actualmente no hay ningún tipo de cambio disponible."
