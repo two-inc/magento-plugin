@@ -201,7 +201,8 @@ class TaxCodeResolver
 
         if ($placing) {
             $record[self::MAPPED_KEY] = array_keys($mappedKeys);
-            $order->setData(self::STORED_CODES, (string)json_encode($record, JSON_FORCE_OBJECT));
+            // Never empty and keyed by name, so it encodes as an object, with `mapped` as a list.
+            $order->setData(self::STORED_CODES, (string)json_encode($record));
         }
 
         return $lineItems;

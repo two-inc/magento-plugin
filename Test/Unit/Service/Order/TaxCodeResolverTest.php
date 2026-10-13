@@ -244,6 +244,7 @@ class TaxCodeResolverTest extends TestCase
         $this->assertSame($expected, $this->codes($sent), $description);
         if ($recorded !== null) {
             $this->assertSame($recorded, json_decode((string)$order->getData(TaxCodeResolver::STORED_CODES), true), $description);
+            $this->assertStringContainsString('"mapped":[', (string)$order->getData(TaxCodeResolver::STORED_CODES), 'mapped is a JSON list');
         }
     }
 

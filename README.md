@@ -357,7 +357,7 @@ refund send those codes, so a later change to the addresses, your rows or a
 product's tax class does not move a coded line. A line placed with no code is
 resolved again against your rows on each later request (TWO-26309). The refund adjustment line
 takes the one code the request's lines coded by steps 1 to 3 share (step 4), counting a
-line placed with a code only while the request still carries it (TWO-26340). These resolve afresh
+line placed with a code only while the request still carries it and steps 1 to 3 coded it (TWO-26340). These resolve afresh
 instead: a product line placement could not match to its item (its SKU was
 changed by another extension, or its item has no quote item), a fee line on
 an order that had none at placement, and every line of an order placed before
