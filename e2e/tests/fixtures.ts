@@ -18,13 +18,9 @@ export function storeAuthHeaders(url: string): Record<string, string> {
 }
 
 function isGatedStoreUrl(url: string): boolean {
-    const { host, pathname } = new URL(url);
-    // The proxy leaves GET /static/ and /media/ open, so those need no token.
-    return (
-        host === new URL(STORE_URL).host &&
-        TOKEN_HOST.test(host) &&
-        !/^\/(static|media)\//.test(pathname)
-    );
+    const { host } = new URL(url);
+    // Every path on the store is behind the proxy, /static/ and /media/ included (PLAT-2706).
+    return host === new URL(STORE_URL).host && TOKEN_HOST.test(host);
 }
 
 export async function authoriseStore(context: BrowserContext): Promise<void> {
