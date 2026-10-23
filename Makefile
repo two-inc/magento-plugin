@@ -16,6 +16,9 @@ URL        := http://localhost:$(PORT)/
 TWO_ENV              := $(shell gcloud config get-value account 2>/dev/null | grep -q '@two\.inc$$' && echo staging || echo sandbox)
 TWO_API_BASE_URL     ?= https://api.$(TWO_ENV).two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
+# Offers the Staging environment in the admin (TWO-26604). Set for internal
+# Two devs, the same people TWO_ENV points at staging.
+TWO_INTERNAL_ENVIRONMENTS ?= $(if $(filter staging,$(TWO_ENV)),1,)
 TWO_STORE_COUNTRY    ?= NO
 export PORT
 
@@ -32,6 +35,7 @@ install: clean
 	MAGENTO_TAG=$(MAGENTO_TAG) PORT=$(PORT) \
 		TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
+		TWO_INTERNAL_ENVIRONMENTS=$(TWO_INTERNAL_ENVIRONMENTS) \
 		docker compose up -d
 	# The image installs the shop on first boot and touches this file when it
 	# is genuinely usable. `bin/magento --version` answers long before that, so

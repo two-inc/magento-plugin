@@ -123,6 +123,33 @@ be refreshed and when it was retrieved. With nothing cached at all the screen sa
 the pricing service could not be reached. Do not restore a bare
 `{success:false}` that the browser swallows.
 
+## The Environment setting follows one rule on all three plugins
+
+The WooCommerce and PrestaShop plugins implement the same rule (TWO-26604),
+and `Test/Unit/Model/Config/_files/environment-cases.json` is byte-identical in
+all three repos; change it in all three or in none.
+
+-   Options Production, Sandbox, and Staging only when `TWO_INTERNAL_ENVIRONMENTS`
+    is exactly `1` or `staging` is already stored at the scope being edited
+    (`Model/Config/Source/Mode`). Stored values `production`, `sandbox`,
+    `staging`; the `config.xml` default is `sandbox`.
+-   `Model/Config/Backend/Mode` refuses anything else on save, wired in both
+    `system.xml` and `brand_form_template.xml`. The refusal is field-level
+    (`_dataSaveAllowed`), as WooCommerce refuses it: the stored value stays and
+    every sibling field still saves.
+-   `getMode()` normalises through `Model/Config/EnvironmentMode`: trimmed,
+    lowercased, `prod` aliased, and anything unrecognised resolves to
+    `sandbox`. This is the one read path that does not raise on an
+    unrecognised value: the rule is shared with the other plugins, and sandbox
+    can neither take real money nor accept a production key.
+    `getStoredMode()` is the raw value the dropdown and the health checklist
+    judge.
+-   The health checklist marks an unrecognised value, and a stored `staging`
+    without the flag, as needing action. A stored `staging` is never
+    rewritten.
+-   `Setup/Patch/Data/NormaliseEnvironmentMode` rewrote legacy rows once, on
+    the Two payment codes only (`payment/<code>/mode` is a common key).
+
 ## A field declared only in `system.xml` reaches no brand — nor does its model
 
 Every admin pane is rendered from fields synthesised out of
