@@ -144,8 +144,8 @@ all three repos; change it in all three or in none.
     `getStoredMode()` is the raw value the dropdown and the health checklist
     judge.
 -   The health checklist marks an unrecognised value, and an environment the
-    plugin does not offer on this server, as needing action. A stored value is
-    never rewritten.
+    plugin does not offer on this server, as needing action. The health
+    checklist never rewrites a stored value.
 -   `Setup/Patch/Data/NormaliseEnvironmentMode` rewrote legacy rows once, on
     the Two payment codes only (`payment/<code>/mode` is a common key).
 
