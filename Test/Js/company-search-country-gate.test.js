@@ -217,7 +217,7 @@ describe('a supported -> unsupported -> supported round trip', () => {
     });
 });
 
-describe('ABN-525: the registered-company chip follows the same gate', () => {
+describe('the registered-company chip follows the same gate', () => {
     test.each([
         ['gb', true, 'a covered country still offers the search'],
         ['fr', false, 'an uncovered country withdraws the chip, leaving manual entry'],

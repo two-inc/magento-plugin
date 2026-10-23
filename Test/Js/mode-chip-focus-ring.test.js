@@ -60,7 +60,7 @@ afterEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the popover mode chips show where the keyboard is (ABN-554)', () => {
+describe('the popover mode chips show where the keyboard is', () => {
     test.each([
         ['selected', 'the selected chip'],
         ['plain', 'an unselected chip']

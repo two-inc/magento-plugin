@@ -245,7 +245,7 @@ class ApiKeyTest extends TestCase
             'store view' => ['stores', 7, 7, 'store', 'a store-scope save uses that store'],
             'singular store spelling' => ['store', 7, 7, 'store', 'the config layer uses both spellings'],
             'default' => ['default', 0, null, 'default', 'the default scope has no id'],
-            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's (ABN-530)"],
+            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's"],
         ];
     }
 

@@ -255,7 +255,7 @@ class VerifyApiKeyTest extends TestCase
         return [
             'store view' => ['stores', 7, 7, 'store', 'a store-scope check uses that store'],
             'default' => ['default', 0, null, 'default', 'the default scope has no id'],
-            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's (ABN-530)"],
+            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's"],
             'store scope without an id' => ['stores', 0, null, 'default', 'a store scope with no id is the default scope'],
         ];
     }

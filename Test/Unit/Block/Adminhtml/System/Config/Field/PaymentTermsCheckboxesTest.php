@@ -135,7 +135,7 @@ class PaymentTermsCheckboxesTest extends TestCase
         return [
             [['store' => 'de'], 'stores', self::STORE_ID, self::STORE_ID, 'store', 'the store param names the scope being edited'],
             [[], 'default', 0, null, 'default', 'no param is the default scope'],
-            [['website' => 'eu'], 'websites', self::WEBSITE_ID, self::WEBSITE_ID, 'website', 'a website reads its own key (ABN-530)'],
+            [['website' => 'eu'], 'websites', self::WEBSITE_ID, self::WEBSITE_ID, 'website', 'a website reads its own key'],
             [['store' => ''], 'default', 0, null, 'default', 'an empty param is not a scope'],
             [['store' => 'broken'], 'default', 0, null, 'default', 'an unresolvable store falls back rather than throwing'],
             [['store' => 'broken', 'website' => 'eu'], 'websites', self::WEBSITE_ID, self::WEBSITE_ID, 'website', 'an unresolvable store falls through to the website param'],

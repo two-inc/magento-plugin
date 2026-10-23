@@ -40,7 +40,7 @@ function announced() {
     );
 }
 
-describe("ABN-554: the company-search panel's live region", () => {
+describe("the company-search panel's live region", () => {
     let panel;
     let answer;
     let companySearch;
