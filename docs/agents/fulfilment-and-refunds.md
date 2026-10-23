@@ -126,14 +126,17 @@ complete trigger never fulfils, so no comment is added there.
 `ComposeRefund::assertLinesCarryNetAndTax()` runs in `execute()` over every
 line the builder composed (items, surcharge, adjustment, shipping, the
 other-charges residual), after the tax codes and before the postprocessing
-hook (TWO-26638). Amounts are read rounded as the payload sends them. A line
-whose net is 0 while its tax is not is refused; so is a line with net and no
-tax whose tax due, `abs(net) x rate`, is more than
-`ComposeRefund::REFUND_LINE_TAX_TOLERANCE` (0.02, what Two's refund validation
-accepts between a line's tax and net x rate). A 0% line (the adjustment) and a
-net-only line within the tolerance go out unchanged, as does a mismatched
-non-zero tax, which Two's API validates. A tax-only line is never valid,
-whatever its size.
+hook (TWO-26638). It reads `name`, `net_amount`, `tax_amount` and `tax_rate`,
+amounts rounded to the cent. A line whose net is 0 while its tax is not is
+refused, whatever its size: a tax-only refund is never valid. A line with net
+and no tax is refused when
+its tax due, `round(abs(net) x rate, 2)`, is more than
+`ComposeRefund::REFUND_LINE_TAX_TOLERANCE` (0.02). That mirrors Two's refund
+validation, which accepts a tax within 0.02 of net x rate once the difference
+is rounded to the cent, so a tax due up to about 0.025 goes out as sent. PHP's
+`round()` is half up, so 0.10 at 25% (0.025) is refused. A 0% line (the
+adjustment) and a net-only line within the tolerance go out unchanged, as does
+a mismatched non-zero tax, which Two's API validates.
 The refusal is a `LocalizedException` with translated copy naming the line,
 and `RefundLineRefused` is logged at error. It is thrown inside
 `Two::refund()`, before the request, so core's credit memo transaction rolls

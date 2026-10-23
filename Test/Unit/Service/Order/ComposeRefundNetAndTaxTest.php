@@ -17,9 +17,9 @@ use Two\Gateway\Service\Order\ComposeRefund;
 /**
  * TWO-26638: a refund line goes to Two with its net and its tax together. A
  * line whose net rounds to 0 while its tax does not is refused, and so is a
- * line with net and no tax whose tax due, abs(net) x rate, is more than the
- * 0.02 Two accepts. A 0% line and a line whose tax due is within that go out
- * unchanged; the plugin never fills the tax in.
+ * line with net and no tax whose tax due, abs(net) x rate rounded to the cent,
+ * is more than 0.02, as Two's refund validation compares it. A 0% line and a
+ * line within that go out unchanged; the plugin never fills the tax in.
  */
 class ComposeRefundNetAndTaxTest extends TestCase
 {
@@ -27,7 +27,7 @@ class ComposeRefundNetAndTaxTest extends TestCase
         . ' with its net amount. To correct the tax charged, refund the whole order and rebook it with the'
         . ' correct tax rates.';
     private const NET_ONLY = '"%s" has no tax entered: Two refunds a line\'s net amount only together with its'
-        . ' tax. Enter the tax refunded for this line as well.';
+        . ' tax.';
 
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $log;
@@ -98,9 +98,13 @@ class ComposeRefundNetAndTaxTest extends TestCase
             ['OTHER', 'Other charges', '3.00', '0.00', '0.250000', 'net', 'residual, net only at 25%'],
             ['PHYSICAL', 'Widget', '0.01', 0.0, '0.210000', null, 'tax due 0.0021, within 0.02: unchanged'],
             ['PHYSICAL', 'Widget', '0.03', 0.0, '0.210000', null, 'tax due 0.0063, within 0.02: unchanged'],
-            ['PHYSICAL', 'Widget', '0.09', 0.0, '0.210000', null, 'tax due 0.0189, just under 0.02: unchanged'],
+            ['PHYSICAL', 'Widget', '0.09', 0.0, '0.210000', null, 'tax due 0.0189 rounds to 0.02: unchanged'],
             ['PHYSICAL', 'Widget', '0.08', 0.0, '0.250000', null, 'tax due exactly 0.02: unchanged'],
-            ['PHYSICAL', 'Widget', '0.10', 0.0, '0.210000', 'net', 'tax due 0.021, just over 0.02: refused'],
+            ['PHYSICAL', 'Widget', '0.10', 0.0, '0.210000', null, 'tax due 0.021 rounds to 0.02: unchanged'],
+            ['PHYSICAL', 'Widget', '0.20', 0.0, '0.100000', null, 'tax due 0.02 at 10%: unchanged'],
+            // PHP rounds half up, so 0.025 is 0.03 and over the tolerance.
+            ['PHYSICAL', 'Widget', '0.10', 0.0, '0.250000', 'net', 'tax due 0.025 rounds to 0.03: refused'],
+            ['PHYSICAL', 'Widget', '0.12', 0.0, '0.250000', 'net', 'tax due 0.03: refused'],
             ['OTHER', 'Adjustment', '-10.00', '0.00', '0.250000', 'net', 'a negative net is measured by size'],
             ['PHYSICAL', 'Widget', '10.00', 1.0, '0.250000', null, 'mismatched non-zero tax: out of scope'],
             ['PHYSICAL', 'Widget', '0.00', 0.0, '0.210000', null, 'nothing refunded on the line'],
@@ -135,6 +139,55 @@ class ComposeRefundNetAndTaxTest extends TestCase
         $this->composeRefund(true)->execute($creditmemo, 10.00, $order);
     }
 
+    /**
+     * A partial quantity scales the order item's net and gross, so the line
+     * keeps its tax in proportion, and a cheap line whose tax rounds away
+     * stays within the tolerance.
+     *
+     * @dataProvider partialQuantities
+     */
+    public function testExecuteSendsAPartialQuantityItem(
+        float $rowTotal,
+        float $discount,
+        float $tax,
+        string $net,
+        string $lineTax,
+        string $description
+    ): void {
+        $order = $this->order([
+            'item_id' => 1,
+            'name' => 'Widget',
+            'sku' => 'W',
+            'qty_ordered' => 3,
+            'row_total' => $rowTotal,
+            'discount_amount' => $discount,
+            'tax_amount' => $tax,
+            'tax_percent' => 21.0,
+        ]);
+        $creditmemo = $this->creditmemo($order, 0.0, 0.0, 0.0);
+        $creditmemo->setItems([$this->item(['order_item_id' => 1, 'qty' => 1, 'row_total' => $rowTotal / 3,
+            'name' => 'Widget', 'sku' => 'W'])]);
+        $gross = (float)$net + (float)$lineTax;
+        $creditmemo->setGrandTotal($gross);
+        $creditmemo->setTaxAmount((float)$lineTax);
+
+        $payload = $this->composeRefund(false, $order)->execute($creditmemo, $gross, $order);
+
+        $line = $payload['line_items'][0];
+        $this->assertCount(1, $payload['line_items'], $description);
+        $this->assertSame($net, $line['net_amount'], $description);
+        $this->assertEqualsWithDelta((float)$lineTax, (float)$line['tax_amount'], 0.001, $description);
+        $this->assertSame('0.210000', $line['tax_rate'], $description);
+    }
+
+    public static function partialQuantities(): array
+    {
+        return [
+            [30.00, 0.0, 6.30, '10.00', '2.10', 'one of three at 10.00 and 21%: net and tax scaled together'],
+            [0.09, 0.01, 0.02, '0.03', '0.00', 'one of three cheap items: tax due 0.0063 is within 0.02'],
+        ];
+    }
+
     public function testExecuteSendsAnAdjustmentAtZeroPercent(): void
     {
         $order = $this->order();
@@ -146,9 +199,20 @@ class ComposeRefundNetAndTaxTest extends TestCase
         $this->assertSame('5.00', $payload['line_items'][0]['net_amount']);
     }
 
-    private function order(): Order
+    private function order(array $item = []): Order
     {
-        $order = new Order();
+        $order = new class extends Order {
+            /** @var array */
+            public $itemsById = [];
+
+            public function getItemById($id)
+            {
+                return $this->itemsById[$id];
+            }
+        };
+        if ($item) {
+            $order->itemsById[$item['item_id']] = $this->item($item + ['id' => $item['item_id']]);
+        }
         $order->setStoreId(1);
         $order->setIncrementId('000000042');
         $order->setOrderCurrencyCode('EUR');
@@ -171,15 +235,50 @@ class ComposeRefundNetAndTaxTest extends TestCase
         return $creditmemo;
     }
 
+    private function item(array $data): Order\Item
+    {
+        return new class ($data) extends Order\Item implements \Magento\Sales\Api\Data\OrderItemInterface {
+            /** @var array */
+            private $data;
+
+            public function __construct(array $data)
+            {
+                $this->data = $data;
+            }
+
+            public function __call($method, $args)
+            {
+                $key = strtolower(preg_replace('/(.)([A-Z])/', '$1_$2', substr($method, 3)));
+                return $this->data[$key] ?? null;
+            }
+        };
+    }
+
     /**
      * @return ComposeRefund|\PHPUnit\Framework\MockObject\MockObject
      */
-    private function composeRefund(bool $shippingFallback)
+    private function composeRefund(bool $shippingFallback, ?Order $order = null)
     {
         $service = $this->getMockBuilder(ComposeRefund::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['getProduct', 'getProductImageUrl', 'getCategories'])
+            ->onlyMethods(['getProduct', 'getProductImageUrl', 'getCategories', 'getOrderItem'])
             ->getMock();
+        $service->method('getProduct')->willReturn(new class extends \Magento\Catalog\Model\Product {
+            public function getCategoryIds()
+            {
+                return [];
+            }
+
+            public function getProductUrl()
+            {
+                return '';
+            }
+        });
+        $service->method('getProductImageUrl')->willReturn('');
+        $service->method('getCategories')->willReturn([]);
+        if ($order !== null) {
+            $service->method('getOrderItem')->willReturnCallback(static fn (int $id) => $order->getItemById($id));
+        }
 
         $taxCalculation = $this->createMock(\Magento\Tax\Model\Calculation::class);
         $taxCalculation->method('getRateRequest')->willReturn(new \Magento\Framework\DataObject());

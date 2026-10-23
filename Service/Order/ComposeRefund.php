@@ -19,10 +19,11 @@ use Two\Gateway\Service\Order as OrderService;
 class ComposeRefund extends OrderService
 {
     /**
-     * How far a refund line's tax may sit from net x rate and still be
-     * accepted by Two's refund validation (TWO-26638). A net-only line whose
-     * tax due is within it is accepted as sent, so only a larger one is
-     * refused here.
+     * Two's refund validation accepts a line whose tax differs from
+     * net x rate by no more than 0.02 once that difference is rounded to the
+     * cent (TWO-26638). A net-only line is compared the same way: its tax due,
+     * rounded to the cent, is refused only above this. So a tax due up to
+     * about 0.025 goes out as sent.
      */
     public const REFUND_LINE_TAX_TOLERANCE = 0.02;
 
@@ -90,11 +91,12 @@ class ComposeRefund extends OrderService
      *
      * Two refunds a line's tax only together with its net amount, so a line
      * whose net rounds to 0 while its tax does not is refused. A line with net
-     * and no tax is refused when the tax due at its rate, abs(net) x rate, is
-     * more than REFUND_LINE_TAX_TOLERANCE: a line at 0% (the adjustment line)
-     * and a line whose tax due is within the tolerance go out unchanged. The
-     * plugin never fills in or recomputes the tax itself: how tax is levied is
-     * the shop's decision. Amounts are read rounded as the payload sends them.
+     * and no tax is refused when the tax due at its rate, abs(net) x rate
+     * rounded to the cent, is more than REFUND_LINE_TAX_TOLERANCE: a line at
+     * 0% (the adjustment line) and a line within the tolerance go out
+     * unchanged. The plugin never fills in or recomputes the tax itself: how
+     * tax is levied is the shop's decision. Amounts are read rounded to the
+     * cent.
      *
      * Runs on every line the plugin composes, before the postprocessing hook
      * and before anything is sent, so the credit memo is refused unsaved.
@@ -119,11 +121,11 @@ class ComposeRefund extends OrderService
                     $this->brandRegistry->getProductName()
                 );
             } elseif ($net != 0.0 && $tax == 0.0
-                && round(abs($net) * $rate, 6) > self::REFUND_LINE_TAX_TOLERANCE
+                && round(abs($net) * $rate, 2) > self::REFUND_LINE_TAX_TOLERANCE
             ) {
                 $type = 'net only';
                 $phrase = __(
-                    '"%1" has no tax entered: %2 refunds a line\'s net amount only together with its tax. Enter the tax refunded for this line as well.',
+                    '"%1" has no tax entered: %2 refunds a line\'s net amount only together with its tax.',
                     $name,
                     $this->brandRegistry->getProductName()
                 );

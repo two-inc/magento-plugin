@@ -464,4 +464,4 @@
 "Staging (%1 internal test environment). Select Sandbox or Production.","Staging (intern testmiljö hos %1). Välj Sandbox eller Produktion."
 "Not recognised: Sandbox is in use. Select an environment and save.","Inte igenkänt: Sandbox används. Välj en miljö och spara."
 """%1"" cannot be refunded as tax alone: %2 refunds a line's tax only together with its net amount. To correct the tax charged, refund the whole order and rebook it with the correct tax rates.","""%1"" kan inte återbetalas som enbart moms: %2 återbetalar en rads moms endast tillsammans med dess nettobelopp. För att korrigera den debiterade momsen, återbetala hela beställningen och boka om den med rätt momssatser."
-"""%1"" has no tax entered: %2 refunds a line's net amount only together with its tax. Enter the tax refunded for this line as well.","""%1"" har ingen moms angiven: %2 återbetalar en rads nettobelopp endast tillsammans med dess moms. Ange även den återbetalade momsen för den här raden."
+"""%1"" has no tax entered: %2 refunds a line's net amount only together with its tax.","""%1"" har ingen moms angiven: %2 återbetalar en rads nettobelopp endast tillsammans med dess moms."

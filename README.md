@@ -207,9 +207,11 @@ postprocessing").
 Two refunds a line's tax only together with its net amount, so a credit memo
 whose refund would send a line as tax alone, or as a net amount with no tax at
 a rate above 0%, is refused before anything is sent to Two, with an admin
-error naming the line (TWO-26638). The credit memo is not saved. A line at 0%,
-such as the adjustment line, and a net-only line whose tax due at its rate is
-no more than 0.02, the difference Two accepts, go out unchanged. The plugin never fills in or
+error naming the line (TWO-26638). The credit memo is not saved. A line at
+0%, such as the adjustment line, goes out unchanged, and so does a net-only
+line whose tax due at its rate, rounded to the cent, is no more than 0.02:
+Two's refund validation accepts a tax that far from net x rate once the
+difference is rounded to the cent. The plugin never fills in or
 recomputes the tax: how tax is levied is your shop's decision. To correct the
 tax charged on an order, refund the whole order and rebook it with the correct
 tax rates. Each refusal is logged as `RefundLineRefused` with the line, the
