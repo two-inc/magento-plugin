@@ -408,14 +408,6 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function isInternalEnvironmentsEnabled(): bool
-    {
-        return EnvironmentMode::isInternalEnvironmentsEnabled();
-    }
-
-    /**
-     * @inheritDoc
-     */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
         if ($this->isDeveloperMode()) {

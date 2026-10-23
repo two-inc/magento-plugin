@@ -101,14 +101,6 @@ interface RepositoryInterface
     public function getStoredMode(?int $storeId = null, ?string $scope = null): string;
 
     /**
-     * Whether this shop runs on Two's own infrastructure
-     * (TWO_INTERNAL_ENVIRONMENTS=1), which alone may offer Staging.
-     *
-     * @return bool
-     */
-    public function isInternalEnvironmentsEnabled(): bool;
-
-    /**
      * Get API key
      *
      * @param int|null $storeId scope id when $scope is given
