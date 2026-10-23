@@ -19,6 +19,14 @@ use Two\Gateway\Service\Order as OrderService;
 class ComposeRefund extends OrderService
 {
     /**
+     * How far a refund line's tax may sit from net x rate and still be
+     * accepted by Two's refund validation (TWO-26638). A net-only line whose
+     * tax due is within it is accepted as sent, so only a larger one is
+     * refused here.
+     */
+    public const REFUND_LINE_TAX_TOLERANCE = 0.02;
+
+    /**
      * Compose request body for two refund order
      *
      * @param Creditmemo $creditmemo
@@ -82,11 +90,11 @@ class ComposeRefund extends OrderService
      *
      * Two refunds a line's tax only together with its net amount, so a line
      * whose net rounds to 0 while its tax does not is refused. A line with net
-     * and no tax is refused when its rate is not 0% and the tax due at that
-     * rate rounds to at least 0.01: a line at 0% (the adjustment line) and a
-     * line too small to carry tax at its rate go out unchanged. The plugin
-     * never fills in or recomputes the tax itself: how tax is levied is the
-     * shop's decision. Amounts are read rounded as the payload sends them.
+     * and no tax is refused when the tax due at its rate, abs(net) x rate, is
+     * more than REFUND_LINE_TAX_TOLERANCE: a line at 0% (the adjustment line)
+     * and a line whose tax due is within the tolerance go out unchanged. The
+     * plugin never fills in or recomputes the tax itself: how tax is levied is
+     * the shop's decision. Amounts are read rounded as the payload sends them.
      *
      * Runs on every line the plugin composes, before the postprocessing hook
      * and before anything is sent, so the credit memo is refused unsaved.
@@ -110,7 +118,9 @@ class ComposeRefund extends OrderService
                     $name,
                     $this->brandRegistry->getProductName()
                 );
-            } elseif ($net != 0.0 && $tax == 0.0 && round(abs($net) * $rate, 2) != 0.0) {
+            } elseif ($net != 0.0 && $tax == 0.0
+                && round(abs($net) * $rate, 6) > self::REFUND_LINE_TAX_TOLERANCE
+            ) {
                 $type = 'net only';
                 $phrase = __(
                     '"%1" has no tax entered: %2 refunds a line\'s net amount only together with its tax. Enter the tax refunded for this line as well.',

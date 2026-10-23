@@ -128,9 +128,12 @@ line the builder composed (items, surcharge, adjustment, shipping, the
 other-charges residual), after the tax codes and before the postprocessing
 hook (TWO-26638). Amounts are read rounded as the payload sends them. A line
 whose net is 0 while its tax is not is refused; so is a line with net and no
-tax whose rate is not 0% and whose tax due, `round(abs(net) x rate, 2)`, is at
-least 0.01. A 0% line (the adjustment) and a line too small to carry tax go
-out unchanged, as does a mismatched non-zero tax, which Two's API validates.
+tax whose tax due, `abs(net) x rate`, is more than
+`ComposeRefund::REFUND_LINE_TAX_TOLERANCE` (0.02, what Two's refund validation
+accepts between a line's tax and net x rate). A 0% line (the adjustment) and a
+net-only line within the tolerance go out unchanged, as does a mismatched
+non-zero tax, which Two's API validates. A tax-only line is never valid,
+whatever its size.
 The refusal is a `LocalizedException` with translated copy naming the line,
 and `RefundLineRefused` is logged at error. It is thrown inside
 `Two::refund()`, before the request, so core's credit memo transaction rolls

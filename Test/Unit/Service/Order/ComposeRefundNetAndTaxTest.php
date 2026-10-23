@@ -17,9 +17,9 @@ use Two\Gateway\Service\Order\ComposeRefund;
 /**
  * TWO-26638: a refund line goes to Two with its net and its tax together. A
  * line whose net rounds to 0 while its tax does not is refused, and so is a
- * line with net and no tax at a non-zero rate whose tax due rounds to at least
- * 0.01. A 0% line and a line too small to carry tax go out unchanged; the
- * plugin never fills the tax in.
+ * line with net and no tax whose tax due, abs(net) x rate, is more than the
+ * 0.02 Two accepts. A 0% line and a line whose tax due is within that go out
+ * unchanged; the plugin never fills the tax in.
  */
 class ComposeRefundNetAndTaxTest extends TestCase
 {
@@ -96,9 +96,12 @@ class ComposeRefundNetAndTaxTest extends TestCase
             ['OTHER', 'Other charges', '3.00', '0.00', '0.000000', null, 'untaxed residual at 0%'],
             ['OTHER', 'Other charges', '0.00', '0.75', '0.250000', 'tax', 'residual, tax only'],
             ['OTHER', 'Other charges', '3.00', '0.00', '0.250000', 'net', 'residual, net only at 25%'],
-            ['PHYSICAL', 'Widget', '0.01', 0.0, '0.210000', null, 'tax due 0.0021 rounds to 0: unchanged'],
-            ['PHYSICAL', 'Widget', '0.02', 0.0, '0.210000', null, 'tax due 0.0042 rounds to 0: unchanged'],
-            ['PHYSICAL', 'Widget', '0.03', 0.0, '0.210000', 'net', 'tax due 0.0063 rounds to 0.01: refused'],
+            ['PHYSICAL', 'Widget', '0.01', 0.0, '0.210000', null, 'tax due 0.0021, within 0.02: unchanged'],
+            ['PHYSICAL', 'Widget', '0.03', 0.0, '0.210000', null, 'tax due 0.0063, within 0.02: unchanged'],
+            ['PHYSICAL', 'Widget', '0.09', 0.0, '0.210000', null, 'tax due 0.0189, just under 0.02: unchanged'],
+            ['PHYSICAL', 'Widget', '0.08', 0.0, '0.250000', null, 'tax due exactly 0.02: unchanged'],
+            ['PHYSICAL', 'Widget', '0.10', 0.0, '0.210000', 'net', 'tax due 0.021, just over 0.02: refused'],
+            ['OTHER', 'Adjustment', '-10.00', '0.00', '0.250000', 'net', 'a negative net is measured by size'],
             ['PHYSICAL', 'Widget', '10.00', 1.0, '0.250000', null, 'mismatched non-zero tax: out of scope'],
             ['PHYSICAL', 'Widget', '0.00', 0.0, '0.210000', null, 'nothing refunded on the line'],
         ];
