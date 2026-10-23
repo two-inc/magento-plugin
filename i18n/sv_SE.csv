@@ -461,5 +461,5 @@
 "Staging","Staging"
 "Sandbox is for testing and moves no real money. Use the API key issued for the environment you select.","Sandbox är för test och flyttar inga riktiga pengar. Använd API-nyckeln som utfärdats för den miljö du väljer."
 "Select a valid environment.","Välj en giltig miljö."
-"Staging (Two internal test environment). Select Sandbox or Production.","Staging (Twos interna testmiljö). Välj Sandbox eller Produktion."
+"Staging (%1 internal test environment). Select Sandbox or Production.","Staging (internt testmiljö hos %1). Välj Sandbox eller Produktion."
 "Not recognised: Sandbox is in use. Select an environment and save.","Inte igenkänt: Sandbox används. Välj en miljö och spara."

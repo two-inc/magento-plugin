@@ -461,5 +461,5 @@
 "Staging","Staging"
 "Sandbox is for testing and moves no real money. Use the API key issued for the environment you select.","De zandbak is bedoeld om te testen en verplaatst geen echt geld. Gebruik de API-sleutel die is uitgegeven voor de omgeving die je selecteert."
 "Select a valid environment.","Selecteer een geldige omgeving."
-"Staging (Two internal test environment). Select Sandbox or Production.","Staging (interne testomgeving van Two). Selecteer Zandbak of Productie."
+"Staging (%1 internal test environment). Select Sandbox or Production.","Staging (interne testomgeving van %1). Selecteer Zandbak of Productie."
 "Not recognised: Sandbox is in use. Select an environment and save.","Niet herkend: de zandbak wordt gebruikt. Selecteer een omgeving en sla op."

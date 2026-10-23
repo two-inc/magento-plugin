@@ -77,6 +77,7 @@ class HealthChecklistTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
+        $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
         $store = $this->createMock(\Magento\Store\Model\Store::class);
         $store->method('getBaseCurrencyCode')->willReturn('GBP');
@@ -737,7 +738,7 @@ class HealthChecklistTest extends TestCase
             ['production', null, 'Production', true, 'production is named'],
             ['sandbox', null, 'Sandbox', true, 'sandbox is named'],
             ['staging', '1', 'Staging', true, 'staging on Two infra is named'],
-            ['staging', null, 'Staging (Two internal test environment). Select Sandbox or Production.', false, 'staging off Two infra says what to do'],
+            ['staging', null, 'Staging (Acme Pay internal test environment). Select Sandbox or Production.', false, 'staging off Two infra says what to do, naming the brand'],
             ['garbage', null, $unrecognised, false, 'an unknown value says sandbox is in use'],
             ['', null, $unrecognised, false, 'an empty value says sandbox is in use'],
         ];

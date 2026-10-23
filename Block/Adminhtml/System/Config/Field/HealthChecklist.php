@@ -376,7 +376,10 @@ class HealthChecklist extends Field
             return (string)__('Not recognised: Sandbox is in use. Select an environment and save.');
         }
         if ($mode === 'staging' && !EnvironmentMode::isInternalEnvironmentsEnabled()) {
-            return (string)__('Staging (Two internal test environment). Select Sandbox or Production.');
+            return (string)__(
+                'Staging (%1 internal test environment). Select Sandbox or Production.',
+                $this->brandRegistry->getProductName()
+            );
         }
         $labels = [
             'production' => __('Production'),
