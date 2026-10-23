@@ -1,5 +1,5 @@
 ---
-description: 'Offline invoices before the fulfilment trigger, status-change fulfilment, and refunding unitemized fees.'
+description: 'Offline invoices before the fulfilment trigger, status-change fulfilment, refund lines sent with net and tax together, and refunding unitemized fees.'
 ---
 
 # Fulfilment and refunds
@@ -120,6 +120,28 @@ capture online: the REST invoice route names no capture case.
 **The comment names the trigger.** On shipment, or on reaching one of the
 configured fulfil-on statuses by their labels. With no status configured the
 complete trigger never fulfils, so no comment is added there.
+
+## A refund line goes out with its net and its tax together
+
+`ComposeRefund::assertLinesCarryNetAndTax()` runs in `execute()` over every
+line the builder composed (items, surcharge, adjustment, shipping, the
+other-charges residual), after the tax codes and before the postprocessing
+hook (TWO-26638). Amounts are read rounded as the payload sends them. A line
+whose net is 0 while its tax is not is refused; so is a line with net and no
+tax whose rate is not 0% and whose tax due, `round(abs(net) x rate, 2)`, is at
+least 0.01. A 0% line (the adjustment) and a line too small to carry tax go
+out unchanged, as does a mismatched non-zero tax, which Two's API validates.
+The refusal is a `LocalizedException` with translated copy naming the line,
+and `RefundLineRefused` is logged at error. It is thrown inside
+`Two::refund()`, before the request, so core's credit memo transaction rolls
+back and the memo is not saved.
+
+It is a backstop. The builder already keeps tax proportional on every line:
+items scale the order item's amounts by the refunded quantity, shipping takes
+the memo's shipping tax, which core prorates from the order's, the surcharge
+tax is its net at the order's surcharge rate, the adjustment goes at 0% and the
+residual either reconciles to an applied rate or goes at 0%. The plugin never
+fills the tax in or recomputes it to get past the refusal.
 
 ## An unitemized fee is reconciled per entity, and refundable
 

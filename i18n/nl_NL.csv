@@ -463,3 +463,5 @@
 "Select a valid environment.","Selecteer een geldige omgeving."
 "Staging (%1 internal test environment). Select Sandbox or Production.","Staging (interne testomgeving van %1). Selecteer Sandbox of Productie."
 "Not recognised: Sandbox is in use. Select an environment and save.","Niet herkend: Sandbox wordt gebruikt. Selecteer een omgeving en sla op."
+"""%1"" cannot be refunded as tax alone: %2 refunds a line's tax only together with its net amount. To correct the tax charged, refund the whole order and rebook it with the correct tax rates.","""%1"" kan niet alleen als btw worden terugbetaald: %2 betaalt de btw van een regel alleen terug samen met het nettobedrag. Om de berekende btw te corrigeren, betaal de hele bestelling terug en boek deze opnieuw met de juiste btw-tarieven."
+"""%1"" has no tax entered: %2 refunds a line's net amount only together with its tax. Enter the tax refunded for this line as well.","Voor ""%1"" is geen btw ingevoerd: %2 betaalt het nettobedrag van een regel alleen terug samen met de btw. Voer ook de terugbetaalde btw voor deze regel in."

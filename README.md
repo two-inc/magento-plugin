@@ -202,6 +202,19 @@ A subscriber on the hook takes it over, and it does not run unless the
 subscriber opts back in (see "Stable extension contract: order
 postprocessing").
 
+## A refund line carries its net and its tax together
+
+Two refunds a line's tax only together with its net amount, so a credit memo
+whose refund would send a line as tax alone, or as a net amount with no tax at
+a rate above 0%, is refused before anything is sent to Two, with an admin
+error naming the line (TWO-26638). The credit memo is not saved. A line at 0%,
+such as the adjustment line, and a line too small to carry tax at its rate
+(the tax due rounds to 0.00) go out unchanged. The plugin never fills in or
+recomputes the tax: how tax is levied is your shop's decision. To correct the
+tax charged on an order, refund the whole order and rebook it with the correct
+tax rates. Each refusal is logged as `RefundLineRefused` with the line, the
+order and the amounts.
+
 ## Tax codes on 0% lines
 
 Every line the plugin sends at a 0% tax rate can carry a Two `tax_code` saying

@@ -64,7 +64,9 @@ carries it unchanged, so a mismatch means the shop's tax does not match the
 rate it declared. A subscriber owns its own lines, and every other request
 leaves line arithmetic to Two's API (TWO-26284). Do not add any other line
 check after the hook: only a shop-match check, which compares with shop data
-the API cannot see, belongs there.
+the API cannot see, belongs there. The refund builder's own refusal of a line
+sent as net only or tax only runs before the hook and is not a reconcile: see
+fulfilment-and-refunds.md (TWO-26638).
 
 ## The postprocessing hook's checks: shop-match only
 

@@ -45,6 +45,7 @@ class ComposeRefund extends OrderService
             (float)$creditmemo->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
+        $this->assertLinesCarryNetAndTax($lineItems, $order);
 
         // Use creditmemo->getGrandTotal() rather than re-summing line items.
         // It's the canonical post-collector refund value Magento records
@@ -74,6 +75,62 @@ class ComposeRefund extends OrderService
             $result['prepaid_amount'] = $this->roundAmt($prepaid / 100);
         }
         return $result;
+    }
+
+    /**
+     * Refuses a refund line sent as tax alone or as net alone (TWO-26638).
+     *
+     * Two refunds a line's tax only together with its net amount, so a line
+     * whose net rounds to 0 while its tax does not is refused. A line with net
+     * and no tax is refused when its rate is not 0% and the tax due at that
+     * rate rounds to at least 0.01: a line at 0% (the adjustment line) and a
+     * line too small to carry tax at its rate go out unchanged. The plugin
+     * never fills in or recomputes the tax itself: how tax is levied is the
+     * shop's decision. Amounts are read rounded as the payload sends them.
+     *
+     * Runs on every line the plugin composes, before the postprocessing hook
+     * and before anything is sent, so the credit memo is refused unsaved.
+     *
+     * @param array $lineItems
+     * @param Order $order
+     * @return void
+     * @throws LocalizedException naming the first refused line
+     */
+    public function assertLinesCarryNetAndTax(array $lineItems, Order $order): void
+    {
+        foreach ($lineItems as $line) {
+            $net = round((float)($line['net_amount'] ?? 0), 2);
+            $tax = round((float)($line['tax_amount'] ?? 0), 2);
+            $rate = (float)($line['tax_rate'] ?? 0);
+            $name = (string)($line['name'] ?? '');
+            if ($net == 0.0 && $tax != 0.0) {
+                $type = 'tax only';
+                $phrase = __(
+                    '"%1" cannot be refunded as tax alone: %2 refunds a line\'s tax only together with its net amount. To correct the tax charged, refund the whole order and rebook it with the correct tax rates.',
+                    $name,
+                    $this->brandRegistry->getProductName()
+                );
+            } elseif ($net != 0.0 && $tax == 0.0 && round(abs($net) * $rate, 2) != 0.0) {
+                $type = 'net only';
+                $phrase = __(
+                    '"%1" has no tax entered: %2 refunds a line\'s net amount only together with its tax. Enter the tax refunded for this line as well.',
+                    $name,
+                    $this->brandRegistry->getProductName()
+                );
+            } else {
+                continue;
+            }
+            $this->logRepository->addErrorLog('RefundLineRefused', sprintf(
+                'Refund line refused (%s): line "%s", order %s, net %.2F, tax %.2F, rate %s',
+                $type,
+                $name,
+                $order->getIncrementId(),
+                $net,
+                $tax,
+                (string)($line['tax_rate'] ?? '')
+            ));
+            throw new LocalizedException($phrase);
+        }
     }
 
     /**

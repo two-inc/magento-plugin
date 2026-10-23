@@ -129,7 +129,7 @@ abstract class Order
     /**
      * @var BrandRegistryInterface
      */
-    private $brandRegistry;
+    protected $brandRegistry;
 
     /**
      * @var TaxCodeResolver|null
