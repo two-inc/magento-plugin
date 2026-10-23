@@ -447,7 +447,7 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(held.closed).toBe(false);
     });
 
-    test('Enter on the chip leaves the popover up and parks focus on the company field (ABN-554)', async () => {
+    test('Enter on the chip leaves the popover up and parks focus on the company field', async () => {
         // Given: the keyboard route, where the chip really does hold focus, so
         // the rebuild that the launch runs through deletes a focused node.
         const { rec } = await startStack();
@@ -471,7 +471,7 @@ describe('a blocked popup falls back to the on-page link', () => {
     test.each([
         [false, 'the launching control does not keep focus'],
         [true, 'and a window return re-firing focus there is not the buyer coming back']
-    ])('afterWindowReturn=%p: the launch parks focus on the company field (ABN-554)',
+    ])('afterWindowReturn=%p: the launch parks focus on the company field',
         async (afterWindowReturn, why) => {
             // Given: "Select a different sole trader", whose click is cancelled, so a
             // mouse click leaves it focused.
@@ -693,7 +693,7 @@ describe('the removed in-page iframe modal leaves nothing behind', () => {
     });
 });
 
-describe('a chip clicked while the signup is open keeps the mode it asked for (ABN-565)', () => {
+describe('a chip clicked while the signup is open keeps the mode it asked for', () => {
     const TRADER = { company_name: 'Held Trader', organization_number: '' };
 
     /**

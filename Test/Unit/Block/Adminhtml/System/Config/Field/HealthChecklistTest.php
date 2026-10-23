@@ -354,7 +354,7 @@ class HealthChecklistTest extends TestCase
             'key unverifiable, service down' => [
                 true, ApiKeyStatus::SERVICE_ERROR, 'none', $unrestricted, null, null, false, true,
                 'Shown at checkout',
-                'ABN-533: a transient verdict falls through to the cached record and withholds nothing',
+                'a transient verdict falls through to the cached record and withholds nothing',
             ],
             'key unverifiable, unreachable' => [
                 true, ApiKeyStatus::UNREACHABLE, 'none', $unrestricted, null, null, false, true,

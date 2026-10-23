@@ -125,7 +125,7 @@ const METHOD_TITLE = /<label\b([^>]*\bclass="two-payment-title"[^>]*)>/;
 const CONSENT_BOX = /<input\b([^>]*\bname="terms-checkbox"[^>]*)>/;
 const CONSENT_TEXT = /<span\b([^>]*\bclass="terms-text"[^>]*)>/;
 
-describe('the term chips are a radio group, not a row of buttons (ABN-554)', () => {
+describe('the term chips are a radio group, not a row of buttons', () => {
     test.each([
         {
             element: GROUP,
@@ -238,7 +238,7 @@ describe('the term chips are a radio group, not a row of buttons (ABN-554)', () 
     });
 });
 
-describe('the arrow keys move the selection, and both ends wrap (ABN-554)', () => {
+describe('the arrow keys move the selection, and both ends wrap', () => {
     test.each([
         { selected: 30, keys: ['ArrowRight'], expected: 60, case: 'forward' },
         {
@@ -332,7 +332,7 @@ describe('the arrow keys move the selection, and both ends wrap (ABN-554)', () =
     });
 });
 
-describe('the method radio and the consent checkbox are named (ABN-554)', () => {
+describe('the method radio and the consent checkbox are named', () => {
     test.each([
         {
             control: METHOD_RADIO,
@@ -376,7 +376,7 @@ describe('the method radio and the consent checkbox are named (ABN-554)', () => 
     );
 });
 
-describe('the chips outlive a fee refresh (ABN-554)', () => {
+describe('the chips outlive a fee refresh', () => {
     /** The renderer, loaded over a surcharge model whose fee map a spec can write. */
     function loadWithFees() {
         // The harness's own observable: the ko double tracks a dependency only

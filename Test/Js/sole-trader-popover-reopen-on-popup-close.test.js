@@ -217,7 +217,7 @@ function refireFocusOnField() {
     dispatchNative(field, 'focusin');
 }
 
-describe('the popup closing must not reopen the company-search popover (ABN-554)', function () {
+describe('the popup closing must not reopen the company-search popover', function () {
     test.each([
         ['the signup adopts a trader', false,
             'the adopt closed the popover, and the re-fire must not put it back'],

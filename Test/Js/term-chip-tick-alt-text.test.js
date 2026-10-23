@@ -67,7 +67,7 @@ afterEach(() => {
     document.head.innerHTML = '';
 });
 
-describe('drawn glyphs carry no alternative text (ABN-554)', () => {
+describe('drawn glyphs carry no alternative text', () => {
     test.each(GLYPH_RULES)('%s draws %s — %s', (selector, glyph) => {
         const declared = glyphDeclarations().filter(([rule]) => rule === selector);
 

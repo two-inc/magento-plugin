@@ -54,7 +54,7 @@ const ICON_IMAGE = /<img\b([^>]*)>/;
 const WRAPPER = /<div\b([^>]*\bclass="two-about"[^>]*)>/;
 const TOOLTIP = /<div\b([^>]*\bclass="two-about-tooltip"[^>]*)>/;
 
-describe('the about control is an anchor-wrapped icon (ABN-554)', () => {
+describe('the about control is an anchor-wrapped icon', () => {
     test.each([
         {
             element: ICON_ANCHOR,
@@ -151,7 +151,7 @@ describe('the about control is an anchor-wrapped icon (ABN-554)', () => {
     });
 });
 
-describe('the icon renders beside the tile title (ABN-554)', () => {
+describe('the icon renders beside the tile title', () => {
     /** The row that holds the title; the subtitle opens the next line of the block. */
     function titleRow() {
         const match = withoutComments(read(TEMPLATE)).match(
@@ -178,7 +178,7 @@ describe('the icon renders beside the tile title (ABN-554)', () => {
     });
 });
 
-describe('the renderer feeds the control from checkoutConfig (ABN-554)', () => {
+describe('the renderer feeds the control from checkoutConfig', () => {
     test.each([
         { field: 'aboutTooltipHtml', case: 'the tooltip copy' },
         { field: 'aboutIconUrl', case: 'the icon asset URL' },
@@ -201,7 +201,7 @@ describe('the renderer feeds the control from checkoutConfig (ABN-554)', () => {
     });
 });
 
-describe('the tooltip opens on hover and on keyboard focus (ABN-554)', () => {
+describe('the tooltip opens on hover and on keyboard focus', () => {
     test.each([
         { pattern: /\.two-about:hover\s+\.two-about-tooltip/, case: 'hover opens it' },
         { pattern: /\.two-about:focus-within\s+\.two-about-tooltip/, case: 'focus opens it' }

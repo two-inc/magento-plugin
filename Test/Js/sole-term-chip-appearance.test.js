@@ -57,7 +57,7 @@ afterEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the sole offered term reads as a selected chip (ABN-554)', () => {
+describe('the sole offered term reads as a selected chip', () => {
     test.each([
         ['opacity', '0.5', '1', 'solid, not faded out'],
         ['cursor', 'not-allowed', 'default', 'no refusal pointer over an offer']

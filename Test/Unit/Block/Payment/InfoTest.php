@@ -66,7 +66,7 @@ class InfoTest extends TestCase
                 ['Two order id' => 'ord_123'],
                 'base brand label must use the resolved product name, not be hardcoded',
             ],
-            'admin, order id present, ABN brand' => [
+            'admin, order id present, overlay brand' => [
                 Area::AREA_ADMINHTML,
                 'Business Invoice',
                 'ord_456',

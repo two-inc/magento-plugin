@@ -589,7 +589,7 @@ function audited(all, chip) {
     return Object.keys(properties).sort();
 }
 
-describe('the chip cascade is decided by weight, not by position (ABN-591)', () => {
+describe('the chip cascade is decided by weight, not by position', () => {
     test.each(STATES.map((state) => [state[0], state]))('%s', (label, state) => {
         const [, classes, expected, options] = state;
         const every = candidates();
@@ -699,7 +699,7 @@ describe('the chip cascade is decided by weight, not by position (ABN-591)', () 
  * theme is modelled here instead, last in source order, so only weight can hold
  * the label.
  */
-describe('a theme cannot repaint the unselected chip label (ABN-598)', () => {
+describe('a theme cannot repaint the unselected chip label', () => {
     test.each([
         [
             'term chip, hovered', TERM + ' ' + PROBES[':hover'], {},
