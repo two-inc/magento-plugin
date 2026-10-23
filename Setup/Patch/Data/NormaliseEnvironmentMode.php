@@ -18,7 +18,8 @@ use Two\Gateway\Model\Config\EnvironmentMode;
  * Rewrites stored Environment rows to `production`, `sandbox` or `staging`
  * at every scope (TWO-26604). `development` and anything else unrecognised
  * resolved to a host that does not exist and becomes `sandbox`; an empty row
- * is deleted, so the scope inherits again and ends on the config.xml default.
+ * is deleted, so the scope inherits its parent scope's value again (the
+ * config.xml default, `sandbox`, at the top).
  *
  * Only the Two payment codes are touched (`two_payment` and the installed
  * brand's own), since `payment/<code>/mode` is a common key other payment
