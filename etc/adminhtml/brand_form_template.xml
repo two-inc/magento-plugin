@@ -119,8 +119,9 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
                     <label>Environment</label>
-                    <comment>Select between sandbox and production environment. The sandbox environment is for testing purposes and does not involve real money.</comment>
+                    <comment>Sandbox is for testing and moves no real money. Use the API key issued for the environment you select.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\Mode</backend_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>

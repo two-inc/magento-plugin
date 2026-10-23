@@ -79,7 +79,8 @@ interface RepositoryInterface
     public function isActive(?int $storeId = null): bool;
 
     /**
-     * Get mode
+     * The Environment mode, normalised: production, sandbox or staging, with
+     * anything unrecognised resolving to sandbox (TWO-26604).
      *
      * @param int|null $storeId scope id when $scope is given
      * @param string|null $scope default: store scope
@@ -87,6 +88,17 @@ interface RepositoryInterface
      * @return string
      */
     public function getMode(?int $storeId = null, ?string $scope = null): string;
+
+    /**
+     * The Environment value as stored, before normalisation: the health
+     * checklist and the dropdown judge it (TWO-26604).
+     *
+     * @param int|null $storeId scope id when $scope is given
+     * @param string|null $scope default: store scope
+     *
+     * @return string
+     */
+    public function getStoredMode(?int $storeId = null, ?string $scope = null): string;
 
     /**
      * Get API key

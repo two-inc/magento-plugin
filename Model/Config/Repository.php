@@ -393,7 +393,16 @@ class Repository implements RepositoryInterface
      */
     public function getMode(?int $storeId = null, ?string $scope = null): string
     {
-        return (string)$this->getConfig($this->path('mode'), $storeId, $scope);
+        return EnvironmentMode::normalise($this->getStoredMode($storeId, $scope));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getStoredMode(?int $storeId = null, ?string $scope = null): string
+    {
+        $value = $this->getConfig($this->path('mode'), $storeId, $scope);
+        return is_scalar($value) ? (string)$value : '';
     }
 
     /**
@@ -407,8 +416,8 @@ class Repository implements RepositoryInterface
                 return $envUrl;
             }
         }
-        $mode = $mode ?: $this->getMode();
-        $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
+        $mode = EnvironmentMode::normalise($mode ?: $this->getMode());
+        $prefix = $mode === 'production' ? 'api' : ('api.' . $mode);
         return sprintf($this->brandRegistry->getCheckoutUrlTemplate(), $prefix);
     }
 
@@ -423,8 +432,8 @@ class Repository implements RepositoryInterface
                 return $envUrl;
             }
         }
-        $mode = $mode ?: $this->getMode();
-        $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
+        $mode = EnvironmentMode::normalise($mode ?: $this->getMode());
+        $prefix = $mode === 'production' ? 'checkout' : ('checkout.' . $mode);
         return sprintf($this->brandRegistry->getCheckoutUrlTemplate(), $prefix);
     }
 

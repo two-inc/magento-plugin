@@ -779,7 +779,9 @@ By default, the plugin points at Two's staging environment for `@two.inc` gcloud
 make install TWO_API_BASE_URL=http://localhost:8000 TWO_CHECKOUT_BASE_URL=http://localhost:3000
 ```
 
-In production mode these are ignored — the URLs are derived from the `mode` setting in the admin panel (sandbox/staging/production).
+In production mode these are ignored: the URLs are derived from the `mode` setting in the admin panel.
+
+The Environment setting offers Production and Sandbox (the default). A stored value the plugin does not recognise resolves to Sandbox, never Production, and the health checklist reports it.
 
 `make install`, `make run` and `make debug` print the resolved API / checkout-page hosts (honouring the overrides above and the developer-mode gate) in their status block, so you can see at a glance which real hosts your local instance will actually talk to without having to run `dev/probe-hosts.php` yourself.
 
