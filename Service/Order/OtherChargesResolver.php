@@ -47,17 +47,7 @@ class OtherChargesResolver
         }
 
         try {
-            $lineItems = $this->composeRefund->getKnownLineAmountsOrder($order);
-            foreach ($this->composeRefund->getFeeLines($order) as $feeLine) {
-                $lineItems[] = $feeLine;
-            }
-
-            return $this->composeRefund->getOtherChargesLineItem(
-                $lineItems,
-                $order,
-                (float)$order->getGrandTotal(),
-                (float)$order->getTaxAmount()
-            );
+            return $this->composeRefund->getOtherChargesLineOrder($order);
         } catch (\Throwable $e) {
             // Refusing here costs the merchant the refund, so it is an error.
             $this->logRepository->addErrorLog(

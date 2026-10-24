@@ -43,19 +43,36 @@ class ComposeCapture extends OrderService
         $lineItems = $this->reconcileOtherCharges(
             $lineItems,
             $invoice,
-            (float)$invoice->getGrandTotal(),
+            (float)$invoice->getGrandTotal() + $this->declaredTenders($invoice, $order),
             (float)$invoice->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
-            'gross_amount' => $this->roundAmt($invoice->getGrandTotal()),
             'line_items' => $lineItems,
-            'net_amount' => $this->roundAmt($invoice->getGrandTotal() - $invoice->getTaxAmount()),
-            'tax_amount' => $this->roundAmt($invoice->getTaxAmount()),
-            'tax_subtotals' => $this->getTaxSubtotals($lineItems),
         ];
+        // "Validate tax subtotals" off: the key is left out, not sent as null.
+        $taxSubtotals = $this->getTaxSubtotals($lineItems, (int)$order->getStoreId());
+        if ($taxSubtotals !== null) {
+            $reqBody['tax_subtotals'] = $taxSubtotals;
+        }
+        // On an order with tenders the invoice declares its prepaid part from
+        // Two's record of the order (TWO-26309): its lines are its grand total
+        // plus the tenders Magento took off it, and what is not prepaid is payable.
+        $tendered = $this->declaredTenders($invoice, $order);
+        $prepaid = 0.0;
+        if ($this->declaredTenders($order, $order) > 0) {
+            $lines = (int)round((float)$invoice->getGrandTotal() * 100) + (int)round($tendered * 100);
+            $prepaid = $this->fulfilmentPrepaid($order, $lines) / 100;
+        }
+        $amounts = $this->orderAmounts(
+            (float)$invoice->getGrandTotal() + $tendered - $prepaid,
+            (float)$invoice->getTaxAmount(),
+            $prepaid
+        );
+        $reqBody += $amounts;
+        ksort($reqBody);
         return $reqBody;
     }
 
@@ -108,7 +125,8 @@ class ComposeCapture extends OrderService
 
         // Magento invoices shipping once, so it follows the invoice, not the order (TWO-26091).
         if ((float)$invoice->getShippingAmount() != 0) {
-            $taxRate = $this->getTaxRateShipping($invoice);
+            // The fallback reconcile runs after the postprocessing hook (TWO-26276).
+            $taxRate = $this->getTaxRateShipping($invoice, false);
             $unitPrice = $this->getUnitPriceShipping($invoice);
             $taxAmount = $this->getTaxAmountShipping($invoice);
             // Invoices lack a shipping-discount field; Magento books the order's on the first invoice with shipping.
@@ -142,27 +160,12 @@ class ComposeCapture extends OrderService
         // fee on every capture of a surcharge-bearing order.
         $invoiceSurchargeAmount = (float)$invoice->getTwoSurchargeAmount();
         if ($invoiceSurchargeAmount > 0) {
-            $invoiceSurchargeTax = (float)$invoice->getTwoSurchargeTaxAmount();
-            $description = (string)$invoice->getTwoSurchargeDescription() ?: (string)__('Payment terms fee');
-            $taxRatePercent = (float)$invoice->getTwoSurchargeTaxRate();
-
-            $items[] = [
-                'order_item_id' => 'surcharge',
-                'name' => $description,
-                'description' => $description,
-                'type' => 'BUYER_FEE',
-                'image_url' => '',
-                'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($invoiceSurchargeAmount + $invoiceSurchargeTax),
-                'net_amount' => $this->roundAmt($invoiceSurchargeAmount),
-                'tax_amount' => $this->roundAmt($invoiceSurchargeTax),
-                'discount_amount' => '0.00',
-                'tax_rate' => $this->roundAmt($taxRatePercent / 100, 6),
-                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
-                'unit_price' => $this->roundAmt($invoiceSurchargeAmount, 6),
-                'quantity' => 1,
-                'quantity_unit' => 'sc',
-            ];
+            $items[] = $this->getSurchargeLine(
+                $invoiceSurchargeAmount,
+                (float)$invoice->getTwoSurchargeTaxAmount(),
+                (string)$invoice->getTwoSurchargeDescription(),
+                (float)$invoice->getTwoSurchargeTaxRate()
+            );
         }
 
         return $items;

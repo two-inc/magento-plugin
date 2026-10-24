@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554. The popover's capture-mode chips are a keyboard destination, and
+ * The popover's capture-mode chips are a keyboard destination, and
  * the payment-term chips in the same stylesheet already ring the focused one.
  * The mode chips carried no focus rule at all, so with the theme resetting the
  * UA outline away the focused chip was indistinguishable.
@@ -60,7 +60,7 @@ afterEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the popover mode chips show where the keyboard is (ABN-554)', () => {
+describe('the popover mode chips show where the keyboard is', () => {
     test.each([
         ['selected', 'the selected chip'],
         ['plain', 'an unselected chip']

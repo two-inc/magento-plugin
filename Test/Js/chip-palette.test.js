@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-591. The unbranded chip palette — payment-term chips and company-mode
+ * The unbranded chip palette: payment-term chips and company-mode
  * chips alike, in every state, on the one stylesheet both Luma and Amasty
  * load.
  *
@@ -149,7 +149,7 @@ afterEach(() => {
 });
 
 describe.each(CONTROLS.map((control) => [control.name, control]))(
-    'the unbranded %s palette (ABN-591)',
+    'the unbranded %s palette',
     (name, control) => {
         const SELECTED = control.selected;
 
@@ -209,7 +209,7 @@ describe.each(CONTROLS.map((control) => [control.name, control]))(
     }
 );
 
-describe('a disabled payment-term chip is exempt (ABN-591)', () => {
+describe('a disabled payment-term chip is exempt', () => {
     const control = CONTROLS[0];
 
     test('the sole offered term keeps its resting appearance under the pointer', () => {
@@ -221,7 +221,7 @@ describe('a disabled payment-term chip is exempt (ABN-591)', () => {
     });
 });
 
-describe('the chip accent is its own property (ABN-591)', () => {
+describe('the chip accent is its own property', () => {
     test('the sole-trader link keeps the shared blue', () => {
         injectStylesheet();
         document.body.innerHTML = '<span class="two-sole-trader-note__link" id="link">Sole trader</span>';

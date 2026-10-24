@@ -100,7 +100,7 @@ class ApiKey extends Encrypted
         // during an outage — a worse failure than accepting a key we could not
         // confirm.
         //
-        // A field-level skip, not an exception: an exception rolls back the whole section (ABN-495).
+        // A field-level skip, not an exception: an exception rolls back the whole section.
         if ($result['status'] === ApiKeyStatus::INVALID_KEY) {
             $this->_dataSaveAllowed = false;
             $this->messageManager->addErrorMessage($this->statusMessage->describe($result)['message']);

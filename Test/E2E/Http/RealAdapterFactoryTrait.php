@@ -9,6 +9,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 
 trait RealAdapterFactoryTrait
 {
@@ -18,6 +19,13 @@ trait RealAdapterFactoryTrait
         $brand->method('getProductName')->willReturn('Two');
         $factory = $this->createMock(CurlFactory::class);
         $factory->method('create')->willReturnCallback(fn() => new RealCurl());
-        return new Adapter($config, $brand, $factory, $log, new NullApiTranslator());
+        return new Adapter(
+            $config,
+            $brand,
+            $factory,
+            $log,
+            new NullApiTranslator(),
+            $this->createMock(LoggerInterface::class)
+        );
     }
 }

@@ -15,7 +15,7 @@ interface RepositoryInterface
     /** Magento payment-method code (canonical, brand-independent). */
     public const CODE = 'two_payment';
 
-    /** Preferred default term, in days, when no explicit default resolves (ABN-548). */
+    /** Preferred default term, in days, when no explicit default resolves. */
     public const PREFERRED_DEFAULT_TERM = 30;
 
     // Brand-bound values (PROVIDER, PROVIDER_FULL_NAME, PRODUCT_NAME,
@@ -79,7 +79,8 @@ interface RepositoryInterface
     public function isActive(?int $storeId = null): bool;
 
     /**
-     * Get mode
+     * The Environment mode, normalised: production, sandbox or staging, with
+     * anything unrecognised resolving to sandbox (TWO-26604).
      *
      * @param int|null $storeId scope id when $scope is given
      * @param string|null $scope default: store scope
@@ -87,6 +88,17 @@ interface RepositoryInterface
      * @return string
      */
     public function getMode(?int $storeId = null, ?string $scope = null): string;
+
+    /**
+     * The Environment value as stored, before normalisation: the health
+     * checklist and the dropdown judge it (TWO-26604).
+     *
+     * @param int|null $storeId scope id when $scope is given
+     * @param string|null $scope default: store scope
+     *
+     * @return string
+     */
+    public function getStoredMode(?int $storeId = null, ?string $scope = null): string;
 
     /**
      * Get API key
@@ -191,6 +203,8 @@ interface RepositoryInterface
      * @param int|null $storeId
      *
      * @return array<string, string>
+     * @throws \Magento\Framework\Exception\LocalizedException when the stored value is not one the
+     *         settings form writes (TWO-26309); it is never read as "nothing mapped"
      */
     public function getTaxCodeMap(?int $storeId = null): array;
 
@@ -360,7 +374,7 @@ interface RepositoryInterface
 
     /**
      * Get default payment term, or null when the merchant offers no term at
-     * all - no day count may be invented for that state (ABN-544).
+     * all - no day count may be invented for that state.
      *
      * @param int|null $storeId
      *

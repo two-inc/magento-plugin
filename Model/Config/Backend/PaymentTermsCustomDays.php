@@ -27,7 +27,7 @@ use Two\Gateway\Model\Config\StoredTerm;
 /**
  * Deprecated field carrying a legacy custom term: the stored value may be removed but never
  * replaced, folds into an offered term's checkbox where the merchant record offers it, and blocks
- * the save while it holds something that is not a number of days (ABN-522).
+ * the save while it holds something that is not a number of days.
  */
 class PaymentTermsCustomDays extends Value
 {
@@ -129,7 +129,7 @@ class PaymentTermsCustomDays extends Value
 
     /**
      * The value the form rendered — the config table row, not getOldValue()'s cached resolution
-     * of the same path: a disagreement made the keep option unpostable (ABN-531).
+     * of the same path: a disagreement made the keep option unpostable.
      */
     private function storedValue(): string
     {
@@ -191,7 +191,7 @@ class PaymentTermsCustomDays extends Value
 
     /**
      * An unresolvable offered set matches nothing rather than everything, so an API outage
-     * cannot delete a migration value (ABN-493).
+     * cannot delete a migration value.
      */
     private function isOffered(int $days): bool
     {
@@ -201,7 +201,7 @@ class PaymentTermsCustomDays extends Value
     }
 
     /**
-     * Scope being edited, as the config repository reads it (ABN-530).
+     * Scope being edited, as the config repository reads it.
      *
      * @return array{int|null, string}
      */

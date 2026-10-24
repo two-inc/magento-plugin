@@ -402,9 +402,8 @@ class ShippingTaxRateTest extends TestCase
     ];
 
     /**
-     * Resolves the rate, then runs the composed shipping line through the
-     * builder's line tax reconcile, as ComposeOrder does before the hook.
-     * A string expectation is the refusal message.
+     * Resolves the rate as the builder does. A string expectation is the
+     * refusal message.
      *
      * @param float|string $expected
      * @dataProvider behaviourTable
@@ -432,14 +431,6 @@ class ShippingTaxRateTest extends TestCase
 
         try {
             $actual = $orderService->getTaxRateShipping($entity);
-            $orderService->validateTaxReconciliation([[
-                'order_item_id' => 'shipping',
-                'net_amount' => $shipping - $discount,
-                'tax_amount' => $tax,
-                'discount_amount' => $discount,
-                'tax_rate' => $actual,
-                'quantity' => 1,
-            ]]);
         } catch (LocalizedException $e) {
             $actual = $e->getMessage();
         }
@@ -474,6 +465,55 @@ class ShippingTaxRateTest extends TestCase
             ['populated on store 2', null, 100.00, 0.00, 25.00, 0.0, 'scope: store 1 is blank, sent as is', 1],
             ['populated', null, 100.00, 0.00, 0.00, self::BUYER_REFUSAL, 'refused at placement in the buyer wording', 1, ComposeOrder::class],
         ];
+    }
+
+    /**
+     * TWO-26276: the builders compose the line without the reconcile, and the
+     * postprocessing default handler runs it after the hook through
+     * assertShippingTaxFallback(): on the same row it refuses exactly where
+     * getTaxRateShipping() does, after the build recorded the case, as at
+     * placement.
+     *
+     * @param float|string $expected
+     * @dataProvider behaviourTable
+     */
+    public function testTheReconcileMovesAfterTheBuildUnchanged(
+        string $control,
+        ?float $declaredPercent,
+        float $shipping,
+        float $discount,
+        float $tax,
+        $expected,
+        string $case,
+        int $storeId = 1,
+        string $service = Order::class
+    ): void {
+        [$classByStore, $fallbackByStore] = self::CONTROLS[$control];
+        $orderService = $this->orderService($declaredPercent, $classByStore, $fallbackByStore, $service);
+        // Saved, the rate is read from the order's tax rows; unsaved, as at placement, from its own applied taxes.
+        $placementTaxes = $declaredPercent === null ? [] : [['type' => 'shipping', 'applied_taxes' => [['percent' => $declaredPercent]]]];
+        foreach (['saved' => [7, null], 'unsaved' => [null, $placementTaxes]] as $state => [$id, $appliedTaxes]) {
+            $entity = $this->entity([
+                'id' => $id,
+                'item_applied_taxes' => $appliedTaxes,
+                'shipping_amount' => $shipping,
+                'shipping_discount_amount' => $discount,
+                'shipping_tax_amount' => $tax,
+                'shipping_address' => new DataObject(['country_id' => 'NO']),
+                'store_id' => $storeId,
+            ]);
+
+            $built = $orderService->getTaxRateShipping($entity, false);
+            try {
+                $orderService->assertShippingTaxFallback($entity);
+                $actual = $built;
+            } catch (LocalizedException $e) {
+                $this->assertInstanceOf(\Two\Gateway\Exception\ShopMatchRefusedException::class, $e, "$case ($state)");
+                $actual = $e->getMessage();
+            }
+
+            $this->assertSame($expected, $actual, "$case ($state)");
+        }
     }
 
     /**

@@ -24,6 +24,7 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Exception\TwoRefusalException;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\OrderPostprocessor;
@@ -121,6 +122,45 @@ class OrderServiceRefusalTest extends TestCase
         if ($unknownLogged) {
             $this->assertSame('remote-order-id', $unknown[0][1]['two_order_id'], "$description: names the Two order");
         }
+    }
+
+    /**
+     * TWO-26295: a refusal on the buyer's return to the shop keeps Two's full
+     * account in the message, for the order comment, and gives the buyer a
+     * message carrying no API text.
+     *
+     * @return array<string, array{string, array, string}>
+     */
+    public static function buyerMessageCases(): array
+    {
+        $refused = static fn(array $extra): array => ['status' => 400, 'body' => [
+            'http_status' => 400, 'error_code' => 'ORDER_INVALID', 'error_message' => 'raw api message',
+        ] + $extra];
+        $field = ['error_json' => [['loc' => ['buyer', 'representative', 'email'], 'msg' => 'raw validator text']]];
+        return [
+            'confirm refused naming a field' => ['confirmOrder', [self::CONFIRM => [$refused($field)]], 'Email Address is not valid.'],
+            'confirm refused naming nothing' => ['confirmOrder', [self::CONFIRM => [$refused([])]], 'Something went wrong with your request to Two. Please try again later.'],
+            'order fetch refused by a server error' => ['getTwoOrderFromApi', [self::FETCH => [self::GATEWAY_502]], 'Something went wrong with your request to Two. Please try again later.'],
+        ];
+    }
+
+    #[DataProvider('buyerMessageCases')]
+    public function testTheBuyerMessageCarriesNoApiText(string $method, array $responses, string $buyerMessage): void
+    {
+        $order = new RefusalOrderStub($this->two());
+        $order->setData('store_id', 1);
+        $order->setData('two_order_id', 'remote-order-id');
+
+        $thrown = null;
+        try {
+            $this->service($responses)->{$method}($order);
+        } catch (TwoRefusalException $e) {
+            $thrown = $e;
+        }
+
+        $this->assertNotNull($thrown, $this->dataName());
+        $this->assertSame($buyerMessage, $thrown->getBuyerMessage()->render(), $this->dataName());
+        $this->assertStringNotContainsString('raw', $thrown->getBuyerMessage()->render(), $this->dataName());
     }
 
     private function service(array $responses): OrderService

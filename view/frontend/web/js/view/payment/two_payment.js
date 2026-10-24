@@ -1,16 +1,14 @@
-define(['uiComponent', 'Magento_Checkout/js/model/payment/renderer-list'], function (
+define(['uiComponent', 'Two_Gateway/js/model/register-renderer'], function (
     Component,
-    rendererList
+    registerRenderer
 ) {
     'use strict';
 
     // Register the Two-branded payment method against the brand-agnostic
     // gateway_method renderer. Brand-overlay packages ship their own
     // wrapper file that pushes their own `type` against the same shared
-    // renderer.
-    rendererList.push({
-        type: 'two_payment',
-        component: 'Two_Gateway/js/view/payment/method-renderer/gateway_method'
-    });
+    // renderer. registerRenderer also creates the renderer when Luma's
+    // payment list has already been built without it (TWO-26297).
+    registerRenderer('two_payment', 'Two_Gateway/js/view/payment/method-renderer/gateway_method');
     return Component.extend({});
 });

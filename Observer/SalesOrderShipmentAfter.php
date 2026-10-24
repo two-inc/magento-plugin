@@ -204,6 +204,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
                 $invoice = $this->invoiceService->prepareInvoice($order);
                 if ($invoice->getGrandTotal() > 0) {
                     $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+                    $invoice->setData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER, true);
                     $invoice->register();
                     $invoice->pay();
                     $invoice->setTransactionId(
@@ -275,8 +276,8 @@ class SalesOrderShipmentAfter implements ObserverInterface
      */
     private function parseFulfillResponse(array $response, Order $order): void
     {
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
+        if (empty($response['fulfilled_order']) ||
+            empty($response['fulfilled_order']['id'])) {
             return;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();

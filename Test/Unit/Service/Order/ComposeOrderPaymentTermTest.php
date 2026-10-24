@@ -43,7 +43,6 @@ class ComposeOrderPaymentTermTest extends TestCase
                 'getAddress',
                 'getBuyer',
                 'getTaxSubtotals',
-                'getDiscountAmountItem',
                 'getFeeLines',
                 'getOtherChargesLineItem',
             ])
@@ -53,7 +52,6 @@ class ComposeOrderPaymentTermTest extends TestCase
         $composeOrder->method('getAddress')->willReturn([]);
         $composeOrder->method('getBuyer')->willReturn([]);
         $composeOrder->method('getTaxSubtotals')->willReturn([]);
-        $composeOrder->method('getDiscountAmountItem')->willReturn(0.0);
         $composeOrder->method('getFeeLines')->willReturn([]);
         $composeOrder->method('getOtherChargesLineItem')->willReturn(null);
 
@@ -117,7 +115,7 @@ class ComposeOrderPaymentTermTest extends TestCase
     /**
      * No selection is not a failed selection: the checkout never sent one, so
      * the default applies — and when there is no default, no term is invented
-     * for the order either (ABN-544).
+     * for the order either.
      *
      * @param int[] $availableTerms
      * @dataProvider noSelectionProvider

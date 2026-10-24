@@ -15,7 +15,7 @@ use Two\Gateway\Model\Ui\AnchorOnlyHtmlEscaper;
 /**
  * The tile emits the subtitle through AnchorOnlyHtmlEscaper, so copy that
  * escaper drops used to vanish at checkout with no merchant feedback. The save
- * refuses it instead (ABN-554).
+ * refuses it instead.
  */
 class SubtitleTest extends TestCase
 {

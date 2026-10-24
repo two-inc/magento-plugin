@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-563: a declined order intent disables the Place Order button, so the
+ * A declined order intent disables the Place Order button, so the
  * buyer must be told why. These specs pin the sentence being present, correct
  * and carried by a live region — and that no brand configuration can withhold
  * it, which is the state the defect was reported from.
@@ -112,7 +112,7 @@ function withoutComments(markup) {
     return markup.replace(/<!--(?!\s*\/?ko\b)[\s\S]*?-->/g, '');
 }
 
-describe('a declined order intent always explains itself (ABN-563)', () => {
+describe('a declined order intent always explains itself', () => {
     test.each([
         {
             copy: BRAND_DECLINED_COPY,
@@ -187,7 +187,7 @@ describe('a declined order intent always explains itself (ABN-563)', () => {
     });
 });
 
-describe('the decline sentence is announced, not merely present (ABN-563)', () => {
+describe('the decline sentence is announced, not merely present', () => {
     /** The decline region element, with its conditional content still attached. */
     function region() {
         const markup = withoutComments(template());

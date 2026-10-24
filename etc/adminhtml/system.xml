@@ -56,8 +56,9 @@
                 <field id="mode" translate="label comment" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Environment</label>
-                    <comment>Select between sandbox and production environment. The sandbox environment is for testing purposes and does not involve real money.</comment>
+                    <comment>Sandbox is for testing and moves no real money. Use the API key issued for the environment you select.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\Mode</backend_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>
@@ -330,7 +331,7 @@
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Custom payment terms (days)</label>
                     <comment model="Two\Gateway\Model\Config\Comment\PaymentTermsCustomDays"/>
-                    <!-- Deprecated: hidden unless a value is stored (etc/adminhtml/di.xml gate), and removable but not changeable. ABN-522. -->
+                    <!-- Deprecated: hidden unless a value is stored (etc/adminhtml/di.xml gate), and removable but not changeable. -->
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays</backend_model>
                     <config_path>payment/two_payment/payment_terms_duration_days</config_path>
@@ -442,7 +443,7 @@
             <resource>Magento_Sales::config_sales</resource>
             <group id="order_management" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Order management</label>
+                <label>Status mapping</label>
                 <field id="fulfill_trigger" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment trigger</label>
@@ -460,17 +461,21 @@
                     </depends>
                     <config_path>payment/two_payment/fulfill_order_status</config_path>
                 </field>
+            </group>
+            <!-- TWO-26153: tax settings under their own caption. -->
+            <group id="tax" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Tax</label>
                 <field id="enable_tax_subtotals" translate="label comment" type="select" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Validate tax subtotals</label>
-                    <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
+                    <comment>If you choose Yes, a per-tax-rate tax_subtotals breakdown is sent in order creation, order edit, fulfilment and refund payloads for validation against the order lines. If you choose No, tax_subtotals is omitted from those payloads.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_tax_subtotals</config_path>
                 </field>
-                <field id="tax_code_map" translate="label comment" type="text" sortOrder="40" showInDefault="1"
+                <field id="tax_code_map" translate="label" type="text" sortOrder="40" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Tax codes for 0% lines</label>
-                    <comment>Optional. For each product tax class, the tax code to send on lines taxed at 0%. Shipping takes the code of the shipping tax class. A class left at (none) keeps the automatic choice for merchants in Spain: export, intra-community supply or reverse charge, worked out from the delivery address and the buyer's country. Otherwise no code is sent. The plugin never refuses an order over a tax code; the API checks every code it receives.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\TaxCodeMap</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\TaxCodeMap</backend_model>
                     <config_path>payment/two_payment/tax_code_map</config_path>

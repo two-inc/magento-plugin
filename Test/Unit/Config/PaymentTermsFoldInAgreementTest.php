@@ -25,7 +25,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * The rendered fold-in marker hides the deprecated custom-term row, so it may not claim a fold-in
  * the save will not perform — a merchant left with a hidden row and a kept value has no control to
- * remove it (ABN-522).
+ * remove it.
  */
 class PaymentTermsFoldInAgreementTest extends TestCase
 {

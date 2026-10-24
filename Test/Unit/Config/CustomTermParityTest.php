@@ -26,7 +26,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * Every reader of `payment_terms_duration_days` resolves the same stored row to the same term.
  * A cast reads '1e2' as 100 and parseInt reads it as 1, so a reader that skips StoredTerm offers
- * the buyer a term the admin refuses to save (ABN-522).
+ * the buyer a term the admin refuses to save.
  *
  * The browser-side reader is pinned separately, in Test/Js/custom-days-visibility.test.js: it
  * takes the term from the data-two-term the renderer emits, which this suite's block test asserts.

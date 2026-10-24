@@ -11,7 +11,9 @@
  * same way whatever the method, standing in for an edit the API turns down.
  * A GET of an order answers its state and status: FULFILLED for an id
  * starting `fulfilled-`, status PARTIAL for one starting `partial-`, and
- * CONFIRMED and APPROVED otherwise.
+ * CONFIRMED and APPROVED otherwise. For an order create (TWO-26277) it
+ * answers the key check and the merchant record with a merchant offering 30
+ * days, and approves a POST of an order.
  */
 declare(strict_types=1);
 
@@ -38,6 +40,28 @@ $routes = [
         'reference' => 'probe-reference',
     ]],
 ];
+$merchant = [
+    '/v1/merchant/verify_api_key' => ['id' => 'probe-merchant', 'short_name' => 'probe'],
+    '/v1/merchant/probe-merchant' => ['id' => 'probe-merchant', 'short_name' => 'probe', 'available_terms' => [30], 'due_in_days' => 30],
+];
+if ($method === 'GET' && isset($merchant[$path])) {
+    header('Content-Type: application/json');
+    echo json_encode($merchant[$path]);
+    return true;
+}
+if ($method === 'POST' && $path === '/v1/order') {
+    http_response_code(201);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'id' => 'probe-created-order-id',
+        'status' => 'APPROVED',
+        'state' => 'VERIFIED',
+        'external_order_status' => 'NONE',
+        'original_order_id' => null,
+        'payment_url' => 'https://checkout.example.test/pay',
+    ]);
+    return true;
+}
 if ($method === 'GET' && preg_match('#^/v1/order/([^/]+)$#', $path, $m) && !str_starts_with($m[1], 'refused-')) {
     header('Content-Type: application/json');
     echo json_encode([

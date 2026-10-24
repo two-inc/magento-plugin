@@ -17,7 +17,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * TWO-25386, and ABN-518 for the checkout-visibility row.
+ * TWO-25386, plus the checkout-visibility row.
  */
 class HealthChecklistTest extends TestCase
 {
@@ -77,6 +77,7 @@ class HealthChecklistTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
+        $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
         $store = $this->createMock(\Magento\Store\Model\Store::class);
         $store->method('getBaseCurrencyCode')->willReturn('GBP');
@@ -241,8 +242,6 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518.
-     *
      * @dataProvider checkoutVisibilityStates
      */
     public function testTheCheckoutVisibilityRowNamesTheActiveReason(
@@ -289,6 +288,43 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
+     * TWO-26153: an unreadable tax code map withholds the method (TWO-26309), and the row says where to clear it.
+     *
+     * @dataProvider taxCodeMaps
+     */
+    public function testTheCheckoutVisibilityRowNamesAnUnreadableTaxCodeMap(bool $readable, bool $expectedOk, string $expectedFragment): void
+    {
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        if ($readable) {
+            $this->configRepository->method('getTaxCodeMap')->willReturn([]);
+        } else {
+            $this->configRepository->method('getTaxCodeMap')
+                ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unreadable')));
+        }
+        $this->supportedCountriesProvider->method('getState')->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+        $this->scopeConfig->method('getValue')->willReturn('');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertSame($expectedOk, $row['ok']);
+        $this->assertStringContainsString($expectedFragment, $row['value']);
+    }
+
+    public static function taxCodeMaps(): array
+    {
+        return [
+            'readable' => [true, true, 'Shown at checkout'],
+            'unreadable' => [false, false, 'Use Clear saved tax codes under Order management > Tax'],
+        ];
+    }
+
+    /**
      * @return array<string, array{0: bool, 1: string, 2: string|null, 3: string,
      *     4: array<string,mixed>|null, 5: array<string,mixed>|null, 6: bool, 7: bool, 8: string, 9: string}>
      */
@@ -318,7 +354,7 @@ class HealthChecklistTest extends TestCase
             'key unverifiable, service down' => [
                 true, ApiKeyStatus::SERVICE_ERROR, 'none', $unrestricted, null, null, false, true,
                 'Shown at checkout',
-                'ABN-533: a transient verdict falls through to the cached record and withholds nothing',
+                'a transient verdict falls through to the cached record and withholds nothing',
             ],
             'key unverifiable, unreachable' => [
                 true, ApiKeyStatus::UNREACHABLE, 'none', $unrestricted, null, null, false, true,
@@ -394,7 +430,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518: the row has to judge the same store the checkout gate would,
+     * The row has to judge the same store the checkout gate would,
      * not the default scope, on a website- or store-view-scoped page.
      *
      * @dataProvider scopeParams
@@ -661,18 +697,55 @@ class HealthChecklistTest extends TestCase
     {
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
         $this->configRepository->method('getMode')->willReturn('production');
+        $this->configRepository->method('getStoredMode')->willReturn('production');
         $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
 
         $rows = $this->block->getChecklistRows();
 
         $this->assertTrue($rows[0]['ok']);
-        $this->assertSame('PRODUCTION', $rows[1]['value']);
+        $this->assertSame('Production', $rows[1]['value']);
+        $this->assertTrue($rows[1]['ok']);
         $this->assertTrue($rows[2]['ok']);
         $this->assertFalse($this->block->isProductionWithSslDisabled());
     }
 
     /**
-     * ABN-533 narrowed which categories withhold the payment method from the
+     * The Environment row names the environment, or says what to do about it
+     * (TWO-26604).
+     *
+     * @dataProvider environmentRowStates
+     */
+    public function testTheEnvironmentRow(string $stored, ?string $flag, string $expected, bool $expectedOk, string $description): void
+    {
+        putenv($flag === null ? 'TWO_INTERNAL_ENVIRONMENTS' : 'TWO_INTERNAL_ENVIRONMENTS=' . $flag);
+        try {
+            $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+            $this->configRepository->method('getStoredMode')->willReturn($stored);
+
+            $row = $this->block->getChecklistRows()[1];
+
+            $this->assertSame($expected, $row['value'], $description);
+            $this->assertSame($expectedOk, $row['ok'], $description);
+        } finally {
+            putenv('TWO_INTERNAL_ENVIRONMENTS');
+        }
+    }
+
+    public static function environmentRowStates(): array
+    {
+        $unrecognised = 'Not recognised: Sandbox is in use. Select an environment and save.';
+        return [
+            ['production', null, 'Production', true, 'production is named'],
+            ['sandbox', null, 'Sandbox', true, 'sandbox is named'],
+            ['staging', '1', 'Staging', true, 'staging on Two infra is named'],
+            ['staging', null, 'Staging (Acme Pay internal test environment). Select Sandbox or Production.', false, 'staging off Two infra says what to do, naming the brand'],
+            ['garbage', null, $unrecognised, false, 'an unknown value says sandbox is in use'],
+            ['', null, $unrecognised, false, 'an empty value says sandbox is in use'],
+        ];
+    }
+
+    /**
+     * A later change narrowed which categories withhold the payment method from the
      * BUYER. The admin's own verdict is unchanged: anything short of a
      * verified key still reads "Not verified" here.
      *

@@ -27,6 +27,7 @@ use Magento\Sales\Model\Order\Creditmemo as CreditmemoModel;
 use Magento\Sales\Model\Order\Creditmemo\Item as CreditmemoItem;
 use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
+use Magento\Sales\Model\ResourceModel\Order\Creditmemo\CollectionFactory as CreditmemoCollectionFactory;
 use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
@@ -35,8 +36,11 @@ use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order\TaxCodeResolver;
+use Two\Gateway\Service\Order\PrepaidLedger;
+use Two\Gateway\Service\Order\TenderReader;
 
 /**
  * Abstract order class
@@ -64,21 +68,6 @@ abstract class Order
      * narrow enough that a wrong rate or a wrong tax amount never passes.
      */
     private const TAX_FORMULA_TOLERANCE = 0.02;
-
-    /**
-     * Per-unit component of the same tolerance, for the "Unit Price" tax
-     * algorithm: Magento rounds each unit's tax and sums, so the line-level
-     * residual is bounded by half a cent per unit.
-     */
-    private const TAX_UNIT_ROUNDING_TOLERANCE = 0.005;
-
-    /**
-     * Fraction-of-net component of the same tolerance. The rate goes on the
-     * wire at 6dp (see the `tax_rate` roundAmt calls), so on a large net the
-     * declared rate's own precision is worth more than a cent. Deliberately
-     * far too small to hide a wrong rate, which is off by whole basis points.
-     */
-    private const TAX_RATE_PRECISION_TOLERANCE = 0.0000005;
 
     /**
      * @var ConfigRepository
@@ -148,6 +137,26 @@ abstract class Order
     private $taxCodeResolver;
 
     /**
+     * @var CreditmemoCollectionFactory|null
+     */
+    protected $creditmemoCollectionFactory;
+
+    /**
+     * @var TenderReader|null
+     */
+    protected $tenderReader;
+
+    /**
+     * @var PrepaidLedger|null
+     */
+    protected $prepaidLedger;
+
+    /**
+     * @var \WeakMap|null Two's ledger per order, read once per request
+     */
+    private $ledgers;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -165,6 +174,9 @@ abstract class Order
      * @param BrandRegistryInterface $brandRegistry
      * @param CustomerRepositoryInterface $customerRepository
      * @param TaxCodeResolver|null $taxCodeResolver
+     * @param CreditmemoCollectionFactory|null $creditmemoCollectionFactory
+     * @param TenderReader|null $tenderReader
+     * @param PrepaidLedger|null $prepaidLedger
      */
     public function __construct(
         Image $imageHelper,
@@ -181,7 +193,10 @@ abstract class Order
         GroupRepositoryInterface $groupRepository,
         BrandRegistryInterface $brandRegistry,
         CustomerRepositoryInterface $customerRepository,
-        ?TaxCodeResolver $taxCodeResolver = null
+        ?TaxCodeResolver $taxCodeResolver = null,
+        ?CreditmemoCollectionFactory $creditmemoCollectionFactory = null,
+        ?TenderReader $tenderReader = null,
+        ?PrepaidLedger $prepaidLedger = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -198,6 +213,205 @@ abstract class Order
         $this->brandRegistry = $brandRegistry;
         $this->customerRepository = $customerRepository;
         $this->taxCodeResolver = $taxCodeResolver;
+        $this->creditmemoCollectionFactory = $creditmemoCollectionFactory;
+        $this->tenderReader = $tenderReader;
+        $this->prepaidLedger = $prepaidLedger;
+    }
+
+    /**
+     * The prepaid part a fulfilment of $invoice declares (TWO-26309), from
+     * Two's record of the order and the tenders Magento still holds as paid.
+     * See PrepaidLedger.
+     *
+     * @param OrderModel $order
+     * @param int $invoice the fulfilment's lines, in cents
+     * @return int cents
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function fulfilmentPrepaid(OrderModel $order, int $invoice): int
+    {
+        // Callers declare a prepaid part only where declaredTenders() found the tenders declared.
+        return PrepaidLedger::fulfilmentPrepaid($this->twoLedger($order), $this->tendersKept($order), $invoice);
+    }
+
+    /**
+     * The prepaid part a refund declares (TWO-26309). See PrepaidLedger.
+     *
+     * @param OrderModel $order
+     * @param int $returned what the memo returned to the tenders, in cents
+     * @param int $lines the refund's lines, in cents
+     * @return int cents
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function refundPrepaid(OrderModel $order, int $returned, int $lines): int
+    {
+        return PrepaidLedger::refundPrepaid($this->twoLedger($order), $returned, $lines);
+    }
+
+    /**
+     * The tenders a body for $entity declares (TWO-26309): its own, unless
+     * the order was placed with Two before tenders were declared. Such an
+     * order has no prepaid at Two and an invoice of the grand total alone,
+     * so every request on it is sent exactly as it was then: the lines
+     * reconcile against the grand total and no prepaid part is declared.
+     * An order not yet placed with Two always declares its tenders.
+     *
+     * @param object|null $entity the order, or its invoice or credit memo
+     * @param OrderModel $order
+     * @return float
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function declaredTenders($entity, OrderModel $order): float
+    {
+        $tendered = $this->getTenderTotal($entity);
+        if ($tendered <= 0 || $this->getTenderTotal($order) <= 0 || !$order->getTwoOrderId()) {
+            return $tendered;
+        }
+
+        return $this->twoLedger($order)['prepaid'] > 0 ? $tendered : 0.0;
+    }
+
+    /**
+     * What the buyer will not be asked to pay through Two, in cents
+     * (TWO-26309): tenders Two holds as prepaid on the parts it has fulfilled
+     * that Magento no longer holds, because a credit memo refunded offline
+     * returned them. Two cannot raise the payable of a fulfilled part, so that
+     * amount is not collected through it. 0 for an order that declared no
+     * tenders.
+     *
+     * @param OrderModel $order
+     * @return int
+     * @throws LocalizedException when Two's record of the order cannot be read
+     */
+    public function uncollectedPrepaid(OrderModel $order): int
+    {
+        if ($this->declaredTenders($order, $order) <= 0) {
+            return 0;
+        }
+        $ledger = $this->twoLedger($order);
+
+        return max(0, $ledger['fulfilled_prepaid'] - $ledger['refunded_prepaid'] - $this->tendersKept($order));
+    }
+
+    /**
+     * The tenders Magento still holds as paid, in cents: the order's, less
+     * what every saved credit memo returned to them, online or offline.
+     *
+     * @param OrderModel $order
+     * @return int
+     */
+    public function tendersKept(OrderModel $order): int
+    {
+        $kept = PrepaidLedger::cents($this->getTenderTotal($order));
+        foreach ($this->savedMemos($order) as $memo) {
+            $kept -= PrepaidLedger::cents($this->getTenderTotal($memo));
+        }
+
+        return max(0, $kept);
+    }
+
+    /**
+     * The order's saved credit memos that refunded something.
+     *
+     * A fresh query, not $order->getCreditmemosCollection(): the order caches
+     * that collection once loaded, and the memo being saved in this same
+     * refund (the one moving the order into the fulfil-on status) is not in it
+     * when OtherCharges::collect() loaded it first. A cancelled memo refunded
+     * nothing.
+     *
+     * @param OrderModel $order
+     * @return CreditmemoModel[]
+     */
+    protected function savedMemos(OrderModel $order): array
+    {
+        if (!$this->creditmemoCollectionFactory) {
+            // Null only where a test skipped the constructor; etc/di.xml names it.
+            return [];
+        }
+        $memos = [];
+        foreach ($this->creditmemoCollectionFactory->create()->setOrderFilter($order) as $memo) {
+            if ($memo->getId() && (int)$memo->getState() !== CreditmemoModel::STATE_CANCELED) {
+                $memos[] = $memo;
+            }
+        }
+
+        return $memos;
+    }
+
+    /**
+     * @param OrderModel $order
+     * @return array
+     * @throws LocalizedException
+     */
+    private function twoLedger(OrderModel $order): array
+    {
+        if (!$this->prepaidLedger) {
+            throw new LocalizedException(__('The prepaid ledger is not configured.'));
+        }
+        $this->ledgers = $this->ledgers ?? new \WeakMap();
+        if (!isset($this->ledgers[$order])) {
+            $this->ledgers[$order] = $this->prepaidLedger->read($order);
+        }
+
+        return $this->ledgers[$order];
+    }
+
+    /**
+     * The entity's tenders (TWO-26309): gift cards, store credit and the like,
+     * which paid part of it outside its lines. See TenderReader.
+     *
+     * @param object|null $entity an order, quote, invoice or credit memo
+     * @return array<int, array{type: string, label: string, amount: string, source: string}>
+     */
+    public function getTenders($entity): array
+    {
+        // Null only where a test skipped the constructor; etc/di.xml names it.
+        return $this->tenderReader ? $this->tenderReader->read($entity) : [];
+    }
+
+    /**
+     * @param object|null $entity
+     * @return float the sum of the entity's tenders, 2dp
+     */
+    public function getTenderTotal($entity): float
+    {
+        return TenderReader::total($this->getTenders($entity));
+    }
+
+    /**
+     * The amounts an order body (create, edit, partial fulfilment) declares
+     * (TWO-26309). The lines carry what the tenders paid and the grand total
+     * does not, so with tenders the invoice covers the full lines and the
+     * tenders are declared as already paid: net and tax are the lines',
+     * invoice_amount their sum, prepaid_amount the tenders and payable_amount
+     * what is left to pay, the grand total, which gross_amount stays. With no
+     * tenders the three prepaid fields are left out and the body is unchanged.
+     * The prepaid fields are worked in cents from the rounded net and tax, so
+     * invoice = net + tax = payable + prepaid exactly.
+     *
+     * @param float $grandTotal what is left to pay
+     * @param float $taxTotal
+     * @param float $tendered
+     * @return array<string, string>
+     */
+    public function orderAmounts(float $grandTotal, float $taxTotal, float $tendered): array
+    {
+        // Exactly the expressions a body with no tenders has always used, so it is byte for byte as before.
+        $amounts = [
+            'gross_amount' => $this->roundAmt($grandTotal),
+            'net_amount' => $this->roundAmt($grandTotal + $tendered - $taxTotal),
+            'tax_amount' => $this->roundAmt($taxTotal),
+        ];
+        $prepaid = (int)round($tendered * 100);
+        if ($prepaid > 0) {
+            $invoice = (int)round((float)$amounts['net_amount'] * 100) + (int)round((float)$amounts['tax_amount'] * 100);
+            $amounts['invoice_amount'] = $this->roundAmt($invoice / 100);
+            $amounts['payable_amount'] = $this->roundAmt(($invoice - $prepaid) / 100);
+            $amounts['prepaid_amount'] = $this->roundAmt($prepaid / 100);
+            $amounts['gross_amount'] = $amounts['payable_amount'];
+        }
+
+        return $amounts;
     }
 
     /**
@@ -209,9 +423,16 @@ abstract class Order
      * @param OrderModel $order
      * @param bool $orderLines true when $lineItems starts with getLineItemsOrder()'s product
      *                         lines, whose items have no id yet at placement
+     * @param bool $mapRequired true for a create or an edit, which an unreadable tax code map
+     *                          refuses; a fulfilment or refund sends such lines uncoded instead
      * @return array
      */
-    public function applyTaxCodes(array $lineItems, OrderModel $order, bool $orderLines = false): array
+    public function applyTaxCodes(
+        array $lineItems,
+        OrderModel $order,
+        bool $orderLines = false,
+        bool $mapRequired = false
+    ): array
     {
         // Null only where a test skipped the constructor; etc/di.xml names it.
         if (!$this->taxCodeResolver) {
@@ -219,7 +440,19 @@ abstract class Order
         }
         $items = $orderLines ? $this->matchLineItemSources($lineItems, $order) : [];
 
-        return $this->taxCodeResolver->apply($lineItems, $order, $items);
+        return $this->taxCodeResolver->apply($lineItems, $order, $items, $mapRequired);
+    }
+
+    /**
+     * The buyer VAT number order create sends, or null to leave the key out
+     * (TWO-26153). See TaxCodeResolver::vatNumberToSend().
+     *
+     * @param OrderModel $order
+     * @return string|null
+     */
+    public function getBuyerVatNumber(OrderModel $order): ?string
+    {
+        return $this->taxCodeResolver ? $this->taxCodeResolver->vatNumberToSend($order) : null;
     }
 
     /**
@@ -535,6 +768,29 @@ abstract class Order
     }
 
     /**
+     * Get the order's total discount before tax, as a positive amount
+     *
+     * Magento stores the order-level discount negative, unlike the item and
+     * shipping discounts, which it stores positive (TWO-26277). The absolute
+     * value is sent, less the tax compensation, the same convention as the
+     * line discounts it totals. The field is informational, so its sign never
+     * refuses an order: a value below zero is sent as 0. The line discounts
+     * keep their guard (TWO-25099).
+     *
+     * @param OrderModel $order
+     * @return float
+     */
+    public function getDiscountAmountOrder(OrderModel $order): float
+    {
+        // Native-precision compute, single round at the payload boundary:
+        // see getDiscountAmountItem() for the rounding-order rationale.
+        $discountAmount = abs((float)$order->getDiscountAmount())
+            - (float)$order->getDiscountTaxCompensationAmount();
+
+        return round($discountAmount, 2) < 0 ? 0.0 : $discountAmount;
+    }
+
+    /**
      * Get category array by category ids
      *
      * @param array $categoryIds
@@ -577,7 +833,8 @@ abstract class Order
      */
     public function getShippingLineOrder(OrderModel $order): array
     {
-        $taxRate = $this->getTaxRateShipping($order);
+        // The fallback reconcile runs after the postprocessing hook (TWO-26276).
+        $taxRate = $this->getTaxRateShipping($order, false);
 
         return [
             'order_item_id' => 'shipping',
@@ -686,20 +943,22 @@ abstract class Order
      * requests read that record and never the current configuration. An order
      * placed before it was recorded resolves as at placement.
      *
+     * The builders pass $reconcile false: the reconcile is a shop-match check,
+     * which the order postprocessing default handler runs after the hook
+     * through assertShippingTaxFallback() (TWO-26276).
+     *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
-     * @param bool $reconcile false for a refund, which relays its parent line's rate
+     * @param bool $reconcile false to skip the fallback reconcile: a builder, or a refund, which relays its
+     *                        parent line's rate
      * @return float
      * @throws LocalizedException when the fallback rate does not reconcile with the line's tax
      */
     public function getTaxRateShipping($entity, bool $reconcile = true): float
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
-        $recorded = method_exists($order, 'getData');
-        $source = $recorded ? $order->getData('two_shipping_tax_rate_source') : null;
-
-        if ($source === self::SHIPPING_RATE_DECLARED || $source === self::SHIPPING_RATE_NONE) {
-            $percent = $order->getData('two_shipping_tax_rate');
-            $rate = $percent === null ? null : (float)$percent / 100;
+        $order = $this->shippingTaxRateOrder($entity);
+        $recorded = $this->recordedShippingTaxRate($order);
+        if ($recorded !== null) {
+            [$source, $rate] = $recorded;
             if ($source === self::SHIPPING_RATE_NONE && $rate !== null && $reconcile) {
                 $this->assertShippingTaxReconciles($entity, $rate);
             }
@@ -707,7 +966,7 @@ abstract class Order
         }
 
         [$source, $rate] = $this->resolveShippingTaxRate($entity, $reconcile);
-        if ($recorded && !$order->getId()) {
+        if (method_exists($order, 'getData') && !$order->getId()) {
             $order->setData('two_shipping_tax_rate_source', $source);
             $order->setData('two_shipping_tax_rate', $rate === null ? null : round($rate * 100, 6));
         }
@@ -715,14 +974,106 @@ abstract class Order
     }
 
     /**
+     * The shipping tax fallback reconcile on its own, for the entity the
+     * shipping line was composed from: a shop-match check (TWO-26276). Reads
+     * the case the build recorded, so it checks exactly what the builder
+     * would have; refuses as getTaxRateShipping() does, and does nothing
+     * where the fallback did not supply the rate.
+     *
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
+     * @return void
+     * @throws ShopMatchRefusedException when the fallback rate does not reconcile with the line's tax
+     */
+    public function assertShippingTaxFallback($entity): void
+    {
+        $recorded = $this->recordedShippingTaxRate($this->shippingTaxRateOrder($entity));
+        if ($recorded === null) {
+            $this->resolveShippingTaxRate($entity, true, false);
+            return;
+        }
+        [$source, $rate] = $recorded;
+        if ($source === self::SHIPPING_RATE_NONE && $rate !== null) {
+            $this->assertShippingTaxReconciles($entity, $rate);
+        }
+    }
+
+    /**
+     * The part of the order's shipping discount that falls on $entity's
+     * shipping (TWO-26309). Magento records the shipping discount on the
+     * order only, not on an invoice or credit memo, so a document carrying
+     * part of the shipping carries the same share of its discount.
+     *
+     * @param mixed $entity
+     * @param mixed $order
+     * @return float
+     */
+    private function shippingDiscountShare($entity, $order): float
+    {
+        $discount = $this->getDiscountAmountShipping($order);
+        $orderShipping = (float)$order->getShippingAmount();
+        if ($entity === $order || $discount <= 0 || $orderShipping <= 0) {
+            return $discount;
+        }
+
+        return $discount * min(1.0, (float)$entity->getShippingAmount() / $orderShipping);
+    }
+
+    /**
+     * The refund's side of the shipping tax fallback (TWO-26309): when the
+     * fallback supplied the order's shipping rate at placement, the shipping
+     * a credit memo refunds must carry the tax that rate gives. Only the
+     * placement record decides: an order placed with a declared rate, a blank
+     * fallback, or before the record existed is not checked.
+     *
+     * @param CreditmemoModel $creditmemo
+     * @return void
+     * @throws ShopMatchRefusedException when the refunded shipping's tax does not reconcile with the rate
+     */
+    public function assertRefundShippingTaxFallback($creditmemo): void
+    {
+        $recorded = $this->recordedShippingTaxRate($this->shippingTaxRateOrder($creditmemo));
+        if ($recorded !== null && $recorded[0] === self::SHIPPING_RATE_NONE && $recorded[1] !== null) {
+            $this->assertShippingTaxReconciles($creditmemo, $recorded[1]);
+        }
+    }
+
+    /**
+     * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @return OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel the order carrying the record
+     */
+    private function shippingTaxRateOrder($entity)
+    {
+        return method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+    }
+
+    /**
+     * The case placement recorded, and its rate as a fraction; null when nothing was recorded.
+     *
+     * @param mixed $order
+     * @return array{0: string, 1: float|null}|null
+     */
+    private function recordedShippingTaxRate($order): ?array
+    {
+        $source = method_exists($order, 'getData') ? $order->getData('two_shipping_tax_rate_source') : null;
+        if ($source !== self::SHIPPING_RATE_DECLARED && $source !== self::SHIPPING_RATE_NONE) {
+            return null;
+        }
+        $percent = $order->getData('two_shipping_tax_rate');
+
+        return [$source, $percent === null ? null : (float)$percent / 100];
+    }
+
+    /**
      * The table as the current order data and configuration answer it: which
      * case applies, and the rate, null for no recorded rate and a blank fallback.
      *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice|CreditmemoModel $entity
+     * @param bool $reconcile
+     * @param bool $log false to resolve again without a second warning line
      * @return array{0: string, 1: float|null}
      * @throws LocalizedException
      */
-    private function resolveShippingTaxRate($entity, bool $reconcile): array
+    private function resolveShippingTaxRate($entity, bool $reconcile, bool $log = true): array
     {
         $declaredPercent = $this->getDeclaredShippingTaxPercent($entity);
         if ($declaredPercent !== null) {
@@ -741,16 +1092,21 @@ abstract class Order
         if ($reconcile) {
             $this->assertShippingTaxReconciles($entity, $rate);
         }
-        $this->logRepository->addDebugLog(
-            'ShippingTaxRateFallback',
-            sprintf(
-                'Using the tax-rules-engine rate %.6F%% for entity %s (shipping tax class %d): '
-                . 'Magento recorded no rate for the shipping line.',
-                $rate * 100,
-                $entity->getIncrementId(),
-                $taxClassId
-            )
-        );
+        if ($log) {
+            // To the error log, as a warning (TWO-26309): the shop is relying on the fallback, which must
+            // show without Debug Mode.
+            $this->logRepository->addErrorLog(
+                'ShippingTaxRateFallback',
+                sprintf(
+                    'Warning: shipping on %s has no tax rate from Magento; assuming shipping tax class %d '
+                    . 'at %.6F%% for the whole shipping charge of %.2F.',
+                    $entity->getIncrementId() ? 'entity ' . $entity->getIncrementId() : 'the cart',
+                    $taxClassId,
+                    $rate * 100,
+                    (float)$entity->getShippingAmount() + (float)$entity->getShippingTaxAmount()
+                )
+            );
+        }
         return [self::SHIPPING_RATE_NONE, $rate];
     }
 
@@ -760,14 +1116,14 @@ abstract class Order
      * An invoice books the order's shipping discount, as ComposeCapture does.
      *
      * @param OrderModel|\Magento\Sales\Model\Order\Invoice $entity
-     * @throws LocalizedException
+     * @throws ShopMatchRefusedException
      */
     private function assertShippingTaxReconciles($entity, float $rate): void
     {
-        $order = method_exists($entity, 'getOrder') && $entity->getOrder() ? $entity->getOrder() : $entity;
+        $order = $this->shippingTaxRateOrder($entity);
         $tax = round($this->getTaxAmountShipping($entity), 2);
         $gross = $this->getUnitPriceShipping($entity);
-        $net = $gross - $this->getDiscountAmountShipping($order);
+        $net = $gross - $this->shippingDiscountShare($entity, $order);
         $discrepancy = min(abs($tax - $net * $rate), abs($tax - $gross * $rate));
         if ($discrepancy <= self::TAX_FORMULA_TOLERANCE) {
             return;
@@ -786,7 +1142,7 @@ abstract class Order
                 self::TAX_FORMULA_TOLERANCE
             )
         );
-        throw new LocalizedException($this->shippingTaxRefusal());
+        throw new ShopMatchRefusedException($this->shippingTaxRefusal());
     }
 
     /**
@@ -998,98 +1354,6 @@ abstract class Order
         }
 
         return $percent;
-    }
-
-    /**
-     * Refuse any line whose declared tax does not reconcile with its own
-     * declared rate and net amount (TWO-25503).
-     *
-     * The plugin never derives a rate from amounts and never corrects a
-     * line's numbers, so an internally-inconsistent line has to stop the
-     * checkout: the buyer sees a generic notice and the detail goes to the
-     * log. Tolerance is in currency units, the same convention as
-     * getOtherChargesLineItem()'s epsilon — see lineTaxTolerance() for what
-     * widens it, and the "before discount" base below.
-     *
-     * The shipping line is not checked here: getTaxRateShipping() checks it
-     * only when its rate came from the shipping tax fallback (TWO-26117).
-     *
-     * @param array $lineItems Composed payload line items.
-     * @return void
-     * @throws LocalizedException when a line's tax does not reconcile
-     */
-    public function validateTaxReconciliation(array $lineItems): void
-    {
-        foreach ($lineItems as $lineItem) {
-            if (($lineItem['order_item_id'] ?? null) === 'shipping') {
-                continue;
-            }
-            $net = (float)($lineItem['net_amount'] ?? 0);
-            $tax = (float)($lineItem['tax_amount'] ?? 0);
-            $rate = (float)($lineItem['tax_rate'] ?? 0);
-            $tolerance = $this->lineTaxTolerance($lineItem, $net);
-
-            // Under tax/calculation/apply_after_discount = 0 ("Before
-            // Discount") Magento taxes the UNDISCOUNTED base while net_amount
-            // is already net of the discount, so the line reconciles against
-            // net + discount rather than net. Both bases are accepted; the
-            // residual is measured against whichever the line actually used.
-            $discount = abs((float)($lineItem['discount_amount'] ?? 0));
-            $base = $net;
-            $discrepancy = abs($tax - $net * $rate);
-            if ($discount > 0) {
-                $discountedBaseDiscrepancy = abs($tax - ($net + $discount) * $rate);
-                if ($discountedBaseDiscrepancy < $discrepancy) {
-                    $discrepancy = $discountedBaseDiscrepancy;
-                    $base = $net + $discount;
-                }
-            }
-            if ($discrepancy <= $tolerance) {
-                continue;
-            }
-
-            $this->logRepository->addErrorLog(
-                'TaxReconciliationFailed',
-                sprintf(
-                    'Line %s declares tax %.2F but rate %.6F on base %.2F implies %.2F '
-                    . '(off by %.2F, tolerance %.2F).',
-                    $lineItem['order_item_id'] ?? 'unknown',
-                    $tax,
-                    $rate,
-                    $base,
-                    $base * $rate,
-                    $discrepancy,
-                    $tolerance
-                )
-            );
-            throw new LocalizedException(
-                __('This order could not be placed. Please contact the merchant.')
-            );
-        }
-    }
-
-    /**
-     * Per-line reconciliation tolerance, in currency units.
-     *
-     * TAX_FORMULA_TOLERANCE alone assumes the line's tax was rounded once,
-     * on the line. Under tax/calculation/algorithm = "Unit Price" Magento
-     * rounds per UNIT and sums, so the line-level residual grows with
-     * quantity — up to half a cent per unit. The net-proportional term covers
-     * the declared rate's own 6dp precision, which on a large net is itself
-     * worth more than a cent.
-     *
-     * @param array $lineItem
-     * @param float $net
-     * @return float
-     */
-    private function lineTaxTolerance(array $lineItem, float $net): float
-    {
-        $quantity = max(1.0, (float)($lineItem['quantity'] ?? 1));
-
-        return max(
-            self::TAX_FORMULA_TOLERANCE,
-            self::TAX_UNIT_ROUNDING_TOLERANCE * $quantity
-        ) + self::TAX_RATE_PRECISION_TOLERANCE * abs($net);
     }
 
     /**
@@ -1459,6 +1723,65 @@ abstract class Order
     }
 
     /**
+     * The Two surcharge as a BUYER_FEE line, shared by every payload that
+     * carries it. Each amount is rounded on its own from the 6dp source and
+     * gross from the unrounded sum, so a refund or fulfilment line cannot
+     * differ from the order line by a cent at a half-cent boundary.
+     *
+     * @param float $net
+     * @param float $tax
+     * @param string $description
+     * @param float $taxRatePercent
+     * @return array
+     */
+    public function getSurchargeLine(float $net, float $tax, string $description, float $taxRatePercent): array
+    {
+        $description = $description ?: (string)__('Payment terms fee');
+
+        return [
+            'order_item_id' => 'surcharge',
+            'name' => $description,
+            'description' => $description,
+            'type' => 'BUYER_FEE',
+            'image_url' => '',
+            'product_page_url' => '',
+            'gross_amount' => $this->roundAmt($net + $tax),
+            'net_amount' => $this->roundAmt($net),
+            'tax_amount' => $this->roundAmt($tax),
+            'discount_amount' => '0.00',
+            'tax_rate' => $this->roundAmt($taxRatePercent / 100, 6),
+            'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
+            'unit_price' => $this->roundAmt($net, 6),
+            'quantity' => 1,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
+    /**
+     * The order's unitemized charge as a line, or null when the order's grand
+     * total is fully accounted for. Fee-provider lines are merged first, so a
+     * fee a provider itemizes is never counted twice.
+     *
+     * @param OrderModel $order
+     * @return array|null getOtherChargesLineItem() shape.
+     * @throws LocalizedException
+     */
+    public function getOtherChargesLineOrder(OrderModel $order, ?float $tendered = null): ?array
+    {
+        $lineItems = $this->getKnownLineAmountsOrder($order);
+        foreach ($this->getFeeLines($order) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        return $this->getOtherChargesLineItem(
+            $lineItems,
+            $order,
+            (float)$order->getGrandTotal() + ($tendered ?? $this->getTenderTotal($order)),
+            (float)$order->getTaxAmount()
+        );
+    }
+
+    /**
      * The gross and tax of every line composition itemizes, for callers that
      * need the order's known amounts rather than its payload.
      *
@@ -1553,12 +1876,16 @@ abstract class Order
     }
 
     /**
+     * The per-rate tax breakdown, or null when "Validate tax subtotals" is
+     * off for the order's store.
+     *
      * @param array $lineItems
-     * @return array
+     * @param int|null $storeId the order's store, whose setting decides
+     * @return array|null
      */
-    public function getTaxSubtotals(array $lineItems): ?array
+    public function getTaxSubtotals(array $lineItems, ?int $storeId = null): ?array
     {
-        if (!$this->configRepository->isTaxSubtotalsEnabled()) {
+        if (!$this->configRepository->isTaxSubtotalsEnabled($storeId)) {
             return null;
         }
         $taxSubtotals = [];

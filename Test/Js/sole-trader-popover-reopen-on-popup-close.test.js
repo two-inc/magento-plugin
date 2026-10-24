@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554 — a browser re-fires `focus` and `focusin` on the control the opener
+ * A browser re-fires `focus` and `focusin` on the control the opener
  * window still holds the moment the signup popup closes. The company field is
  * that control, because the launch parked focus there, and its own
  * open-on-focus opener must not read the re-fire as the buyer asking for the
@@ -217,7 +217,7 @@ function refireFocusOnField() {
     dispatchNative(field, 'focusin');
 }
 
-describe('the popup closing must not reopen the company-search popover (ABN-554)', function () {
+describe('the popup closing must not reopen the company-search popover', function () {
     test.each([
         ['the signup adopts a trader', false,
             'the adopt closed the popover, and the re-fire must not put it back'],

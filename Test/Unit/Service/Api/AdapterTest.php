@@ -16,6 +16,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\ApiTranslator\PassthroughTrait;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 
 class AdapterTest extends TestCase
 {
@@ -31,6 +32,9 @@ class AdapterTest extends TestCase
     /** @var BrandRegistryInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $brandRegistry;
 
+    /** @var LoggerInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $refusalLogger;
+
     /** @var Adapter */
     private $adapter;
 
@@ -40,6 +44,7 @@ class AdapterTest extends TestCase
         $this->curl = $this->createMock(Curl::class);
         $this->logRepository = $this->createMock(LogRepository::class);
         $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $this->refusalLogger = $this->createMock(LoggerInterface::class);
         $this->brandRegistry->method('getProductName')->willReturn('Two');
 
         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
@@ -54,7 +59,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
     }
 
@@ -239,7 +245,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
 
         $result = $adapter->execute('/v1/order');
@@ -367,7 +374,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            $translator
+            $translator,
+            $this->refusalLogger
         );
         $adapter->execute('/v1/order', ['x' => 1]);
 
@@ -392,7 +400,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            $translator
+            $translator,
+            $this->refusalLogger
         );
         $result = $adapter->execute('/v1/order');
 
@@ -440,7 +449,8 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $curlFactory,
             $this->logRepository,
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->refusalLogger
         );
         $adapter->execute('/v1/order', ['amount' => 100]);
 
@@ -551,6 +561,276 @@ class AdapterTest extends TestCase
                 'candidate-key',
                 'an override authenticates with an unsaved candidate instead',
             ],
+        ];
+    }
+
+    // ── Debug logging ───────────────────────────────────────────────────
+
+    /**
+     * Given the store's "Enable debug logging" setting; When a call returns
+     * a given status; Then the request and response bodies are logged only
+     * with debug on, once, with the key and custom header values redacted,
+     * a refusal going to the error log and the rest to the debug log.
+     *
+     * @dataProvider debugLoggingCases
+     */
+    public function testExchangeIsLoggedOnlyWithDebugOn(
+        bool $debug,
+        int $status,
+        int $debugLogs,
+        int $errorLogs,
+        string $description
+    ): void {
+        $configRepository = $this->createMock(ConfigRepository::class);
+        $configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
+        $configRepository->method('addVersionDataInURL')->willReturnArgument(0);
+        $configRepository->method('getApiKey')->willReturn('test-key');
+        $configRepository->method('getCustomHeaders')->willReturn(['X-WAF-TOKEN' => 'waf-token']);
+        $configRepository->method('isDebugMode')->with(7)->willReturn($debug);
+
+        $this->curl->method('getStatus')->willReturn($status);
+        $this->curl->method('getBody')->willReturn('{"buyer":"Jane Doe"}');
+        $this->curl->method('getHeaders')->willReturn(['X-Trace' => 't1']);
+
+        $logged = ['debug' => [], 'error' => []];
+        $logRepository = $this->createMock(LogRepository::class);
+        $logRepository->method('addDebugLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                // Only entries carrying the exchange; a refusal's reason line has no data.
+                if ($data !== null) {
+                    $logged['debug'][] = [$type, $data];
+                }
+            }
+        );
+        $logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                // Only entries carrying the exchange; a refusal's reason line has no data.
+                if ($data !== null) {
+                    $logged['error'][] = [$type, $data];
+                }
+            }
+        );
+
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+        $adapter = new Adapter(
+            $configRepository,
+            $this->brandRegistry,
+            $curlFactory,
+            $logRepository,
+            new NullApiTranslator(),
+            $this->refusalLogger
+        );
+        $adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 7);
+
+        $this->assertCount($debugLogs, $logged['debug'], $description);
+        $this->assertCount($errorLogs, $logged['error'], $description);
+        foreach (array_merge($logged['debug'], $logged['error']) as [$type, $data]) {
+            $this->assertSame('POST /v1/order', $type, $description);
+            $this->assertSame(['buyer' => 'Jane Doe'], $data['request']['body'], $description);
+            $this->assertSame('[REDACTED]', $data['request']['headers']['X-API-Key'], $description);
+            $this->assertSame('[REDACTED]', $data['request']['headers']['X-WAF-TOKEN'], $description);
+            $this->assertSame($status, $data['response']['status_code'], $description);
+            $this->assertSame(['buyer' => 'Jane Doe'], $data['response']['body'], $description);
+            $this->assertSame(['X-Trace' => 't1'], $data['response']['headers'], $description);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: int, 2: int, 3: int, 4: string}>
+     */
+    public static function debugLoggingCases(): array
+    {
+        return [
+            'debug off, success' => [false, 200, 0, 0, 'no body is logged with debug off'],
+            'debug off, refused' => [false, 422, 0, 0, 'no body is logged with debug off, even on a refusal'],
+            'debug on, success' => [true, 200, 1, 0, 'a success is one debug log entry'],
+            'debug on, refused' => [true, 422, 0, 1, 'a refusal is one error log entry'],
+        ];
+    }
+
+    /**
+     * Given an order request the API refuses; When it returns, whatever the
+     * debug setting; Then one reason-only line is logged (a warning for an
+     * intent, an error for the rest), and no line for a read or a non-order
+     * call. The buyer's details never appear in it.
+     *
+     * @dataProvider refusalCases
+     */
+    public function testOrderRequestRefusalIsLoggedWithTheReason(
+        string $method,
+        string $endpoint,
+        ?string $level,
+        string $description
+    ): void {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(422);
+        $this->curl->method('getBody')->willReturn(
+            '{"error_code":"SCHEMA_ERROR","error_message":"Invalid order",'
+            . '"error_json":[{"loc":["buyer","email"],"msg":"field required"}],"buyer":"Jane Doe"}'
+        );
+
+        $logged = [];
+        $this->logRepository->method('addDebugLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                $logged[] = ['debug', $type, $data];
+            }
+        );
+        $this->logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged) {
+                $logged[] = ['error log repository', $type, $data];
+            }
+        );
+        foreach (['error', 'warning'] as $lvl) {
+            $this->refusalLogger->method($lvl)->willReturnCallback(
+                function ($message, array $context = []) use (&$logged, $lvl) {
+                    $logged[] = [$lvl, $message, $context ?: null];
+                }
+            );
+        }
+
+        $this->adapter->execute($endpoint, ['buyer' => 'Jane Doe'], $method, 1);
+
+        if ($level === null) {
+            $this->assertSame([], $logged, $description);
+            return;
+        }
+        $this->assertSame(
+            [[
+                $level,
+                "$method $endpoint refused by the API (HTTP 422): "
+                    . 'SCHEMA_ERROR; Invalid order; buyer.email: field required',
+                null,
+            ]],
+            $logged,
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string|null, 3: string}>
+     */
+    public static function refusalCases(): array
+    {
+        return [
+            'create' => ['POST', '/v1/order', 'error', 'a refused create is an error'],
+            'edit' => ['PUT', '/v1/order/abc', 'error', 'a refused edit is an error'],
+            'fulfilment' => ['POST', '/v1/order/abc/fulfillments', 'error', 'a refused fulfilment is an error'],
+            'refund' => ['POST', '/v1/order/abc/refund', 'error', 'a refused refund is an error'],
+            'cancel' => ['POST', '/v1/order/abc/cancel', 'error', 'a refused cancel is an error'],
+            'confirm' => ['POST', '/v1/order/abc/confirm', 'error', 'a refused confirm is an error'],
+            'intent' => ['POST', '/v1/order_intent', 'warning', 'a refused intent is only a warning'],
+            'order read' => ['GET', '/v1/order/abc', null, 'a read is not an order request'],
+            'non-order call' => ['POST', '/v1/pricing/order/fee', null, 'a non-order endpoint is not logged'],
+        ];
+    }
+
+    /**
+     * A refused create names its quote and carries the API's trace id, in
+     * the one line logged for it.
+     */
+    public function testARefusedCreateNamesItsQuoteAndTraceId(): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(400);
+        $this->curl->method('getBody')->willReturn(
+            '{"error_code":"ORDER_INVALID","error_message":"Order is invalid","error_trace_id":"trace-1"}'
+        );
+        $this->refusalLogger->expects($this->once())->method('error')->with(
+            'POST /v1/order refused by the API (HTTP 400) for quote 42: ORDER_INVALID; Order is invalid [Trace ID: trace-1]'
+        );
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->withLogSubject('quote 42')->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1);
+    }
+
+    public function testRefusalReasonFallsBackToTheRawBody(): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(502);
+        $this->curl->method('getBody')->willReturn('Bad gateway');
+        $this->refusalLogger->expects($this->once())->method('error')
+            ->with('POST /v1/order/abc/refund refused by the API (HTTP 502): Bad gateway');
+
+        $this->adapter->execute('/v1/order/abc/refund', [], 'POST', 1);
+    }
+
+    /**
+     * A subject names one call chain only: the shared adapter, which every
+     * other caller is handed, keeps logging without one.
+     */
+    public function testALogSubjectLeavesTheSharedAdapterAlone(): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        $this->curl->method('getStatus')->willReturn(400);
+        $this->curl->method('getBody')->willReturn('{"error_message":"Order is invalid"}');
+        $messages = [];
+        $this->refusalLogger->method('error')->willReturnCallback(function ($message) use (&$messages) {
+            $messages[] = $message;
+        });
+
+        $this->adapter->withLogSubject('quote 42');
+        $this->adapter->execute('/v1/order', [], 'POST', 1);
+
+        $this->assertSame(['POST /v1/order refused by the API (HTTP 400): Order is invalid'], $messages);
+    }
+
+    /**
+     * The adapter is extended outside this module, so its public signatures
+     * stay as they were: execute() and executeWithStatus() take the same
+     * seven parameters, and the refusal logger is optional.
+     *
+     * @dataProvider unchangedSignatures
+     */
+    public function testThePublicSignaturesAreUnchanged(string $method, int $parameters): void
+    {
+        $this->assertSame($parameters, (new \ReflectionMethod(Adapter::class, $method))->getNumberOfParameters(), $method);
+        $this->assertSame(5, (new \ReflectionMethod(Adapter::class, '__construct'))->getNumberOfRequiredParameters());
+    }
+
+    public static function unchangedSignatures(): array
+    {
+        return [
+            'execute' => ['execute', 7],
+            'executeWithStatus' => ['executeWithStatus', 7],
+        ];
+    }
+
+    /**
+     * Given a call that gets no response; Then the failure is logged whatever
+     * the setting, and with debug logging on the request it was making, key
+     * redacted, as WooCommerce does.
+     *
+     * @dataProvider transportFailureCases
+     */
+    public function testATransportFailureLogsTheRequestOnlyWithDebugOn(bool $debug, int $withRequest): void
+    {
+        $this->configRepository->method('isDebugMode')->willReturn($debug);
+        $this->curl->method('post')->willThrowException(new \RuntimeException('Connection timed out'));
+        $requests = [];
+        $this->logRepository->method('addErrorLog')->willReturnCallback(function ($type, $data) use (&$requests) {
+            if (is_array($data) && isset($data['request'])) {
+                $requests[] = [$type, $data['request']['body'], $data['request']['headers']['X-API-Key']];
+            }
+        });
+
+        $this->adapter->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1);
+
+        $this->assertSame(
+            array_fill(0, $withRequest, [
+                'POST /v1/order: transport failure: Connection timed out',
+                ['buyer' => 'Jane Doe'],
+                '[REDACTED]',
+            ]),
+            $requests
+        );
+    }
+
+    public static function transportFailureCases(): array
+    {
+        return [
+            'debug off' => [false, 0],
+            'debug on' => [true, 1],
         ];
     }
 }

@@ -187,6 +187,8 @@ require_once __DIR__ . '/Stubs/PaymentMethod.php';
 // Admin/storefront message channel with real adder signatures, so a call to
 // it is mockable; per-symbol guard lives inside the stub file.
 require_once __DIR__ . '/Stubs/MessageManager.php';
+// The flag table, where the tax code section keeps each country's last code list.
+require_once __DIR__ . '/Stubs/FlagManager.php';
 
 // View asset repository with a real getUrl(), so the checkout tile's icon URL
 // is mockable; per-symbol guard lives inside the stub file.
@@ -197,6 +199,15 @@ require_once __DIR__ . '/Stubs/AssetRepository.php';
 if (!class_exists(\Magento\Sales\Ui\Component\Listing\Column\Price::class, false)) {
     require_once __DIR__ . '/Stubs/SalesUiColumn.php';
 }
+
+// Interception surface for the postprocessing subscriber detection (TWO-26276).
+if (!interface_exists(\Magento\Framework\Interception\PluginListInterface::class, false)) {
+    require_once __DIR__ . '/Stubs/Interception.php';
+}
+
+// Storefront action base for the payment return controllers (TWO-26295);
+// per-symbol guard lives inside the stub file.
+require_once __DIR__ . '/Stubs/FrontendAction.php';
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.

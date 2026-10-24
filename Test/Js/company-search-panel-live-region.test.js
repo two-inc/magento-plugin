@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554. What the company-search panel says to a screen reader.
+ * What the company-search panel says to a screen reader.
  *
  * The panel painted rows and messages into a listbox nothing was watching, so a
  * buyer who cannot see the panel got silence for every outcome a search has.
@@ -40,7 +40,7 @@ function announced() {
     );
 }
 
-describe("ABN-554: the company-search panel's live region", () => {
+describe("the company-search panel's live region", () => {
     let panel;
     let answer;
     let companySearch;
