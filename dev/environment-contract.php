@@ -1,16 +1,17 @@
 <?php
 
 /**
- * Where this plugin declares the Environment setting, for
- * dev/environment-parity.php (TWO-26613), which loads this file in each of
- * the three plugin repos and compares what it finds. Runs inside that script
- * and uses its helpers; declare no functions or classes here.
+ * Where this plugin declares the Environment setting (TWO-26613). Read only
+ * by this repo's dev/environment-parity.php, which extracts the contract from
+ * this repo's own code into dev/environment-contract.json; the other plugins
+ * compare that JSON as data. After changing this file or the code it names,
+ * run `php dev/environment-parity.php --write` and commit the JSON. Runs
+ * inside that script and uses its helpers; declare no functions or classes.
  */
 
 return [
     'platform' => 'magento',
     'cases' => 'Test/Unit/Model/Config/_files/environment-cases.json',
-    'tests' => 'Test',
     'helpers' => [
         'file' => 'Model/Config/EnvironmentMode.php',
         'class' => 'EnvironmentMode',
@@ -24,13 +25,6 @@ return [
     'migrate' => [
         'method' => 'migrate',
         'variants' => ['every scope' => ['args' => [], 'moves' => []]],
-    ],
-    'steps' => [
-        [
-            'file' => 'Setup/Patch/Data/NormaliseEnvironmentMode.php',
-            'in' => ['NormaliseEnvironmentMode', 'apply'],
-            'calls' => 'EnvironmentMode::migrate(',
-        ],
     ],
     'declarations' => static function (array $p): array {
         $default = one(
