@@ -86,6 +86,38 @@ Every "read before" line below applies equally when reviewing a PR that touches 
 -   [docs/agents/order-composition-and-tax.md](docs/agents/order-composition-and-tax.md): read before changing how order, edit, capture, fulfilment or refund payloads are composed (`Service\Order`, `Compose*`), line tax rates or the shipping tax fallback, the placement records on `sales_order` (`two_shipping_tax_rate*`, `two_tax_codes`), the postprocessing hook, its subscribers or shop-match checks, tenders and prepaid amounts (`OrderTenders`, `PrepaidLedger`), the other-charges residual, the buyer VAT number, or tax codes, their admin section, JS, backend model, data patch or API client (`Service\Api\TaxCodes`).
 -   [docs/agents/fulfilment-and-refunds.md](docs/agents/fulfilment-and-refunds.md): read before changing invoicing (online or offline, `canCapture()`, the invoice observers and plugins), fulfilment on shipment or status change (`SalesOrderSaveAfter`, `StatusFulfilment`), the shipment and refund payload builders (`ComposeShipment`, `ComposeRefund`), credit memos and their totals collectors (including the surcharge one), the credit-memo fee override field, fee line providers, or the other-charges residual (`OtherChargesResolver`).
 
+## The Environment setting matches the other plugins
+
+`dev/environment-parity.php` (TWO-26613), run by the "Environment parity"
+workflow on every PR, every push to `staging` and `main`, and nightly, checks
+that this plugin, two-inc/prestashop-plugin and two-inc/woocommerce-plugin offer
+the same Environment setting: the stored values and their order, the
+fresh-install default and the install step that writes it, the dropdown with and
+without `TWO_INTERNAL_ENVIRONMENTS=1`, how each test input reads, and the field
+label, description and option labels. Each plugin's legacy-value migration must
+land on a stored value and be idempotent, and may rewrite a canonical value only
+where its `dev/environment-contract.php` lists that value under the variant's
+`moves` (a registered move); what each one maps is printed, not compared,
+because the platforms stored different values historically.
+
+The script extracts this plugin's contract from its own code, as
+`dev/environment-contract.php` describes, into the committed
+`dev/environment-contract.json`, and fails if the committed copy is stale: after
+changing the setting, its declarations or that file, run
+`php dev/environment-parity.php --write` and commit the JSON. The siblings' JSON
+is fetched with `gh api` and compared as data; no sibling code runs.
+`environment-cases.json` and the script itself must be byte-identical in all
+three, so change them in all three, in step.
+
+A PR reads each sibling at the PR's branch name when the sibling has that
+branch, and then a missing snapshot fails: push a paired change under the same
+branch name in all three repos. Otherwise it reads the sibling's `staging`, as
+does a push to `staging` and the nightly run, while a push to `main` reads the
+siblings' `main`; there a sibling with no snapshot yet is a warning, and one
+that differs fails. Locally, run `php dev/environment-parity.php` with
+`ENVIRONMENT_PARITY_SIBLINGS_DIR=<dir>` to compare with checkouts named after
+their repos in `<dir>`.
+
 ## A NON-EXECUTABLE guard is invoked through `bash`
 
 A script whose mode is `100644` and which is run as `./script.sh` exits 126. On a
