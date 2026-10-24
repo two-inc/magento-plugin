@@ -32,22 +32,22 @@ return [
             'calls' => 'EnvironmentMode::migrate(',
         ],
     ],
-    'declarations' => static function (Plugin $p): array {
+    'declarations' => static function (array $p): array {
         $default = one(
-            xml($p->file('etc/config.xml'), 'etc/config.xml'),
+            xml($p['file']('etc/config.xml'), 'etc/config.xml'),
             '/config/default/payment/two_payment/mode',
             'etc/config.xml payment/two_payment/mode'
         );
         $out = [
             'install_default' => [(string) $default],
-            'labels' => labels($p->method('Model/Config/Source/Mode.php', 'Mode', 'toOptionArray')),
+            'labels' => labels($p['method']('Model/Config/Source/Mode.php', 'Mode', 'toOptionArray')),
             'field_label' => [],
             'description' => [],
         ];
         // Both admin forms declare the field: the base section and the
         // template every brand's section is built from.
         foreach (['etc/adminhtml/system.xml', 'etc/adminhtml/brand_form_template.xml'] as $path) {
-            $field = one(xml($p->file($path), $path), '//field[@id="mode"]', "{$path} field mode");
+            $field = one(xml($p['file']($path), $path), '//field[@id="mode"]', "{$path} field mode");
             $out['field_label'][] = (string) $field->label;
             $out['description'][] = (string) $field->comment;
         }
