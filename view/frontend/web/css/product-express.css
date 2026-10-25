@@ -44,7 +44,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    /* The label, the mark and the name are separate items, so a button too
+       narrow for all three on one line moves the name under "Buy with" as a
+       whole rather than squeezing each item into its own column. */
+    flex-wrap: wrap;
+    gap: 2px 8px;
     width: 100%;
     min-height: 45px;
     padding: 10px 16px;
@@ -67,9 +71,13 @@
     cursor: pointer;
     /* Long brand names and long translations wrap rather than spilling out of
        the button; "Buy with" plus a brand name is short in English and is not
-       in every locale this ships in. */
+       in every locale this ships in. They wrap between words: break-word
+       splits a word only when it alone is wider than the button, where
+       `anywhere` (TWO-26656) let flex shrink each item to one character and
+       broke "Buy with" mid-word at the width of Add to Cart. */
+    text-align: center;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
 }
 
 /* Paired with Add to Cart rather than spanning the column: Luma sizes its own
