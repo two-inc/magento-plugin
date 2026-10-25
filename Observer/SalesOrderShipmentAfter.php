@@ -166,7 +166,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
             }
             $twoOrderId = (string)$order->getTwoOrderId();
             $key = $isPartialOrder
-                ? IdempotencyKey::fulfil($twoOrderId, IdempotencyKey::recordRef('shipment', $shipment, []))
+                ? IdempotencyKey::fulfil($twoOrderId, IdempotencyKey::recordRef('shipment', $shipment, [], $payload))
                 : IdempotencyKey::fulfil($twoOrderId);
             $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                 "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
