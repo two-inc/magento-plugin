@@ -36,8 +36,12 @@ class SoleTraderTokenKeyTest extends TestCase
         $a = $this->keysFor(...$first);
         $b = $this->keysFor(...$second);
 
-        $this->assertMatchesRegularExpression('/^delegation_token_\d*_[0-9a-f]{12}$/', $a[0], $description);
-        $this->assertMatchesRegularExpression('/^autofill_token_\d*_[0-9a-f]{12}$/', $a[1], $description);
+        if ($first[0] === null || $first[1] === '') {
+            $this->assertSame([null, null], $a, $description);
+            return;
+        }
+        $this->assertMatchesRegularExpression('/^delegation_token_\d+_[0-9a-f]{12}$/', (string)$a[0], $description);
+        $this->assertMatchesRegularExpression('/^autofill_token_\d+_[0-9a-f]{12}$/', (string)$a[1], $description);
         if ($same) {
             $this->assertSame($a, $b, $description);
         } else {
@@ -52,20 +56,21 @@ class SoleTraderTokenKeyTest extends TestCase
     {
         return [
             'one buyer, one session' => [[42, 'sess-a'], [42, 'sess-a'], true, 'a retry in one session reuses its keys'],
-            'two buyers, no quote id' => [[null, 'sess-a'], [null, 'sess-b'], false, 'buyers whose quote has no id still get keys of their own'],
+            'no quote id' => [[null, 'sess-a'], [null, 'sess-b'], false, 'a buyer whose quote has no id sends no key, never a shared one'],
+            'no session id' => [[42, ''], [43, ''], false, 'a buyer with no session sends no key, never a shared one'],
             'one quote, a new session' => [[42, 'sess-a'], [42, 'sess-b'], false, 'a new session mints under new keys'],
         ];
     }
 
     /**
-     * @return list<string> the keys of the delegation and autofill requests
+     * @return list<string|null> the keys of the delegation and autofill requests
      */
     private function keysFor(?int $quoteId, string $sessionId): array
     {
         $keys = [];
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('withIdempotencyKey')->willReturnCallback(
-            function (string $key) use (&$keys, &$adapter): Adapter {
+            function (?string $key) use (&$keys, &$adapter): Adapter {
                 $keys[] = $key;
                 return $adapter;
             }

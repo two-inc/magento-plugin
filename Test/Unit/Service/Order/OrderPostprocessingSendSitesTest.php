@@ -58,7 +58,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
     /** @var int */
     private $sent = 0;
 
-    /** @var list<string> the Idempotency-Keys the adapter was handed */
+    /** @var list<string|null> the Idempotency-Keys the adapter was handed */
     private $keys = [];
 
     /**
@@ -107,7 +107,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
      * (TWO-26658), set before its body is built.
      */
     #[\PHPUnit\Framework\Attributes\DataProvider('keySites')]
-    public function testEachRequestSendsTheKeyOfItsOperation(string $site, string $pattern, string $description): void
+    public function testEachRequestSendsTheKeyOfItsOperation(string $site, ?string $pattern, string $description): void
     {
         try {
             $this->{$site}();
@@ -116,23 +116,27 @@ class OrderPostprocessingSendSitesTest extends TestCase
         }
 
         $this->assertCount(1, $this->keys, $description . ': one key per request');
-        $this->assertMatchesRegularExpression($pattern, $this->keys[0], $description);
+        if ($pattern === null) {
+            $this->assertNull($this->keys[0], $description);
+            return;
+        }
+        $this->assertMatchesRegularExpression($pattern, (string)$this->keys[0], $description);
     }
 
     /**
-     * @return list<array{0: string, 1: string, 2: string}>
+     * @return list<array{0: string, 1: string|null, 2: string}>
      */
     public static function keySites(): array
     {
         return [
-            ['orderIntent', '/^order_intent__[0-9a-f]{12}$/', 'order intent: the quote and a hash of the intent'],
-            ['authorize', '/^create_100000042_\d+$/', 'order create: the reserved order id and the attempt reference'],
-            ['addressUpdate', '/^edit_remote-order-id_[0-9a-f]{12}$/', 'order edit: the order and a hash of the edit'],
+            ['orderIntent', null, 'order intent with no quote id: no key rather than one buyers could share'],
+            ['authorize', '/^create_100000042_[0-9a-f]{16}$/', 'order create: the reserved order id and the attempt reference'],
+            ['addressUpdate', '/^edit_remote-order-id_[0-9a-f]{12}$/', 'order edit: the order and a hash of the previous key and the edit'],
             ['confirm', '/^confirm_remote-order-id$/', 'confirm: the order'],
             ['captureInvoice', '/^fulfil_remote-order-id$/', 'whole fulfil on an invoice: the order'],
             ['captureShipment', '/^fulfil_remote-order-id$/', 'whole fulfil on a shipment: the order'],
             ['captureStatus', '/^fulfil_remote-order-id$/', 'fulfil on a status change: the order'],
-            ['refund', '/^refund_remote-order-id_creditmemo-n1$/', 'refund: the first credit memo'],
+            ['refund', '/^refund_remote-order-id_creditmemo-n1-[0-9a-f]{12}$/', 'refund: the first credit memo and its amount and lines'],
             ['void', '/^cancel_remote-order-id$/', 'cancel from an admin Void: the order'],
             ['orderCancel', '/^cancel_remote-order-id$/', 'cancel of the Magento order: the order'],
             ['buyerCancel', '/^cancel_remote-order-id$/', 'buyer cancel: the order'],
@@ -369,7 +373,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
     {
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('withLogSubject')->willReturnSelf();
-        $adapter->method('withIdempotencyKey')->willReturnCallback(function (string $key) use (&$adapter): Adapter {
+        $adapter->method('withIdempotencyKey')->willReturnCallback(function (?string $key) use (&$adapter): Adapter {
             $this->keys[] = $key;
             return $adapter;
         });

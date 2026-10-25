@@ -58,6 +58,9 @@ class Two extends AbstractMethod
 {
     public const CODE = 'two_payment';
 
+    /** Payment information key: Two's refunded total after the last refund (TWO-26658). */
+    public const REFUNDED_TOTAL = 'two_refunded_total';
+
     public const STATUS_NEW = 'two_new';
     public const STATUS_FAILED = 'two_failed';
     public const STATUS_PENDING = 'pending_two_payment';
@@ -323,7 +326,7 @@ class Two extends AbstractMethod
         $additionalInformation = $payment->getAdditionalInformation();
         $this->assertOrganizationNumberPresent($additionalInformation);
         $this->urlCookie->delete();
-        $orderReference = (string)rand();
+        $orderReference = bin2hex(random_bytes(8));
 
         $payload = $this->compositeOrder->execute(
             $order,
@@ -885,7 +888,10 @@ class Two extends AbstractMethod
                     ];
                 }
                 $key = $isPartialOrder
-                    ? IdempotencyKey::fulfil($twoOrderId, IdempotencyKey::recordRef('invoice', $createdInvoice, $invoices))
+                    ? IdempotencyKey::fulfil(
+                        $twoOrderId,
+                        IdempotencyKey::recordRef('invoice', $createdInvoice, $invoices, $payload)
+                    )
                     : IdempotencyKey::fulfil($twoOrderId);
                 $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                     '/v1/order/' . $twoOrderId . '/fulfillments',
@@ -912,6 +918,14 @@ class Two extends AbstractMethod
                     throw new LocalizedException($error);
                 }
                 break;
+            }
+
+            if ($isPartialOrder && isset($response['fulfilled_order']['id'])
+                && !IdempotencyKey::fulfilmentIsNew((string)$response['fulfilled_order']['id'], $invoices)
+            ) {
+                $this->failReplayed($order, $twoOrderId, 'fulfil', [
+                    'fulfilled_order_id' => $response['fulfilled_order']['id'],
+                ]);
             }
 
             if (!empty($response) && isset($response['fulfilled_order']['id'])) {
@@ -1013,14 +1027,14 @@ class Two extends AbstractMethod
         );
         // Keyed on the credit memo, so a retry of this refund is deduplicated
         // and every other refund is not (TWO-26658).
-        $creditmemo = $payment->getCreditmemo();
+        $memos = $order->getCreditmemosCollection() ?: [];
         $key = IdempotencyKey::refund(
             (string)$twoOrderId,
-            IdempotencyKey::recordRef('creditmemo', $creditmemo, $order->getCreditmemosCollection() ?: [])
+            IdempotencyKey::recordRef('creditmemo', $payment->getCreditmemo(), $memos, $payload)
         );
         $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $this->orderPostprocessor->process(
+            $sent = $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_REFUND,
                 $payload,
                 [
@@ -1053,6 +1067,8 @@ class Two extends AbstractMethod
             );
         }
 
+        $this->assertRefundApplied($order, $payment, $memos, (float)($sent['amount'] ?? 0), $response, $key);
+
         $comment = __(
             'Successfully refunded order with %1 for order ID: %2. Refund reference: %3',
             $this->brandRegistry->getProductName(),
@@ -1065,6 +1081,65 @@ class Two extends AbstractMethod
             'amount' => $response['amount'],
         ]);
         return $this;
+    }
+
+    /**
+     * Two answers a refund with the order's refunded total. When that total
+     * did not move by what this refund sent, Two answered with an earlier
+     * refund stored under this key, and this one did not happen (TWO-26658).
+     * An order refunded before the total was recorded has nothing to compare
+     * on its first refund since.
+     *
+     * @param iterable<object> $memos
+     * @throws LocalizedException
+     */
+    private function assertRefundApplied(
+        Order $order,
+        InfoInterface $payment,
+        iterable $memos,
+        float $sent,
+        array $response,
+        string $key
+    ): void {
+        $stored = $payment->getAdditionalInformation(self::REFUNDED_TOTAL);
+        $before = $stored !== null && $stored !== ''
+            ? (float)$stored
+            : (IdempotencyKey::savedCount($memos) === 0 ? 0.0 : null);
+        $after = abs((float)$response['amount']);
+        if (IdempotencyKey::refundApplied($before, $after, $sent) === false) {
+            $this->failReplayed($order, (string)$order->getTwoOrderId(), 'refund', [
+                'idempotency_key' => $key,
+                'sent' => $sent,
+                'refunded_total_before' => $before,
+                'refunded_total_after' => $after,
+            ]);
+        }
+        $payment->setAdditionalInformation(self::REFUNDED_TOTAL, $after);
+    }
+
+    /**
+     * Two answered a refund or a partial fulfil with an earlier operation
+     * stored under the same Idempotency-Key, so this one did not happen:
+     * stop it being recorded as done, and say so on the order and in the
+     * error log (TWO-26658).
+     *
+     * @throws LocalizedException
+     */
+    private function failReplayed(Order $order, string $twoOrderId, string $operation, array $detail): void
+    {
+        $message = __(
+            '%1 answered this %2 with an earlier one, so it was not applied. '
+            . 'Please contact support with order ID %3.',
+            $this->brandRegistry->getProductName(),
+            $operation === 'refund' ? __('refund') : __('fulfilment'),
+            $twoOrderId
+        );
+        $this->addOrderComment($order, $message);
+        $this->logRepository->addErrorLog(
+            sprintf('[idempotency-replay] %s on %s', $operation, $twoOrderId),
+            $detail
+        );
+        throw new LocalizedException($message);
     }
 
     /**

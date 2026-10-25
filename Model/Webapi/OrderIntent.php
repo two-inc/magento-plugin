@@ -122,7 +122,11 @@ class OrderIntent implements OrderIntentInterface
                 $body['merchant_short_name'] = $identity['short_name'];
             }
 
-            $key = IdempotencyKey::build('order_intent', (string)$quote->getId(), IdempotencyKey::hash($body));
+            // No quote id, no key: one buyer's key must never be another's.
+            $quoteId = (string)$quote->getId();
+            $key = $quoteId !== ''
+                ? IdempotencyKey::build('order_intent', $quoteId, IdempotencyKey::hash($body))
+                : null;
 
             return $this->envelope(
                 $this->adapter->withIdempotencyKey($key)->executeWithStatus(

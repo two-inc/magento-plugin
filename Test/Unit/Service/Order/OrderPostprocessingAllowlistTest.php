@@ -30,6 +30,9 @@ class OrderPostprocessingAllowlistTest extends TestCase
 
         $this->assertCount(10, $sends, 'a send was added or removed: extend sendSites() in the send-sites test too');
         foreach ($sends as [$where, $endpoint, $body]) {
+            // Keeping the hook's output to check the answer against is still
+            // sending it straight from the hook (TWO-26658).
+            $body = (string)preg_replace('/^\$\w+\s*=\s*/', '', $body);
             $this->assertStringStartsWith(self::PROCESS, $body, $where . ' sends without the hook');
             $this->assertStringContainsString(
                 'Postprocessing::' . $this->expectedType($endpoint) . ',',

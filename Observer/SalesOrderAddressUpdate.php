@@ -28,6 +28,9 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class SalesOrderAddressUpdate implements ObserverInterface
 {
+    /** Payment information key: the Idempotency-Key of the last edit Two accepted (TWO-26658). */
+    public const LAST_EDIT_KEY = 'two_last_edit_idempotency_key';
+
     /** The order states and statuses in which the API accepts an edit; it refuses any other. */
     private const EDITABLE_STATES = ['UNVERIFIED', 'VERIFIED', 'CONFIRMED'];
     private const EDITABLE_STATUSES = ['APPROVED', 'REJECTED', 'DECLINED'];
@@ -135,11 +138,11 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     return $this;
                 }
                 $payload = $this->composeEdit($order);
-                // Named by the edit composed, so a re-save of the same edit
-                // reuses its key (TWO-26658).
-                $response = $this->apiAdapter->withIdempotencyKey(
-                    IdempotencyKey::edit((string)$order->getTwoOrderId(), $payload)
-                )->execute(
+                // Chained on the last accepted edit's key, so a retry of this
+                // edit repeats its key and every other edit gets its own
+                // (TWO-26658).
+                $key = IdempotencyKey::edit((string)$order->getTwoOrderId(), $this->lastEditKey($order), $payload);
+                $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                     '/v1/order/' . $order->getTwoOrderId(),
                     $this->orderPostprocessor->process(
                         Postprocessing::REQUEST_ORDER_UPDATE,
@@ -157,6 +160,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     );
                     $this->messageManager->addWarningMessage((string)$error);
                 } else {
+                    $order->getPayment()->setAdditionalInformation(self::LAST_EDIT_KEY, $key);
                     $comment = __('Order edit request was accepted by %1', $this->brandRegistry->getProductName());
                     $order->addStatusToHistory($order->getStatus(), $comment->render());
                 }
@@ -172,6 +176,21 @@ class SalesOrderAddressUpdate implements ObserverInterface
             $order->save();
         }
         return $this;
+    }
+
+    /**
+     * The key of the last edit Two accepted, or the order create's key
+     * before the first, which the order's increment id and stored attempt
+     * reference rebuild.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     */
+    private function lastEditKey($order): string
+    {
+        $stored = $order->getPayment()->getAdditionalInformation()[self::LAST_EDIT_KEY] ?? null;
+        return is_string($stored) && $stored !== ''
+            ? $stored
+            : IdempotencyKey::create((string)$order->getIncrementId(), (string)$order->getTwoOrderReference());
     }
 
     /**

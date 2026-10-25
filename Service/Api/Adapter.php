@@ -89,11 +89,10 @@ class Adapter
     /**
      * This adapter, sending the given Idempotency-Key on its writes
      * (TWO-26658). Build the key with IdempotencyKey, which names one logical
-     * operation. A write sent without one carries a key derived from its
-     * method, endpoint and body. A copy, so the shared adapter is left as it
-     * was.
+     * operation; null sends none, for a caller missing the id its key needs.
+     * A copy, so the shared adapter is left as it was.
      */
-    public function withIdempotencyKey(string $key): self
+    public function withIdempotencyKey(?string $key): self
     {
         $copy = clone $this;
         $copy->idempotencyKey = $key;
@@ -152,6 +151,52 @@ class Adapter
         ?string $modeOverride = null,
         ?int $timeoutSeconds = null
     ): array {
+        $outcome = $this->dispatch(
+            $endpoint,
+            $payload,
+            $method,
+            $storeId,
+            $apiKeyOverride,
+            $modeOverride,
+            $timeoutSeconds
+        );
+        $this->logOrderWriteKey($method, $endpoint, $outcome['status']);
+        return $outcome;
+    }
+
+    /**
+     * Records the Idempotency-Key of every order write (create, edit,
+     * confirm, fulfil, cancel, refund) whatever its outcome and the debug
+     * setting, so support can find the request on Two's side (TWO-26658).
+     * Status 0 is a call with no HTTP exchange.
+     */
+    private function logOrderWriteKey(string $method, string $endpoint, int $status): void
+    {
+        if ($this->idempotencyKey === null
+            || strtoupper($method) === 'GET'
+            || !preg_match('#^/v1/order(/|$)#', $endpoint)
+        ) {
+            return;
+        }
+        $this->logRepository->addDebugLog(
+            sprintf('[idempotency-key] %s %s key=%s status=%d', $method, $endpoint, $this->idempotencyKey, $status),
+            null
+        );
+    }
+
+    /**
+     * @see self::executeWithStatus()
+     * @return array{status: int, body: array}
+     */
+    private function dispatch(
+        string $endpoint,
+        array $payload,
+        string $method,
+        ?int $storeId,
+        ?string $apiKeyOverride,
+        ?string $modeOverride,
+        ?int $timeoutSeconds
+    ): array {
         $call = null;
         $idempotencyKey = null;
         try {
@@ -167,9 +212,8 @@ class Adapter
                 'Content-Type' => 'application/json',
                 'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
             ];
-            if (strtoupper($method) !== 'GET') {
-                $idempotencyKey = $this->idempotencyKey
-                    ?? IdempotencyKey::build(strtolower($method), $endpoint, IdempotencyKey::hash($body));
+            if (strtoupper($method) !== 'GET' && $this->idempotencyKey !== null) {
+                $idempotencyKey = $this->idempotencyKey;
                 $headers[IdempotencyKey::HEADER] = $idempotencyKey;
             }
             // Case-folded: a differently-cased X-API-Key is a conflict, not

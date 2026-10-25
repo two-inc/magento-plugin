@@ -127,23 +127,23 @@ class SoleTrader implements SoleTraderInterface
      * store. Null falls the call back to the default scope.
      */
     /**
-     * A token request is named by the buyer's quote and session (TWO-26658):
-     * a token is a credential for that buyer, so no two buyers may share a
-     * key, even where the quote cannot be read.
+     * A token request is named by the buyer's quote and session (TWO-26658).
+     * A token is a credential for that buyer, so without both there is no
+     * key at all rather than one another buyer could share.
      */
-    private function tokenKey(string $operation): string
+    private function tokenKey(string $operation): ?string
     {
         try {
             $quoteId = (string)$this->checkoutSession->getQuote()->getId();
         } catch (\Throwable $e) {
             $quoteId = '';
         }
+        $sessionId = (string)$this->checkoutSession->getSessionId();
+        if ($quoteId === '' || $sessionId === '') {
+            return null;
+        }
 
-        return IdempotencyKey::build(
-            $operation,
-            $quoteId,
-            IdempotencyKey::hash((string)$this->checkoutSession->getSessionId())
-        );
+        return IdempotencyKey::build($operation, $quoteId, IdempotencyKey::hash($sessionId));
     }
 
     private function quoteStoreId(): ?int

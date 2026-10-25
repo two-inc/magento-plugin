@@ -47,7 +47,7 @@ class RecordingAdapter extends Adapter
     }
 
     /** Records the key on the next call rather than handing out a copy. */
-    public function withIdempotencyKey(string $key): Adapter
+    public function withIdempotencyKey(?string $key): Adapter
     {
         $this->nextIdempotencyKey = $key;
         return $this;

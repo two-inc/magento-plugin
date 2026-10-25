@@ -261,29 +261,39 @@ logical operation: the same on every retry of it, different for every other.
 `Service\Api\IdempotencyKey` builds it from durable ids only, never time or
 randomness held only in memory, as `<operation>_<ids>[_<short hash>]`,
 lowercase ASCII, at most 100 characters (the API's limit). Callers set it with
-`Adapter::withIdempotencyKey()`, a copy like `withLogSubject()`; a write sent
-without one gets a key from its method, endpoint and body.
+`Adapter::withIdempotencyKey()`, a copy like `withLogSubject()`. A key is never
+shared between buyers: a caller missing the id its key needs (an order intent
+with no quote id, a token request with no quote or session) passes null and
+sends no key, and the adapter has no fallback of its own.
 
 | Operation | Key |
 | --- | --- |
-| Order create | `create_<increment id>_<attempt reference>`: the reference is minted per checkout attempt and stored as `two_order_reference` |
-| Order edit | `edit_<two order id>_<hash of the composed edit>` |
+| Order create | `create_<increment id>_<attempt reference>`: the reference is 16 random hex characters minted per checkout attempt and stored as `two_order_reference` |
+| Order edit | `edit_<two order id>_<hash of the last accepted edit's key, or the create key, plus the composed edit>`; an accepted edit stores its key in the payment information |
 | Confirm | `confirm_<two order id>`, shared by its one retry |
 | Whole fulfil | `fulfil_<two order id>`, on an invoice, a shipment or a status change |
-| Partial fulfil | `fulfil_<two order id>_shipment-<id>` or `_invoice-<id>` |
+| Partial fulfil | `fulfil_<two order id>_shipment-<id>` or `_invoice-<id>` (`_invoice-n<N>-<hash>` while unsaved) |
 | Cancel | `cancel_<two order id>` |
-| Refund | `refund_<two order id>_creditmemo-<id>` |
+| Refund | `refund_<two order id>_creditmemo-<id>` (`_creditmemo-n<N>-<hash>` while unsaved) |
 | Order intent | `order_intent_<quote id>_<hash of the intent>` |
 | Other writes | `fee_quote_<hash>`, `merchant_rates_<hash>`, `delegation_token_<quote id>_<hash of the session id>`, `autofill_token_<quote id>_<hash of the session id>`, `invoice_upload_<invoice id>_<index>` |
 
 Magento calls the payment method before it saves the invoice or credit memo,
 so an unsaved one is named by its place among the order's saved records of
-that kind (`creditmemo-n3`): the same on a retry, which saves nothing, and
-different from every record saved before it.
+that kind plus a hash of its amount and lines (`creditmemo-n3-<hash>`): the
+same on a retry, which saves nothing, and different for any other record.
+Two answers a key it has seen with the operation it stored, so the answer is
+checked: a refund's refunded total must move by the amount sent (the total is
+kept in the payment information as `two_refunded_total`), and a partial
+fulfil must name a fulfilled order no saved invoice records. Otherwise the
+operation is refused with an order comment, an `[idempotency-replay]` error
+log line and an exception, so Magento never records it as done.
 
-The key is logged with the request: in the refusal line, the transport
-failure line and, with debug logging on, the request headers (where it is not
-redacted). `idempotency-key` and `x-idempotency-key` are reserved names in the
+Every order write (create, edit, confirm, fulfil, cancel, refund) logs an
+`[idempotency-key]` line with its key and HTTP status (0 for no answer)
+whatever the outcome and the debug setting. The key also appears in the
+refusal and transport failure lines and, with debug logging on, in the
+request headers (where it is not redacted). `idempotency-key` and `x-idempotency-key` are reserved names in the
 custom-header table, so no stored row can replace or shadow it.
 
 **A browser-ticked header must already be allowed by the API on

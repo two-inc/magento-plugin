@@ -86,7 +86,10 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             });
 
         $this->apiAdapter = $this->createMock(Adapter::class);
-        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnCallback(function (?string $key): Adapter {
+            $this->sentKeys[] = $key;
+            return $this->apiAdapter;
+        });
         // One state lookup, then the edit itself.
         $this->apiAdapter->expects($this->exactly(2))
             ->method('execute')
@@ -126,6 +129,32 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
 
     /** @var AddressUpdateOrderStub */
     private $order;
+
+    /** @var list<string|null> the Idempotency-Keys the edits were sent with */
+    private $sentKeys = [];
+
+    /**
+     * An accepted edit records its key on the order, and the next edit is
+     * chained on it: the same edit sent again after one was accepted is a
+     * new operation with its own key (TWO-26658).
+     */
+    public function testAnAcceptedEditRecordsItsKeyAndTheNextEditChainsOnIt(): void
+    {
+        $this->order = $this->makeOrder($this->storedInformationWithoutOptionalFields());
+        $event = new AddressUpdateObserverStub(new AddressUpdateEventStub(42));
+
+        $this->makeObserverService()->execute($event);
+        $this->makeObserverService()->execute($event);
+
+        [$first, $second] = $this->sentKeys;
+        $this->assertMatchesRegularExpression('/^edit_remote-order-id_[0-9a-f]{12}$/', (string)$first, 'an edit is keyed on its order');
+        $this->assertNotSame($first, $second, 'the same edit after an accepted one is a new operation');
+        $this->assertSame(
+            $second,
+            $this->order->getPayment()->getAdditionalInformation()[SalesOrderAddressUpdate::LAST_EDIT_KEY] ?? null,
+            'the accepted edit records its key on the order'
+        );
+    }
 
     private function makeOrder(array $additionalInformation): AddressUpdateOrderStub
     {
@@ -357,6 +386,13 @@ class AddressUpdatePaymentStub
     public function getAdditionalInformation(): array
     {
         return $this->additionalInformation;
+    }
+
+    /** Where an accepted edit records its Idempotency-Key (TWO-26658). */
+    public function setAdditionalInformation(string $key, $value): self
+    {
+        $this->additionalInformation[$key] = $value;
+        return $this;
     }
 
     public function getMethodInstance(): AddressUpdateMethodInstanceStub

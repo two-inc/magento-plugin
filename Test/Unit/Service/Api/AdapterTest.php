@@ -691,6 +691,11 @@ class AdapterTest extends TestCase
         }
 
         $this->adapter->withIdempotencyKey('op_abc')->execute($endpoint, ['buyer' => 'Jane Doe'], $method, 1);
+        // The key line every order write logs is its own test's subject.
+        $logged = array_values(array_filter(
+            $logged,
+            static fn(array $entry) => strpos((string)$entry[1], '[idempotency-key]') !== 0
+        ));
 
         if ($level === null) {
             $this->assertSame([], $logged, $description);
@@ -760,8 +765,7 @@ class AdapterTest extends TestCase
 
     /**
      * A subject and a key name one call chain only: the shared adapter, which
-     * every other caller is handed, keeps logging without a subject and sends
-     * the key derived from its own call.
+     * every other caller is handed, keeps logging without either.
      */
     public function testALogSubjectLeavesTheSharedAdapterAlone(): void
     {
@@ -777,11 +781,7 @@ class AdapterTest extends TestCase
         $this->adapter->withIdempotencyKey('create_42_1');
         $this->adapter->execute('/v1/order', [], 'POST', 1);
 
-        $derived = IdempotencyKey::build('post', '/v1/order', IdempotencyKey::hash(''));
-        $this->assertSame(
-            ['POST /v1/order refused by the API (HTTP 400) [Idempotency-Key: ' . $derived . ']: Order is invalid'],
-            $messages
-        );
+        $this->assertSame(['POST /v1/order refused by the API (HTTP 400): Order is invalid'], $messages);
     }
 
     /**
@@ -880,13 +880,59 @@ class AdapterTest extends TestCase
      */
     public static function idempotencyKeyCases(): array
     {
-        $derived = IdempotencyKey::build('put', '/v1/order/abc', IdempotencyKey::hash('{"a":1}'));
-
         return [
             'keyed write' => ['POST', '/v1/order/abc/refund', [], 'refund_abc_creditmemo-7', [], 'refund_abc_creditmemo-7', 'a write sends the key its caller named'],
-            'unkeyed write' => ['PUT', '/v1/order/abc', ['a' => 1], null, [], $derived, 'a write with no named key sends one built from its method, endpoint and body'],
+            'unkeyed write' => ['PUT', '/v1/order/abc', ['a' => 1], null, [], null, 'a write whose caller has no key for it sends none, never a shared fallback'],
             'read' => ['GET', '/v1/order/abc', [], 'ignored', [], null, 'a read sends no key'],
             'custom header' => ['POST', '/v1/order', [], 'create_1_2', ['idempotency-key' => 'merchant'], 'create_1_2', 'a stored custom header cannot replace the key'],
+        ];
+    }
+    /**
+     * Given an order write with a key; When it succeeds, is refused or gets
+     * no answer, with debug logging off; Then its key is logged beside it.
+     * Reads, intents and unkeyed calls log no key line (TWO-26658).
+     */
+    #[DataProvider('keyLogCases')]
+    public function testEveryOrderWriteLogsItsKeyWhateverTheOutcome(
+        string $method,
+        string $endpoint,
+        ?string $key,
+        int $status,
+        ?string $expected,
+        string $description
+    ): void {
+        $this->configRepository->method('isDebugMode')->willReturn(false);
+        if ($status === 0) {
+            $this->curl->method('post')->willThrowException(new \RuntimeException('timed out'));
+        }
+        $this->curl->method('getStatus')->willReturn($status);
+        $this->curl->method('getBody')->willReturn('{"amount":"1.00"}');
+        $lines = [];
+        $this->logRepository->method('addDebugLog')->willReturnCallback(function ($type) use (&$lines) {
+            if (strpos((string)$type, '[idempotency-key]') === 0) {
+                $lines[] = $type;
+            }
+        });
+
+        $this->adapter->withIdempotencyKey($key)->execute($endpoint, ['amount' => '1.00'], $method, 1);
+
+        $this->assertSame($expected === null ? [] : [$expected], $lines, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string|null, 3: int, 4: string|null, 5: string}>
+     */
+    public static function keyLogCases(): array
+    {
+        $refund = '/v1/order/abc/refund';
+        return [
+            'accepted' => ['POST', $refund, 'refund_abc_creditmemo-7', 201, "[idempotency-key] POST $refund key=refund_abc_creditmemo-7 status=201", 'an accepted write logs its key'],
+            'refused' => ['POST', $refund, 'refund_abc_creditmemo-7', 422, "[idempotency-key] POST $refund key=refund_abc_creditmemo-7 status=422", 'a refused write logs its key'],
+            'no answer' => ['POST', $refund, 'refund_abc_creditmemo-7', 0, "[idempotency-key] POST $refund key=refund_abc_creditmemo-7 status=0", 'a write with no answer logs its key'],
+            'edit' => ['PUT', '/v1/order/abc', 'edit_abc_123456789abc', 200, '[idempotency-key] PUT /v1/order/abc key=edit_abc_123456789abc status=200', 'an edit logs its key'],
+            'intent' => ['POST', '/v1/order_intent', 'order_intent_1_abc', 200, null, 'an intent is not an order write'],
+            'fee quote' => ['POST', '/v1/pricing/order/fee', 'fee_quote_abc', 200, null, 'a fee quote is not an order write'],
+            'unkeyed' => ['POST', $refund, null, 201, null, 'a write with no key has none to log'],
         ];
     }
 }

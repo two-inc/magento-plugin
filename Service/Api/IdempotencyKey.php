@@ -33,10 +33,15 @@ final class IdempotencyKey
         return self::build('create', $incrementId, $attemptReference);
     }
 
-    /** An order edit is named by what it sends. */
-    public static function edit(string $twoOrderId, array $body): string
+    /**
+     * An order edit is chained on the key of the last edit Two accepted (the
+     * create key before the first), plus what it sends: every edit in a
+     * sequence gets its own key, even one returning to an earlier state,
+     * while a retry of an edit repeats its key.
+     */
+    public static function edit(string $twoOrderId, string $previousKey, array $body): string
     {
-        return self::build('edit', $twoOrderId, self::hash($body));
+        return self::build('edit', $twoOrderId, self::hash([$previousKey, $body]));
     }
 
     public static function confirm(string $twoOrderId): string
@@ -68,27 +73,68 @@ final class IdempotencyKey
     /**
      * A shop record (credit memo, invoice) as `<kind>-<entity id>`. Magento
      * calls the payment method before it saves the record, so an unsaved one
-     * is named by its place among the order's saved records of that kind,
-     * `<kind>-n<count + 1>`: the same until it is saved, as a retry after a
-     * refusal or a failure saves nothing, and different from every record
-     * saved before it.
+     * is named by its place among the order's saved records of that kind plus
+     * a hash of what it sends, `<kind>-n<count + 1>-<hash>`: the same on a
+     * retry, which saves nothing, and different for a record saved before it
+     * or one with other amounts or lines in the same place.
      *
      * @param object|null $record a Magento model with getId()
      * @param iterable<object> $siblings the order's records of the same kind
+     * @param array $content the composed request for the record
      */
-    public static function recordRef(string $kind, $record, iterable $siblings): string
+    public static function recordRef(string $kind, $record, iterable $siblings, array $content): string
     {
         $id = $record !== null ? (string)$record->getId() : '';
         if ($id !== '') {
             return $kind . '-' . $id;
         }
+        return $kind . '-n' . (self::savedCount($siblings) + 1) . '-' . self::hash($content);
+    }
+
+    /**
+     * @param iterable<object> $records
+     */
+    public static function savedCount(iterable $records): int
+    {
         $saved = 0;
-        foreach ($siblings as $sibling) {
-            if ((string)$sibling->getId() !== '') {
+        foreach ($records as $record) {
+            if ((string)$record->getId() !== '') {
                 $saved++;
             }
         }
-        return $kind . '-n' . ($saved + 1);
+        return $saved;
+    }
+
+    /**
+     * Whether Two's refunded total moved by what this refund sent. Two
+     * answers a refund with the order's refunded total, so a replay of
+     * another refund under this key leaves the total where it was. Null when
+     * the total before it is unknown (an order refunded before the total was
+     * recorded), which cannot be checked.
+     */
+    public static function refundApplied(?float $totalBefore, float $totalAfter, float $sent): ?bool
+    {
+        if ($totalBefore === null) {
+            return null;
+        }
+        return abs((abs($totalAfter) - abs($totalBefore)) - abs($sent)) < 0.005;
+    }
+
+    /**
+     * Whether the fulfilment Two answered with is new to the order: a replay
+     * of an earlier partial fulfil names a fulfilled order one of the
+     * order's saved invoices already records.
+     *
+     * @param iterable<object> $invoices the order's invoices, with getId() and getTransactionId()
+     */
+    public static function fulfilmentIsNew(string $fulfilledOrderId, iterable $invoices): bool
+    {
+        foreach ($invoices as $invoice) {
+            if ((string)$invoice->getId() !== '' && (string)$invoice->getTransactionId() === $fulfilledOrderId) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

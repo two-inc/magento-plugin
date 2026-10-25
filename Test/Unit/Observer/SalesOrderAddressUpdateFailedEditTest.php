@@ -146,6 +146,13 @@ class FailedEditPaymentStub
         return $this->additionalInformation;
     }
 
+    /** Where an accepted edit records its Idempotency-Key (TWO-26658). */
+    public function setAdditionalInformation(string $key, $value): self
+    {
+        $this->additionalInformation[$key] = $value;
+        return $this;
+    }
+
     public function getMethodInstance(): Two
     {
         return $this->methodInstance;
