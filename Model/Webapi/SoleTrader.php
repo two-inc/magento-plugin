@@ -93,9 +93,7 @@ class SoleTrader implements SoleTraderInterface
 
     private function getDelegationToken(?int $storeId): string
     {
-        $delegateResponse = $this->adapter->withIdempotencyKey(
-            IdempotencyKey::build('delegation_token', $this->quoteId())
-        )->execute(
+        $delegateResponse = $this->adapter->withIdempotencyKey($this->tokenKey('delegation_token'))->execute(
             self::DELEGATION_TOKEN_ENDPOINT,
             ['create_proposal' => true, 'read_current_business' => true],
             'POST',
@@ -110,9 +108,7 @@ class SoleTrader implements SoleTraderInterface
 
     private function getAutofillToken(?int $storeId)
     {
-        $autofillResponse = $this->adapter->withIdempotencyKey(
-            IdempotencyKey::build('autofill_token', $this->quoteId())
-        )->execute(
+        $autofillResponse = $this->adapter->withIdempotencyKey($this->tokenKey('autofill_token'))->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
             ['read_current_buyer' => true, 'write_current_buyer' => true],
             'POST',
@@ -130,14 +126,24 @@ class SoleTrader implements SoleTraderInterface
      * /rest/V1/... with no store code, so the request resolves to the default
      * store. Null falls the call back to the default scope.
      */
-    /** The buyer's quote, which names a token request (TWO-26658). */
-    private function quoteId(): string
+    /**
+     * A token request is named by the buyer's quote and session (TWO-26658):
+     * a token is a credential for that buyer, so no two buyers may share a
+     * key, even where the quote cannot be read.
+     */
+    private function tokenKey(string $operation): string
     {
         try {
-            return (string)$this->checkoutSession->getQuote()->getId();
+            $quoteId = (string)$this->checkoutSession->getQuote()->getId();
         } catch (\Throwable $e) {
-            return '';
+            $quoteId = '';
         }
+
+        return IdempotencyKey::build(
+            $operation,
+            $quoteId,
+            IdempotencyKey::hash((string)$this->checkoutSession->getSessionId())
+        );
     }
 
     private function quoteStoreId(): ?int

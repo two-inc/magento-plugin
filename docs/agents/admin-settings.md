@@ -274,7 +274,7 @@ without one gets a key from its method, endpoint and body.
 | Cancel | `cancel_<two order id>` |
 | Refund | `refund_<two order id>_creditmemo-<id>` |
 | Order intent | `order_intent_<quote id>_<hash of the intent>` |
-| Other writes | `fee_quote_<hash>`, `merchant_rates_<hash>`, `delegation_token_<quote id>`, `autofill_token_<quote id>`, `invoice_upload_<invoice id>_<index>` |
+| Other writes | `fee_quote_<hash>`, `merchant_rates_<hash>`, `delegation_token_<quote id>_<hash of the session id>`, `autofill_token_<quote id>_<hash of the session id>`, `invoice_upload_<invoice id>_<index>` |
 
 Magento calls the payment method before it saves the invoice or credit memo,
 so an unsaved one is named by its place among the order's saved records of
