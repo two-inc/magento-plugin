@@ -283,8 +283,9 @@ so an unsaved one is named by its place among the order's saved records of
 that kind plus a hash of its amount and lines (`creditmemo-n3-<hash>`): the
 same on a retry, which saves nothing, and different for any other record.
 Two answers a key it has seen with the operation it stored, so the answer is
-checked: a refund's refunded total must move by the amount sent (the total is
-kept in the payment information as `two_refunded_total`), and a partial
+checked: a refund's refunded total must rise by at least the amount sent (a
+larger rise is a concurrent or outside refund; the total is kept in the
+payment information as `two_refunded_total`), and a partial
 fulfil must name a fulfilled order no saved invoice records. Otherwise the
 operation is refused with an order comment, an `[idempotency-replay]` error
 log line and an exception, so Magento never records it as done.

@@ -87,10 +87,11 @@ class IdempotencyKeyTest extends TestCase
     public static function refundAnswers(): array
     {
         return [
-            'first refund' => [0.0, 40.0, 40.0, true, 'the total moved by the amount sent'],
-            'second refund' => [40.0, 65.5, 25.5, true, 'the total is cumulative across refunds'],
-            'replayed' => [40.0, 40.0, 25.5, false, 'a total that did not move is a replay'],
-            'replayed, different amount' => [0.0, 40.0, 30.0, false, 'a total that moved by another amount is a replay'],
+            'exact rise' => [40.0, 65.5, 25.5, true, 'a total that rose by the amount sent passes'],
+            'first refund' => [0.0, 40.0, 40.0, true, 'the total is cumulative from zero'],
+            'larger rise' => [40.0, 80.0, 25.5, true, 'a larger rise is a concurrent or outside refund, and this one still happened'],
+            'no rise' => [40.0, 40.0, 25.5, false, 'a total that did not move is a replay'],
+            'smaller rise' => [0.0, 30.0, 40.0, false, 'a total that rose by less than the amount sent is a replay of a smaller refund'],
             'negative totals' => [-40.0, -65.5, 25.5, true, 'the sign Two answers with does not matter'],
             'unknown before' => [null, 65.5, 25.5, null, 'with no recorded total there is nothing to check'],
         ];

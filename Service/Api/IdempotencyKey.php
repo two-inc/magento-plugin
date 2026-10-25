@@ -106,18 +106,19 @@ final class IdempotencyKey
     }
 
     /**
-     * Whether Two's refunded total moved by what this refund sent. Two
-     * answers a refund with the order's refunded total, so a replay of
-     * another refund under this key leaves the total where it was. Null when
-     * the total before it is unknown (an order refunded before the total was
-     * recorded), which cannot be checked.
+     * Whether Two's refunded total rose by at least what this refund sent.
+     * Two answers a refund with the order's refunded total, so a replay of
+     * an earlier refund under this key leaves it short of that rise. A
+     * larger rise is a refund made at the same time or outside Magento, and
+     * this one still happened. Null when the total before it is unknown (an
+     * order refunded before the total was recorded), which cannot be checked.
      */
     public static function refundApplied(?float $totalBefore, float $totalAfter, float $sent): ?bool
     {
         if ($totalBefore === null) {
             return null;
         }
-        return abs((abs($totalAfter) - abs($totalBefore)) - abs($sent)) < 0.005;
+        return abs($totalAfter) - abs($totalBefore) >= abs($sent) - 0.005;
     }
 
     /**

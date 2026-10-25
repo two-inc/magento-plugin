@@ -1127,16 +1127,22 @@ class Two extends AbstractMethod
      */
     private function failReplayed(Order $order, string $twoOrderId, string $operation, array $detail): void
     {
-        $message = __(
-            '%1 answered this %2 with an earlier one, so it was not applied. '
-            . 'Please contact support with order ID %3.',
-            $this->brandRegistry->getProductName(),
-            $operation === 'refund' ? __('refund') : __('fulfilment'),
-            $twoOrderId
-        );
+        $message = $operation === 'refund'
+            ? __(
+                '%1 returned an earlier refund for this key; this refund was not applied. '
+                . 'Please contact support with order ID %2.',
+                $this->brandRegistry->getProductName(),
+                $twoOrderId
+            )
+            : __(
+                '%1 returned an earlier fulfilment for this key; this fulfilment was not applied. '
+                . 'Please contact support with order ID %2.',
+                $this->brandRegistry->getProductName(),
+                $twoOrderId
+            );
         $this->addOrderComment($order, $message);
         $this->logRepository->addErrorLog(
-            sprintf('[idempotency-replay] %s on %s', $operation, $twoOrderId),
+            sprintf('[idempotency-replay] %s', $message->render()),
             $detail
         );
         throw new LocalizedException($message);
