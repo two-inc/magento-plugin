@@ -30,6 +30,7 @@ class TwoCancelTest extends TestCase
     public function testCancelRequestsSent(string $action, int $expectedCalls, string $description): void
     {
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->expects($this->exactly($expectedCalls))
             ->method('execute')
             ->with('/v1/order/two-order-id/cancel', [], 'POST', 1)

@@ -97,6 +97,7 @@ class TwoAuthorizeLoggingTest extends TestCase
             $this->subjects[] = $subject;
             return $adapter;
         });
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturn($response);
         $surcharge = $this->createMock(SurchargeCalculator::class);
         $surcharge->method('isSurchargeResolvable')->willReturn(true);

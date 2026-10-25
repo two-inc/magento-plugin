@@ -243,6 +243,7 @@ class FulfilmentInvoiceTest extends TestCase
     private function adapter(): Adapter
     {
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = []): array {
             $this->fulfils++;
             $this->payloads[] = $payload;

@@ -58,6 +58,9 @@ class OrderPostprocessingSendSitesTest extends TestCase
     /** @var int */
     private $sent = 0;
 
+    /** @var list<string|null> the Idempotency-Keys the adapter was handed */
+    private $keys = [];
+
     /**
      * @dataProvider sendSites
      */
@@ -96,6 +99,47 @@ class OrderPostprocessingSendSitesTest extends TestCase
             ['void', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from an admin Void'],
             ['orderCancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel when the Magento order is cancelled'],
             ['buyerCancel', Hook::REQUEST_CANCEL, 'buyer_cancel', '/v1/order/{id}/cancel', 'cancel when the buyer abandons Two\'s checkout'],
+        ];
+    }
+
+    /**
+     * Every order request names its operation in one Idempotency-Key
+     * (TWO-26658), set before its body is built.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('keySites')]
+    public function testEachRequestSendsTheKeyOfItsOperation(string $site, ?string $pattern, string $description): void
+    {
+        try {
+            $this->{$site}();
+        } catch (StopAtSend $stop) {
+            // The recorder ends the path where the request would go out.
+        }
+
+        $this->assertCount(1, $this->keys, $description . ': one key per request');
+        if ($pattern === null) {
+            $this->assertNull($this->keys[0], $description);
+            return;
+        }
+        $this->assertMatchesRegularExpression($pattern, (string)$this->keys[0], $description);
+    }
+
+    /**
+     * @return list<array{0: string, 1: string|null, 2: string}>
+     */
+    public static function keySites(): array
+    {
+        return [
+            ['orderIntent', null, 'order intent with no quote id: no key rather than one buyers could share'],
+            ['authorize', '/^create_100000042_[0-9a-f]{16}$/', 'order create: the reserved order id and the attempt reference'],
+            ['addressUpdate', '/^edit_remote-order-id_[0-9a-f]{12}$/', 'order edit: the order and a hash of the previous key and the edit'],
+            ['confirm', '/^confirm_remote-order-id$/', 'confirm: the order'],
+            ['captureInvoice', '/^fulfil_remote-order-id$/', 'whole fulfil on an invoice: the order'],
+            ['captureShipment', '/^fulfil_remote-order-id$/', 'whole fulfil on a shipment: the order'],
+            ['captureStatus', '/^fulfil_remote-order-id$/', 'fulfil on a status change: the order'],
+            ['refund', '/^refund_remote-order-id_creditmemo-n1-[0-9a-f]{12}$/', 'refund: the first credit memo and its amount and lines'],
+            ['void', '/^cancel_remote-order-id$/', 'cancel from an admin Void: the order'],
+            ['orderCancel', '/^cancel_remote-order-id$/', 'cancel of the Magento order: the order'],
+            ['buyerCancel', '/^cancel_remote-order-id$/', 'buyer cancel: the order'],
         ];
     }
 
@@ -312,6 +356,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $order->setData('store_id', 1);
         $order->setData('two_order_reference', 'reference');
         $order->setData('entity_id', 7);
+        $order->setData('increment_id', '100000042');
         $order->setData('two_order_id', 'remote-order-id');
         $order->setData('order_currency_code', 'EUR');
         $order->setData('status', 'complete');
@@ -328,6 +373,10 @@ class OrderPostprocessingSendSitesTest extends TestCase
     {
         $adapter = $this->createMock(Adapter::class);
         $adapter->method('withLogSubject')->willReturnSelf();
+        $adapter->method('withIdempotencyKey')->willReturnCallback(function (?string $key) use (&$adapter): Adapter {
+            $this->keys[] = $key;
+            return $adapter;
+        });
         // A GET is a read with no body, so the hook does not cover it.
         $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = [], string $method = 'POST'): array {
             if ($method !== 'GET') {

@@ -29,6 +29,7 @@ class FeeRatesProviderTest extends TestCase
     protected function setUp(): void
     {
         $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
     }
 
     /**
@@ -290,6 +291,7 @@ class FeeRatesProviderTest extends TestCase
             }
         );
         $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
         $this->apiAdapter->expects($this->exactly(1))->method('execute')->willReturn(self::RATES);
         $provider = $this->build($cooling);
 

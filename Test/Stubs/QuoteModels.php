@@ -93,6 +93,12 @@ namespace Magento\Quote\Model {
     if (!class_exists(Quote::class, false)) {
         class Quote implements \Magento\Quote\Api\Data\CartInterface
         {
+            /** The quote id, which names an order intent's Idempotency-Key (TWO-26658). */
+            public function getId()
+            {
+                return null;
+            }
+
             public function getGrandTotal()
             {
                 return null;

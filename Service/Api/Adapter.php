@@ -55,6 +55,9 @@ class Adapter
     /** @var string what the next call is for ("quote 42"), named in its refusal line */
     private $logSubject = '';
 
+    /** @var string|null the Idempotency-Key the next write sends, see self::withIdempotencyKey() */
+    private $idempotencyKey = null;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -80,6 +83,19 @@ class Adapter
     {
         $copy = clone $this;
         $copy->logSubject = $subject;
+        return $copy;
+    }
+
+    /**
+     * This adapter, sending the given Idempotency-Key on its writes
+     * (TWO-26658). Build the key with IdempotencyKey, which names one logical
+     * operation; null sends none, for a caller missing the id its key needs.
+     * A copy, so the shared adapter is left as it was.
+     */
+    public function withIdempotencyKey(?string $key): self
+    {
+        $copy = clone $this;
+        $copy->idempotencyKey = $key;
         return $copy;
     }
 
@@ -135,7 +151,54 @@ class Adapter
         ?string $modeOverride = null,
         ?int $timeoutSeconds = null
     ): array {
+        $outcome = $this->dispatch(
+            $endpoint,
+            $payload,
+            $method,
+            $storeId,
+            $apiKeyOverride,
+            $modeOverride,
+            $timeoutSeconds
+        );
+        $this->logOrderWriteKey($method, $endpoint, $outcome['status']);
+        return $outcome;
+    }
+
+    /**
+     * Records the Idempotency-Key of every order write (create, edit,
+     * confirm, fulfil, cancel, refund) whatever its outcome and the debug
+     * setting, so support can find the request on Two's side (TWO-26658).
+     * Status 0 is a call with no HTTP exchange.
+     */
+    private function logOrderWriteKey(string $method, string $endpoint, int $status): void
+    {
+        if ($this->idempotencyKey === null
+            || strtoupper($method) === 'GET'
+            || !preg_match('#^/v1/order(/|$)#', $endpoint)
+        ) {
+            return;
+        }
+        $this->logRepository->addDebugLog(
+            sprintf('[idempotency-key] %s %s key=%s status=%d', $method, $endpoint, $this->idempotencyKey, $status),
+            null
+        );
+    }
+
+    /**
+     * @see self::executeWithStatus()
+     * @return array{status: int, body: array}
+     */
+    private function dispatch(
+        string $endpoint,
+        array $payload,
+        string $method,
+        ?int $storeId,
+        ?string $apiKeyOverride,
+        ?string $modeOverride,
+        ?int $timeoutSeconds
+    ): array {
         $call = null;
+        $idempotencyKey = null;
         try {
             $mode = $modeOverride
                 ?: ($storeId !== null ? $this->configRepository->getMode($storeId) : null);
@@ -149,6 +212,10 @@ class Adapter
                 'Content-Type' => 'application/json',
                 'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
             ];
+            if (strtoupper($method) !== 'GET' && $this->idempotencyKey !== null) {
+                $idempotencyKey = $this->idempotencyKey;
+                $headers[IdempotencyKey::HEADER] = $idempotencyKey;
+            }
             // Case-folded: a differently-cased X-API-Key is a conflict, not
             // a second header.
             $ours = array_change_key_case($headers, CASE_LOWER);
@@ -234,11 +301,11 @@ class Adapter
                     $decoded = json_decode($body, true) ?: [];
                     $decoded['http_status'] = $result->status;
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
-                    $this->logRefusal($method, $endpoint, $result, $this->logSubject);
+                    $this->logRefusal($method, $endpoint, $result, $this->logSubject, $idempotencyKey);
                     return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logExchange($method, $endpoint, $payload, $call, $result, $storeId);
-                    $this->logRefusal($method, $endpoint, $result, $this->logSubject);
+                    $this->logRefusal($method, $endpoint, $result, $this->logSubject, $idempotencyKey);
                     // This used to throw a LocalizedException, which this
                     // method's own catch-all immediately converted into
                     // exactly the array below minus `http_status` — the
@@ -267,7 +334,12 @@ class Adapter
             // Logged here because the anonymous proxy routes replace this body:
             // the transport detail is for the merchant's log, not the caller.
             $this->logRepository->addErrorLog(
-                sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
+                sprintf(
+                    '[api-transport-failure] endpoint=%s method=%s%s',
+                    $endpoint,
+                    $method,
+                    $idempotencyKey !== null ? ' idempotency_key=' . $idempotencyKey : ''
+                ),
                 $exception->getMessage()
             );
             $this->logTransportFailure($method, $endpoint, $payload, $call, $exception, $storeId);
@@ -286,10 +358,16 @@ class Adapter
      * a body, whatever the debug setting: the merchant needs to know why an
      * order, edit, fulfilment, refund, cancel or confirm did not go through.
      * An intent is refused routinely (no order yet, a rate limit), so it is
-     * only a warning. Reads (GET) are not order requests.
+     * only a warning. Reads (GET) are not order requests. The line names the
+     * Idempotency-Key sent, so support can find the request on Two's side.
      */
-    private function logRefusal(string $method, string $endpoint, ApiResult $result, string $subject): void
-    {
+    private function logRefusal(
+        string $method,
+        string $endpoint,
+        ApiResult $result,
+        string $subject,
+        ?string $idempotencyKey
+    ): void {
         if ($result->status < 400
             || strtoupper($method) === 'GET'
             || !preg_match('#^/v1/order(_intent)?(/|$)#', $endpoint)
@@ -297,11 +375,12 @@ class Adapter
             return;
         }
         $message = sprintf(
-            '%s %s refused by the API (HTTP %d)%s: %s',
+            '%s %s refused by the API (HTTP %d)%s%s: %s',
             $method,
             $endpoint,
             $result->status,
             $subject !== '' ? ' for ' . $subject : '',
+            $idempotencyKey !== null ? ' [Idempotency-Key: ' . $idempotencyKey . ']' : '',
             $this->rejectionReason($result->body)
         );
         if (strpos($endpoint, '/v1/order_intent') === 0) {
@@ -414,7 +493,7 @@ class Adapter
 
     /**
      * The request as logged: its URL, its headers with the API key and every
-     * custom header value redacted, and its body.
+     * custom header value redacted (the Idempotency-Key is kept), and its body.
      */
     private function requestContext(array $payload, ?ApiCall $call, ?int $storeId): array
     {
