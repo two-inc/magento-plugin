@@ -44,9 +44,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* The label, the mark and the name are separate items, so a button too
-       narrow for all three on one line moves the name under "Buy with" as a
-       whole rather than squeezing each item into its own column. */
+    /* The label, the mark and the name are separate items. Without wrapping,
+       a button too narrow for all three on one line shrinks each item into a
+       column of its own (TWO-26656); with it, the name moves under "Buy with"
+       as a whole. */
     flex-wrap: wrap;
     gap: 2px 8px;
     width: 100%;
@@ -71,13 +72,14 @@
     cursor: pointer;
     /* Long brand names and long translations wrap rather than spilling out of
        the button; "Buy with" plus a brand name is short in English and is not
-       in every locale this ships in. They wrap between words: break-word
-       splits a word only when it alone is wider than the button, where
-       `anywhere` (TWO-26656) let flex shrink each item to one character and
-       broke "Buy with" mid-word at the width of Add to Cart. */
+       in every locale this ships in. They still break between words first:
+       `anywhere` splits a word only when it alone is wider than the button.
+       It is `anywhere` rather than `break-word` because only `anywhere` lets
+       a flex item shrink below its longest word, so a long single-word name
+       wraps inside the border instead of running past it. */
     text-align: center;
     white-space: normal;
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
 }
 
 /* Paired with Add to Cart rather than spanning the column: Luma sizes its own
@@ -106,9 +108,13 @@
     outline-offset: 2px;
 }
 
-/* Sized only by a brand's own rule, so a brand with no mark leaves no gap. */
+/* Sized only by a brand's own rule, so a brand with no mark leaves no gap.
+   The negative end margin cancels the column gap the empty span would
+   otherwise add, which would set "Buy with" 4px off centre when the name
+   wraps beneath it. A brand that paints a mark puts the margin back. */
 .two-product-express__mark {
     flex: 0 0 auto;
+    margin-inline-end: -8px;
     background-repeat: no-repeat;
     background-position: center;
     background-size: contain;
@@ -117,6 +123,7 @@
 .two-product-express[data-brand='two_payment'] .two-product-express__mark {
     width: 44px;
     height: 22px;
+    margin-inline-end: 0;
     background-image: url('../images/logo.svg');
 }
 
