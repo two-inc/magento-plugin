@@ -14,6 +14,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Cache\Type\TwoGateway;
 use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 
 /**
  * The merchant's fee per payment term, with the last retrieved set kept as a
@@ -146,15 +147,18 @@ class FeeRatesProvider
     private function fetch(array $terms, string $buyerCountry, ?int $storeId, ?string $scope = null): array
     {
         try {
-            $response = $this->apiAdapter->execute(
+            $request = [
+                'buyer_country_code' => $buyerCountry,
+                // TODO: no admin recourse-pricing config exists yet.
+                'recourse_pricing' => false,
+                // payout_schedule intentionally omitted: no admin override exists yet.
+                'net_terms' => array_values($terms),
+            ];
+            $response = $this->apiAdapter->withIdempotencyKey(
+                IdempotencyKey::build('merchant_rates', IdempotencyKey::hash($request))
+            )->execute(
                 self::ENDPOINT,
-                [
-                    'buyer_country_code' => $buyerCountry,
-                    // TODO: no admin recourse-pricing config exists yet.
-                    'recourse_pricing' => false,
-                    // payout_schedule intentionally omitted: no admin override exists yet.
-                    'net_terms' => array_values($terms),
-                ],
+                $request,
                 'POST',
                 AdminScope::isStoreScope($scope) ? $storeId : null,
                 $this->configRepository->getApiKey($storeId, $scope),

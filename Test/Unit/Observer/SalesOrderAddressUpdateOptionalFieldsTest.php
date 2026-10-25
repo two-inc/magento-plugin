@@ -86,6 +86,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             });
 
         $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
         // One state lookup, then the edit itself.
         $this->apiAdapter->expects($this->exactly(2))
             ->method('execute')

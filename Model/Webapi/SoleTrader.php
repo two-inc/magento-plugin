@@ -10,6 +10,7 @@ namespace Two\Gateway\Model\Webapi;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\RateLimiter;
 
@@ -92,7 +93,9 @@ class SoleTrader implements SoleTraderInterface
 
     private function getDelegationToken(?int $storeId): string
     {
-        $delegateResponse = $this->adapter->execute(
+        $delegateResponse = $this->adapter->withIdempotencyKey(
+            IdempotencyKey::build('delegation_token', $this->quoteId())
+        )->execute(
             self::DELEGATION_TOKEN_ENDPOINT,
             ['create_proposal' => true, 'read_current_business' => true],
             'POST',
@@ -107,7 +110,9 @@ class SoleTrader implements SoleTraderInterface
 
     private function getAutofillToken(?int $storeId)
     {
-        $autofillResponse = $this->adapter->execute(
+        $autofillResponse = $this->adapter->withIdempotencyKey(
+            IdempotencyKey::build('autofill_token', $this->quoteId())
+        )->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
             ['read_current_buyer' => true, 'write_current_buyer' => true],
             'POST',
@@ -125,6 +130,16 @@ class SoleTrader implements SoleTraderInterface
      * /rest/V1/... with no store code, so the request resolves to the default
      * store. Null falls the call back to the default scope.
      */
+    /** The buyer's quote, which names a token request (TWO-26658). */
+    private function quoteId(): string
+    {
+        try {
+            return (string)$this->checkoutSession->getQuote()->getId();
+        } catch (\Throwable $e) {
+            return '';
+        }
+    }
+
     private function quoteStoreId(): ?int
     {
         try {

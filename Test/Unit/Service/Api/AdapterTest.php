@@ -16,6 +16,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\ApiTranslator\PassthroughTrait;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Psr\Log\LoggerInterface;
 
 class AdapterTest extends TestCase
@@ -689,7 +690,7 @@ class AdapterTest extends TestCase
             );
         }
 
-        $this->adapter->execute($endpoint, ['buyer' => 'Jane Doe'], $method, 1);
+        $this->adapter->withIdempotencyKey('op_abc')->execute($endpoint, ['buyer' => 'Jane Doe'], $method, 1);
 
         if ($level === null) {
             $this->assertSame([], $logged, $description);
@@ -698,7 +699,7 @@ class AdapterTest extends TestCase
         $this->assertSame(
             [[
                 $level,
-                "$method $endpoint refused by the API (HTTP 422): "
+                "$method $endpoint refused by the API (HTTP 422) [Idempotency-Key: op_abc]: "
                     . 'SCHEMA_ERROR; Invalid order; buyer.email: field required',
                 null,
             ]],
@@ -737,11 +738,13 @@ class AdapterTest extends TestCase
             '{"error_code":"ORDER_INVALID","error_message":"Order is invalid","error_trace_id":"trace-1"}'
         );
         $this->refusalLogger->expects($this->once())->method('error')->with(
-            'POST /v1/order refused by the API (HTTP 400) for quote 42: ORDER_INVALID; Order is invalid [Trace ID: trace-1]'
+            'POST /v1/order refused by the API (HTTP 400) for quote 42 [Idempotency-Key: create_42_1]: '
+                . 'ORDER_INVALID; Order is invalid [Trace ID: trace-1]'
         );
         $this->logRepository->expects($this->never())->method('addErrorLog');
 
-        $this->adapter->withLogSubject('quote 42')->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1);
+        $this->adapter->withLogSubject('quote 42')->withIdempotencyKey('create_42_1')
+            ->execute('/v1/order', ['buyer' => 'Jane Doe'], 'POST', 1);
     }
 
     public function testRefusalReasonFallsBackToTheRawBody(): void
@@ -750,14 +753,15 @@ class AdapterTest extends TestCase
         $this->curl->method('getStatus')->willReturn(502);
         $this->curl->method('getBody')->willReturn('Bad gateway');
         $this->refusalLogger->expects($this->once())->method('error')
-            ->with('POST /v1/order/abc/refund refused by the API (HTTP 502): Bad gateway');
+            ->with('POST /v1/order/abc/refund refused by the API (HTTP 502) [Idempotency-Key: refund_abc_creditmemo-7]: Bad gateway');
 
-        $this->adapter->execute('/v1/order/abc/refund', [], 'POST', 1);
+        $this->adapter->withIdempotencyKey('refund_abc_creditmemo-7')->execute('/v1/order/abc/refund', [], 'POST', 1);
     }
 
     /**
-     * A subject names one call chain only: the shared adapter, which every
-     * other caller is handed, keeps logging without one.
+     * A subject and a key name one call chain only: the shared adapter, which
+     * every other caller is handed, keeps logging without a subject and sends
+     * the key derived from its own call.
      */
     public function testALogSubjectLeavesTheSharedAdapterAlone(): void
     {
@@ -770,9 +774,14 @@ class AdapterTest extends TestCase
         });
 
         $this->adapter->withLogSubject('quote 42');
+        $this->adapter->withIdempotencyKey('create_42_1');
         $this->adapter->execute('/v1/order', [], 'POST', 1);
 
-        $this->assertSame(['POST /v1/order refused by the API (HTTP 400): Order is invalid'], $messages);
+        $derived = IdempotencyKey::build('post', '/v1/order', IdempotencyKey::hash(''));
+        $this->assertSame(
+            ['POST /v1/order refused by the API (HTTP 400) [Idempotency-Key: ' . $derived . ']: Order is invalid'],
+            $messages
+        );
     }
 
     /**
@@ -831,6 +840,53 @@ class AdapterTest extends TestCase
         return [
             'debug off' => [false, 0],
             'debug on' => [true, 1],
+        ];
+    }
+    /**
+     * Given a call with or without a key from its caller; When it is sent;
+     * Then a write carries exactly one Idempotency-Key, under that name and
+     * never X-Idempotency-Key, and a read carries none (TWO-26658).
+     *
+     * @param array<string, mixed> $payload
+     * @param array<string, string> $custom
+     */
+    #[DataProvider('idempotencyKeyCases')]
+    public function testEveryWriteCarriesOneIdempotencyKey(
+        string $method,
+        string $endpoint,
+        array $payload,
+        ?string $given,
+        array $custom,
+        ?string $expected,
+        string $description
+    ): void {
+        $this->configRepository->method('getCustomHeaders')->willReturn($custom);
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+        $headers = [];
+        $this->curl->method('addHeader')->willReturnCallback(function ($name, $value) use (&$headers) {
+            $headers[] = [$name, $value];
+        });
+
+        ($given !== null ? $this->adapter->withIdempotencyKey($given) : $this->adapter)
+            ->execute($endpoint, $payload, $method);
+
+        $sent = array_values(array_filter($headers, static fn(array $h) => stripos($h[0], 'idempotency') !== false));
+        $this->assertSame($expected === null ? [] : [['Idempotency-Key', $expected]], $sent, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: array, 3: string|null, 4: array, 5: string|null, 6: string}>
+     */
+    public static function idempotencyKeyCases(): array
+    {
+        $derived = IdempotencyKey::build('put', '/v1/order/abc', IdempotencyKey::hash('{"a":1}'));
+
+        return [
+            'keyed write' => ['POST', '/v1/order/abc/refund', [], 'refund_abc_creditmemo-7', [], 'refund_abc_creditmemo-7', 'a write sends the key its caller named'],
+            'unkeyed write' => ['PUT', '/v1/order/abc', ['a' => 1], null, [], $derived, 'a write with no named key sends one built from its method, endpoint and body'],
+            'read' => ['GET', '/v1/order/abc', [], 'ignored', [], null, 'a read sends no key'],
+            'custom header' => ['POST', '/v1/order', [], 'create_1_2', ['idempotency-key' => 'merchant'], 'create_1_2', 'a stored custom header cannot replace the key'],
         ];
     }
 }

@@ -77,6 +77,7 @@ class SalesOrderAddressUpdateTermTest extends TestCase
 
         $sent = null;
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturnCallback(
             function (string $endpoint, array $payload = [], string $method = 'POST') use (&$sent, $apiError): array {
                 if ($method === 'GET') {

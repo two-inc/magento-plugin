@@ -29,6 +29,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Observer\InvoiceRegisteredOffline;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 
 /**
  * Fulfils a Two order with Two when it reaches a configured fulfil-on status
@@ -260,7 +261,10 @@ class StatusFulfilment
         }
 
         $this->attempts->markAttempted((int)$order->getEntityId());
-        $response = $this->apiAdapter->execute(
+        // The order's one fulfilment, whole or net of refunds (TWO-26658).
+        $response = $this->apiAdapter->withIdempotencyKey(
+            IdempotencyKey::fulfil((string)$order->getTwoOrderId())
+        )->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_CAPTURE,

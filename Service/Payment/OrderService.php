@@ -28,6 +28,7 @@ use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Exception\TwoRefusalException;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -249,8 +250,10 @@ class OrderService
         // here, because a cancel can race a confirm still in flight
         // (TWO-26150). Each attempt is its own request and fires the hook.
         $result = ['status' => 0, 'body' => []];
+        // Both attempts are one operation, so they share a key (TWO-26658).
+        $adapter = $this->apiAdapter->withIdempotencyKey(IdempotencyKey::confirm((string)$order->getTwoOrderId()));
         for ($attempt = 1; $attempt <= 2; $attempt++) {
-            $result = $this->apiAdapter->executeWithStatus(
+            $result = $adapter->executeWithStatus(
                 "/v1/order/" . $order->getTwoOrderId() . "/confirm",
                 $this->orderPostprocessor->process(
                     Postprocessing::REQUEST_ORDER_CONFIRM,
@@ -301,7 +304,9 @@ class OrderService
      */
     public function cancelTwoOrder(Order $order, string $trigger = 'cancel'): bool
     {
-        $response = $this->apiAdapter->execute(
+        $response = $this->apiAdapter->withIdempotencyKey(
+            IdempotencyKey::cancel((string)$order->getTwoOrderId())
+        )->execute(
             '/v1/order/' . $order->getTwoOrderId() . '/cancel',
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_CANCEL,

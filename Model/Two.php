@@ -33,6 +33,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -333,7 +334,11 @@ class Two extends AbstractMethod
         // Create order
         // The adapter logs a refusal with the API's reason (TWO-26259,
         // TWO-26340); the quote identifies the order, which has no id yet.
-        $response = $this->apiAdapter->withLogSubject('quote ' . $order->getQuoteId())->execute(
+        // One key per checkout attempt: the reference is minted per attempt
+        // and stored on the order (TWO-26658).
+        $adapter = $this->apiAdapter->withLogSubject('quote ' . $order->getQuoteId())
+            ->withIdempotencyKey(IdempotencyKey::create((string)$order->getIncrementId(), $orderReference));
+        $response = $adapter->execute(
             '/v1/order',
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_ORDER_CREATE,
@@ -795,7 +800,7 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         try {
             $twoOrderId = $order->getTwoOrderId();
-            $response = $this->apiAdapter->execute(
+            $response = $this->apiAdapter->withIdempotencyKey(IdempotencyKey::cancel((string)$twoOrderId))->execute(
                 '/v1/order/' . $order->getTwoOrderId() . '/cancel',
                 $this->orderPostprocessor->process(
                     Postprocessing::REQUEST_CANCEL,
@@ -860,6 +865,7 @@ class Two extends AbstractMethod
 
             $payload = [];
             $createdInvoice = null;
+            $invoices = [];
             $isWholeOrderInvoiced = $this->isWholeOrderInvoiced($order);
             $isPartialOrder = !$isWholeOrderInvoiced;
             while (true) {
@@ -878,7 +884,10 @@ class Two extends AbstractMethod
                         'partial' => $this->composeCapture->execute($createdInvoice),
                     ];
                 }
-                $response = $this->apiAdapter->execute(
+                $key = $isPartialOrder
+                    ? IdempotencyKey::fulfil($twoOrderId, IdempotencyKey::recordRef('invoice', $createdInvoice, $invoices))
+                    : IdempotencyKey::fulfil($twoOrderId);
+                $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                     '/v1/order/' . $twoOrderId . '/fulfillments',
                     $this->orderPostprocessor->process(
                         Postprocessing::REQUEST_CAPTURE,
@@ -1002,7 +1011,14 @@ class Two extends AbstractMethod
             (float)$amount,
             $order
         );
-        $response = $this->apiAdapter->execute(
+        // Keyed on the credit memo, so a retry of this refund is deduplicated
+        // and every other refund is not (TWO-26658).
+        $creditmemo = $payment->getCreditmemo();
+        $key = IdempotencyKey::refund(
+            (string)$twoOrderId,
+            IdempotencyKey::recordRef('creditmemo', $creditmemo, $order->getCreditmemosCollection() ?: [])
+        );
+        $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
             "/v1/order/" . $twoOrderId . "/refund",
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_REFUND,

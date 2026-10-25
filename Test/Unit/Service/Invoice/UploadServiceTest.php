@@ -58,6 +58,7 @@ class UploadServiceTest extends TestCase
     {
         $this->settingsProvider = $this->createMock(SettingsProvider::class);
         $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
         $this->invoicePdf = $this->createMock(InvoicePdf::class);
         $this->orderRepository = $this->createMock(OrderRepositoryInterface::class);
         $this->historyFactory = $this->createMock(HistoryFactory::class);

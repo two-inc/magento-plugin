@@ -15,6 +15,7 @@ use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
@@ -134,7 +135,11 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     return $this;
                 }
                 $payload = $this->composeEdit($order);
-                $response = $this->apiAdapter->execute(
+                // Named by the edit composed, so a re-save of the same edit
+                // reuses its key (TWO-26658).
+                $response = $this->apiAdapter->withIdempotencyKey(
+                    IdempotencyKey::edit((string)$order->getTwoOrderId(), $payload)
+                )->execute(
                     '/v1/order/' . $order->getTwoOrderId(),
                     $this->orderPostprocessor->process(
                         Postprocessing::REQUEST_ORDER_UPDATE,

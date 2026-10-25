@@ -170,6 +170,7 @@ class OrderServiceRefusalTest extends TestCase
             return array_shift($responses["$method $endpoint"]) ?? [];
         };
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturnCallback(
             fn (string $endpoint, array $payload = [], string $method = 'POST'): array => $next($method, $endpoint)
         );

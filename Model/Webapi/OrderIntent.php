@@ -12,6 +12,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -121,8 +122,10 @@ class OrderIntent implements OrderIntentInterface
                 $body['merchant_short_name'] = $identity['short_name'];
             }
 
+            $key = IdempotencyKey::build('order_intent', (string)$quote->getId(), IdempotencyKey::hash($body));
+
             return $this->envelope(
-                $this->adapter->executeWithStatus(
+                $this->adapter->withIdempotencyKey($key)->executeWithStatus(
                     self::ENDPOINT,
                     $this->orderPostprocessor->process(
                         OrderPostprocessingInterface::REQUEST_ORDER_INTENT,

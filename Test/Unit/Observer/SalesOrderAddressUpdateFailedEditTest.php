@@ -54,6 +54,7 @@ class SalesOrderAddressUpdateFailedEditTest extends TestCase
 
         // The adapter's shape for a non-2xx response whose body is not JSON.
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturn(['http_status' => $status]);
 
         $composeOrder = $this->getMockBuilder(ComposeOrder::class)
