@@ -217,6 +217,16 @@ chip's click path, not the focus rule. The popover is a separate matter — its
 single-open invariant is enforced at open time and does not depend on these
 rules.
 
+## A blocked signup popup leaves a link, for sole-trader mode only
+
+When the browser blocks the popup, `sole-trader.js` asks the host to render a
+link under the company field that retries the launch. The link belongs to
+sole-trader mode: while it is up the flow watches the identity, and any other
+mode (the Registered company or Enter manually chip, or a country change that
+resets the mode) takes it down. A second Sole trader click that is still blocked
+keeps it, and a successful launch or an adoption withdraws it as before
+(TWO-26775). The rule lives in the shared flow, so no host repeats it.
+
 ## The company relay resolves an ISO 3166-2 region to the store's own
 
 The company lookup answers an address region as an ISO 3166-2 code ("ES-M",

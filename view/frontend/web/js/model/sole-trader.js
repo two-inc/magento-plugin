@@ -154,6 +154,8 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
+        /** The identity subscription that withdraws the blocked-signup link, held while it is up. */
+        this._promptModeWatch = null;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
@@ -722,10 +724,26 @@
      * popup was blocked. The host renders it, because the two checkouts anchor
      * and style it differently.
      *
+     * The link belongs to sole-trader mode alone, so while it is up any other
+     * mode, from a chip or a country reset, takes it down (TWO-26775).
+     *
      * @param {boolean} show
      */
     SoleTrader.prototype.showSignupPrompt = function (show) {
         this.host().renderSignupPrompt(!!show, () => this.retrySignup());
+        if (show && !this._promptModeWatch) {
+            this._promptModeWatch = this.identity().subscribe(() => {
+                if (!this.identity().isSoleTrader()) this.showSignupPrompt(false);
+            });
+        } else if (!show) {
+            this.stopPromptModeWatch();
+        }
+    };
+
+    SoleTrader.prototype.stopPromptModeWatch = function () {
+        if (!this._promptModeWatch) return;
+        this._promptModeWatch.dispose();
+        this._promptModeWatch = null;
     };
 
     /**
@@ -786,6 +804,7 @@
             this._messageHandler = null;
         }
         this.stopReturnToCheckoutWatcher();
+        this.stopPromptModeWatch();
         liveFlows.delete(this);
         // The refresh is the page's: it outlives this flow while another still
         // holds the pair.
