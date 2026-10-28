@@ -87,7 +87,8 @@ describe('the blocked-popup link follows the mode (TWO-26775)', () => {
         ['Registered company takes it down', (c) => c.registeredMode({ openDropdown: true }), false],
         ['Enter manually takes it down', (c) => c.manualEntryMode(), false],
         ['a country change that resets the mode takes it down', (c) => c.onCountryChanged('fr'), false],
-        ['a second Sole trader click, still blocked, keeps it', (c) => c.soleTraderMode(), true]
+        ['a second Sole trader click, still blocked, keeps it', (c) => c.soleTraderMode(), true],
+        ['an identity write that stays in sole trader keeps it', (c) => c.identity().addressNotice('x'), true]
     ])('%s', async (description, act, visible) => {
         const { component, prompt } = await startBlocked();
         expect(prompt.visible).toBe(true);
