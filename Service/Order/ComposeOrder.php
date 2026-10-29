@@ -115,7 +115,7 @@ class ComposeOrder extends OrderService
         $payload = [
             'billing_address' => $this->getAddress($order, $additionalData, 'billing'),
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
-            'buyer' => $this->getBuyer($order, $additionalData),
+            ...($isEdit ? [] : ['buyer' => $this->getBuyer($order, $additionalData)]),
             'currency' => $order->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($order)),
             ...$amounts,
@@ -123,23 +123,9 @@ class ComposeOrder extends OrderService
             'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
-            'merchant_urls' => [
-                'merchant_confirmation_url' => $this->url->getUrl(
-                    'two/payment/confirm',
-                    ['_two_order_reference' => base64_encode($orderReference)]
-                ),
-                'merchant_cancel_order_url' => $this->url->getUrl(
-                    'two/payment/cancel',
-                    ['_two_order_reference' => base64_encode($orderReference)]
-                ),
-                // merchant_edit_order_url is deliberately absent: the plugin
-                // exposes no merchant-side edit-order route, so there is no
-                // URL to put here.
-                'merchant_order_verification_failed_url' => $this->url->getUrl(
-                    'two/payment/verificationfailed',
-                    ['_two_order_reference' => base64_encode($orderReference)]
-                ),
-            ],
+            // Create only: Two's API does not define these on the edit request and
+            // ignores them, so an edit no longer sends them.
+            ...($isEdit ? [] : ['merchant_urls' => $this->getMerchantUrls($orderReference)]),
         ];
 
         // "Validate tax subtotals" off: the key is left out, not sent as null.
@@ -171,8 +157,11 @@ class ComposeOrder extends OrderService
             'buyer_project' => $additionalData['project'] ?? '',
             'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
             'order_note' => $additionalData['orderNote'] ?? '',
-            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
         ];
+        if (!$isEdit) {
+            // Create only: Two's API does not define vendor_name on the edit request.
+            $optionalFields['vendor_name'] = $this->configRepository->getVendorSiteName($storeId);
+        }
         foreach ($optionalFields as $key => $value) {
             // $additionalData comes straight from the checkout request, and the
             // observer that stores it only checks that the top level is an
@@ -213,6 +202,33 @@ class ComposeOrder extends OrderService
         }
 
         return $payload;
+    }
+
+    /**
+     * The merchant URLs the create request carries.
+     *
+     * @param string $orderReference
+     * @return array
+     */
+    private function getMerchantUrls(string $orderReference): array
+    {
+        return [
+            'merchant_confirmation_url' => $this->url->getUrl(
+                'two/payment/confirm',
+                ['_two_order_reference' => base64_encode($orderReference)]
+            ),
+            'merchant_cancel_order_url' => $this->url->getUrl(
+                'two/payment/cancel',
+                ['_two_order_reference' => base64_encode($orderReference)]
+            ),
+            // merchant_edit_order_url is deliberately absent: the plugin
+            // exposes no merchant-side edit-order route, so there is no
+            // URL to put here.
+            'merchant_order_verification_failed_url' => $this->url->getUrl(
+                'two/payment/verificationfailed',
+                ['_two_order_reference' => base64_encode($orderReference)]
+            ),
+        ];
     }
 
     /**
