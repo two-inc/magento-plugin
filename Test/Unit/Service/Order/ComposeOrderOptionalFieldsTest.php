@@ -97,6 +97,24 @@ class ComposeOrderOptionalFieldsTest extends TestCase
         return $order;
     }
 
+    /**
+     * The API decides the invoice type from the merchant account and ignores a
+     * client-sent value, so neither the create request nor the edit request
+     * (ABN-621) carries the key.
+     */
+    public function testCreateAndEditRequestsCarryNoInvoiceType(): void
+    {
+        $create = $this->makeComposeOrder('')->execute($this->makeOrder(), 'ref', []);
+        $edit = $this->makeComposeOrder('')->execute(
+            $this->makeOrder(),
+            'ref',
+            ['isEdit' => true, 'placedTerms' => ['type' => 'NET_TERMS', 'duration_days' => 30]]
+        );
+
+        $this->assertArrayNotHasKey('invoice_type', $create, 'create request');
+        $this->assertArrayNotHasKey('invoice_type', $edit, 'edit request');
+    }
+
     public function testBlankVendorSiteNameOmitsTheKeyEntirely(): void
     {
         $payload = $this->makeComposeOrder('')->execute($this->makeOrder(), 'ref', []);

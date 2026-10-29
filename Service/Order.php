@@ -616,7 +616,6 @@ abstract class Order
                 'tax_class_name' => 'VAT ' . $this->roundAmt($item->getTaxPercent()) . '%',
                 'unit_price' => $this->roundAmt($this->getUnitPriceItem($item), 6),
                 'quantity' => $item->getQtyOrdered(),
-                'qty_to_ship' => $item->getQtyToShip(), //need for partial shipment
                 'quantity_unit' => $this->configRepository->getWeightUnit((int)$order->getStoreId()),
                 'details' => [
                     'barcodes' => [
@@ -851,7 +850,6 @@ abstract class Order
             'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
             'tax_class_name' => 'VAT ' . $this->roundAmt($taxRate * 100) . '%',
             'quantity' => 1,
-            'qty_to_ship' => 1, //need for partial shipment
             'quantity_unit' => 'sc',
         ];
     }
