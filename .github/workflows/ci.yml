@@ -333,6 +333,18 @@ jobs:
           docker exec magento-project-community-edition \
             php /data/extensions/magento-plugin/Test/Integration/api-wire-probe.php
 
+      # ABN-621: the term the buyer selected is the term on POST /v1/order.
+      # Offered terms 30, 60 and 90 with 30 as the default; each non-default
+      # term, the default as the control and an end-of-month variant are
+      # recorded the way the storefront records them, placed through
+      # authorize() and read off the request body at a local server. A term
+      # priced in the session but missing from the payment, and one the
+      # merchant does not offer, must be refused rather than sent as the default.
+      - name: Order term wire probe
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-plugin/Test/Integration/order-term-wire-probe.php
+
   # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
   # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
   # di:compile — proves the cross-major vanilla merchant upgrade (1.x -> 2.x) lands
