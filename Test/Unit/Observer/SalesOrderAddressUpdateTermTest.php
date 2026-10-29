@@ -124,7 +124,7 @@ class SalesOrderAddressUpdateTermTest extends TestCase
             return;
         }
         $this->assertNotNull($sent, $description . ': edit request sent; history: ' . implode(' | ', $order->historyComments));
-        $this->assertArrayNotHasKey('available_terms', $sent, $description . ': not in the edit schema');
+        $this->assertArrayNotHasKey('available_terms', $sent, $description . ': not sent on edit');
         $this->assertSame($apiError === null ? [] : [$apiError], $warnings, $description . ': admin warning');
         if ($apiError !== null) {
             $this->assertSame([$apiError], $order->historyComments, $description . ': history note');
