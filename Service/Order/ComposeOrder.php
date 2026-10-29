@@ -121,7 +121,6 @@ class ComposeOrder extends OrderService
             ...$amounts,
             'tax_subtotals' => $this->getTaxSubtotals($lineItems, $storeId),
             'terms' => $isEdit ? $placedTerms : $this->getSelectedPaymentTerms($selectedTermDays, $storeId),
-            'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
             'merchant_urls' => [
