@@ -3,7 +3,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * Router for `php -S`, used by order-term-wire-probe.php (ABN-621). It is
+ * Router for `php -S`, used by order-term-wire-probe.php. It is
  * wire-echo-server.php with one difference: the merchant record offers 30, 60
  * and 90 days with 30 as its default, so a buyer can choose a term other than
  * the default. Everything else, including the request log, is the shared
