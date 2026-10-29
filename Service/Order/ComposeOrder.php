@@ -198,8 +198,6 @@ class ComposeOrder extends OrderService
             if ($buyerVatNumber !== null) {
                 $payload['buyer_vat_number'] = $buyerVatNumber;
             }
-            // The edit-order schema has no available_terms.
-            $payload['available_terms'] = $this->getAvailableBuyerTerms($storeId);
         } elseif ($placedTerms === null) {
             // An absent terms key keeps the agreed ones (TWO-25386).
             unset($payload['terms']);
@@ -367,20 +365,5 @@ class ComposeOrder extends OrderService
     private function getSelectedPaymentTerms(int $durationDays, ?int $storeId = null): array
     {
         return $this->buildTermObject($durationDays, $storeId);
-    }
-
-    /**
-     * Get all available buyer terms for the checkout term selector.
-     */
-    private function getAvailableBuyerTerms(?int $storeId = null): array
-    {
-        $allTerms = $this->configRepository->getAllBuyerTerms($storeId);
-
-        $available = [];
-        foreach ($allTerms as $days) {
-            $available[] = $this->buildTermObject($days, $storeId);
-        }
-
-        return $available;
     }
 }
