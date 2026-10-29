@@ -333,7 +333,7 @@ jobs:
           docker exec magento-project-community-edition \
             php /data/extensions/magento-plugin/Test/Integration/api-wire-probe.php
 
-      # ABN-621: the term the buyer selected is the term on POST /v1/order.
+      # The term the buyer selected is the term on POST /v1/order.
       # Offered terms 30, 60 and 90 with 30 as the default; each non-default
       # term, the default as the control and an end-of-month variant are
       # recorded the way the storefront records them, placed through

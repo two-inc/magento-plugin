@@ -3,7 +3,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * CI probe (ABN-621), run inside a real Magento: the payment term the buyer
+ * CI probe, run inside a real Magento: the payment term the buyer
  * selected is the term on the order create request. Each case records the
  * selection the way the storefront does, through the real term-selection
  * endpoint class (the checkout session's priced term) and the payment's
@@ -22,6 +22,7 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\Bootstrap;
 use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\InputException;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Order\ComposeIntent;
@@ -50,6 +51,10 @@ $server = proc_open(
     null,
     ['WIRE_ECHO_LOG' => $log]
 );
+if (!is_resource($server)) {
+    echo 'FAIL the local API server process could not be started' . PHP_EOL;
+    exit(1);
+}
 for ($i = 0; $i < 50 && !@fsockopen('127.0.0.1', $port); $i++) {
     usleep(100000);
 }
@@ -77,7 +82,6 @@ if ($env !== 'developer') {
 }
 
 $fixtures = new ProbeFixtures($objectManager);
-$fixtures->configure(ProbeFixtures::EXCLUSIVE);
 // The merchant record is cached per key and environment, so this probe's key
 // keeps its three-term record apart from the other probes'.
 $configureTerms = static function (string $termsType) use ($fixtures, $objectManager): void {
@@ -88,10 +92,24 @@ $configureTerms = static function (string $termsType) use ($fixtures, $objectMan
         'payment/two_payment/payment_terms' => '30,60,90',
         'payment/two_payment/default_payment_term' => 30,
         'payment/two_payment/payment_terms_type' => $termsType,
-        // Ten chip selections in a run, from one address, must not meet the endpoint's ceiling.
-        'payment/two_payment/disable_rate_limit' => 1,
     ]);
 };
+$termPaths = [
+    'payment/two_payment/active',
+    'payment/two_payment/mode',
+    'payment/two_payment/api_key',
+    'payment/two_payment/payment_terms',
+    'payment/two_payment/default_payment_term',
+    'payment/two_payment/payment_terms_type',
+];
+// What the shop held at default scope before this run, so a failed run leaves it as it found it.
+$stored = [];
+foreach ($objectManager->create(\Magento\Config\Model\ResourceModel\Config\Data\Collection::class)
+    ->addFieldToFilter('scope', 'default')
+    ->addFieldToFilter('scope_id', 0)
+    ->addFieldToFilter('path', ['in' => $termPaths]) as $row) {
+    $stored[$row->getPath()] = (string)$row->getValue();
+}
 
 // [term the buyer chose at the chips (null: none recorded in the session),
 //  term the payment carries (null: none), terms type, term on the wire (null: refused, nothing sent),
@@ -107,7 +125,9 @@ $cases = [
     [90, 60, 'standard', null, false, 'a payment term that differs from the priced one is refused'],
     [45, 45, 'standard', null, false, 'a term the merchant does not offer is refused'],
     [null, 45, 'standard', null, false, 'a term the merchant does not offer, with no session term, is refused'],
+    [null, 30, 'standard', 30, false, 'no chip clicked: the payment carries the default and no session term is recorded'],
 ];
+const REFUSAL = 'Selected payment term is not available.';
 
 $session = $objectManager->get(CheckoutSession::class);
 $termSelection = $objectManager->get(TermSelectionInterface::class);
@@ -125,88 +145,108 @@ $cookie = new class extends UrlCookie {
     }
 };
 
-foreach ($cases as [$chipTerm, $paymentTerm, $termsType, $wireTerm, $endOfMonth, $description]) {
-    $configureTerms($termsType);
-    $quote = $fixtures->quote([['probe-standard', 2]], false);
-    $session->clearStorage();
-    $session->replaceQuote($quote);
+try {
+    foreach ($cases as [$chipTerm, $paymentTerm, $termsType, $wireTerm, $endOfMonth, $description]) {
+        $configureTerms($termsType);
+        $quote = $fixtures->quote([['probe-standard', 2]], false);
+        $session->clearStorage();
+        $session->replaceQuote($quote);
 
-    // The buyer's chip click: the session term the surcharge is priced on.
-    $selectionRefused = null;
-    if ($chipTerm !== null) {
-        try {
-            $termSelection->selectTerm((string)$quote->getId(), $chipTerm);
-        } catch (\Throwable $e) {
-            $selectionRefused = get_class($e);
+        // The buyer's chip click: the session term the surcharge is priced on.
+        $selectionRefused = null;
+        if ($chipTerm !== null) {
+            try {
+                $termSelection->selectTerm((string)$quote->getId(), $chipTerm);
+            } catch (\Throwable $e) {
+                $selectionRefused = $e;
+            }
+            $offered = $chipTerm !== 45;
+            $check(
+                $offered
+                    ? $selectionRefused === null
+                    : ($selectionRefused instanceof InputException && $selectionRefused->getMessage() === REFUSAL),
+                "$description: the chip selection was " . ($offered ? 'recorded' : 'refused with the unavailable-term message')
+                . ' (' . ($selectionRefused === null ? 'no error' : get_class($selectionRefused) . ': ' . $selectionRefused->getMessage()) . ')'
+            );
+            $check(
+                (int)$session->getTwoSelectedTerm() === ($offered ? $chipTerm : 0),
+                "$description: the session holds the selection (" . var_export($session->getTwoSelectedTerm(), true) . ')'
+            );
         }
-        $offered = $chipTerm !== 45;
+
+        // Placement: the quote's payment carries the data the storefront posts, and
+        // core's own conversion copies it onto the order's payment.
+        $placing = $session->getQuote();
+        $additionalData = [
+            'companyName' => 'Probe Buyer',
+            'companyId' => '123456789',
+            'telephone' => '+31201234567',
+        ];
+        if ($paymentTerm !== null) {
+            $additionalData['selectedTerm'] = $paymentTerm;
+        }
+        $placing->getPayment()->importData(['method' => 'two_payment', 'additional_data' => $additionalData]);
+        $created = $objectManager->get(ComposeIntent::class)->toOrder($placing);
+        $payment = $objectManager->get(\Magento\Quote\Model\Quote\Payment\ToOrderPayment::class)
+            ->convert($placing->getPayment());
+        $created->setPayment($payment);
+        $method = $objectManager->create(Two::class, ['urlCookie' => $cookie]);
+        $payment->setMethodInstance($method);
+        $method->setInfoInstance($payment);
         $check(
-            $offered ? $selectionRefused === null : $selectionRefused !== null,
-            "$description: the chip selection was " . ($offered ? 'recorded' : 'refused') . ' (' . ($selectionRefused ?? 'no error') . ')'
+            $payment->getAdditionalInformation('selectedTerm') === $paymentTerm,
+            "$description: the payment recorded the term (" . var_export($payment->getAdditionalInformation('selectedTerm'), true) . ')'
         );
+
+        $received();
+        $refusal = null;
+        try {
+            $method->authorize($payment, $created->getGrandTotal());
+        } catch (\Throwable $e) {
+            $refusal = $e;
+        }
+        $posted = array_values(array_filter(
+            $received(),
+            static fn (array $c): bool => $c['method'] === 'POST' && $c['path'] === '/v1/order'
+        ));
+
+        if ($wireTerm === null) {
+            $check(
+                $refusal instanceof InputException && $refusal->getMessage() === REFUSAL,
+                "$description: placement refused with the unavailable-term message ("
+                . ($refusal === null ? 'it was authorized' : get_class($refusal) . ': ' . $refusal->getMessage()) . ')'
+            );
+            $check(count($posted) === 0, "$description: no create request reached the API (" . count($posted) . ')');
+            continue;
+        }
         $check(
-            (int)$session->getTwoSelectedTerm() === ($offered ? $chipTerm : 0),
-            "$description: the session holds the selection (" . var_export($session->getTwoSelectedTerm(), true) . ')'
+            $refusal === null,
+            "$description: authorized" . ($refusal === null ? '' : ' (' . get_class($refusal) . ': ' . $refusal->getMessage() . ')')
+        );
+        $check(count($posted) === 1, "$description: one create request reached the API (" . count($posted) . ')');
+        $terms = (json_decode($posted[0]['body'] ?? '', true) ?: [])['terms'] ?? [];
+        $check(
+            ($terms['duration_days'] ?? null) === $wireTerm,
+            "$description: terms.duration_days on the wire is $wireTerm (" . var_export($terms['duration_days'] ?? null, true) . ')'
+        );
+        $check(($terms['type'] ?? null) === 'NET_TERMS', "$description: terms.type on the wire is NET_TERMS");
+        $check(
+            ($terms['duration_days_calculated_from'] ?? null) === ($endOfMonth ? 'END_OF_MONTH' : null),
+            "$description: terms.duration_days_calculated_from is " . ($endOfMonth ? 'END_OF_MONTH' : 'absent')
+            . ' (' . var_export($terms['duration_days_calculated_from'] ?? null, true) . ')'
         );
     }
-
-    // Placement: the quote's payment carries the data the storefront posts, and
-    // core's own conversion copies it onto the order's payment.
-    $placing = $session->getQuote();
-    $additionalData = [
-        'companyName' => 'Probe Buyer',
-        'companyId' => '123456789',
-        'telephone' => '+31201234567',
-    ];
-    if ($paymentTerm !== null) {
-        $additionalData['selectedTerm'] = $paymentTerm;
+} finally {
+    $writer = $objectManager->get(\Magento\Framework\App\Config\Storage\WriterInterface::class);
+    foreach ($termPaths as $path) {
+        if (array_key_exists($path, $stored)) {
+            $writer->save($path, $stored[$path]);
+        } else {
+            $writer->delete($path);
+        }
     }
-    $placing->getPayment()->importData(['method' => 'two_payment', 'additional_data' => $additionalData]);
-    $created = $objectManager->get(ComposeIntent::class)->toOrder($placing);
-    $payment = $objectManager->get(\Magento\Quote\Model\Quote\Payment\ToOrderPayment::class)
-        ->convert($placing->getPayment());
-    $created->setPayment($payment);
-    $method = $objectManager->create(Two::class, ['urlCookie' => $cookie]);
-    $payment->setMethodInstance($method);
-    $method->setInfoInstance($payment);
-    $check(
-        $payment->getAdditionalInformation('selectedTerm') === $paymentTerm,
-        "$description: the payment recorded the term (" . var_export($payment->getAdditionalInformation('selectedTerm'), true) . ')'
-    );
-
-    $received();
-    $refusal = null;
-    try {
-        $method->authorize($payment, $created->getGrandTotal());
-    } catch (\Throwable $e) {
-        $refusal = get_class($e) . ': ' . $e->getMessage();
-    }
-    $posted = array_values(array_filter(
-        $received(),
-        static fn (array $c): bool => $c['method'] === 'POST' && $c['path'] === '/v1/order'
-    ));
-
-    if ($wireTerm === null) {
-        $check($refusal !== null, "$description: placement refused" . ($refusal === null ? ' (it was authorized)' : " ($refusal)"));
-        $check(count($posted) === 0, "$description: no create request reached the API (" . count($posted) . ')');
-        continue;
-    }
-    $check($refusal === null, "$description: authorized" . ($refusal === null ? '' : " ($refusal)"));
-    $check(count($posted) === 1, "$description: one create request reached the API (" . count($posted) . ')');
-    $terms = (json_decode($posted[0]['body'] ?? '', true) ?: [])['terms'] ?? [];
-    $check(
-        ($terms['duration_days'] ?? null) === $wireTerm,
-        "$description: terms.duration_days on the wire is $wireTerm (" . var_export($terms['duration_days'] ?? null, true) . ')'
-    );
-    $check(($terms['type'] ?? null) === 'NET_TERMS', "$description: terms.type on the wire is NET_TERMS");
-    $check(
-        ($terms['duration_days_calculated_from'] ?? null) === ($endOfMonth ? 'END_OF_MONTH' : null),
-        "$description: terms.duration_days_calculated_from is " . ($endOfMonth ? 'END_OF_MONTH' : 'absent')
-        . ' (' . var_export($terms['duration_days_calculated_from'] ?? null, true) . ')'
-    );
+    $objectManager->get(\Magento\Framework\App\Config\ScopeConfigInterface::class)->clean();
 }
-$configureTerms('standard');
-$fixtures->configure(['payment/two_payment/disable_rate_limit' => 0] + ProbeFixtures::EXCLUSIVE);
 
 if ($failures) {
     echo count($failures) . ' order term wire probe check(s) failed' . PHP_EOL;
