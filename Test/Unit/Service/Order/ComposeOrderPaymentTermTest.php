@@ -99,7 +99,7 @@ class ComposeOrderPaymentTermTest extends TestCase
             ->execute($this->makeOrder(), 'ref', ['selectedTerm' => 14]);
 
         $this->assertSame(14, $payload['terms']['duration_days']);
-        $this->assertSame([14, 30], array_column($payload['available_terms'], 'duration_days'), 'placement offers the buyer terms');
+        $this->assertArrayNotHasKey('available_terms', $payload, 'the create-order request does not define available_terms');
     }
 
     public function testAnUnavailableSelectedTermBlocksTheOrder(): void
