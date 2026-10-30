@@ -17,8 +17,8 @@
  *
  * FRAMEWORK-FREE, with a UMD tail, for the reason `company-search-panel.js` is:
  * Luma and Hyvä run this one file. Everything platform-shaped — the REST entry
- * point, the quote, the address write-back, the error surface, the fallback
- * prompt — arrives through `host`, which the capture component assembles from
+ * point, the quote, the address write-back and the error surface, arrives
+ * through `host`, which the capture component assembles from
  * its own options.
  *
  * Owns the delegation/autofill token pair and its refresh, the hosted signup
@@ -104,37 +104,55 @@
     };
 
     /**
-     * What "the same sole trader" means for the once-per-identity address
-     * guard. The organisation number where there is one; the email otherwise,
-     * so two buyers who both arrive without a number are not treated as one.
+     * An autofill address with its blank values dropped. A blank says the record
+     * has nothing for that field, which is not an instruction to empty it: the
+     * host clears a field the record leaves out only where the plugin wrote
+     * what it holds (TWO-26775, PrestaShop's `adoptSoleTraderBuyer` rules).
      *
-     * @param {object} buyer `/autofill/v1/buyer/current` record
-     * @returns {string}
+     * @param {object} address
+     * @returns {object}
      */
-    function soleTraderIdentityKey(buyer) {
-        const number = String(buyer.organization_number || '').trim();
-        if (number) return number;
-        const email = String(buyer.email || '').trim().toLowerCase();
-        // Nothing tells one such buyer from another, so record nothing and let
-        // the write happen every time — repeating a write is recoverable, and
-        // collapsing two buyers onto one key silently drops the second's
-        // address.
-        return email ? `email:${email}` : '';
+    function withoutBlanks(address) {
+        const kept = {};
+        Object.keys(address).forEach(function (key) {
+            const value = address[key];
+            if (value === undefined || value === null) return;
+            if (typeof value === 'string' && !value.trim()) return;
+            kept[key] = value;
+        });
+        return kept;
     }
 
     /**
-     * Whether an autofill record carries enough to adopt without the popup.
+     * Whether a held autofill answer is the buyer at this checkout, judged by the
+     * email the checkout holds (TWO-26775, PrestaShop's `buyerMatchesCheckout`).
+     * A held answer for anyone else is offered through the popup instead.
      *
-     * Keyed on the name because that is the identity `adoptSoleTrader()` writes
-     * authoritatively: adopting a nameless record blanks the company field,
-     * which is worse than the popup.
+     * @param {object} buyer `/autofill/v1/buyer/current` record
+     * @param {string} checkoutEmail
+     * @returns {boolean}
+     */
+    function buyerMatchesCheckout(buyer, checkoutEmail) {
+        const entered = String(checkoutEmail || '').trim().toLowerCase();
+        const own = String((buyer && buyer.email) || '').trim().toLowerCase();
+        return !!(entered && own && own === entered);
+    }
+
+    /**
+     * Whether an autofill record carries enough to adopt.
+     *
+     * Keyed on the number, as PrestaShop's adoption is: a record without one
+     * would replace the captured company with a sole trader the order cannot be
+     * placed for. A blank name is adoptable, and keeps the name in the field
+     * (TWO-26775).
      *
      * @param {object} buyer `/autofill/v1/buyer/current` record
      * @returns {boolean}
      */
     function isUsableSoleTrader(buyer) {
         if (!buyer || typeof buyer !== 'object') return false;
-        return !!String(buyer.company_name || '').trim();
+        const number = buyer.organization_number;
+        return !!String(number === null || number === undefined ? '' : number).trim();
     }
 
     /**
@@ -154,14 +172,10 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
-        /** The identity subscription that withdraws the blocked-signup link, held while it is up. */
-        this._promptModeWatch = null;
-        /**
-         * Sole-trader identities whose registered address has already been
-         * written into this page's checkout, so a replay does not overwrite a
-         * correction the buyer made afterwards (TWO-25461).
-         */
-        this._adoptedIds = new Set();
+        /** The control the open popup was launched from; focus goes back to it on a hand-close. */
+        this._launcher = null;
+        /** The popup was closed by a focus or click rule rather than by the buyer's own hand. */
+        this._closedByRule = false;
         liveFlows.add(this);
     }
 
@@ -340,11 +354,7 @@
     SoleTrader.prototype.openPopup = function (options) {
         const config = this._component.config();
         if (!this.hasSignupTokens()) return null;
-        if (this.isPopupOpen()) this._popupWindow.close();
-        this.stopPopupCloseWatcher();
-        // With it goes the close poll that would have released the panel's opener hold,
-        // and a blocked re-open arms no replacement to release it later.
-        this.stopReturnToCheckoutWatcher();
+        this.retireFinishedPopup();
 
         let params = `businessToken=${this.delegationToken}`;
         params += `&autofillToken=${this.autofillToken}`;
@@ -375,6 +385,20 @@
     };
 
     /**
+     * Close a prior popup and stand down everything armed for it: its close poll,
+     * its return watch and the field opener hold, and the record of how it closed,
+     * which would otherwise misread the next popup's hand-close (TWO-26775).
+     */
+    SoleTrader.prototype.retireFinishedPopup = function () {
+        if (this.isPopupOpen()) this._popupWindow.close();
+        this._closedByRule = false;
+        this.stopPopupCloseWatcher();
+        // With it goes the close poll that would have released the panel's opener hold,
+        // and a blocked re-open arms no replacement to release it later.
+        this.stopReturnToCheckoutWatcher();
+    };
+
+    /**
      * Open the popup and, if it did not open, offer the on-page link that lets
      * the buyer ask again — the fallback for a blocked popup, and for the
      * narrow window before the up-front mint lands.
@@ -384,28 +408,49 @@
      * own click.
      *
      * @param {object} [options] passed through to openPopup()
+     * @param {Element} [launcher] the control the buyer launched it from
      * @returns {Window|null}
      */
-    SoleTrader.prototype.launchSignup = function (options) {
+    SoleTrader.prototype.launchSignup = function (options, launcher) {
         const win = this.openPopup(options);
-        this.showSignupPrompt(!win);
+        if (win) this._launcher = launcher || null;
+        this.showSignupPanel(!win);
         if (!win) {
             // Held for retrySignup(): a blocked replacement that retried
             // without them would hand back the identity being replaced.
             this._blockedSignupOptions = options || null;
             this.ensureTokens();
+        } else {
+            this._blockedSignupOptions = null;
         }
         return win;
     };
 
-    /** The fallback link's own launch, on the terms the blocked one had. */
+    /** The blocked-popup panel's own launch, on the terms the blocked one had. */
     SoleTrader.prototype.retrySignup = function () {
         return this.launchSignup(this._blockedSignupOptions);
     };
 
-    /** "Select a different sole trader" — offer a choice, not what is on screen. */
-    SoleTrader.prototype.selectDifferentSoleTrader = function () {
-        return this.launchSignup({ autoselect: false });
+    /**
+     * "Select a different sole trader": offer a choice, not what is on screen.
+     *
+     * @param {Element} [launcher] the link the buyer used
+     */
+    SoleTrader.prototype.selectDifferentSoleTrader = function (launcher) {
+        return this.launchSignup({ autoselect: false }, launcher);
+    };
+
+    /**
+     * The control a hand-closed popup hands focus back to: its launcher while
+     * that is still on screen, else null for the company field (guide row 1.39).
+     *
+     * @returns {?Element}
+     */
+    SoleTrader.prototype.launcherToRefocus = function () {
+        const launcher = this._launcher;
+        if (!launcher || !launcher.isConnected || typeof launcher.focus !== 'function') return null;
+        if (launcher.closest && launcher.closest('[hidden]')) return null;
+        return launcher;
     };
 
     /**
@@ -479,6 +524,19 @@
     };
 
     /**
+     * The held answer where it is the buyer at this checkout, so the click can
+     * adopt it without a popup; null otherwise.
+     *
+     * @returns {?object} `/autofill/v1/buyer/current` record
+     */
+    SoleTrader.prototype.matchingSoleTrader = function () {
+        const buyer = this.autofilledSoleTrader();
+        if (!buyer) return null;
+        const prefill = this.host().signupPrefill() || {};
+        return buyerMatchesCheckout(buyer, prefill.email) ? buyer : null;
+    };
+
+    /**
      * Hold the busy state while the popup is open, and hand the checkout back
      * to company search if the buyer closes it having captured nothing.
      *
@@ -486,8 +544,15 @@
      */
     SoleTrader.prototype.watchPopupClose = function (win) {
         this.identity().beginFlight();
+        let closedSeen = false;
         this._popupCloseWatcherId = setInterval(() => {
             if (!win.closed) return;
+            // One more tick for an ACCEPTED the popup posted as it closed, which
+            // can still be queued behind this one (TWO-26775).
+            if (!closedSeen && !this._signupConfirming) {
+                closedSeen = true;
+                return;
+            }
             this.stopPopupCloseWatcher();
             // The close is bookkeeping: the field re-fire it will provoke comes with the
             // window's return, which is unbounded from here.
@@ -495,9 +560,11 @@
             // The handshake's buyer lookup can still be out; it owns the
             // outcome from here and will write whatever identity it resolves.
             if (this._signupConfirming) return;
+            const handClosed = !this._closedByRule;
+            this._closedByRule = false;
             // A signup still up anywhere on the checkout is a handover: that
             // popup owns focus, and this flow's field must not take it back.
-            this._component.abandonSoleTrader({ returnFocus: !anySignupOpen() });
+            this._component.abandonSoleTrader({ returnFocus: !anySignupOpen(), handClosed: handClosed });
         }, POPUP_CLOSE_POLL_MS);
     };
 
@@ -532,7 +599,8 @@
             if (!field || !document.contains(field)) return;
             // Before the focus, which the return watch sees synchronously.
             this._parkedFocus = field;
-            panel.holdFieldOpener(true);
+            // For the whole flight: every window return re-fires focus on the field.
+            panel.holdFieldOpener(true, { flight: () => this.isPopupOpen() });
             panel.restoreFieldFocus();
         }, 0);
     };
@@ -555,7 +623,8 @@
         this._returnHandler = (event) => {
             if (!this.isPopupOpen()) return;
             const target = event.target;
-            if (target === this._parkedFocus) return;
+            // A press on the parked field is the buyer's own; a focus re-fired there is the window's.
+            if (event.type === 'focusin' && target === this._parkedFocus) return;
             const panel = this._component.panel();
             const field = panel && panel.getField && panel.getField()[0];
             // Off the field, never `getPanelElement()`: a morph re-render deletes the wrap and the
@@ -569,14 +638,17 @@
                 return;
             }
             // The CLOSE half only: the enrolment stays live and resumable, tokens unspent.
-            this.closeSignupPopup();
+            this.closeSignupPopup({ byRule: true });
             // Outside the popover the buyer has left capture, not just the signup.
             if (!inside && panel && panel.close) panel.close();
             // Another capture's chip is a different control, and its own click handler is the one
-            // place a launch is spelled out.
-            if (chip && typeof chip.click === 'function') chip.click();
+            // place a launch is spelled out. A press is followed by that click anyway.
+            if (event.type === 'focusin' && chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);
+        // A press counts as well as a focus: one on page content nothing can focus moves no focus,
+        // and it is still the buyer back on the checkout (TWO-26775).
+        document.addEventListener('mousedown', this._returnHandler, true);
     };
 
     /**
@@ -584,7 +656,7 @@
      *
      * @param {object} [options] `{ releaseOpener: false }` where the popup's own
      *        disappearance is all that has happened, and the field's opener stays
-     *        held for the window return still to come.
+     *        held for the one window return still to come.
      */
     SoleTrader.prototype.stopReturnToCheckoutWatcher = function (options) {
         const panel = this._component.panel();
@@ -595,12 +667,21 @@
         this._parkedFocus = null;
         if (!this._returnHandler) return;
         document.removeEventListener('focusin', this._returnHandler, true);
+        document.removeEventListener('mousedown', this._returnHandler, true);
         this._returnHandler = null;
     };
 
-    /** Close the popup this flow opened, if it is still up. */
-    SoleTrader.prototype.closeSignupPopup = function () {
+    /**
+     * Close the popup this flow opened, if it is still up.
+     *
+     * @param {object} [options] `{ byRule: true }` where a focus or click rule
+     *        closed it, so the close watcher does not read it as the buyer's
+     *        hand-close and take the popover and focus with it
+     * @returns {boolean} whether there was a popup to close
+     */
+    SoleTrader.prototype.closeSignupPopup = function (options) {
         if (!this.isPopupOpen()) return false;
+        this._closedByRule = !!(options && options.byRule);
         this._popupWindow.close();
         this.stopReturnToCheckoutWatcher();
         return true;
@@ -621,11 +702,6 @@
             return false;
         }
         return true;
-    };
-
-    /** Re-arm the once-per-identity address guard. */
-    SoleTrader.prototype.forgetAdoptions = function () {
-        this._adoptedIds.clear();
     };
 
     /**
@@ -649,6 +725,16 @@
      * @returns {Promise<object|null>} null for no buyer and for any failure
      */
     SoleTrader.prototype.fetchBuyer = function () {
+        return this.lookupBuyer().then((result) => result.buyer);
+    };
+
+    /**
+     * fetchBuyer(), telling "Two knows nobody" apart from a lookup that failed:
+     * after a signup the two lead different ways (TWO-26775).
+     *
+     * @returns {Promise<{buyer: ?object, failed: boolean}>}
+     */
+    SoleTrader.prototype.lookupBuyer = function () {
         const config = this._component.config();
         const params = new URLSearchParams(this.host().apiClientParams(config)).toString();
         const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current${params ? `?${params}` : ''}`;
@@ -670,7 +756,8 @@
                 if (response.status === 404) return null;
                 throw new Error(`Error response from ${URL}.`);
             })
-            .catch(() => null);
+            .then((buyer) => ({ buyer: buyer || null, failed: false }))
+            .catch(() => ({ buyer: null, failed: true }));
     };
 
     /**
@@ -683,67 +770,56 @@
      * wherever company search is not in the address area, which is exactly
      * where this flow lives. Both sibling platforms bypass it here too.
      *
-     * Written ONCE PER IDENTITY, so a replayed ACCEPTED cannot overwrite a
-     * correction the buyer made after the first write.
+     * Written on every adoption, by PrestaShop's rules (TWO-26775): a blank in
+     * the record writes nothing, and the host clears a field the record leaves
+     * out only where the plugin wrote what it holds.
      *
      * @param {object} buyer `/autofill/v1/buyer/current` record
      */
     SoleTrader.prototype.adoptBuyer = function (buyer) {
-        if (!buyer || typeof buyer !== 'object') return;
+        // Refused whole: nothing of a record with no number is written.
+        if (!isUsableSoleTrader(buyer)) return;
         // Any adoption supersedes the held answer, in flight or already in
         // hand, so a later click cannot re-adopt it over the identity that won.
         this._autofillGeneration += 1;
         this._autofillBuyer = null;
         this._component.adoptSoleTrader(buyer);
-        const key = soleTraderIdentityKey(buyer);
-        if (key && this._adoptedIds.has(key)) {
-            this.showSignupPrompt(false);
-            return;
-        }
         // Isolated: a DOM failure in the address write must not take the
-        // identity fill with it. Recorded only once the write has happened, so
-        // a failure leaves the next attempt free to try again.
+        // identity fill with it.
         try {
             const source = buyer.billing_address || buyer.shipping_address || null;
             if (source && typeof source === 'object') {
-                this.host().applyBuyerAddress(source);
-                if (key) this._adoptedIds.add(key);
+                this.host().applyBuyerAddress(withoutBlanks(source));
             }
             // Routed separately because the address writer deliberately never
             // touches telephone — correct for a registry number that is not the
             // buyer's own, where this record IS the buyer's own verified data.
-            this.host().applyTelephone(buyer.phone_number);
+            const phone = typeof buyer.phone_number === 'string' ? buyer.phone_number.trim() : '';
+            this.host().applyTelephone(phone);
         } catch (error) {
             console.error({ logger: 'twoPayment.adoptSoleTraderBuyer', error });
         }
-        this.showSignupPrompt(false);
+        this.showSignupPanel(false);
     };
 
     /**
-     * Show or withdraw the on-page signup prompt — the fallback route when the
-     * popup was blocked. The host renders it, because the two checkouts anchor
-     * and style it differently.
-     *
-     * The link belongs to sole-trader mode alone, so while it is up any other
-     * mode, from a chip or a country reset, takes it down (TWO-26775).
+     * Show or withdraw the blocked-popup panel: one button over the popover,
+     * whose click is a gesture a blocker allows (TWO-26775). The popover owns
+     * it, and takes it down on any mode change and on its own close.
      *
      * @param {boolean} show
      */
-    SoleTrader.prototype.showSignupPrompt = function (show) {
-        this.host().renderSignupPrompt(!!show, () => this.retrySignup());
-        if (show && !this._promptModeWatch) {
-            this._promptModeWatch = this.identity().subscribe(() => {
-                if (!this.identity().isSoleTrader()) this.showSignupPrompt(false);
-            });
-        } else if (!show) {
-            this.stopPromptModeWatch();
+    SoleTrader.prototype.showSignupPanel = function (show) {
+        const panel = this._component.panel();
+        if (!panel) return;
+        if (!show) {
+            panel.hideSignupPanel();
+            return;
         }
-    };
-
-    SoleTrader.prototype.stopPromptModeWatch = function () {
-        if (!this._promptModeWatch) return;
-        this._promptModeWatch.dispose();
-        this._promptModeWatch = null;
+        panel.showSignupPanel(
+            this._component.translate('Sign up or log in as a sole trader'),
+            () => this.retrySignup()
+        );
     };
 
     /**
@@ -773,12 +849,22 @@
             // must not read that as an abandoned signup.
             this._signupConfirming = true;
             this.identity().beginFlight();
-            this.fetchBuyer()
-                .then((buyer) => {
-                    if (buyer) {
-                        this.adoptBuyer(buyer);
-                    } else {
+            this.lookupBuyer()
+                .then((result) => {
+                    // A mode chosen while the lookup was out is the buyer's answer.
+                    if (!this.identity().isSoleTrader()) return;
+                    if (isUsableSoleTrader(result.buyer)) {
+                        this.adoptBuyer(result.buyer);
+                    } else if (result.failed) {
                         this.showSignupError();
+                        // The close watcher stood down for this lookup, so the
+                        // abandon is owed here, or the checkout stays in
+                        // sole-trader mode with nothing captured (TWO-26775).
+                        if (!this.isPopupOpen()) this._component.abandonSoleTrader({ handClosed: true });
+                    } else {
+                        // Signed up, and Two still knows nobody it can adopt:
+                        // ask again, as PrestaShop does (TWO-26775).
+                        this._component.signupFoundNobody();
                     }
                 })
                 .finally(() => {
@@ -804,7 +890,6 @@
             this._messageHandler = null;
         }
         this.stopReturnToCheckoutWatcher();
-        this.stopPromptModeWatch();
         liveFlows.delete(this);
         // The refresh is the page's: it outlives this flow while another still
         // holds the pair.

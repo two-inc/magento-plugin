@@ -36,6 +36,17 @@ const {
 
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const POPUP_CLOSE_POLL_MS = 300;
+
+/**
+ * The close watcher over a closed popup: it gives an ACCEPTED queued behind the
+ * close one more tick before it abandons.
+ *
+ * @param {{fn: function}} poll
+ */
+function seeClosed(poll) {
+    poll.fn();
+    poll.fn();
+}
 const PANEL = '.two-company-dropdown';
 const FIELD = '#company_name';
 const TRADER = { company_name: 'Alpha Trading', organization_number: '123456' };
@@ -221,10 +232,15 @@ describe('the popup closing must not reopen the company-search popover', functio
     test.each([
         ['the signup adopts a trader', false,
             'the adopt closed the popover, and the re-fire must not put it back'],
-        ['the buyer closes the signup window', true,
-            'the popover is held open across a signup, and nothing here closes it']
+        ['the buyer closes the signup window', false,
+            'a hand-close closes the popover, as PrestaShop does (TWO-26775)'],
+        ['a focus rule closes the signup window', true,
+            'a rule close leaves the popover where the buyer has it']
     ])('%s: popover open=%p afterwards (%s)', async function (path, expectedOpen, why) {
         const ctx = await openedStack();
+        if (path === 'a focus rule closes the signup window') {
+            ctx.component.soleTrader().closeSignupPopup({ byRule: true });
+        }
         if (path === 'the signup adopts a trader') {
             ctx.buyerRef.value = TRADER;
             ctx.rec.messageListeners
@@ -237,7 +253,7 @@ describe('the popup closing must not reopen the company-search popover', functio
         ctx.handle.closed = true;
         // The close is noticed first and the return arrives whenever the buyer comes
         // back, which is the ordering a live browser was measured in.
-        ctx.poll.fn();
+        seeClosed(ctx.poll);
         await flush();
         windowReturnRefire();
 
@@ -318,7 +334,7 @@ describe('the popup closing must not reopen the company-search popover', functio
 
     test('the popup close alone leaves the hold standing', async function () {
         const ctx = await heldWithPopoverShut();
-        ctx.poll.fn();
+        seeClosed(ctx.poll);
         await flush();
 
         dispatchNative(document.querySelector(FIELD), 'focus');

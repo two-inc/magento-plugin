@@ -6,6 +6,9 @@
  * on offer, and the chip then decides on the answer it already holds: adopt it
  * silently, or open the hosted signup inside the click itself.
  *
+ * TWO-26775: adopted silently only where the held answer's email is the one
+ * the checkout holds, as PrestaShop's `buyerMatchesCheckout`.
+ *
  * Mutation-resistance notes:
  *
  *  - the first silent-adoption case asserts the popup count is ZERO rather
@@ -40,8 +43,11 @@ const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const CHECKOUT_API_URL = 'https://api.example';
 const BUYER_ENDPOINT = '/autofill/v1/buyer/current';
 
+/** The email the checkout holds, which a held answer must match to skip the popup. */
+const CHECKOUT_EMAIL = 'trader@example.com';
+
 const BUYER = {
-    email: 'trader@example.com',
+    email: CHECKOUT_EMAIL,
     organization_number: '999888777',
     company_name: 'Example Trader',
     phone_number: '+4479000000',
@@ -53,9 +59,12 @@ const BUYER = {
     }
 };
 
-/** A second, distinguishable record, so a clobbered identity is visible. */
+/**
+ * A second, distinguishable record, so a clobbered identity is visible. The
+ * same buyer's email, so a held copy of it is still adopted silently.
+ */
 const OTHER_TRADER = {
-    email: 'other@example.com',
+    email: CHECKOUT_EMAIL,
     organization_number: '111222333',
     company_name: 'Other Trader',
     phone_number: '+4479111111',
@@ -67,7 +76,7 @@ const POPUP = { popup: 'the tracked signup window', closed: false, close: functi
 
 /**
  * @param {object} [options] `{ buyer, laterBuyer, failLookup, hangLookup,
- *        holdLookup, companyTypes }` — the record the buyer endpoint answers
+ *        holdLookup, companyTypes, checkoutEmail }`: the record the buyer endpoint answers
  *        with (omit for a 404), a different record for every lookup after the
  *        first, a transport failure, a lookup that never lands, one held until
  *        `rec.releaseLookup()`, or the registry's per-country company types
@@ -94,10 +103,13 @@ function makeEnv(options) {
         addEventListener: function (name, fn) { rec.listeners.push({ name: name, fn: fn }); },
         removeEventListener: function () {}
     };
+    // A signed-in buyer: Luma publishes the customer, not a guest email.
+    if (opts.customerEmail) fakeWindow.checkoutConfig = { customerData: { email: opts.customerEmail } };
 
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
         billingAddress: quoteAddress({ countryId: 'GB' }),
         getQuoteId: function () { return 'cart-1'; },
+        guestEmail: 'checkoutEmail' in opts ? opts.checkoutEmail : CHECKOUT_EMAIL,
         isVirtual: function () { return false; }
     });
 
@@ -186,6 +198,7 @@ async function startStack(options) {
     });
     const component = loadCompanyCapture(mocks, env.globals).shipping;
     component.start();
+    started.push(component.soleTrader());
     // Lets the seeded availability answer, the mint and the lookup settle.
     await settle();
     return {
@@ -199,6 +212,17 @@ async function startStack(options) {
 function settle() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+/**
+ * Every flow a case booted. Its document-level return watch outlives the case
+ * otherwise, and a popup a case left open would read the next case's presses
+ * as the buyer returning to a checkout that is no longer on the page.
+ */
+const started = [];
+
+afterEach(() => {
+    started.splice(0).forEach((flow) => flow.dispose());
+});
 
 /** Open the popover the buyer's own way and hand back one of its chips. */
 function chip(mode) {
@@ -297,18 +321,47 @@ describe('a session Two already knows skips the popup', () => {
     });
 });
 
+describe('a held answer for anyone but this checkout\'s buyer opens the popup (TWO-26775)', () => {
+    test.each([
+        [CHECKOUT_EMAIL, CHECKOUT_EMAIL, 0, 'the same email adopts silently'],
+        ['Trader@Example.com', '  trader@example.com ', 0, 'case and surrounding space do not matter'],
+        [CHECKOUT_EMAIL, 'someone@example.com', 1, 'a different checkout email opens the popup'],
+        [CHECKOUT_EMAIL, '', 1, 'a checkout with no email yet opens the popup'],
+        ['', CHECKOUT_EMAIL, 1, 'a held answer with no email opens the popup']
+    ])('buyer %p, checkout %p -> %p popups (%s)', async (buyerEmail, checkoutEmail, popups, why) => {
+        const { identity, rec } = await startStack({
+            buyer: Object.assign({}, BUYER, { email: buyerEmail }),
+            checkoutEmail: checkoutEmail
+        });
+
+        chip('soletrader').click();
+        await settle();
+
+        expect([why, rec.opened.length, identity.soleTraderAdopted()]).toEqual([why, popups, popups === 0]);
+    });
+});
+
+test('a signed-in buyer, whose quote carries no email, is matched on the customer\'s own (TWO-26775)', async () => {
+    const { identity, rec } = await startStack({ buyer: BUYER, checkoutEmail: '', customerEmail: CHECKOUT_EMAIL });
+
+    chip('soletrader').click();
+    await settle();
+
+    expect([rec.opened.length, identity.soleTraderAdopted()]).toEqual([0, true]);
+});
+
 describe('anything less than a usable record falls through to the popup', () => {
     test.each([
         [{}, 'the session identifies no buyer at all'],
         [{ failLookup: true }, 'the lookup fails in transport'],
         [{ hangLookup: true }, 'the lookup has not landed when the buyer clicks'],
         [
-            { buyer: { email: 'nameless@example.com', organization_number: '111' } },
-            'the record carries no company name, which would blank the field'
+            { buyer: Object.assign({}, BUYER, { organization_number: '' }) },
+            'the record carries no number, so no order could be placed for it (TWO-26775, as PrestaShop)'
         ],
         [
-            { buyer: Object.assign({}, BUYER, { company_name: '   ' }) },
-            'the record carries a whitespace-only company name'
+            { buyer: Object.assign({}, BUYER, { organization_number: '   ' }) },
+            'the record carries a whitespace-only number'
         ]
     ])('%p -> the popup opens (%s)', async (options) => {
         const { identity, rec } = await startStack(options);
@@ -325,6 +378,17 @@ describe('anything less than a usable record falls through to the popup', () => 
         expect(identity.companyName()).toBe('');
         expect(rec.applied).toEqual([]);
         expect(rec.phones).toEqual([]);
+    });
+
+    test('a matching record with a blank name adopts from the click and keeps the name (TWO-26775, as PrestaShop)', async () => {
+        const { identity, rec } = await startStack({ buyer: Object.assign({}, BUYER, { company_name: '  ' }) });
+        identity.companyName('Acme Registered Ltd');
+
+        chip('soletrader').click();
+        await settle();
+
+        expect([rec.opened.length, identity.soleTraderAdopted(), identity.companyName(), identity.companyId()])
+            .toEqual([0, true, 'Acme Registered Ltd', BUYER.organization_number]);
     });
 
     test('the fall-through popup carries no autoselect param, as a first launch', async () => {
@@ -506,7 +570,10 @@ describe('leaving the mode keeps the answer the session still stands behind', ()
     test.each([
         ['registeredMode', 'back to company search'],
         ['manualEntryMode', 'to manual entry']
-    ])('the lookup in flight when the buyer left via %s is retired for a fresh one (%s)', async (leave) => {
+    ])('the lookup in flight when the buyer left via %s still answers the next click (%s)', async (leave) => {
+        // Leaving a sole-trader mode that adopted nobody discards nothing
+        // (TWO-26775), so the lookup it was waiting on is still the session's
+        // answer, and nothing asks again.
         const { component, identity, rec } = await startStack({
             buyer: BUYER,
             laterBuyer: OTHER_TRADER,
@@ -521,10 +588,8 @@ describe('leaving the mode keeps the answer the session still stands behind', ()
         await settle();
         await clickSoleTrader();
 
-        expect(rec.lookups).toBe(2);
-        // The retired lookup never writes: what the buyer gets is the answer
-        // armed after they left, not the one they clicked past.
-        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+        expect(rec.lookups).toBe(1);
+        expect(identity.companyName()).toBe(BUYER.company_name);
         expect(rec.opened).toHaveLength(1);
     });
 });
@@ -596,7 +661,7 @@ describe('the click never waits on a mint', () => {
         expect(rec.tokenMints).toBe(mintsBeforeClick);
     });
 
-    test('without tokens there is no popup either, so the on-page link is the way back', async () => {
+    test('without tokens there is no popup either, so the panel over the popover is the way on', async () => {
         const { component, flow, rec } = await startStack();
         flow.delegationToken = '';
         flow.autofillToken = '';
@@ -605,6 +670,9 @@ describe('the click never waits on a mint', () => {
 
         expect(rec.lookups).toBe(1);
         expect(rec.opened).toEqual([]);
-        expect(document.querySelector('.two-sole-trader-note')).not.toBeNull();
+        const button = document.querySelector('.two-company-dropdown__signup button');
+        expect(button).not.toBeNull();
+        expect(button.textContent).toBe('Sign up or log in as a sole trader');
+        expect(document.activeElement).toBe(button);
     });
 });

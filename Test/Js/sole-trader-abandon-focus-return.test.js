@@ -26,8 +26,13 @@ const {
 const GLOBALS = { document: document, window: window };
 const PANEL = '.two-company-dropdown';
 
-/** A capture component whose panel records the focus restores asked of it. */
-function loadComponentWithPanelDouble() {
+/**
+ * A capture component whose panel records the focus restores and closes asked
+ * of it.
+ *
+ * @param {?Element} [launcher] what the flow reports as the launcher still on screen
+ */
+function loadComponentWithPanelDouble(launcher) {
     const capture = loadCompanyCapture({
         jquery: $,
         'Two_Gateway/js/model/sole-trader': function () {},
@@ -36,10 +41,18 @@ function loadComponentWithPanelDouble() {
     }, GLOBALS);
     const component = capture.shipping;
     const restores = [];
+    const closes = [];
+    const released = [];
     // Leaving sole-trader mode reaches into the flow, which this fixture does
     // not boot.
     component._soleTrader = {
-        forgetAdoptions: function () {},
+        closeSignupPopup: function () { return false; },
+        focusSignupPopup: function () { return false; },
+        launchSignup: function () { return {}; },
+        matchingSoleTrader: function () { return null; },
+        isPopupOpen: function () { return false; },
+        showSignupPanel: function () {},
+        launcherToRefocus: function () { return launcher || null; },
         autofilledSoleTrader: function () { return null; },
         forgetAutofilledBuyer: function () {},
         prefetchBuyer: function () {}
@@ -47,60 +60,83 @@ function loadComponentWithPanelDouble() {
     component._panel = {
         restoreFieldFocus: function () { restores.push(true); },
         reclaimField: function () {},
+        releaseField: function () { released.push(true); },
+        abortActiveRequest: function () {},
         bind: function () {},
-        close: function () {},
+        close: function () { closes.push(true); },
         setDisplayText: function () {},
         syncChips: function () {},
         isBound: function () { return true; },
         unmount: function () {}
     };
 
-    return { component: component, restores: restores };
+    return { component: component, restores: restores, closes: closes, released: released };
 }
 
 describe('closing the sole-trader signup returns focus', function () {
     test.each([
-        [false, false, false, false, 1, 'focus the launch dropped is handed back to the company field'],
-        [false, true, false, false, 0, 'the buyer moved to another control, so the close is theirs'],
-        [true, false, false, false, 0, 'an adopted sole trader is the adopt path\'s business, not this one'],
-        [false, false, true, false, 0, 'a handover gave focus to another capture\'s signup'],
-        [
-            false,
-            true,
-            false,
-            true,
-            0,
-            'returning to registered mode unplaced the focus the buyer had put somewhere'
-        ]
+        [false, false, false, true, 'none', 'field', 1, 'a hand-close with no launcher on screen hands focus to the company field'],
+        [false, false, false, true, 'launcher', 'launcher', 1, 'a hand-close hands focus back to the launcher (guide row 1.39)'],
+        [true, false, false, true, 'launcher', 'launcher', 1, 'a hand-closed replacement signup goes back to its "select a different" link'],
+        [false, true, false, true, 'none', 'other', 1, 'the buyer moved to another control, so focus stays theirs'],
+        [false, false, true, true, 'none', 'none', 1, 'a handover gave focus to another capture\'s signup'],
+        [false, false, false, false, 'none', 'none', 0, 'a rule close leaves the popover and focus where the buyer put them']
     ])(
-        'adopted=%p elsewhere=%p handedOver=%p remountUnplaces=%p -> %p restores (%s)',
-        function (adopted, focusElsewhere, handedOver, remountUnplaces, expectedRestores) {
-            const ctx = loadComponentWithPanelDouble();
-            // The mode the popup was raised in, which is the only one the close
-            // is this flow's to answer for.
+        'adopted=%p elsewhere=%p handedOver=%p handClosed=%p launcher=%s -> focus %s, %p popover closes (%s)',
+        function (adopted, focusElsewhere, handedOver, handClosed, launcherKind, expectedFocus, expectedCloses, why) {
+            document.body.innerHTML = '<input id="other-control"><button id="launcher" type="button">Sole trader</button>';
+            const launcher = launcherKind === 'launcher' ? document.getElementById('launcher') : null;
+            const ctx = loadComponentWithPanelDouble(launcher);
             ctx.component.identity().captureMode('soletrader');
             ctx.component.identity().soleTraderAdopted(adopted);
-            // After the load, which resets the fixture.
-            document.body.innerHTML = '<input id="other-control">';
+            // loadCompanyCapture resets the body; put the fixture back.
+            if (!document.getElementById('launcher')) {
+                document.body.innerHTML = '<input id="other-control"><button id="launcher" type="button">Sole trader</button>';
+            }
             if (focusElsewhere) {
                 document.getElementById('other-control').focus();
             } else {
                 // What openPopup() leaves behind: nothing focused at all.
-                document.getElementById('other-control').blur();
+                document.activeElement.blur();
             }
-            if (remountUnplaces) {
-                const returnToRegistered = ctx.component.registeredMode.bind(ctx.component);
-                ctx.component.registeredMode = function () {
-                    document.getElementById('other-control').remove();
-                    return returnToRegistered();
-                };
-            }
+            const launcherNode = launcher || null;
+            let launcherFocused = false;
+            if (launcherNode) launcherNode.focus = function () { launcherFocused = true; };
 
-            ctx.component.abandonSoleTrader(handedOver ? { returnFocus: false } : undefined);
+            ctx.component.abandonSoleTrader({ returnFocus: !handedOver, handClosed: handClosed });
 
-            expect(ctx.restores.length).toBe(expectedRestores);
+            const focus = launcherFocused ? 'launcher'
+                : ctx.restores.length ? 'field'
+                    : document.activeElement === document.getElementById('other-control') ? 'other' : 'none';
+            expect([why, focus, ctx.closes.length]).toEqual([why, expectedFocus, expectedCloses]);
         }
     );
+});
+
+describe('an abandoned signup clears nothing and recomputes the mode (TWO-26775)', function () {
+    test.each([
+        ['registered', 'Acme Ltd', '12345678', 'registered', false, 'a registered pick is still the capture, so its mode comes back'],
+        ['manual', 'Typed Name Ltd', '', 'manual', true, 'a manual name with no id lands the buyer back in manual entry'],
+        ['registered', '', '', 'registered', false, 'nothing captured comes back as the default search']
+    ])('from %s with %p/%p the close lands in %s (released=%p) (%s)', function (before, name, id, expectedMode, expectReleased, why) {
+        const ctx = loadComponentWithPanelDouble();
+        const identity = ctx.component.identity();
+        identity.write({ companyName: name, companyId: id }, { authoritative: true });
+        identity.captureMode(before);
+        ctx.component.soleTraderMode();
+        ctx.released.length = 0;
+
+        ctx.component.abandonSoleTrader({ handClosed: true });
+
+        expect([why, identity.captureMode(), identity.companyName(), identity.companyId(), ctx.released.length > 0])
+            .toEqual([why, expectedMode, name, id, expectReleased]);
+    });
+
+    test('the restingMode() an adopted sole trader stands in is sole trader', function () {
+        const ctx = loadComponentWithPanelDouble();
+        ctx.component.identity().soleTraderAdopted(true);
+        expect(ctx.component.restingMode()).toBe('soletrader');
+    });
 });
 
 /**

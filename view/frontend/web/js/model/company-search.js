@@ -619,9 +619,12 @@ define([
      *        to; document-wide when null
      * @param {object} identity the calling panel's own identity, keying the
      *        recording
+     * @param {object} [options] `{ buyerRules: true }` for a sole trader's
+     *        autofill record; see keepBuyerWritableValues()
      */
-    function writeAddressInto(self, address, $root, identity) {
+    function writeAddressInto(self, address, $root, identity, options) {
         const values = self.resolveAddressValues(address, $root);
+        if (options && options.buyerRules) keepBuyerWritableValues(values, $root);
         const names = Object.keys(values);
         // What the marker attribute records for each written field — the
         // value ITSELF for an `<input>`, but the selected option's DISPLAYED
@@ -657,6 +660,33 @@ define([
         );
         names.forEach(function (name) {
             scopedFind($root, fieldSelector(name)).trigger('change');
+        });
+    }
+
+    /**
+     * PrestaShop's rules for a sole trader's autofill record (TWO-26775), applied
+     * to the resolved values in place:
+     *  - a blank writes nothing; the field is then left to the retraction, which
+     *    clears it only where it still holds what this module wrote;
+     *  - the region is written only into a region field that is empty or still
+     *    holds this module's own write.
+     *
+     * @param {object} values field name -> value, from resolveAddressValues()
+     * @param {object} $root the form to scope to
+     */
+    function keepBuyerWritableValues(values, $root) {
+        Object.keys(values).forEach(function (name) {
+            if (values[name] === '') {
+                delete values[name];
+                return;
+            }
+            if (name !== 'region' && name !== 'region_id') return;
+            const node = firstElement(scopedFind($root, fieldSelector(name)));
+            if (!node) return;
+            // As retractStaleFields() reads it: a select by its option's text.
+            const current = name === 'region_id' ? selectedOptionText(node) : String(node.value || '');
+            const filled = name === 'region_id' ? !!node.value : !!current.trim();
+            if (filled && node.getAttribute(AUTOFILL_MARKER_ATTR) !== current) delete values[name];
         });
     }
 
@@ -1254,15 +1284,17 @@ define([
          * @param {object} root jQuery set for the calling panel's own form
          * @param {object} identity the calling panel's own identity, keying the
          *        recording a later revert reads
+         * @param {object} [options] `{ buyerRules: true }` for a sole trader's
+         *        autofill record (see keepBuyerWritableValues())
          * @returns {number} 0 — no address other than `root` is ever written
          */
-        applyAddress: function (address, root, identity) {
+        applyAddress: function (address, root, identity, options) {
             console.debug({ logger: 'companySearch.applyAddress', address });
             if (!root || !root.length || !identity) {
                 console.debug({ logger: 'companySearch.applyAddress.refused' });
                 return 0;
             }
-            writeAddressInto(this, address, root, identity);
+            writeAddressInto(this, address, root, identity, options);
             return 0;
         },
 
@@ -1270,8 +1302,11 @@ define([
          * Write a verified buyer's own phone number into the telephone field.
          *
          * The deliberate exception to applyAddress() never touching telephone,
-         * and left unrecorded because the buyer's own number is not something a
-         * country switch invalidates the way a registry address is.
+         * and kept out of the country-switch revert because the buyer's own
+         * number is not something a country switch invalidates the way a
+         * registry address is. The write is marked all the same, because a
+         * blank clears the field only where it still holds this write
+         * (TWO-26775, as PrestaShop).
          *
          * @param {string} phone
          * @param {object} root the calling panel's own form. Required: an
@@ -1280,11 +1315,17 @@ define([
          * @returns {boolean} whether a field was written
          */
         applyTelephone: function (phone, root) {
-            if (typeof phone !== 'string' || !phone.trim()) return false;
             if (!root || !root.length) return false;
             const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
             if (!$field.length) return false;
-            $field.val(phone.trim()).trigger('change');
+            const value = typeof phone === 'string' ? phone.trim() : '';
+            if (!value) {
+                const current = $field.val() || '';
+                if (!current || $field.attr(AUTOFILL_MARKER_ATTR) !== current) return false;
+                $field.val('').removeAttr(AUTOFILL_MARKER_ATTR).trigger('change');
+                return true;
+            }
+            $field.val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
             return true;
         },
 

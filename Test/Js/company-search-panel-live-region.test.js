@@ -66,6 +66,14 @@ describe("the company-search panel's live region", () => {
         panel.destroy();
     });
 
+    test('the region is on the page, empty, from the moment the panel attaches (TWO-26775)', () => {
+        const regions = document.querySelectorAll(LIVE_SELECTOR);
+
+        expect(Array.prototype.map.call(regions, function (region) {
+            return [region.getAttribute('role'), region.textContent];
+        })).toEqual([['status', '']]);
+    });
+
     /**
      * @param {number} count companies the search should answer with
      */

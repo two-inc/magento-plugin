@@ -51,8 +51,7 @@ function telephoneValue() {
  * capture component, over the real company-search model, both closed over
  * jsdom's own document.
  *
- * Loaded fresh per test — the once-per-identity address guard lives on the flow
- * instance and the identity is a page-level singleton.
+ * Loaded fresh per test: the identity is a page-level singleton.
  *
  * @returns {object} `{ flow, companySearch, identity }`
  */
@@ -140,29 +139,41 @@ describe('the address write is not the route the phone takes', () => {
     });
 });
 
-describe('a replayed adoption', () => {
-    test('does not re-run the phone write over a number the buyer has since corrected', () => {
+describe('a replayed adoption (TWO-26775: written every time, by PrestaShop\'s rules)', () => {
+    test.each([
+        ['+442012345678', '+440000000000', '+442012345678', 'a number on the record overwrites a corrected one'],
+        ['', '+440000000000', '+440000000000', 'a blank leaves a number the buyer typed'],
+        ['', null, '', 'a blank clears a number the plugin itself wrote']
+    ])('second record %p over %p -> %p (%s)', (secondPhone, editedTo, expected, why) => {
         mountShippingForm('');
         const { flow } = loadFlow();
-        const buyer = Object.assign({}, BUYER, { phone_number: '+442012345678' });
 
-        flow.adoptBuyer(buyer);
-        document.querySelector('input[name="telephone"]').value = '+440000000000';
-        flow.adoptBuyer(buyer);
+        flow.adoptBuyer(Object.assign({}, BUYER, { phone_number: '+442012345678' }));
+        if (editedTo !== null) document.querySelector('input[name="telephone"]').value = editedTo;
+        flow.adoptBuyer(Object.assign({}, BUYER, { phone_number: secondPhone }));
 
-        expect(telephoneValue()).toBe('+440000000000');
+        expect([why, telephoneValue()]).toEqual([why, expected]);
     });
+});
 
-    test('forgetAdoptions() re-arms it, the same as the address half', () => {
-        mountShippingForm('');
-        const { flow } = loadFlow();
-        const buyer = Object.assign({}, BUYER, { phone_number: '+442012345678' });
+describe('applyTelephone() marks its own write (TWO-26775)', () => {
+    const MARKER = 'data-two-autofilled-value';
 
-        flow.adoptBuyer(buyer);
-        document.querySelector('input[name="telephone"]').value = '';
-        flow.forgetAdoptions();
-        flow.adoptBuyer(buyer);
+    test.each([
+        ['+442012345678', '', null, '+442012345678', '+442012345678', true, 'a value writes and is marked'],
+        [' +44 1 ', '+440000000000', null, '+44 1', '+44 1', true, 'a value overwrites whatever was there, trimmed'],
+        ['', '+441111111111', '+441111111111', '', null, true, 'a blank clears a marked value still as written'],
+        ['', '+442222222222', '+441111111111', '+442222222222', '+441111111111', false, 'a blank keeps a marked value the buyer changed'],
+        ['', '+441111111111', null, '+441111111111', null, false, 'a blank keeps a value nothing marked'],
+        [undefined, '', null, '', null, false, 'nothing at all writes nothing']
+    ])('%p over %p (marker %p) -> %p, marker %p, wrote %p (%s)', (phone, prior, marker, expected, expectedMarker, wrote, why) => {
+        mountShippingForm(prior);
+        if (marker !== null) document.querySelector('input[name="telephone"]').setAttribute(MARKER, marker);
+        const { companySearch } = loadFlow();
 
-        expect(telephoneValue()).toBe('+442012345678');
+        const result = companySearch.applyTelephone(phone, $('#shipping-new-address-form'));
+
+        const field = document.querySelector('input[name="telephone"]');
+        expect([why, field.value, field.getAttribute(MARKER), result]).toEqual([why, expected, expectedMarker, wrote]);
     });
 });

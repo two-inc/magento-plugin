@@ -220,8 +220,11 @@ define([
         return function () {
             const billingAddress = quote.billingAddress() || {};
             const street = (billingAddress.street || []).filter((s) => s).join(', ').split(' ');
+            // A signed-in buyer's quote carries no guest email, and the held
+            // autofill answer is matched against this one (TWO-26775).
+            const customer = (window.checkoutConfig && window.checkoutConfig.customerData) || {};
             return {
-                email: (billingAddress.email || quote.guestEmail || ''),
+                email: (billingAddress.email || quote.guestEmail || customer.email || ''),
                 first_name: billingAddress.firstname,
                 last_name: billingAddress.lastname,
                 company_name: identity.companyName(),
@@ -261,6 +264,7 @@ define([
             'Registered company': $t('Registered company'),
             'Search for company': $t('Search for company'),
             'Select a different sole trader': $t('Select a different sole trader'),
+            'Sign up or log in as a sole trader': $t('Sign up or log in as a sole trader'),
             'Sole trader': $t('Sole trader')
         };
     }
@@ -308,12 +312,6 @@ define([
             supportedCountriesUrl: function () {
                 return url.build('rest/V1/two/supported-countries');
             },
-            clearField: function (selector) {
-                // `change`, not just `val('')`: Knockout's `value:` binding reads the
-                // DOM on change only, so without it the buyer sees an empty box while
-                // the quote still carries the company they searched for.
-                $(selector).val('').trigger('change').trigger('focus');
-            },
             tokensUrl: function () {
                 return url.build('rest/V1/two/get-tokens');
             },
@@ -329,47 +327,6 @@ define([
             showError: function (message) {
                 messageList.addErrorMessage({ message: message });
             }
-        };
-    }
-
-    /**
-     * A sole-trader signup prompt scoped to ONE panel's own mount, so two
-     * simultaneously-mounted panels never share one prompt element
-     * (TWO-25554). `getComponent` is a thunk because the component this prompt
-     * belongs to does not exist yet when its host options are built.
-     *
-     * Anchored OUTSIDE the search popover, after the field's wrapper: entering
-     * sole-trader mode closes the popover, so a prompt inside it is a route
-     * forward the buyer cannot see.
-     *
-     * @param {function(): object} getComponent
-     * @returns {function(boolean, function())}
-     */
-    function makeRenderSignupPrompt(getComponent) {
-        return function (show, onRetry) {
-            const panel = getComponent().panel();
-            const fieldSelector = panel && panel.fieldSelector;
-            const $wrap = fieldSelector ? $(fieldSelector).parent() : $();
-            let $prompt = $wrap.length ? $wrap.next('.two-sole-trader-note') : $();
-            if (!show) {
-                $prompt.addClass('two-hidden');
-                return;
-            }
-            if (!$prompt.length) {
-                if (!$wrap.length) return;
-                $prompt = $('<div></div>').addClass('two-sole-trader-note');
-                $('<a href="#"></a>')
-                    .addClass('two-sole-trader-note__link')
-                    .text($t('Click here to log in or sign up as a Sole Trader.'))
-                    .on('click', function (event) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onRetry();
-                    })
-                    .appendTo($prompt);
-                $prompt.insertAfter($wrap);
-            }
-            $prompt.removeClass('two-hidden');
         };
     }
 
@@ -493,7 +450,7 @@ define([
             companySearch.revertAutofilledAddress(shippingWriteRoot(), shippingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, shippingWriteTarget(), shippingIdentity);
+            companySearch.applyAddress(source, shippingWriteTarget(), shippingIdentity, { buyerRules: true });
         },
         applyTelephone: function (phoneNumber) {
             companySearch.applyTelephone(phoneNumber, shippingWriteTarget());
@@ -504,8 +461,7 @@ define([
                 : '';
         },
         watchCountryChanges: makeWatchCountryChanges(ADDRESS_COUNTRY_SELECTOR),
-        signupPrefill: makeSignupPrefill(shippingIdentity),
-        renderSignupPrompt: makeRenderSignupPrompt(function () { return shippingComponent; })
+        signupPrefill: makeSignupPrefill(shippingIdentity)
     }));
 
     billingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
@@ -534,7 +490,7 @@ define([
             companySearch.revertAutofilledAddress(billingWriteRoot(), billingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, billingWriteTarget(), billingIdentity);
+            companySearch.applyAddress(source, billingWriteTarget(), billingIdentity, { buyerRules: true });
         },
         applyTelephone: function (phoneNumber) {
             companySearch.applyTelephone(phoneNumber, billingWriteTarget());
@@ -543,9 +499,97 @@ define([
             return companySearch.currentAddressFormCountry($(BILLING_FORM_ROOT));
         },
         watchCountryChanges: makeWatchCountryChanges(BILLING_COUNTRY_SELECTOR),
-        signupPrefill: makeSignupPrefill(billingIdentity),
-        renderSignupPrompt: makeRenderSignupPrompt(function () { return billingComponent; })
+        signupPrefill: makeSignupPrefill(billingIdentity)
     }));
+
+    /**
+     * Where each panel's manual entry outlives a reload of this tab (TWO-26775).
+     * The record belongs to one quote and one customer: a placed order, a login
+     * and a logout all move on from it, and the next checkout drops it.
+     */
+    const MANUAL_ENTRY_KEY = 'two-company-manual-entry';
+
+    /** @returns {string} the quote and customer a record is good for */
+    function manualEntryOwner() {
+        const customer = (window.checkoutConfig && window.checkoutConfig.customerData) || {};
+        return JSON.stringify([String(quote.getQuoteId() || ''), String(customer.id || '')]);
+    }
+
+    /** @returns {object} this checkout's stored manual entries, the name by role */
+    function readManualEntries() {
+        try {
+            const stored = JSON.parse(window.sessionStorage.getItem(MANUAL_ENTRY_KEY) || '{}');
+            const ours = stored && stored.owner === manualEntryOwner();
+            return ours && stored.entries && typeof stored.entries === 'object' ? stored.entries : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function writeManualEntries(entries) {
+        try {
+            window.sessionStorage.setItem(MANUAL_ENTRY_KEY, JSON.stringify({ owner: manualEntryOwner(), entries: entries }));
+        } catch (error) {
+            // No storage, no restore: the page still holds the entry until it reloads.
+        }
+    }
+
+    /**
+     * Blank the `company_id` a quote address carries, which a saved address-book
+     * entry fills with the company of the last Two order. The quote is what
+     * places the order, and the address book is the buyer's own (TWO-26775).
+     *
+     * @param {?object} address quote address
+     */
+    function dropCompanyId(address) {
+        if (!address || !Array.isArray(address.customAttributes)) return;
+        address.customAttributes.forEach(function (item) {
+            if (item && item.attribute_code === 'company_id') item.value = '';
+        });
+    }
+
+    /** Every quote address a panel in manual entry speaks for loses its number. */
+    function dropManualCompanyIds() {
+        if (shippingIdentity.captureMode() === 'manual') {
+            dropCompanyId(quote.shippingAddress());
+            if (!billingIsDistinct()) dropCompanyId(quote.billingAddress());
+        }
+        if (billingIdentity.captureMode() === 'manual' && billingIsDistinct()) {
+            dropCompanyId(quote.billingAddress());
+        }
+    }
+
+    /**
+     * Restore a panel's manual entry from before a reload, then keep the record
+     * current: the name while manual entry is the panel's resting mode, which a
+     * Sole trader click leaves in place until a sole trader is adopted over it,
+     * and nothing otherwise.
+     *
+     * @param {string} role
+     * @param {object} component
+     */
+    function keepManualEntry(role, component) {
+        const identity = component.identity();
+        const saved = readManualEntries()[role];
+        if (typeof saved === 'string') component.restoreManualEntry(saved);
+        const record = function () {
+            const entries = readManualEntries();
+            const pending = identity.isSoleTrader() && component.restingMode() === 'manual';
+            if (identity.captureMode() === 'manual' || pending) entries[role] = identity.companyName();
+            else delete entries[role];
+            writeManualEntries(entries);
+            dropManualCompanyIds();
+        };
+        record();
+        identity.subscribe(record);
+    }
+
+    // Before anything reads the quote addresses: the renderer's seed of a saved
+    // address's company must find the panel already in manual entry.
+    keepManualEntry('shipping', shippingComponent);
+    keepManualEntry('billing', billingComponent);
+    quote.shippingAddress.subscribe(dropManualCompanyIds);
+    quote.billingAddress.subscribe(dropManualCompanyIds);
 
     const resolver = new CompanySourceResolver({
         shipping: shippingIdentity,

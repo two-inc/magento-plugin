@@ -411,7 +411,11 @@ function loadTile() {
             soleTrader.launches.push(options || null);
             return null;
         };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
         this.selectDifferentSoleTrader = function () { return 'relaunched'; };
     }
@@ -601,8 +605,9 @@ describe('the payment tile shows the number as an uneditable label, not a field'
 
     test('a prior search does not leave the name locked after switching to sole trader', () => {
         // Same trap by a different route: a captured company, THEN the mode
-        // switch. Sole-trader mode abandons the registry number and, on the
-        // unmatched branch, nothing refills it.
+        // switch. The click clears nothing (TWO-26775), so the picked company
+        // stays on the order until a sole trader is adopted over it, and the
+        // field is still not locked: nothing has been adopted yet.
         const { renderer, component } = loadTile();
 
         renderer.applyCompanyData(
@@ -611,7 +616,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         );
         component.shipping.soleTraderMode();
 
-        expect(renderer.companyId()).toBe('');
+        expect(renderer.companyId()).toBe('12345678');
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 

@@ -9,7 +9,8 @@
  *
  * Shipping's capture wins while billing is not a distinct address. Once the
  * buyer makes billing distinct, billing's capture wins, falling back to
- * shipping when billing carries no company number to bill against.
+ * shipping when billing carries no company number to bill against, unless
+ * billing is in manual entry (TWO-26775).
  *
  * Never a hybrid of the two: `resolved` is always a live mirror of exactly ONE
  * of `shipping`/`billing`, so a downstream reader (order-intent, the tile's own
@@ -74,6 +75,10 @@
         const options = this._options;
         if (!options.billingIsDistinct()) return options.shipping;
         if (hasCompanyNumber(options.billing)) return options.billing;
+        // Manual entry on billing is the buyer naming the invoice company: the
+        // shipping panel's number would bill the order to a company the buyer
+        // just set aside (TWO-26775).
+        if (options.billing.captureMode() === 'manual') return options.billing;
         // TWO-26295: an organisation number belongs to its own country's
         // registry, and the order goes out under the billing country, so a
         // shipping company from another country is never the fallback: the API

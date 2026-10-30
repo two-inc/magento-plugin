@@ -222,9 +222,9 @@ describe('a disabled payment-term chip is exempt', () => {
 });
 
 describe('the chip accent is its own property', () => {
-    test('the sole-trader link keeps the shared blue', () => {
+    test('the field action links keep the shared blue', () => {
         injectStylesheet();
-        document.body.innerHTML = '<span class="two-sole-trader-note__link" id="link">Sole trader</span>';
+        document.body.innerHTML = '<button class="two-field-action-link" id="link">Select a different sole trader</button>';
 
         expect(rgb(window.getComputedStyle(document.getElementById('link')).color))
             .toBe('rgb(48, 67, 209)');

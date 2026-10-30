@@ -63,7 +63,6 @@
         'supportedCompanyTypesUrl',
         'applyCompanyAddress',
         'revertAutofilledAddress',
-        'clearField',
         'tokensUrl',
         'quoteId',
         'apiClientParams',
@@ -71,8 +70,7 @@
         'signupCountry',
         'applyBuyerAddress',
         'applyTelephone',
-        'showError',
-        'renderSignupPrompt'
+        'showError'
     ];
 
     /** style.css keys this label's alignment off the class. */
@@ -168,8 +166,6 @@
      *        a picked registry result.
      * @param {function()} options.revertAutofilledAddress undo what the last
      *        such write put in, leaving the buyer's own edits.
-     * @param {function(string)} options.clearField blank the field at a
-     *        selector, and tell the host's own state.
      * @param {function(): string} options.tokensUrl
      * @param {function(): string} options.quoteId
      * @param {function(object): object} options.apiClientParams query params
@@ -181,8 +177,6 @@
      * @param {function(object)} options.applyBuyerAddress
      * @param {function(string)} options.applyTelephone
      * @param {function(string)} options.showError
-     * @param {function(boolean, function())} options.renderSignupPrompt show or
-     *        withdraw the blocked-popup fallback link.
      */
     function CompanyCaptureComponent(options) {
         options = options || {};
@@ -210,6 +204,8 @@
         this._manualWatchedSelectors = {};
         /** @see subscribeMount */
         this._mountSubs = [];
+        /** The capture mode a Sole trader click left; @see restingMode */
+        this._modeBeforeSoleTrader = 'registered';
 
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
@@ -355,7 +351,6 @@
             const wasSoleTrader = this._identity.isSoleTrader();
             this._identity.clear();
             this._options.revertAutofilledAddress();
-            this._soleTrader.forgetAdoptions();
             if (wasSoleTrader) this.registeredMode();
         }
         // The held buyer answer comes from the session cookie, not the
@@ -646,6 +641,9 @@
                 onExitManualEntry: function () {
                     self.registeredMode({ openDropdown: true });
                 },
+                onClose: function () {
+                    self.settleIdleSoleTrader();
+                },
                 onSelect: function (selectedItem) {
                     self.selectCompany(selectedItem);
                 }
@@ -656,7 +654,13 @@
         this._panel.bind();
         // A re-render takes the return link with the wrapper, and without it
         // manual entry is a dead end.
-        if (this._identity.captureMode() === 'manual') this._panel.releaseField();
+        if (this._identity.captureMode() === 'manual') {
+            this._panel.releaseField();
+            // A manual entry restored before anything mounted shows its name
+            // and records the buyer's edits from here (TWO-26775).
+            this._panel.setDisplayText(this._identity.companyName());
+            this._watchManualEdits();
+        }
     };
 
     // ---------------------------------------------------------------- chrome
@@ -835,7 +839,7 @@
         link.addEventListener('click', function (event) {
             event.preventDefault();
             event.stopPropagation();
-            self._soleTrader.selectDifferentSoleTrader();
+            self._soleTrader.selectDifferentSoleTrader(link);
         });
         wrapper.appendChild(link);
         // After the number when there is one, so the two keep a stable order
@@ -892,7 +896,7 @@
             {
                 mode: 'soletrader',
                 text: this.translate('Sole trader'),
-                onActivate: function () { return self.soleTraderMode(); }
+                onActivate: function (chip) { return self.soleTraderMode(chip); }
             },
             {
                 mode: 'manual',
@@ -949,25 +953,40 @@
     };
 
     /**
-     * Manual entry: abandon the company in play and hand the field back as a
-     * plain text input the buyer can type into.
+     * Manual entry: drop the company number and hand the field back as a plain
+     * text input, still showing the name, for the buyer to edit (TWO-26775).
      *
      * With no registry number `isCaptured()` stays false and the order is
      * refused server-side — unchanged by this being one click away.
      */
     CompanyCaptureComponent.prototype.manualEntryMode = function () {
+        // First, and by rule: the release below focuses the field the popup
+        // parked focus on, which the popup's own focus rule ignores (TWO-26775).
+        if (this._soleTrader) this._soleTrader.closeSignupPopup({ byRule: true });
         this.leaveSoleTraderMode();
         this._identity.captureMode('manual');
+        this._identity.clearNumber();
         if (this._panel) {
             // Before the release: a search still on the wire would otherwise
             // paint results into a panel the buyer has closed.
             this._panel.abortActiveRequest();
             this._panel.releaseField();
+            this._panel.setDisplayText(this._identity.companyName());
         }
-        this._identity.clearNumber();
-        if (this._boundSelector) this._options.clearField(this._boundSelector);
         this._watchManualEdits();
         this.syncChips();
+    };
+
+    /**
+     * Re-enter a manual entry a reload interrupted, with the name it kept, so
+     * the page cannot come back holding the number the buyer set aside
+     * (TWO-26775). Safe before `start()`: the mount picks the mode up.
+     *
+     * @param {string} name
+     */
+    CompanyCaptureComponent.prototype.restoreManualEntry = function (name) {
+        this._identity.companyName(String(name || ''));
+        this.manualEntryMode();
     };
 
     /**
@@ -1041,9 +1060,14 @@
      * minted, so the answer is already in hand and the popup opens inside the
      * click a blocker will allow.
      *
+     * Clears nothing: the company captured before the click stays until a
+     * sole trader is actually adopted over it, and the signup prefills from
+     * its name (TWO-26775, as PrestaShop).
+     *
+     * @param {Element} [chip] the chip the buyer used
      * @returns {Window|null} the popup where one opened
      */
-    CompanyCaptureComponent.prototype.soleTraderMode = function () {
+    CompanyCaptureComponent.prototype.soleTraderMode = function (chip) {
         // Raised, not reopened: the popup targets `_blank`, so a second open would orphan a
         // signup the buyer is part-way through (TWO-25658).
         if (this._soleTrader.focusSignupPopup()) return null;
@@ -1051,10 +1075,10 @@
         // is a deliberate request for the popup itself (TWO-25658).
         // `autoselect: false` so the hosted flow offers a choice rather than the registration already adopted.
         if (this._identity.isSoleTrader() && this._identity.soleTraderAdopted()) {
-            return this._soleTrader.launchSignup({ autoselect: false });
+            return this._soleTrader.launchSignup({ autoselect: false }, chip);
         }
+        if (!this._identity.isSoleTrader()) this._modeBeforeSoleTrader = this._identity.captureMode();
         this._identity.captureMode('soletrader');
-        this._identity.clearNumber();
         // The popover stays OPEN behind the signup popup, so the chips stay
         // on screen and the buyer can click Sole trader again to raise the
         // popup rather than having to reach it through the company field —
@@ -1062,8 +1086,10 @@
         // the popup down. It closes when they return to checkout and settle
         // somewhere other than this control.
         this.syncChips();
-        const buyer = this._soleTrader.autofilledSoleTrader();
-        if (!buyer) return this._soleTrader.launchSignup();
+        // Adopted without a popup only where the held answer is the buyer at
+        // this checkout (TWO-26775, as PrestaShop).
+        const buyer = this._soleTrader.matchingSoleTrader();
+        if (!buyer) return this._soleTrader.launchSignup(undefined, chip);
         this._soleTrader.adoptBuyer(buyer);
         return null;
     };
@@ -1072,10 +1098,15 @@
      * Leave sole-trader mode, discarding what it captured. A no-op in the other
      * two modes, which is what makes it safe on every mode entry.
      *
+     * Before an adoption the mode has captured nothing: the company in the
+     * capture is still the one from before the chip click, and stays
+     * (TWO-26775).
+     *
      * @returns {boolean} whether sole-trader mode was actually left
      */
     CompanyCaptureComponent.prototype.leaveSoleTraderMode = function () {
         if (!this._identity.isSoleTrader()) return false;
+        if (!this._identity.soleTraderAdopted()) return true;
         this._identity.soleTraderAdopted(false);
         // A sole trader's minted name and synthetic number are not a registered
         // organisation, so carrying them across would submit one identity under
@@ -1086,7 +1117,6 @@
         // fields still holding what the write put there are cleared, so the
         // buyer's own edits survive.
         this._options.revertAutofilledAddress();
-        this._soleTrader.forgetAdoptions();
         // An adopted answer is spent; one still held is left alone — the
         // session stands behind it either way.
         if (!this._soleTrader.autofilledSoleTrader()) {
@@ -1094,6 +1124,48 @@
             this._soleTrader.prefetchBuyer();
         }
         return true;
+    };
+
+    /**
+     * Sole-trader mode with no popup up, nothing in flight and nobody adopted
+     * has nothing behind it, so the mode follows the capture back to
+     * registered, as PrestaShop recomputes it on the next open (TWO-26775).
+     * Run on every popover close: the blocked-popup panel goes with the
+     * popover, and the chip would otherwise stay selected over a company it
+     * does not describe.
+     */
+    CompanyCaptureComponent.prototype.settleIdleSoleTrader = function () {
+        if (this._identity.captureMode() !== 'soletrader') return;
+        if (this._identity.soleTraderAdopted() || this._identity.isBusy()) return;
+        if (this._soleTrader && this._soleTrader.isPopupOpen()) return;
+        this.returnToRestingMode();
+    };
+
+    /**
+     * The mode the stored capture stands in, recomputed the way PrestaShop's
+     * `openDropdown()` does: Sole trader for an adopted one, else the mode of
+     * the capture the Sole trader click left, which nothing has replaced.
+     * Read off that click rather than off the name and number: a manual name
+     * and a registry hit with no number look the same (TWO-26775).
+     *
+     * @returns {string}
+     */
+    CompanyCaptureComponent.prototype.restingMode = function () {
+        if (this._identity.soleTraderAdopted()) return 'soletrader';
+        return this._modeBeforeSoleTrader === 'manual' ? 'manual' : 'registered';
+    };
+
+    /** Leave a sole-trader mode that captured nothing for the resting mode, clearing nothing. */
+    CompanyCaptureComponent.prototype.returnToRestingMode = function () {
+        const mode = this.restingMode();
+        if (mode === 'soletrader') return;
+        if (mode === 'manual') {
+            this.manualEntryMode();
+            return;
+        }
+        this._identity.captureMode('registered');
+        this.refreshMount();
+        this.syncChips();
     };
 
     // -------------------------------------------------- sole-trader callbacks
@@ -1107,10 +1179,12 @@
     CompanyCaptureComponent.prototype.adoptSoleTrader = function (buyer) {
         // Authoritative: a sole trader with no registry number of their own must
         // not inherit the number of whatever company was captured before them,
-        // which a non-authoritative write leaves standing.
+        // which a non-authoritative write leaves standing. A blank name is the
+        // exception, and keeps the name in the field (TWO-26775, as PrestaShop).
+        const name = String(buyer.company_name || '').trim();
         this._identity.write(
             {
-                companyName: buyer.company_name,
+                companyName: name || this._identity.companyName(),
                 companyId: buyer.organization_number,
                 companyIdSource: buyer.organization_number ? 'registry' : ''
             },
@@ -1128,24 +1202,54 @@
     };
 
     /**
-     * The buyer abandoned signup with nothing captured. The signup launch
-     * blurred whatever held focus (TWO-25658), so the company field takes it
-     * back unless the buyer has since placed it themselves.
+     * The signup closed with nothing captured. It clears nothing: the capture
+     * is the one from before the chip click, and the mode follows it back
+     * (TWO-26775, as PrestaShop).
+     *
+     * A hand-close closes the popover too, and hands focus to the launcher, or
+     * to the company field where the launcher went with the popover (guide row
+     * 1.39). A close by a focus or click rule leaves both where the buyer put
+     * them.
      *
      * @param {object} [options] `returnFocus: false` where focus has been handed
-     *        to another capture's signup
+     *        to another capture's signup; `handClosed: true` for the buyer's
+     *        own close
      */
     CompanyCaptureComponent.prototype.abandonSoleTrader = function (options) {
-        if (this._identity.soleTraderAdopted()) return;
+        const handClosed = !!(options && options.handClosed);
+        const adopted = this._identity.soleTraderAdopted();
         // A mode asked for since the popup was raised is the buyer's answer, not
         // abandonment to overwrite.
         if (this._identity.captureMode() !== 'soletrader') return;
-        // Read before registeredMode(), which can remount the panel and so
+        // Read before the mode change, which can remount the panel and so
         // unplace focus the buyer had put somewhere.
         const reclaimable = focusIsUnplaced();
-        this.registeredMode();
-        if (options && options.returnFocus === false) return;
-        if (this._panel && reclaimable) this._panel.restoreFieldFocus();
+        if (!adopted) this.returnToRestingMode();
+        if (!handClosed) return;
+        if (this._panel) this._panel.close({ returnFocus: false });
+        if (options.returnFocus === false || !reclaimable) return;
+        const launcher = this._soleTrader.launcherToRefocus();
+        if (launcher) launcher.focus();
+        else if (this._panel) this._panel.restoreFieldFocus();
+    };
+
+    /**
+     * The signup reported success and Two still knows nobody. PrestaShop asks
+     * again: on the payment step through its on-page prompt, on the address
+     * step with a second popup. The tile mount maps to the first, where the
+     * blocked-popup panel is that prompt, and the address mount to the second,
+     * which a blocker turns into the same panel (TWO-26775).
+     */
+    CompanyCaptureComponent.prototype.signupFoundNobody = function () {
+        if (this._boundSelector && this._boundSelector === this._options.tileFieldSelector) {
+            // The finished popup's watchers go first. Its close poll would abandon the
+            // mode once this lookup settles, and its return watch would read the button
+            // taking focus as the buyer leaving: either takes the panel down.
+            this._soleTrader.retireFinishedPopup();
+            this._soleTrader.showSignupPanel(true);
+            return;
+        }
+        this._soleTrader.launchSignup();
     };
 
     CompanyCaptureComponent.HOST_CONTRACT = HOST_CONTRACT;

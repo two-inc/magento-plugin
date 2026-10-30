@@ -246,6 +246,8 @@ function defaultMocks() {
             CompanySearchPanelMock.prototype.isBound = function () { return false; };
             CompanySearchPanelMock.prototype.setDisabled = function () {};
             CompanySearchPanelMock.prototype.getField = function () { return this._field || {}; };
+            CompanySearchPanelMock.prototype.showSignupPanel = function () {};
+            CompanySearchPanelMock.prototype.hideSignupPanel = function () {};
             CompanySearchPanelMock.prototype.getBindToken = function () { return null; };
             return CompanySearchPanelMock;
         })(),
