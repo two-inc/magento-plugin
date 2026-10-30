@@ -11,7 +11,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Refuses a payment term the merchant record does not offer, shared by the admin fields (ABN-493).
+ * Refuses a payment term the merchant record does not offer, shared by the admin fields.
  */
 class OfferedTermsGuard
 {
@@ -31,7 +31,7 @@ class OfferedTermsGuard
     {
         $offered = $this->offered($storeId, $scope);
         // Refusing the save would lock the merchant out of correcting the API key that
-        // resolves the record; the buyer path fails closed instead (ABN-493).
+        // resolves the record; the buyer path fails closed instead.
         if ($offered === []) {
             return;
         }

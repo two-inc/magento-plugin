@@ -15,11 +15,10 @@
         <payment>
             <two_payment>
                 <active>1</active>
-                <version>4.0.0</version>
+                <version>4.1.0</version>
                 <title>Two - Buy Now Pay Later on Invoice Terms</title>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
-                <invoice_type>FUNDED_INVOICE</invoice_type>
                 <merchant_minimum_order_basis>gross</merchant_minimum_order_basis>
                 <finalize_purchase>1</finalize_purchase>
                 <enable_order_intent>1</enable_order_intent>

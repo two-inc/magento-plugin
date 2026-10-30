@@ -124,6 +124,14 @@ class PostprocessingTotals implements OrderPostprocessingTotalsInterface
         foreach ($totals as $total => $field) {
             $block[$total] = self::amount($sums[$field] + $residual($total, $field));
         }
+        if (!array_key_exists('amount', $block) && array_key_exists('invoice_amount', $block)) {
+            // TWO-26309: the tenders stay prepaid; the invoice follows the lines and payable takes the change.
+            $invoice = (int)round((float)$block['net_amount'] * 100) + (int)round((float)$block['tax_amount'] * 100);
+            $prepaid = (int)round((float)($block['prepaid_amount'] ?? 0) * 100);
+            $block['invoice_amount'] = self::amount($invoice / 100);
+            $block['payable_amount'] = self::amount(($invoice - $prepaid) / 100);
+            $block['gross_amount'] = $block['payable_amount'];
+        }
 
         if (isset($block['tax_subtotals'])) {
             $block['tax_subtotals'] = $this->subtotals($block['line_items'], $original, $originalLines);

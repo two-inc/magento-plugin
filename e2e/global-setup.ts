@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FullConfig } from '@playwright/test';
+import { storeAuthHeaders } from './tests/fixtures';
 
 const READY_TIMEOUT_MS = 5 * 60_000; // > the ~3min in-place static redeploy a plugin merge triggers
 const POLL_INTERVAL_MS = 10_000;
@@ -35,7 +36,7 @@ async function probe(baseURL: string, local: string): Promise<Probe> {
     try {
         // `page.goto` resolves on a 500, so without this a mid-redeploy run
         // surfaces as an assertion failure and reads as a plugin defect.
-        res = await fetch(baseURL, { redirect: 'follow' });
+        res = await fetch(baseURL, { redirect: 'follow', headers: storeAuthHeaders(baseURL) });
     } catch (err) {
         return {
             ready: false,
@@ -57,7 +58,7 @@ async function probe(baseURL: string, local: string): Promise<Probe> {
     }
 
     const url = new URL(prefix + ASSET, baseURL).toString();
-    const asset = await fetch(url);
+    const asset = await fetch(url, { headers: storeAuthHeaders(url) });
     if (!asset.ok) {
         return { ready: false, kind: 'no-storefront', detail: `HTTP ${asset.status} from ${url}` };
     }

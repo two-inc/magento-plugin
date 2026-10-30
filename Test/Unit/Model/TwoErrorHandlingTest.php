@@ -164,45 +164,128 @@ class TwoErrorHandlingTest extends TestCase
         $this->assertStringNotContainsString('..', $rendered);
     }
 
-    // ── User errors (400 + error_code) ──────────────────────────────────
+    // ── User errors, and every refusal at order create ──────────────────
 
-    public function testUserErrorSchemaError(): void
+    /**
+     * Elsewhere a 400 user error shows its own message with no trace ID. At
+     * order create (TWO-26259) any status of 400 or above shows the field
+     * messages, else the same-company message, else the generic notice, as
+     * the WooCommerce plugin does; no API message or trace ID reaches the
+     * buyer. A call with no HTTP response shows the general error.
+     *
+     * @return array<string, array{0: array, 1: bool, 2: string}>
+     */
+    public static function userErrorCases(): array
     {
-        $response = [
-            'http_status' => 400,
-            'error_code' => 'SCHEMA_ERROR',
-            'error_message' => 'Missing required field: company_id',
+        $generic = 'Invoice purchase with Two is not available for this order.';
+        $sameCompany = 'The buyer and the seller are the same company.';
+        $general = 'Something went wrong with your request to Two. Please try again later.';
+        $phone = 'Phone Number: Invalid phone number.';
+        $err = static fn(int $status, string $code, array $extra = []): array => [
+            'http_status' => $status,
+            'error_code' => $code,
+            'error_message' => 'api text',
+            'error_trace_id' => 'abc-123-trace',
+        ] + $extra;
+        $fieldJson = ['error_json' => [['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.']]];
+        return [
+            // [response, atOrderCreate, expected message]
+            'SCHEMA_ERROR elsewhere shows the API message' => [$err(400, 'SCHEMA_ERROR'), false, 'api text'],
+            'ORDER_INVALID elsewhere shows the API message' => [$err(400, 'ORDER_INVALID'), false, 'api text'],
+            'SAME_BUYER_SELLER_ERROR elsewhere shows same company' => [$err(400, 'SAME_BUYER_SELLER_ERROR'), false, $sameCompany],
+            'SCHEMA_ERROR at create shows the generic notice' => [$err(400, 'SCHEMA_ERROR'), true, $generic],
+            'ORDER_INVALID at create shows the generic notice' => [$err(400, 'ORDER_INVALID'), true, $generic],
+            '400 with another code at create shows the generic notice' => [$err(400, 'SOME_OTHER_ERROR'), true, $generic],
+            '422 at create shows the generic notice' => [$err(422, 'UNPROCESSABLE'), true, $generic],
+            '500 at create shows the generic notice' => [$err(500, 'INTERNAL_ERROR'), true, $generic],
+            '503 without a body at create shows the generic notice' => [['http_status' => 503], true, $generic],
+            'SAME_BUYER_SELLER_ERROR at create shows same company' => [$err(400, 'SAME_BUYER_SELLER_ERROR'), true, $sameCompany],
+            '400 with error_json at create names the field' => [$err(400, 'SCHEMA_ERROR', $fieldJson), true, 'Phone Number is not valid.'],
+            '422 with error_json at create names the field' => [$err(422, 'SCHEMA_ERROR', $fieldJson), true, 'Phone Number is not valid.'],
+            '400 with error_json elsewhere names the field' => [$err(400, 'SCHEMA_ERROR', $fieldJson), false, $phone],
+            'unrecognised field and duplicates are punctuated and de-duplicated' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [
+                ['loc' => ['some', 'unknown'], 'msg' => 'field required'],
+                ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
+                ['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Invalid phone number.'],
+            ]]), false, 'field required. ' . $phone],
+            'recognised field ending in a question mark keeps it' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [['loc' => ['buyer', 'representative', 'phone_number'], 'msg' => 'Is this right?']]]), false, 'Phone Number: Is this right?'],
+            'unrecognised field ending in a question mark keeps it' => [$err(400, 'SCHEMA_ERROR', ['error_json' => [['loc' => ['x'], 'msg' => 'Is this right?']]]), false, 'Is this right?'],
+            'no HTTP response at create shows the general error' => [['error_code' => 400, 'error_message' => 'Could not resolve host'], true, $general],
         ];
-        $result = $this->model->getErrorFromResponse($response);
-        $rendered = $result->render();
-        $this->assertStringContainsString('Missing required field', $rendered);
-        $this->assertStringNotContainsString('Trace ID', $rendered);
     }
 
-    public function testUserErrorSameBuyerSeller(): void
+    /**
+     * TWO-26295: what a BUYER is shown, at order create and on the buyer's
+     * return to the shop. A field they can fix is named in our own words,
+     * chosen from the field path; anything else is a standard message; the
+     * API's text never appears.
+     *
+     * @return array<string, array{0: array, 1: string, 2: string}>
+     */
+    public static function buyerErrorCases(): array
     {
-        $response = [
-            'http_status' => 400,
-            'error_code' => 'SAME_BUYER_SELLER_ERROR',
-            'error_message' => 'original api message',
+        $general = 'Something went wrong with your request to Two. Please try again later.';
+        $generic = 'Invoice purchase with Two is not available for this order.';
+        $sameCompany = 'The buyer and the seller are the same company.';
+        $refusal = static fn(int $status, string $code, array $locs = []): array => [
+            'http_status' => $status,
+            'error_code' => $code,
+            'error_message' => 'raw api message',
+            'error_details' => 'raw api details',
+            'error_json' => array_map(
+                static fn(array $loc): array => ['loc' => $loc, 'msg' => 'Value error, raw validator text'],
+                $locs
+            ),
         ];
-        $result = $this->model->getErrorFromResponse($response);
-        $rendered = $result->render();
-        $this->assertStringContainsString('buyer and the seller are the same', $rendered);
-        $this->assertStringNotContainsString('Trace ID', $rendered);
+        $phone = ['buyer', 'representative', 'phone_number'];
+        return [
+            // [response, at order create, on the buyer's return]
+            'a field' => [$refusal(400, 'SCHEMA_ERROR', [$phone]), 'Phone Number is not valid.', 'Phone Number is not valid.'],
+            'a field behind a model-name segment' => [$refusal(400, 'SCHEMA_ERROR', [['buyer', 'SomeSchema', 'company', 'SomeOtherSchema', 'organization_number']]), 'Company Number is not valid.', 'Company Number is not valid.'],
+            'two fields, one repeated' => [$refusal(400, 'SCHEMA_ERROR', [$phone, ['billing_address', 'city'], $phone]), 'Phone Number is not valid. City is not valid.', 'Phone Number is not valid. City is not valid.'],
+            'ORDER_INVALID carrying a field path' => [$refusal(400, 'ORDER_INVALID', [$phone]), 'Phone Number is not valid.', 'Phone Number is not valid.'],
+            'a field we do not know' => [$refusal(400, 'SCHEMA_ERROR', [['buyer', 'unknown']]), $general, $general],
+            'ORDER_INVALID naming nothing' => [$refusal(400, 'ORDER_INVALID'), $generic, $general],
+            'a refusal with an unknown code' => [$refusal(400, 'SOMETHING_NEW'), $generic, $general],
+            'a server error' => [$refusal(500, 'INTERNAL_ERROR'), $generic, $general],
+            'a server error carrying a field path' => [$refusal(502, 'BAD_GATEWAY', [$phone]), $generic, $general],
+            'the same company' => [$refusal(400, 'SAME_BUYER_SELLER_ERROR'), $sameCompany, $sameCompany],
+        ];
     }
 
-    public function testUserErrorOrderInvalid(): void
+    /**
+     * @dataProvider buyerErrorCases
+     */
+    public function testWhatTheBuyerIsShown(array $response, string $atCreate, string $onReturn): void
     {
-        $response = [
-            'http_status' => 400,
-            'error_code' => 'ORDER_INVALID',
-            'error_message' => 'Order amount too low',
+        $shown = [
+            $this->model->getErrorFromResponse($response, true)->render(),
+            $this->model->getBuyerErrorFromResponse($response)->render(),
         ];
-        $result = $this->model->getErrorFromResponse($response);
-        $rendered = $result->render();
-        $this->assertStringContainsString('Order amount too low', $rendered);
-        $this->assertStringNotContainsString('Trace ID', $rendered);
+
+        $this->assertSame([$atCreate, $onReturn], $shown, $this->dataName());
+        foreach ($shown as $text) {
+            $this->assertStringNotContainsString('raw', $text, $this->dataName() . ': no API text');
+        }
+    }
+
+    public function testNoRefusalIsNothingForTheBuyer(): void
+    {
+        $this->assertNull($this->model->getBuyerErrorFromResponse(['status' => 'APPROVED', 'id' => 'abc-123']));
+    }
+
+    /**
+     * @dataProvider userErrorCases
+     */
+    public function testUserError(array $response, bool $atOrderCreate, string $expected): void
+    {
+        $rendered = $this->model->getErrorFromResponse($response, $atOrderCreate)->render();
+        $this->assertSame($expected, $rendered, $this->dataName());
+    }
+
+    public function testSuccessAtCreateReturnsNull(): void
+    {
+        $this->assertNull($this->model->getErrorFromResponse(['status' => 'APPROVED', 'id' => 'abc-123'], true));
     }
 
     // ── System errors (non-400 + error_code) ────────────────────────────

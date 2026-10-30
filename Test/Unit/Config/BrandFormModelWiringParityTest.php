@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
  * An overlay install renders ONLY the sections synthesised out of
  * brand_form_template.xml — Plugin\Config\Structure\HidePaymentSection hides
  * the static Two ones — so a source, backend or frontend model declared in
- * system.xml alone is wired on no brand at all. ABN-497 was the surcharge tax
+ * system.xml alone is wired on no brand at all. One past defect was the surcharge tax
  * treatment's save-time guard missing from the template that way: the invariant
  * held on a Two-only install and nothing enforced it on any overlay.
  */

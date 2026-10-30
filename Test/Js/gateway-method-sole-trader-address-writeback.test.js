@@ -17,9 +17,9 @@
  *    company-search selection. That switch is legitimately off wherever company
  *    search is not mounted in the address area, which is exactly where this
  *    flow lives, so gating here leaves the write permanently dead;
- *  - the write happens ONCE PER IDENTITY, so a replayed ACCEPTED cannot
- *    overwrite a correction the buyer made after the first write — and
- *    `forgetAdoptions()` is what re-arms it.
+ *  - the write happens on EVERY adoption, with the record's blank values
+ *    dropped first (TWO-26775, PrestaShop's rules): a blank is "nothing to
+ *    say", and the host decides what an omitted field means.
  *
  * Field routing itself is pinned against the real shared model in
  * company-search-address-field-routing.test.js; the double here records the
@@ -68,8 +68,7 @@ const BUYER = {
  * The real flow, reached through Luma's wired capture component, over a
  * recording company-search double.
  *
- * Loaded fresh per test: the once-per-identity guard lives on the flow
- * instance, and the identity is a page-level singleton.
+ * Loaded fresh per test: the identity is a page-level singleton.
  *
  * @returns {object} `{ flow, rec, identity, component }`
  */
@@ -216,70 +215,22 @@ describe('the write ignores the address-lookup switches (TWO-25461)', () => {
     });
 });
 
-describe('the write happens once per identity', () => {
+describe('the write happens on every adoption (TWO-26775)', () => {
     test.each([
-        [
-            { organization_number: '999888777', email: 'a@example.com' },
-            { organization_number: '999888777', email: 'b@example.com' },
-            1,
-            'the organisation number is the identity; the email is not'
-        ],
-        [
-            { organization_number: '999888777' },
-            { organization_number: '111222333' },
-            2,
-            'a different organisation number is a different sole trader'
-        ],
-        [
-            { email: 'a@example.com' },
-            { email: 'a@example.com' },
-            1,
-            'with no number, the email identifies the buyer'
-        ],
-        [
-            { email: 'a@example.com' },
-            { email: 'b@example.com' },
-            2,
-            'two numberless buyers are not collapsed onto one key'
-        ],
-        [
-            {},
-            {},
-            2,
-            'nothing tells one numberless, emailless buyer from another, so the write repeats'
-        ]
-    ])('%p then %p -> %p writes (%s)', (first, second, expectedWrites) => {
-        const { flow, rec } = loadFlow();
+        [{ organization_number: '999888777' }, { organization_number: '999888777' }, 2, 'the same sole trader twice'],
+        [{ organization_number: '999888777' }, { organization_number: '111222333' }, 2, 'two different sole traders'],
+        [{ email: 'a@example.com' }, { email: 'a@example.com' }, 0, 'a numberless buyer is refused whole, as PrestaShop'],
+        [{ organization_number: '  ' }, {}, 0, 'a blank number or none at all is no number']
+    ])('%p then %p -> %p writes (%s)', (first, second, writes, why) => {
+        const { flow, rec, identity } = loadFlow();
 
         flow.adoptBuyer(Object.assign({ company_name: 'Example', billing_address: BILLING }, first));
         flow.adoptBuyer(Object.assign({ company_name: 'Example', billing_address: BILLING }, second));
 
-        expect(rec.applied).toHaveLength(expectedWrites);
+        expect([why, rec.applied.length, identity.soleTraderAdopted()]).toEqual([why, writes, writes > 0]);
     });
 
-    test('the identity itself is still written on every replay, only the address is guarded', () => {
-        const { flow, rec } = loadFlow();
-
-        flow.adoptBuyer(BUYER);
-        flow.adoptBuyer(BUYER);
-
-        expect(rec.adopted).toEqual([BUYER, BUYER]);
-        expect(rec.applied).toEqual([BILLING]);
-    });
-
-    test('forgetAdoptions() re-arms the write', () => {
-        // Leaving sole-trader mode reverts the address; without the re-arm the
-        // buyer could never get it back by re-adopting the same identity.
-        const { flow, rec } = loadFlow();
-
-        flow.adoptBuyer(BUYER);
-        flow.forgetAdoptions();
-        flow.adoptBuyer(BUYER);
-
-        expect(rec.applied).toEqual([BILLING, BILLING]);
-    });
-
-    test('a throw in the address write leaves the identity filled and the write retryable', () => {
+    test('a throw in the address write leaves the identity filled and the next adoption writes', () => {
         const { flow, rec, identity } = loadFlow();
         rec.failAddressWrite = true;
 
@@ -288,10 +239,24 @@ describe('the write happens once per identity', () => {
         expect(identity.companyId()).toBe(BUYER.organization_number);
         expect(rec.applied).toEqual([]);
 
-        // The failure did not consume the one chance: the same identity writes
-        // on the next attempt.
         rec.failAddressWrite = false;
         flow.adoptBuyer(BUYER);
         expect(rec.applied).toEqual([BILLING]);
+    });
+});
+
+describe('a blank in the record writes nothing (TWO-26775)', () => {
+    test.each([
+        [{ city: '', postal_code: 'TN23 1AA' }, { postal_code: 'TN23 1AA' }, 'an empty string is dropped'],
+        [{ city: '   ', postal_code: 'TN23 1AA' }, { postal_code: 'TN23 1AA' }, 'whitespace alone is dropped'],
+        [{ city: null, street: undefined, postal_code: 'X' }, { postal_code: 'X' }, 'null and undefined are dropped'],
+        [{ city: 'Ashford', region: 'Kent' }, { city: 'Ashford', region: 'Kent' }, 'real values pass untouched'],
+        [{ street: '', building: '' }, {}, 'an all-blank address writes an empty payload']
+    ])('%p -> %p (%s)', (address, expected, why) => {
+        const { flow, rec } = loadFlow();
+
+        flow.adoptBuyer({ organization_number: '1', company_name: 'Example', billing_address: address });
+
+        expect([why, rec.applied]).toEqual([why, [expected]]);
     });
 });

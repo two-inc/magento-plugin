@@ -28,7 +28,7 @@
  *     quote, which lags a client-estimated shipping choice (saved only by
  *     set-shipping-information), so a mismatched verdict is about a different
  *     basket: publishing one withheld the method on a stale below-minimum
- *     total that then never moved, so nothing restored it (ABN-509).
+ *     total that then never moved, so nothing restored it.
  *   - It never calls quote.setTotals(). The shared core action
  *     (get-payment-information) does, which stamps the server's possibly-
  *     pre-shipping totals over the correctly-collected client totals — the

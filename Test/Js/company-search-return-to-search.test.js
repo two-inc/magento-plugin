@@ -64,7 +64,11 @@ function mount() {
         this.focusSignupPopup = function () { return false; };
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function () { return {}; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
     };
     const companySearch = Object.assign(

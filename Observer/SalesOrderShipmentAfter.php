@@ -26,6 +26,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Invoice\UploadService;
 use Two\Gateway\Service\Order\ComposeShipment;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
@@ -163,7 +164,11 @@ class SalesOrderShipmentAfter implements ObserverInterface
                     'partial' => $this->composeShipment->execute($shipment, $order),
                 ];
             }
-            $response = $this->apiAdapter->execute(
+            $twoOrderId = (string)$order->getTwoOrderId();
+            $key = $isPartialOrder
+                ? IdempotencyKey::fulfil($twoOrderId, IdempotencyKey::recordRef('shipment', $shipment, [], $payload))
+                : IdempotencyKey::fulfil($twoOrderId);
+            $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                 "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
                 $this->orderPostprocessor->process(
                     Postprocessing::REQUEST_CAPTURE,
@@ -204,6 +209,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
                 $invoice = $this->invoiceService->prepareInvoice($order);
                 if ($invoice->getGrandTotal() > 0) {
                     $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+                    $invoice->setData(InvoiceRegisteredOffline::FULFILLED_WITH_PROVIDER, true);
                     $invoice->register();
                     $invoice->pay();
                     $invoice->setTransactionId(
@@ -275,8 +281,8 @@ class SalesOrderShipmentAfter implements ObserverInterface
      */
     private function parseFulfillResponse(array $response, Order $order): void
     {
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
+        if (empty($response['fulfilled_order']) ||
+            empty($response['fulfilled_order']['id'])) {
             return;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();

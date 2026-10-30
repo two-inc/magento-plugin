@@ -70,6 +70,7 @@ class SalesOrderAddressUpdateFulfilledTest extends TestCase
         $puts = 0;
         $lookups = [];
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturnCallback(
             function (string $endpoint, array $payload = [], string $method = 'POST', ...$rest) use ($lookup, &$puts, &$lookups): array {
                 if ($method === 'GET') {

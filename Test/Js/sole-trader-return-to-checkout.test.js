@@ -271,7 +271,7 @@ test('closing the popup releases the watcher, so a later focus closes nothing', 
     expect(ctx.flow._returnHandler).toBe(null);
 });
 
-describe('the window losing focus to the popup leaves the park armed (ABN-554)', () => {
+describe('the window losing focus to the popup leaves the park armed', () => {
     /** The launch's park, driven through the real deferred park. */
     async function parked() {
         const ctx = load();

@@ -21,7 +21,7 @@ use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
  * Save-time guard on the API key field (TWO-25503).
  *
  * A rejected key must not replace a working one, and must not cost the
- * merchant the rest of the form either (ABN-495). Anything short of a
+ * merchant the rest of the form either. Anything short of a
  * definitive rejection saves as submitted, so an outage cannot lock a
  * merchant out of configuring their first key.
  */
@@ -245,7 +245,7 @@ class ApiKeyTest extends TestCase
             'store view' => ['stores', 7, 7, 'store', 'a store-scope save uses that store'],
             'singular store spelling' => ['store', 7, 7, 'store', 'the config layer uses both spellings'],
             'default' => ['default', 0, null, 'default', 'the default scope has no id'],
-            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's (ABN-530)"],
+            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's"],
         ];
     }
 

@@ -14,6 +14,7 @@ services:
             URL: http://localhost:${PORT:-1234}/
             TWO_API_BASE_URL: ${TWO_API_BASE_URL:-}
             TWO_CHECKOUT_BASE_URL: ${TWO_CHECKOUT_BASE_URL:-}
+            TWO_INTERNAL_ENVIRONMENTS: ${TWO_INTERNAL_ENVIRONMENTS:-}
             # The image's own admin must not claim exampleuser@two.inc: dev/create-admin-user
             # adds the shared local-dev account under that address (TWO-25757), and
             # Magento refuses a second user with the same email but a different username.

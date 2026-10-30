@@ -43,15 +43,35 @@ class UninstallTest extends TestCase
         return new Uninstall($scopeConfig, $brandRegistry);
     }
 
-    public function testDoesNothingWhenToggleIsOff(): void
+    public function testLeavesConfigurationWhenToggleIsOff(): void
     {
         $uninstall = $this->buildUninstall(false, 'two_payment');
         $setup = new FakeSchemaSetup();
 
         $uninstall->uninstall($setup, new FakeModuleContext());
 
-        $this->assertFalse($setup->setupStarted, 'startSetup() must not run when the toggle is off');
         $this->assertSame([], $setup->connection->deletedPatterns);
+    }
+
+    /**
+     * TWO-26153: the tax code section's last code lists are kept in the flag table, not configuration, so they
+     * go whatever the toggle says.
+     *
+     * @dataProvider toggles
+     */
+    public function testDeletesTheLastTaxCodeListsWhateverTheToggle(bool $toggle): void
+    {
+        $setup = new FakeSchemaSetup();
+
+        $this->buildUninstall($toggle, 'two_payment')->uninstall($setup, new FakeModuleContext());
+
+        $this->assertSame(['two\\_gateway\\_tax\\_codes\\_last\\_%'], $setup->connection->deletedFlags);
+        $this->assertTrue($setup->setupStarted && $setup->setupEnded);
+    }
+
+    public static function toggles(): array
+    {
+        return ['toggle off' => [false], 'toggle on' => [true]];
     }
 
     public function testDeletesOnlyTheActiveBrandsConfigWhenToggleIsOn(): void
@@ -95,8 +115,11 @@ class UninstallTest extends TestCase
 
 class FakeConnection
 {
-    /** @var string[] */
+    /** @var string[] patterns deleted from core_config_data */
     public $deletedPatterns = [];
+
+    /** @var string[] patterns deleted from the flag table */
+    public $deletedFlags = [];
 
     public function quoteInto($text, $value)
     {
@@ -109,7 +132,11 @@ class FakeConnection
     {
         foreach ($where as $condition) {
             if (is_array($condition) && isset($condition['pattern'])) {
-                $this->deletedPatterns[] = $condition['pattern'];
+                if ($table === 'flag') {
+                    $this->deletedFlags[] = $condition['pattern'];
+                } else {
+                    $this->deletedPatterns[] = $condition['pattern'];
+                }
             }
         }
         return 1;
