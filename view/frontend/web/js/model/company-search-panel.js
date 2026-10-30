@@ -1084,15 +1084,13 @@
         if (!this._open) this.open();
         this.hideSignupPanel();
         const cover = document.createElement('div');
+        // A plain container, with no role or name of its own: the focus move
+        // says the caption once, as the button's name, and the status region
+        // stays empty, so nothing says it twice.
         cover.className = SIGNUP_PANEL_CLASS;
-        cover.setAttribute('role', 'group');
         cover.style.cssText = SIGNUP_PANEL_STYLE;
         const button = document.createElement('button');
         button.type = 'button';
-        // Named by its one button rather than a label of its own: the caption is
-        // said by the focus move and by the status region, and a third time is noise.
-        button.id = `two-company-signup-${this._id}`;
-        cover.setAttribute('aria-labelledby', button.id);
         button.style.cssText = SIGNUP_BUTTON_STYLE;
         // The selected chip's look, so the button reads as part of the popover.
         button.className = `${CHIP_CLASS} ${CHIP_SELECTED_CLASS}`;
@@ -1117,7 +1115,6 @@
         this._signup = cover;
         this._signupMode = this.getSelectedMode();
         button.focus();
-        this._announce(caption);
     };
 
     /** Take the signup panel down, giving the popover back. */

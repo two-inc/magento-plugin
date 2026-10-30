@@ -54,6 +54,17 @@ const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const POPUP_CLOSE_POLL_MS = 300;
 
 /**
+ * The close watcher over a closed popup: it gives an ACCEPTED queued behind the
+ * close one more tick before it abandons.
+ *
+ * @param {{fn: function}} poll
+ */
+function seeClosed(poll) {
+    poll.fn();
+    poll.fn();
+}
+
+/**
  * The mocks and sandbox globals both loaders share, plus the recorders they
  * write into.
  *
@@ -416,7 +427,22 @@ describe('a blocked popup gets a panel over the popover (TWO-26775)', () => {
             .toEqual(tagged(why, [2, expectedAutoselect, null]));
     });
 
-    test('the panel covers the open popover, named, with focus on its one button', async () => {
+    test('a launch that opens forgets the blocked terms, so a later panel retries on its own', async () => {
+        const { flow, rec } = await startStack();
+        rec.blocked = true;
+        flow.launchSignup({ autoselect: false });
+        rec.blocked = false;
+        signupButton().click();
+        rec.handles[rec.handles.length - 1].closed = true;
+
+        // The tile's "found nobody" panel, which no launch of its own put up.
+        flow.showSignupPanel(true);
+        signupButton().click();
+
+        expect(new URL(rec.opened[rec.opened.length - 1].url).searchParams.get('autoselect')).toBeNull();
+    });
+
+    test('the panel covers the open popover, unnamed, with focus on its one button', async () => {
         const { rec } = await startStack();
         rec.blocked = true;
 
@@ -428,11 +454,11 @@ describe('a blocked popup gets a panel over the popover (TWO-26775)', () => {
         expect([
             cover.parentNode === popover,
             popover.hasAttribute('hidden'),
-            document.getElementById(cover.getAttribute('aria-labelledby')) === button,
+            ['role', 'aria-label', 'aria-labelledby'].some(function (name) { return cover.hasAttribute(name); }),
             button.textContent,
             document.activeElement === button,
             cover.querySelectorAll('button').length
-        ]).toEqual([true, false, true, 'Sign up or log in as a sole trader', true, 1]);
+        ]).toEqual([true, false, false, 'Sign up or log in as a sole trader', true, 1]);
     });
 
     test.each([
@@ -621,13 +647,16 @@ describe('the popup-close watcher', () => {
     });
 
     test.each([
-        [false, 1, 'the buyer closed it having captured nothing'],
-        [true, 0, 'the handshake lookup is still out and owns the outcome']
-    ])('confirming=%p -> %p abandon calls (%s)', (confirming, expectedAbandons) => {
+        [false, false, 1, 'the buyer closed it having captured nothing'],
+        [true, true, 0, 'the handshake lookup is still out and owns the outcome'],
+        [false, true, 0, 'an ACCEPTED queued behind the close wins (TWO-26775)']
+    ])('confirming=%p, then %p by the next tick -> %p abandon calls (%s)', (confirming, confirmingNext, expectedAbandons) => {
         const { flow, rec, poll, handle } = openedFlow();
         flow._signupConfirming = confirming;
 
         handle.closed = true;
+        poll.fn();
+        flow._signupConfirming = confirmingNext;
         poll.fn();
 
         expect(rec.abandons).toHaveLength(expectedAbandons);
@@ -669,7 +698,7 @@ describe('the popup-close watcher', () => {
         }
 
         ctx.handle.closed = true;
-        ctx.poll.fn();
+        seeClosed(ctx.poll);
 
         expect(ctx.rec.abandons).toHaveLength(1);
         expect(ctx.rec.abandons[0].returnFocus).toBe(expectedReturnFocus);
@@ -683,7 +712,7 @@ describe('the popup-close watcher', () => {
         rec2Close(ctx);
 
         ctx.handle.closed = true;
-        ctx.poll.fn();
+        seeClosed(ctx.poll);
 
         expect(ctx.rec.abandons).toHaveLength(1);
         expect(ctx.rec.abandons[0].returnFocus).toBe(true);
@@ -774,7 +803,7 @@ describe('a chip clicked while the signup is open keeps the mode it asked for', 
             if (mode !== 'none') chip(mode).click();
 
             ctx.handle.closed = true;
-            ctx.poll.fn();
+            seeClosed(ctx.poll);
 
             const field = document.querySelector('#company_name');
             expect([ctx.identity.captureMode(), field.getAttribute('role')])

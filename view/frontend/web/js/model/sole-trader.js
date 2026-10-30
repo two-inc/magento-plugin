@@ -420,6 +420,8 @@
             // without them would hand back the identity being replaced.
             this._blockedSignupOptions = options || null;
             this.ensureTokens();
+        } else {
+            this._blockedSignupOptions = null;
         }
         return win;
     };
@@ -542,8 +544,15 @@
      */
     SoleTrader.prototype.watchPopupClose = function (win) {
         this.identity().beginFlight();
+        let closedSeen = false;
         this._popupCloseWatcherId = setInterval(() => {
             if (!win.closed) return;
+            // One more tick for an ACCEPTED the popup posted as it closed, which
+            // can still be queued behind this one (TWO-26775).
+            if (!closedSeen && !this._signupConfirming) {
+                closedSeen = true;
+                return;
+            }
             this.stopPopupCloseWatcher();
             // The close is bookkeeping: the field re-fire it will provoke comes with the
             // window's return, which is unbounded from here.

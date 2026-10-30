@@ -167,6 +167,9 @@ buyer activated while the signup was up has already written the mode it asked
 for by the time the poll runs — and a poll that returned to registered search
 regardless swallowed that action. Manual entry was the visible loss: the field
 came back a registered-search combobox with the registered chip pressed.
+The poll that first finds the popup closed waits one more tick before it
+abandons, so an `ACCEPTED` the popup posted as it closed, still queued behind
+that tick, wins (TWO-26775).
 
 **Closing the signup with nothing captured clears nothing** (TWO-26775). The
 capture is still the one from before the Sole trader click, which itself
@@ -195,9 +198,10 @@ previous popup closed, so its own hand-close is never misread as a rule close.
 covered by one centred button, "Sign up or log in as a sole trader", whose
 click is a fresh gesture a blocker allows. The button keeps its own width,
 centred inside the popover's padding. Focus moves to the button, the rest of
-the popover is `inert` underneath, the panel is named by its button rather than
-a label of its own, and the caption is announced in the panel's live region,
-which exists, empty, from the moment the panel attaches. A chip click, any mode change and the popover's close take
+the popover is `inert` underneath, and the panel is a plain container with no role
+or name of its own: the caption is said once, as the focused button's name. The
+panel's live region exists from the moment the panel attaches and stays empty
+here, so nothing says the caption twice. A chip click, any mode change and the popover's close take
 it down, and so does a launch that opens.
 
 **After a signup reports ACCEPTED, the buyer lookup has three outcomes**
@@ -284,7 +288,11 @@ the number of its last Two order, and the buyer's address book is left alone:
 instead `company-capture.js` blanks `company_id` on every quote address a
 manual panel speaks for, and records the manual name per panel in
 `sessionStorage`, so a reload re-enters manual entry before the renderer reads
-the saved address. Order placement itself reads the number only from the
+the saved address. The record stands while manual entry is the panel's resting
+mode, a pending Sole trader click included, and goes when a registered pick or
+an adopted sole trader replaces it. It belongs to one quote and one customer:
+a placed order, a login or a logout moves on from it, and the next checkout
+drops it rather than restore another checkout's name. Order placement itself reads the number only from the
 payment's additional data, never from an address.
 
 ## The company relay resolves an ISO 3166-2 region to the store's own

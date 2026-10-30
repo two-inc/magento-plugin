@@ -177,6 +177,16 @@ function closePoll(rec) {
     return polls[polls.length - 1];
 }
 
+/**
+ * Run a close poll over a closed popup until it acts: it gives an ACCEPTED
+ * queued behind the close one more tick before it abandons.
+ *
+ * @param {{fn: function, cleared: boolean}} poll
+ */
+function seeClosed(poll) {
+    for (let tick = 0; tick < 2 && !poll.cleared; tick += 1) poll.fn();
+}
+
 module.exports = {
     CHECKOUT_PAGE_URL: CHECKOUT_PAGE_URL,
     PANEL: PANEL,
@@ -187,5 +197,6 @@ module.exports = {
     startStack: startStack,
     chip: chip,
     popoverIsOpen: popoverIsOpen,
-    closePoll: closePoll
+    closePoll: closePoll,
+    seeClosed: seeClosed
 };

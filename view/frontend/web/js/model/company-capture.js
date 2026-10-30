@@ -502,14 +502,25 @@ define([
         signupPrefill: makeSignupPrefill(billingIdentity)
     }));
 
-    /** Where each panel's manual entry outlives a reload of this tab (TWO-26775). */
+    /**
+     * Where each panel's manual entry outlives a reload of this tab (TWO-26775).
+     * The record belongs to one quote and one customer: a placed order, a login
+     * and a logout all move on from it, and the next checkout drops it.
+     */
     const MANUAL_ENTRY_KEY = 'two-company-manual-entry';
 
-    /** @returns {object} the stored manual entries, the name by role */
+    /** @returns {string} the quote and customer a record is good for */
+    function manualEntryOwner() {
+        const customer = (window.checkoutConfig && window.checkoutConfig.customerData) || {};
+        return JSON.stringify([String(quote.getQuoteId() || ''), String(customer.id || '')]);
+    }
+
+    /** @returns {object} this checkout's stored manual entries, the name by role */
     function readManualEntries() {
         try {
             const stored = JSON.parse(window.sessionStorage.getItem(MANUAL_ENTRY_KEY) || '{}');
-            return stored && typeof stored === 'object' ? stored : {};
+            const ours = stored && stored.owner === manualEntryOwner();
+            return ours && stored.entries && typeof stored.entries === 'object' ? stored.entries : {};
         } catch (error) {
             return {};
         }
@@ -517,7 +528,7 @@ define([
 
     function writeManualEntries(entries) {
         try {
-            window.sessionStorage.setItem(MANUAL_ENTRY_KEY, JSON.stringify(entries));
+            window.sessionStorage.setItem(MANUAL_ENTRY_KEY, JSON.stringify({ owner: manualEntryOwner(), entries: entries }));
         } catch (error) {
             // No storage, no restore: the page still holds the entry until it reloads.
         }
@@ -550,7 +561,9 @@ define([
 
     /**
      * Restore a panel's manual entry from before a reload, then keep the record
-     * current: the name while the panel is in manual entry, nothing otherwise.
+     * current: the name while manual entry is the panel's resting mode, which a
+     * Sole trader click leaves in place until a sole trader is adopted over it,
+     * and nothing otherwise.
      *
      * @param {string} role
      * @param {object} component
@@ -561,7 +574,8 @@ define([
         if (typeof saved === 'string') component.restoreManualEntry(saved);
         const record = function () {
             const entries = readManualEntries();
-            if (identity.captureMode() === 'manual') entries[role] = identity.companyName();
+            const pending = identity.isSoleTrader() && component.restingMode() === 'manual';
+            if (identity.captureMode() === 'manual' || pending) entries[role] = identity.companyName();
             else delete entries[role];
             writeManualEntries(entries);
             dropManualCompanyIds();

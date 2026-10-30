@@ -20,6 +20,7 @@ const {
     chip,
     popoverIsOpen,
     closePoll,
+    seeClosed,
     teardown
 } = require('./sole-trader-stack');
 
@@ -43,7 +44,7 @@ describe('a Sole trader click clears nothing (TWO-26775)', () => {
         ['then Registered company', function () { chip('registered').click(); }, 'registered'],
         ['then a hand-close', function (ctx) {
             ctx.rec.handles[0].closed = true;
-            closePoll(ctx.rec).fn();
+            seeClosed(closePoll(ctx.rec));
         }, 'registered']
     ])('a registered pick survives %s, in mode %s', async (why, act, mode) => {
         const ctx = await startStack();
@@ -88,9 +89,9 @@ describe('a blocked popup draws a panel over the popover (TWO-26775)', () => {
         expect(cover.querySelectorAll('button')).toHaveLength(1);
         const button = cover.querySelector('button');
         expect(button.textContent).toBe(CAPTION);
-        // Named once, by its button: no label of its own to say the caption a third time.
-        expect([cover.hasAttribute('aria-label'), document.getElementById(cover.getAttribute('aria-labelledby'))])
-            .toEqual([false, button]);
+        // The caption is said once, as the focused button's name: the cover is a plain container.
+        expect(['role', 'aria-label', 'aria-labelledby'].filter(function (name) { return cover.hasAttribute(name); }))
+            .toEqual([]);
         // Centred inside the popover's gutter at its own width, not stretched edge to edge.
         expect([cover.style.padding, button.style.flex]).toEqual(['inherit', '0 1 auto']);
         expect(document.activeElement).toBe(cover.querySelector('button'));
@@ -98,8 +99,9 @@ describe('a blocked popup draws a panel over the popover (TWO-26775)', () => {
         expect(Array.prototype.filter.call(popover.children, function (child) {
             return child !== cover && !child.hasAttribute('inert');
         })).toEqual([]);
+        // The status region is there, and stays empty.
         await new Promise(function (resolve) { setTimeout(resolve, 150); });
-        expect(liveRegionText()).toBe(CAPTION);
+        expect([!!document.querySelector('.two-company-dropdown__status'), liveRegionText()]).toEqual([true, '']);
     });
 
     test('the button is the gesture: it opens the popup and the panel goes', async () => {
@@ -213,7 +215,7 @@ describe('a press on the checkout while the popup is open (TWO-26775)', () => {
         await flush();
 
         dispatchNative(document.querySelector('.two-company-mode-chips'), 'mousedown');
-        closePoll(ctx.rec).fn();
+        seeClosed(closePoll(ctx.rec));
 
         expect(popoverIsOpen()).toBe(true);
     });
@@ -313,7 +315,7 @@ describe('the popup\'s watchers across window returns and relaunches (TWO-26775)
         expect(ctx.rec.handles).toHaveLength(2);
 
         ctx.rec.handles[1].closed = true;
-        closePoll(ctx.rec).fn();
+        seeClosed(closePoll(ctx.rec));
 
         expect(popoverIsOpen()).toBe(false);
     });
@@ -335,7 +337,7 @@ describe('the popup\'s watchers across window returns and relaunches (TWO-26775)
         handle.closed = true;
         ctx.rec.intervals
             .filter(function (entry) { return entry.ms === 300 && !entry.cleared; })
-            .forEach(function (entry) { entry.fn(); });
+            .forEach(seeClosed);
 
         expect([why, !!signupPanel(), ctx.identity.captureMode(), popoverIsOpen()])
             .toEqual([why, true, 'soletrader', true]);
