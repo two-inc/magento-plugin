@@ -93,20 +93,19 @@ describe('billing distinct — billing wins if it has a number, else shipping', 
     });
 
     test.each([
-        ['manual', false, 'billing in manual entry never carries a vouched number'],
-        ['registered', false, 'billing search left with no id at all'],
-        ['soletrader', false, 'sole-trader mode entered but not yet adopted']
-    ])('billing distinct, mode=%s adopted=%p falls back to shipping (%s)', (mode, adopted) => {
+        ['manual', 'Billing Typed Name', '', 'manual entry on billing is the buyer\'s answer, never another panel\'s number (TWO-26775)'],
+        ['registered', 'Shipping Co', '111', 'billing search left with no id at all'],
+        ['soletrader', 'Shipping Co', '111', 'sole-trader mode entered but not yet adopted']
+    ])('billing distinct, mode=%s resolves to "%s" %p (%s)', (mode, name, id, why) => {
         const { shipping, billing, resolver, resolved, setBillingDistinct } = build();
         setBillingDistinct(true);
         shipping.write({ companyName: 'Shipping Co', companyId: '111' }, { authoritative: true });
         billing.captureMode(mode);
-        billing.soleTraderAdopted(adopted);
+        billing.soleTraderAdopted(false);
         if (mode === 'manual') billing.companyName('Billing Typed Name');
         resolver.connect();
 
-        expect(resolved.companyName()).toBe('Shipping Co');
-        expect(resolved.companyId()).toBe('111');
+        expect([why, resolved.companyName(), resolved.companyId()]).toEqual([why, name, id]);
     });
 
     test('billing distinct, sole trader ADOPTED wins over a shipping pick', () => {

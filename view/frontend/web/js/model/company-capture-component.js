@@ -166,9 +166,6 @@
      *        a picked registry result.
      * @param {function()} options.revertAutofilledAddress undo what the last
      *        such write put in, leaving the buyer's own edits.
-     * @param {function(string)} [options.clearField] superseded, and called
-     *        only where a host still supplies it: manual entry now keeps the
-     *        name in the field (TWO-26775).
      * @param {function(): string} options.tokensUrl
      * @param {function(): string} options.quoteId
      * @param {function(object): object} options.apiClientParams query params
@@ -970,11 +967,6 @@
             this._panel.releaseField();
             this._panel.setDisplayText(this._identity.companyName());
         }
-        // A host adapter written before the name was kept still expects this
-        // call to learn the field is released.
-        if (this._boundSelector && typeof this._options.clearField === 'function') {
-            this._options.clearField(this._boundSelector);
-        }
         this._watchManualEdits();
         this.syncChips();
     };
@@ -1232,6 +1224,10 @@
      */
     CompanyCaptureComponent.prototype.signupFoundNobody = function () {
         if (this._boundSelector && this._boundSelector === this._options.tileFieldSelector) {
+            // The finished popup's watchers go first. Its close poll would abandon the
+            // mode once this lookup settles, and its return watch would read the button
+            // taking focus as the buyer leaving: either takes the panel down.
+            this._soleTrader.retireFinishedPopup();
             this._soleTrader.showSignupPanel(true);
             return;
         }

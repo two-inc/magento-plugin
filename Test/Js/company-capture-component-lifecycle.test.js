@@ -727,19 +727,20 @@ describe('a typed company name carries no vouched number', () => {
         expect(identity.companyName()).toBe('Acme Limited');
     });
 
-    test('manual entry before anything has mounted asks the host to clear nothing', () => {
-        // Nothing bound means there is no selector, and a host handed one
-        // resolves it against the whole document — Hyva's `querySelector(null)`
-        // would answer for a field this control does not own.
+    test.each([
+        [null, 'nothing mounted: a host handed no selector resolves it against the whole document'],
+        [TILE_FIELD, 'a mounted field: the host blanks the name manual entry keeps (TWO-26775)']
+    ])('manual entry with %p bound never asks the host to clear the field (%s)', (bound, why) => {
         const Controller = loadAmdModule(CONTROLLER);
         const cleared = [];
         const controller = new Controller(Object.assign(completeHost(), {
             identity: loadAmdModule(IDENTITY)(),
             clearField: function (selector) { cleared.push(selector); }
         }));
+        controller._boundSelector = bound;
 
         controller.manualEntryMode();
 
-        expect(cleared).toEqual([]);
+        expect([why, cleared]).toEqual([why, []]);
     });
 });

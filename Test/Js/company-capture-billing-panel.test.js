@@ -331,17 +331,17 @@ describe('the resolved identity, end to end, follows the resolution rule live', 
         expect(capture.identity.companyId()).toBe('222');
     });
 
-    test('billing distinct but manual entry: the resolved identity falls back to shipping', () => {
+    test('billing distinct, then manual entry: billing\'s name resolves with no number, never shipping\'s (TWO-26775)', () => {
         const { capture, dom, quote } = load();
         billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
+        capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
 
         capture.billing.manualEntryMode();
 
-        expect(capture.identity.companyId()).toBe('111');
-        expect(capture.identity.companyName()).toBe('Shipping Co');
+        expect([capture.identity.companyName(), capture.identity.companyId()]).toEqual(['Billing Co', '']);
     });
 });
 

@@ -103,6 +103,8 @@ function makeEnv(options) {
         addEventListener: function (name, fn) { rec.listeners.push({ name: name, fn: fn }); },
         removeEventListener: function () {}
     };
+    // A signed-in buyer: Luma publishes the customer, not a guest email.
+    if (opts.customerEmail) fakeWindow.checkoutConfig = { customerData: { email: opts.customerEmail } };
 
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
         billingAddress: quoteAddress({ countryId: 'GB' }),
@@ -339,18 +341,27 @@ describe('a held answer for anyone but this checkout\'s buyer opens the popup (T
     });
 });
 
+test('a signed-in buyer, whose quote carries no email, is matched on the customer\'s own (TWO-26775)', async () => {
+    const { identity, rec } = await startStack({ buyer: BUYER, checkoutEmail: '', customerEmail: CHECKOUT_EMAIL });
+
+    chip('soletrader').click();
+    await settle();
+
+    expect([rec.opened.length, identity.soleTraderAdopted()]).toEqual([0, true]);
+});
+
 describe('anything less than a usable record falls through to the popup', () => {
     test.each([
         [{}, 'the session identifies no buyer at all'],
         [{ failLookup: true }, 'the lookup fails in transport'],
         [{ hangLookup: true }, 'the lookup has not landed when the buyer clicks'],
         [
-            { buyer: { email: 'nameless@example.com', organization_number: '111' } },
-            'the record carries no company name, which would blank the field'
+            { buyer: Object.assign({}, BUYER, { organization_number: '' }) },
+            'the record carries no number, so no order could be placed for it (TWO-26775, as PrestaShop)'
         ],
         [
-            { buyer: Object.assign({}, BUYER, { company_name: '   ' }) },
-            'the record carries a whitespace-only company name'
+            { buyer: Object.assign({}, BUYER, { organization_number: '   ' }) },
+            'the record carries a whitespace-only number'
         ]
     ])('%p -> the popup opens (%s)', async (options) => {
         const { identity, rec } = await startStack(options);
@@ -367,6 +378,17 @@ describe('anything less than a usable record falls through to the popup', () => 
         expect(identity.companyName()).toBe('');
         expect(rec.applied).toEqual([]);
         expect(rec.phones).toEqual([]);
+    });
+
+    test('a matching record with a blank name adopts from the click and keeps the name (TWO-26775, as PrestaShop)', async () => {
+        const { identity, rec } = await startStack({ buyer: Object.assign({}, BUYER, { company_name: '  ' }) });
+        identity.companyName('Acme Registered Ltd');
+
+        chip('soletrader').click();
+        await settle();
+
+        expect([rec.opened.length, identity.soleTraderAdopted(), identity.companyName(), identity.companyId()])
+            .toEqual([0, true, 'Acme Registered Ltd', BUYER.organization_number]);
     });
 
     test('the fall-through popup carries no autoselect param, as a first launch', async () => {

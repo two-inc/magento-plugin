@@ -139,18 +139,20 @@
     }
 
     /**
-     * Whether an autofill record carries enough to adopt without the popup.
+     * Whether an autofill record carries enough to adopt.
      *
-     * Keyed on the name because that is the identity `adoptSoleTrader()` writes
-     * authoritatively: adopting a nameless record blanks the company field,
-     * which is worse than the popup.
+     * Keyed on the number, as PrestaShop's adoption is: a record without one
+     * would replace the captured company with a sole trader the order cannot be
+     * placed for. A blank name is adoptable, and keeps the name in the field
+     * (TWO-26775).
      *
      * @param {object} buyer `/autofill/v1/buyer/current` record
      * @returns {boolean}
      */
     function isUsableSoleTrader(buyer) {
         if (!buyer || typeof buyer !== 'object') return false;
-        return !!String(buyer.company_name || '').trim();
+        const number = buyer.organization_number;
+        return !!String(number === null || number === undefined ? '' : number).trim();
     }
 
     /**
@@ -352,11 +354,7 @@
     SoleTrader.prototype.openPopup = function (options) {
         const config = this._component.config();
         if (!this.hasSignupTokens()) return null;
-        if (this.isPopupOpen()) this._popupWindow.close();
-        this.stopPopupCloseWatcher();
-        // With it goes the close poll that would have released the panel's opener hold,
-        // and a blocked re-open arms no replacement to release it later.
-        this.stopReturnToCheckoutWatcher();
+        this.retireFinishedPopup();
 
         let params = `businessToken=${this.delegationToken}`;
         params += `&autofillToken=${this.autofillToken}`;
@@ -384,6 +382,20 @@
             this.parkFocusDroppedByPopup();
         }
         return this._popupWindow;
+    };
+
+    /**
+     * Close a prior popup and stand down everything armed for it: its close poll,
+     * its return watch and the field opener hold, and the record of how it closed,
+     * which would otherwise misread the next popup's hand-close (TWO-26775).
+     */
+    SoleTrader.prototype.retireFinishedPopup = function () {
+        if (this.isPopupOpen()) this._popupWindow.close();
+        this._closedByRule = false;
+        this.stopPopupCloseWatcher();
+        // With it goes the close poll that would have released the panel's opener hold,
+        // and a blocked re-open arms no replacement to release it later.
+        this.stopReturnToCheckoutWatcher();
     };
 
     /**
@@ -578,7 +590,8 @@
             if (!field || !document.contains(field)) return;
             // Before the focus, which the return watch sees synchronously.
             this._parkedFocus = field;
-            panel.holdFieldOpener(true);
+            // For the whole flight: every window return re-fires focus on the field.
+            panel.holdFieldOpener(true, { flight: () => this.isPopupOpen() });
             panel.restoreFieldFocus();
         }, 0);
     };
@@ -634,7 +647,7 @@
      *
      * @param {object} [options] `{ releaseOpener: false }` where the popup's own
      *        disappearance is all that has happened, and the field's opener stays
-     *        held for the window return still to come.
+     *        held for the one window return still to come.
      */
     SoleTrader.prototype.stopReturnToCheckoutWatcher = function (options) {
         const panel = this._component.panel();
@@ -755,7 +768,8 @@
      * @param {object} buyer `/autofill/v1/buyer/current` record
      */
     SoleTrader.prototype.adoptBuyer = function (buyer) {
-        if (!buyer || typeof buyer !== 'object') return;
+        // Refused whole: nothing of a record with no number is written.
+        if (!isUsableSoleTrader(buyer)) return;
         // Any adoption supersedes the held answer, in flight or already in
         // hand, so a later click cannot re-adopt it over the identity that won.
         this._autofillGeneration += 1;
@@ -830,7 +844,7 @@
                 .then((result) => {
                     // A mode chosen while the lookup was out is the buyer's answer.
                     if (!this.identity().isSoleTrader()) return;
-                    if (result.buyer) {
+                    if (isUsableSoleTrader(result.buyer)) {
                         this.adoptBuyer(result.buyer);
                     } else if (result.failed) {
                         this.showSignupError();
@@ -839,8 +853,8 @@
                         // sole-trader mode with nothing captured (TWO-26775).
                         if (!this.isPopupOpen()) this._component.abandonSoleTrader({ handClosed: true });
                     } else {
-                        // Signed up, and Two still knows nobody: ask again, as
-                        // PrestaShop does (TWO-26775).
+                        // Signed up, and Two still knows nobody it can adopt:
+                        // ask again, as PrestaShop does (TWO-26775).
                         this._component.signupFoundNobody();
                     }
                 })

@@ -428,11 +428,11 @@ describe('a blocked popup gets a panel over the popover (TWO-26775)', () => {
         expect([
             cover.parentNode === popover,
             popover.hasAttribute('hidden'),
-            cover.getAttribute('aria-label'),
+            document.getElementById(cover.getAttribute('aria-labelledby')) === button,
             button.textContent,
             document.activeElement === button,
             cover.querySelectorAll('button').length
-        ]).toEqual([true, false, 'Sign up or log in as a sole trader', 'Sign up or log in as a sole trader', true, 1]);
+        ]).toEqual([true, false, true, 'Sign up or log in as a sole trader', true, 1]);
     });
 
     test.each([

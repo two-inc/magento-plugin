@@ -102,7 +102,12 @@ function makeEnv(buyerRef, email) {
             rec.intervals.push({ id: intervalSeq, fn: fn, ms: ms });
             return intervalSeq;
         },
-        clearInterval: function () {},
+        // Marked rather than dropped: a case can still reach a stopped poll, and asks.
+        clearInterval: function (id) {
+            rec.intervals.forEach(function (entry) {
+                if (entry.id === id) entry.cleared = true;
+            });
+        },
         fetch: function (url) {
             if (String(url).indexOf('get-tokens') !== -1) {
                 return Promise.resolve({

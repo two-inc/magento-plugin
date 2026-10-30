@@ -217,17 +217,17 @@ describe('the write ignores the address-lookup switches (TWO-25461)', () => {
 
 describe('the write happens on every adoption (TWO-26775)', () => {
     test.each([
-        [{ organization_number: '999888777' }, { organization_number: '999888777' }, 'the same sole trader twice'],
-        [{ organization_number: '999888777' }, { organization_number: '111222333' }, 'two different sole traders'],
-        [{ email: 'a@example.com' }, { email: 'a@example.com' }, 'the same numberless buyer twice'],
-        [{}, {}, 'two records carrying no key at all']
-    ])('%p then %p -> 2 writes (%s)', (first, second, why) => {
-        const { flow, rec } = loadFlow();
+        [{ organization_number: '999888777' }, { organization_number: '999888777' }, 2, 'the same sole trader twice'],
+        [{ organization_number: '999888777' }, { organization_number: '111222333' }, 2, 'two different sole traders'],
+        [{ email: 'a@example.com' }, { email: 'a@example.com' }, 0, 'a numberless buyer is refused whole, as PrestaShop'],
+        [{ organization_number: '  ' }, {}, 0, 'a blank number or none at all is no number']
+    ])('%p then %p -> %p writes (%s)', (first, second, writes, why) => {
+        const { flow, rec, identity } = loadFlow();
 
         flow.adoptBuyer(Object.assign({ company_name: 'Example', billing_address: BILLING }, first));
         flow.adoptBuyer(Object.assign({ company_name: 'Example', billing_address: BILLING }, second));
 
-        expect([why, rec.applied]).toEqual([why, [BILLING, BILLING]]);
+        expect([why, rec.applied.length, identity.soleTraderAdopted()]).toEqual([why, writes, writes > 0]);
     });
 
     test('a throw in the address write leaves the identity filled and the next adoption writes', () => {

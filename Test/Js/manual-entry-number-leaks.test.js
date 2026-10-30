@@ -303,8 +303,12 @@ describe('Enter manually keeps the name and drops the number on the address step
         const published = [];
         addressStep.setCompanyData = function (id, name) { published.push([id, name]); };
 
+        // The field changes with every keystroke, as the buyer's typing changes it.
+        const field = document.querySelector(SHIPPING_COMPANY);
+        field.value = 'Typed A';
         shippingIdentity.companyName('Typed A');
         await flushIdentityWatcher();
+        field.value = 'Typed AB';
         shippingIdentity.companyName('Typed AB');
         await flushIdentityWatcher();
 

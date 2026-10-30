@@ -85,9 +85,14 @@ describe('a blocked popup draws a panel over the popover (TWO-26775)', () => {
         expect(ctx.rec.handles).toHaveLength(0);
         expect(popoverIsOpen()).toBe(true);
         expect(cover.parentNode).toBe(popover);
-        expect(cover.getAttribute('aria-label')).toBe(CAPTION);
         expect(cover.querySelectorAll('button')).toHaveLength(1);
-        expect(cover.querySelector('button').textContent).toBe(CAPTION);
+        const button = cover.querySelector('button');
+        expect(button.textContent).toBe(CAPTION);
+        // Named once, by its button: no label of its own to say the caption a third time.
+        expect([cover.hasAttribute('aria-label'), document.getElementById(cover.getAttribute('aria-labelledby'))])
+            .toEqual([false, button]);
+        // Centred inside the popover's gutter at its own width, not stretched edge to edge.
+        expect([cover.style.padding, button.style.flex]).toEqual(['inherit', '0 1 auto']);
         expect(document.activeElement).toBe(cover.querySelector('button'));
         // Everything else in the popover is out of reach underneath it.
         expect(Array.prototype.filter.call(popover.children, function (child) {
@@ -235,5 +240,104 @@ describe('a press on the checkout while the popup is open (TWO-26775)', () => {
         await flush();
 
         expect(ctx.identity.companyId()).toBe('ST-9');
+    });
+
+    test('an ACCEPTED answer with no number writes nothing and asks again (TWO-26775, as PrestaShop)', async () => {
+        const ctx = await startStack();
+        ctx.identity.write(PICK, { authoritative: true });
+        chip('soletrader').click();
+        ctx.buyerRef.value = { company_name: 'Ola Nordmann', organization_number: '' };
+        ctx.rec.messageListeners
+            .find(function (entry) { return entry.name === 'message'; })
+            .fn({ origin: CHECKOUT_PAGE_URL, source: ctx.rec.handles[0], data: 'ACCEPTED' });
+        await flush();
+        await flush();
+
+        expect([ctx.identity.soleTraderAdopted(), ctx.identity.companyName(), ctx.identity.companyId(), !!signupPanel()])
+            .toEqual([false, PICK.companyName, PICK.companyId, true]);
+    });
+});
+
+describe('the popup\'s watchers across window returns and relaunches (TWO-26775)', () => {
+    /** The window regaining focus: the browser re-fires focus on the field it holds. */
+    function windowReturn() {
+        const field = document.querySelector(FIELD);
+        window.dispatchEvent(new FocusEvent('focus'));
+        field.dispatchEvent(new FocusEvent('focus'));
+        field.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    }
+
+    function postAccepted(ctx, handle) {
+        ctx.rec.messageListeners
+            .find(function (entry) { return entry.name === 'message'; })
+            .fn({ origin: CHECKOUT_PAGE_URL, source: handle, data: 'ACCEPTED' });
+    }
+
+    test.each([
+        [1, 'the first return'],
+        [2, 'a second return answers as the first did'],
+        [3, 'and so does every one after it']
+    ])('%p window returns close neither popup nor popover (%s)', async (returns, why) => {
+        const ctx = await startStack();
+        chip('soletrader').click();
+        await flush();
+
+        for (let i = 0; i < returns; i += 1) windowReturn();
+
+        expect([why, ctx.rec.handles[0].closed, popoverIsOpen()]).toEqual([why, false, true]);
+    });
+
+    test('a return, a raise from the chip and another return still close nothing', async () => {
+        const ctx = await startStack();
+        chip('soletrader').click();
+        await flush();
+        windowReturn();
+        const soleTrader = document.querySelector('[data-two-chip="soletrader"]');
+        dispatchNative(soleTrader, 'mousedown');
+        soleTrader.click();
+
+        windowReturn();
+
+        expect([ctx.rec.handles[0].closed, ctx.rec.opens]).toEqual([false, 1]);
+    });
+
+    test('a popup closed by rule and relaunched at once reads its own hand-close as one', async () => {
+        const ctx = await startStack();
+        chip('soletrader').click();
+        await flush();
+        const registered = document.querySelector('[data-two-chip="registered"]');
+        dispatchNative(registered, 'mousedown');
+        registered.click();
+        chip('soletrader').click();
+        await flush();
+        expect(ctx.rec.handles).toHaveLength(2);
+
+        ctx.rec.handles[1].closed = true;
+        closePoll(ctx.rec).fn();
+
+        expect(popoverIsOpen()).toBe(false);
+    });
+
+    test.each([
+        ['the popup still open when the lookup lands', false],
+        ['the popup closed by itself, the lookup landing before the next poll tick', true]
+    ])('signed up but Two knows nobody on the payment step: the panel stays (%s)', async (why, closedOnPost) => {
+        const ctx = await startStack();
+        chip('soletrader').click();
+        await flush();
+        const handle = ctx.rec.handles[0];
+        postAccepted(ctx, handle);
+        if (closedOnPost) handle.closed = true;
+        await flush();
+        await flush();
+        expect([why, !!signupPanel()]).toEqual([why, true]);
+
+        handle.closed = true;
+        ctx.rec.intervals
+            .filter(function (entry) { return entry.ms === 300 && !entry.cleared; })
+            .forEach(function (entry) { entry.fn(); });
+
+        expect([why, !!signupPanel(), ctx.identity.captureMode(), popoverIsOpen()])
+            .toEqual([why, true, 'soletrader', true]);
     });
 });

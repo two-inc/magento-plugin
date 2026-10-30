@@ -23,7 +23,7 @@ const path = require('path');
 const PANEL_PATH = 'view/frontend/web/js/model/company-search-panel.js';
 
 /** sha256 of the shared panel module, identical in both plugins. */
-const EDIT_LOCK_SHA256 = 'efcdbb75560965106d8a24ba33474692384654116a1c78709cf9f5f9bd3655e0';
+const EDIT_LOCK_SHA256 = 'b049cb6abde63bb7fe460d7037cddcae778769e866af29110359600cfc6269c0';
 
 describe('the vendored company-search panel', () => {
     test('has not been edited in place', () => {

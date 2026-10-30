@@ -154,7 +154,12 @@ A popover left on screen around a document focusing nothing reaches no keystroke
 at all, so the launch parks that focus on the company field one tick later.
 That one control is exempt from the rules above for the whole
 flight: the window losing focus to the popup blurs the field, and a buyer
-clicking back into the checkout would otherwise end their own enrolment.
+clicking back into the checkout would otherwise end their own enrolment. The
+field's own focus opener is held for the same span, however many times the
+buyer moves between the popup and the checkout, and only the window return
+after the popup has gone releases it (TWO-26775). Focus arriving on the Sole
+trader chip alone moves nothing; only a click, or Enter or Space on it, raises
+the popup.
 
 **The close is only abandonment while the checkout is still in sole-trader
 mode**. The popup's close is noticed by a 300ms poll, so a chip the
@@ -182,27 +187,32 @@ sole trader" link), and otherwise to the company field (guide row 1.39). The
 flight's own park is dropped before that is read, so what it judges is the
 unplaced focus the launch left. A close by one of the rules above
 (`closeSignupPopup({ byRule: true })`) is not a hand-close: the popover and
-focus stay where the buyer's press or focus put them.
+focus stay where the buyer's press or focus put them. A launch forgets how the
+previous popup closed, so its own hand-close is never misread as a rule close.
 
 **A blocked popup gets a panel over the popover, never a link** (TWO-26775). When
 `window.open` returns null the popover (opened first where it is closed) is
 covered by one centred button, "Sign up or log in as a sole trader", whose
-click is a fresh gesture a blocker allows. Focus moves to the button, the rest
-of the popover is `inert` underneath, and the caption is announced in the
-panel's live region. A chip click, any mode change and the popover's close take
+click is a fresh gesture a blocker allows. The button keeps its own width,
+centred inside the popover's padding. Focus moves to the button, the rest of
+the popover is `inert` underneath, the panel is named by its button rather than
+a label of its own, and the caption is announced in the panel's live region,
+which exists, empty, from the moment the panel attaches. A chip click, any mode change and the popover's close take
 it down, and so does a launch that opens.
 
 **After a signup reports ACCEPTED, the buyer lookup has three outcomes**
-(TWO-26775). A buyer is adopted. A failed lookup shows the error and, the close
-watcher having stood down for it, runs the abandon itself. A lookup that finds
-nobody asks again as PrestaShop does: the payment-tile mount shows the
+(TWO-26775). A buyer with a number is adopted. A failed lookup shows the error
+and, the close watcher having stood down for it, runs the abandon itself. A
+lookup that finds nobody, or a record with no number, asks again as PrestaShop
+does: the payment-tile mount retires the finished popup's watchers and shows the
 blocked-popup panel, the address-step mount opens a second popup, which a
 blocker turns into the same panel.
 
 **An autofill is adopted by PrestaShop's rules, on every adoption** (TWO-26775).
 The click adopts a held answer without a popup only where its email matches
-the checkout's. The name and number are overwritten, except that a blank name
-keeps the name in the field. A blank address value or phone writes nothing,
+the checkout's (a signed-in buyer's own email where the quote carries none). A
+record with no number is refused whole and writes nothing. The name and number
+are overwritten, except that a blank name keeps the name in the field. A blank address value or phone writes nothing,
 and a field the record leaves out is cleared only where it still holds the
 plugin's own marked write. The region is written only into an empty or
 plugin-written field. Country, email and the buyer's own names are never
@@ -266,7 +276,10 @@ the identity; the address step's `company_id` and the `companyData` section,
 which `address-autocomplete.js` republishes once as manual entry starts (not
 per keystroke, which would fire order intents); and the quote address, whose
 `company_id` `gateway_method.js` no longer writes back into a manual identity
-from `fillCompanyData()` or `updateBillingAddress()`. A saved address-book
+from `fillCompanyData()` or `updateBillingAddress()`. A billing panel in manual
+entry resolves as itself, never falling back to the shipping panel's number.
+The component no longer calls a host's `clearField`: a host that blanked the
+field there would undo the kept name. A saved address-book
 entry still carries its number, and that is the route it took back before.
 
 ## The company relay resolves an ISO 3166-2 region to the store's own

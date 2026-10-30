@@ -13,7 +13,9 @@ pairing (TWO-26295). Two guards, one per route a company can arrive by:
 the shipping panel's country (TWO-24867), and the source resolver never falls
 back from a number-less billing capture to the shipping company while the
 quote's shipping and billing addresses are in different countries. Both fail
-open while a country is unknown.
+open while a country is unknown. Nor does it fall back from a billing capture in
+manual entry, in any country: the buyer has named the invoice company, and the
+shipping number would bill another one (TWO-26775).
 
 The API's own text never reaches the buyer: it is written for an integrator or
 for the merchant. A refusal whose `error_json` names a field the buyer can fix
