@@ -221,10 +221,15 @@ describe('the popup closing must not reopen the company-search popover', functio
     test.each([
         ['the signup adopts a trader', false,
             'the adopt closed the popover, and the re-fire must not put it back'],
-        ['the buyer closes the signup window', true,
-            'the popover is held open across a signup, and nothing here closes it']
+        ['the buyer closes the signup window', false,
+            'a hand-close closes the popover, as PrestaShop does (TWO-26775)'],
+        ['a focus rule closes the signup window', true,
+            'a rule close leaves the popover where the buyer has it']
     ])('%s: popover open=%p afterwards (%s)', async function (path, expectedOpen, why) {
         const ctx = await openedStack();
+        if (path === 'a focus rule closes the signup window') {
+            ctx.component.soleTrader().closeSignupPopup({ byRule: true });
+        }
         if (path === 'the signup adopts a trader') {
             ctx.buyerRef.value = TRADER;
             ctx.rec.messageListeners

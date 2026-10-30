@@ -182,6 +182,7 @@ function loadFlow(options) {
     component.adoptSoleTrader = function (buyer) { env.rec.adopted.push(buyer); };
     component.abandonSoleTrader = function (options) { env.rec.abandons.push(options || {}); };
     const flow = new SoleTraderCtor(component);
+    started.push(flow);
     return {
         flow: flow,
         rec: env.rec,
@@ -218,6 +219,7 @@ async function startStack(options) {
     });
     const component = loadCompanyCapture(mocks, env.globals).shipping;
     component.start();
+    started.push(component.soleTrader());
     // The availability answer is seeded, so one macrotask turn is enough for it
     // and the mint it triggers to settle.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -246,8 +248,19 @@ function readSource() {
     return fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER), 'utf8');
 }
 
+/**
+ * Every flow a case built. Its document-level return watch outlives the case
+ * otherwise, and a popup a case left open reads the next case's presses as the
+ * buyer returning to a checkout that is no longer on the page.
+ */
+const started = [];
+
 beforeEach(() => {
     document.body.innerHTML = '';
+});
+
+afterEach(() => {
+    started.splice(0).forEach((flow) => flow.dispose());
 });
 
 describe('the tokens are minted unconditionally at boot, never on the click', () => {
@@ -377,26 +390,73 @@ describe('what the signup URL carries', () => {
     });
 });
 
-describe('a blocked popup falls back to the on-page link', () => {
+/** The blocked-popup panel's one button, or null (TWO-26775). */
+function signupButton() {
+    return document.querySelector('.two-company-dropdown__signup button');
+}
+
+describe('a blocked popup gets a panel over the popover (TWO-26775)', () => {
     test.each([
         [{ autoselect: false }, 'false', 'a blocked replacement retries with autoselect still off'],
         [undefined, null, 'a blocked first signup retries with no autoselect param']
-    ])('%p -> autoselect=%p (%s)', async (launchOptions, expectedAutoselect) => {
+    ])('%p -> autoselect=%p (%s)', async (launchOptions, expectedAutoselect, why) => {
         const { flow, rec } = await startStack();
         rec.blocked = true;
 
         flow.launchSignup(launchOptions);
 
-        const note = document.querySelector('.two-sole-trader-note');
-        expect(note).not.toBeNull();
-        expect(note.classList.contains('two-hidden')).toBe(false);
+        const button = signupButton();
+        expect(button).not.toBeNull();
         expect(rec.opened).toHaveLength(1);
 
         rec.blocked = false;
-        note.querySelector('.two-sole-trader-note__link').click();
+        button.click();
 
-        expect(rec.opened).toHaveLength(2);
-        expect(new URL(rec.opened[1].url).searchParams.get('autoselect')).toBe(expectedAutoselect);
+        expect(tagged(why, [rec.opened.length, new URL(rec.opened[1].url).searchParams.get('autoselect'), signupButton()]))
+            .toEqual(tagged(why, [2, expectedAutoselect, null]));
+    });
+
+    test('the panel covers the open popover, named, with focus on its one button', async () => {
+        const { rec } = await startStack();
+        rec.blocked = true;
+
+        chip('soletrader').click();
+
+        const button = signupButton();
+        const cover = button.closest('.two-company-dropdown__signup');
+        const popover = document.querySelector('.two-company-dropdown');
+        expect([
+            cover.parentNode === popover,
+            popover.hasAttribute('hidden'),
+            cover.getAttribute('aria-label'),
+            button.textContent,
+            document.activeElement === button,
+            cover.querySelectorAll('button').length
+        ]).toEqual([true, false, 'Sign up or log in as a sole trader', 'Sign up or log in as a sole trader', true, 1]);
+    });
+
+    test.each([
+        ['registered', 'Registered company takes it down'],
+        ['manual', 'Enter manually takes it down'],
+        ['escape', 'Escape closes the popover, and the panel with it'],
+        ['outside', 'focus outside closes the popover, and the panel with it']
+    ])('%s -> panel gone (%s)', async (route, why) => {
+        const { rec } = await startStack();
+        rec.blocked = true;
+        chip('soletrader').click();
+        expect(signupButton()).not.toBeNull();
+
+        if (route === 'escape') {
+            signupButton().dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        } else if (route === 'outside') {
+            const outside = document.createElement('input');
+            document.body.appendChild(outside);
+            outside.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+        } else {
+            document.querySelector(`.two-company-mode-chip[data-two-chip="${route}"]`).click();
+        }
+
+        expect(tagged(why, signupButton())).toEqual(tagged(why, null));
     });
 
     test('a real mouse click on the chip raises the popup it holds (TWO-25658)', async () => {
@@ -506,28 +566,12 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(popover.hasAttribute('hidden')).toBe(true);
     });
 
-    test('the note is reachable after the chip click that closes the popover', async () => {
-        // Given: the chip closes the panel on its way to signup.
-        // When: that signup is blocked.
-        // Then: the note must not be anchored inside what just closed.
-        const { rec } = await startStack();
-        rec.blocked = true;
-
-        chip('soletrader').click();
-
-        const note = document.querySelector('.two-sole-trader-note');
-        expect(note).not.toBeNull();
-        expect(note.classList.contains('two-hidden')).toBe(false);
-        expect(note.closest('.two-company-dropdown')).toBeNull();
-    });
-
-    test('a popup that opened leaves the fallback link withdrawn', async () => {
+    test('a popup that opened leaves no panel up', async () => {
         const { flow } = await startStack();
 
         flow.launchSignup();
 
-        const note = document.querySelector('.two-sole-trader-note');
-        expect(note === null || note.classList.contains('two-hidden')).toBe(true);
+        expect(signupButton()).toBeNull();
     });
 });
 

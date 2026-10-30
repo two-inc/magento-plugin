@@ -133,12 +133,15 @@ control.
 ## What focus landing on the checkout does to an open signup popup
 
 Every `focusin` while the hosted sole-trader signup window is up is classified
-once, and these are the three rules (TWO-25658):
+once, and these are the three rules (TWO-25658). A `mousedown` is classified the
+same way (TWO-26775): a press on page content nothing can focus moves no focus
+at all, and it is still the buyer back on the checkout.
 
 -   **A Sole trader chip inside the capture's own popover is inert.** Arrival
     moves the popup neither way — only an activation raises it, and the browser
     delivers Enter and Space on a focused chip as a click.
--   **Any other target closes an open popup.**
+-   **Any other target closes an open popup**, Enter manually included: its
+    release focuses the parked field, so it closes the popup itself first.
 -   **A target outside that capture's popover closes the popover too**, with the
     company field counted as INSIDE it: the field is the popover's own trigger
     and sits outside the panel node, and a buyer typing a query is still inside
@@ -160,12 +163,50 @@ for by the time the poll runs — and a poll that returned to registered search
 regardless swallowed that action. Manual entry was the visible loss: the field
 came back a registered-search combobox with the registered chip pressed.
 
-**Closing the signup with nothing captured gives focus back, but only where
-focus is still unplaced**. A close that left `document.activeElement`
-on the body or nothing at all has nowhere for the buyer to be, and the company
-field takes it. The flight's own park is dropped before that is read, so what
-it judges is the unplaced focus the launch left. A close the buyer caused by
-focusing another control keeps focus where they put it.
+**Closing the signup with nothing captured clears nothing** (TWO-26775). The
+capture is still the one from before the Sole trader click, which itself
+clears nothing either, and the mode follows it back: `restingMode()` answers
+Sole trader for an adopted one, else the mode the click left. That mode is read
+off the click rather than off the name and number, because a manual name and a
+registry hit with no number look the same. Leaving a sole-trader mode that
+adopted nobody, by any chip, keeps the company too; only an adopted sole
+trader is discarded on the way out. Every popover close settles a sole-trader
+mode with no popup, no flight and no adoption the same way, so a dismissed
+blocked-popup panel cannot leave the chip selected over nothing.
+
+**A hand-close closes the popover and gives focus back, but only where focus is
+still unplaced**. A close that left `document.activeElement` on the body or
+nothing at all has nowhere for the buyer to be, so focus goes to the control the
+signup was launched from while it is still on screen (the "Select a different
+sole trader" link), and otherwise to the company field (guide row 1.39). The
+flight's own park is dropped before that is read, so what it judges is the
+unplaced focus the launch left. A close by one of the rules above
+(`closeSignupPopup({ byRule: true })`) is not a hand-close: the popover and
+focus stay where the buyer's press or focus put them.
+
+**A blocked popup gets a panel over the popover, never a link** (TWO-26775). When
+`window.open` returns null the popover (opened first where it is closed) is
+covered by one centred button, "Sign up or log in as a sole trader", whose
+click is a fresh gesture a blocker allows. Focus moves to the button, the rest
+of the popover is `inert` underneath, and the caption is announced in the
+panel's live region. A chip click, any mode change and the popover's close take
+it down, and so does a launch that opens.
+
+**After a signup reports ACCEPTED, the buyer lookup has three outcomes**
+(TWO-26775). A buyer is adopted. A failed lookup shows the error and, the close
+watcher having stood down for it, runs the abandon itself. A lookup that finds
+nobody asks again as PrestaShop does: the payment-tile mount shows the
+blocked-popup panel, the address-step mount opens a second popup, which a
+blocker turns into the same panel.
+
+**An autofill is adopted by PrestaShop's rules, on every adoption** (TWO-26775).
+The click adopts a held answer without a popup only where its email matches
+the checkout's. The name and number are overwritten, except that a blank name
+keeps the name in the field. A blank address value or phone writes nothing,
+and a field the record leaves out is cleared only where it still holds the
+plugin's own marked write. The region is written only into an empty or
+plugin-written field. Country, email and the buyer's own names are never
+written.
 
 **A signup open anywhere on the checkout owns focus, and that is what the close
 watcher asks.** Handing the popup over to another capture launches that
@@ -217,15 +258,16 @@ chip's click path, not the focus rule. The popover is a separate matter — its
 single-open invariant is enforced at open time and does not depend on these
 rules.
 
-## A blocked signup popup leaves a link, for sole-trader mode only
+## Enter manually keeps the name and drops the number everywhere
 
-When the browser blocks the popup, `sole-trader.js` asks the host to render a
-link under the company field that retries the launch. The link belongs to
-sole-trader mode: while it is up the flow watches the identity, and any other
-mode (the Registered company or Enter manually chip, or a country change that
-resets the mode) takes it down. A second Sole trader click that is still blocked
-keeps it, and a successful launch or an adoption withdraws it as before
-(TWO-26775). The rule lives in the shared flow, so no host repeats it.
+Enter manually leaves the current name in the field, editable, and keeps the
+address (TWO-26775). The number goes from every place it could reach the order:
+the identity; the address step's `company_id` and the `companyData` section,
+which `address-autocomplete.js` republishes once as manual entry starts (not
+per keystroke, which would fire order intents); and the quote address, whose
+`company_id` `gateway_method.js` no longer writes back into a manual identity
+from `fillCompanyData()` or `updateBillingAddress()`. A saved address-book
+entry still carries its number, and that is the route it took back before.
 
 ## The company relay resolves an ISO 3166-2 region to the store's own
 

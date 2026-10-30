@@ -131,7 +131,11 @@ function boot(options) {
         this.focusSignupPopup = function () { return false; };
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function () { return null; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
         this.showSignupPrompt = function () {};
         this.selectDifferentSoleTrader = function () {

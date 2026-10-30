@@ -67,6 +67,7 @@ define([
     const tileCompanyName = ko.observable(tileIdentity.companyName());
     const tileCompanyId = ko.observable(tileIdentity.companyId());
     const tileSoleTraderBusy = ko.observable(tileIdentity.soleTraderBusy());
+    const tileSoleTraderAdopted = ko.observable(tileIdentity.soleTraderAdopted());
     let tileMirroring = false;
 
     /**
@@ -89,6 +90,7 @@ define([
         tileCompanyName(tileIdentity.companyName());
         tileCompanyId(tileIdentity.companyId());
         tileSoleTraderBusy(tileIdentity.soleTraderBusy());
+        tileSoleTraderAdopted(tileIdentity.soleTraderAdopted());
         tileMirroring = false;
     });
 
@@ -387,12 +389,14 @@ define([
          * Gated on the captured number, not on sole-trader mode alone: this
          * input is `required` and jQuery Validation enforces that on a
          * `[readonly]` field, so a sole trader whose signup captured nothing
-         * would otherwise face a blank, locked, unsatisfiable field.
+         * would otherwise face a blank, locked, unsatisfiable field. And on the
+         * adoption, not the mode: a Sole trader click keeps the registered
+         * company it follows until a sole trader replaces it (TWO-26775).
          *
          * @returns {boolean}
          */
         isCompanyNameReadOnly: function () {
-            return tileIdentity.isSoleTrader() && !!this.tileCompanyId();
+            return tileIdentity.isSoleTrader() && tileSoleTraderAdopted() && !!this.tileCompanyId();
         },
         /**
          * Whether the tile's own company field is the component's live mount.
@@ -811,6 +815,11 @@ define([
             companyName = typeof companyName == 'string' && companyName ? companyName : '';
             companyId = typeof companyId == 'string' ? companyId : '';
             if (!companyName || !companyId) return;
+            // Manual entry is name-only capture. A number arriving here then is
+            // the quote address still carrying the company the buyer left, and
+            // writing it would put that company's number on the order
+            // (TWO-26775).
+            if (companyCapture.shipping.identity().captureMode() === 'manual') return;
             // The shipping panel's own identity, never the resolved one: every
             // caller here is shipping-panel-sourced, and only the resolver may
             // change what resolvedIdentity mirrors (TWO-25554).
@@ -1088,7 +1097,9 @@ define([
             if (!billingAddress) return;
             const fields = this.readAddressFields(billingAddress);
             this.applyBuyerFields(fields);
-            if (fields.companyName && fields.companyId) {
+            // Not into a manual capture: see fillCompanyData() (TWO-26775).
+            if (fields.companyName && fields.companyId
+                && companyCapture.billingRoleIdentity().captureMode() !== 'manual') {
                 companyCapture.billingRoleIdentity().write({
                     companyName: fields.companyName,
                     companyId: fields.companyId

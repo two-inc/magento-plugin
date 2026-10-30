@@ -356,7 +356,7 @@ function switchCountryTo(ctx, iso) {
  */
 function loadCaptureComponent(options) {
     const opts = options || {};
-    const calls = { reverts: 0, aborts: 0, binds: [], forgotten: 0, destroys: 0 };
+    const calls = { reverts: 0, aborts: 0, binds: [], destroys: 0 };
 
     function PanelStub() {
         this.bind = function (bindOptions) { calls.binds.push(bindOptions || {}); };
@@ -377,7 +377,10 @@ function loadCaptureComponent(options) {
         this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
-        this.forgetAdoptions = function () { calls.forgotten += 1; };
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
         this.forgetAutofilledBuyer = function () {};
     }
 
@@ -568,7 +571,6 @@ describe('the capture component on a country change', () => {
         ctx.component.onCountryChanged('gb');
         ctx.identity.write({ companyName: 'Example Ltd', companyId: '12345678' });
         ctx.calls.reverts = 0;
-        ctx.calls.forgotten = 0;
         ctx.calls.aborts = 0;
     }
 
@@ -581,7 +583,7 @@ describe('the capture component on a country change', () => {
         ctx.component.onCountryChanged(iso);
     }
 
-    test('the captured company, the autofilled address and the adoption guard all go', () => {
+    test('the captured company and the autofilled address both go', () => {
         const ctx = loadCaptureComponent({ billingCountry: 'GB' });
         inPlay(ctx);
 
@@ -592,7 +594,6 @@ describe('the capture component on a country change', () => {
         expect(ctx.identity.companyId()).toBe('');
         expect(ctx.identity.companyName()).toBe('');
         expect(ctx.calls.reverts).toBe(1);
-        expect(ctx.calls.forgotten).toBe(1);
     });
 
     test('a search still on the wire for the old country is cancelled', () => {
