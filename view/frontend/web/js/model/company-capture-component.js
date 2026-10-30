@@ -654,7 +654,13 @@
         this._panel.bind();
         // A re-render takes the return link with the wrapper, and without it
         // manual entry is a dead end.
-        if (this._identity.captureMode() === 'manual') this._panel.releaseField();
+        if (this._identity.captureMode() === 'manual') {
+            this._panel.releaseField();
+            // A manual entry restored before anything mounted shows its name
+            // and records the buyer's edits from here (TWO-26775).
+            this._panel.setDisplayText(this._identity.companyName());
+            this._watchManualEdits();
+        }
     };
 
     // ---------------------------------------------------------------- chrome
@@ -969,6 +975,18 @@
         }
         this._watchManualEdits();
         this.syncChips();
+    };
+
+    /**
+     * Re-enter a manual entry a reload interrupted, with the name it kept, so
+     * the page cannot come back holding the number the buyer set aside
+     * (TWO-26775). Safe before `start()`: the mount picks the mode up.
+     *
+     * @param {string} name
+     */
+    CompanyCaptureComponent.prototype.restoreManualEntry = function (name) {
+        this._identity.companyName(String(name || ''));
+        this.manualEntryMode();
     };
 
     /**

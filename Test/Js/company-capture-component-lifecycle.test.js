@@ -715,10 +715,11 @@ describe('a typed company name carries no vouched number', () => {
         component.refreshMount();
         expect(component._boundSelector).toBe(TILE_FIELD);
 
-        const registrationsBeforeReentry = $.async.registrations(TILE_FIELD);
+        // The move itself arms the tile field (TWO-26775), so re-entry adds no second watcher.
+        const registrationsAfterMove = $.async.registrations(TILE_FIELD);
         component.manualEntryMode();
 
-        expect($.async.registrations(TILE_FIELD)).toBe(registrationsBeforeReentry + 1);
+        expect($.async.registrations(TILE_FIELD)).toBe(registrationsAfterMove);
 
         const field = document.querySelector(TILE_FIELD);
         field.value = 'Acme Limited';

@@ -502,6 +502,81 @@ define([
         signupPrefill: makeSignupPrefill(billingIdentity)
     }));
 
+    /** Where each panel's manual entry outlives a reload of this tab (TWO-26775). */
+    const MANUAL_ENTRY_KEY = 'two-company-manual-entry';
+
+    /** @returns {object} the stored manual entries, the name by role */
+    function readManualEntries() {
+        try {
+            const stored = JSON.parse(window.sessionStorage.getItem(MANUAL_ENTRY_KEY) || '{}');
+            return stored && typeof stored === 'object' ? stored : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function writeManualEntries(entries) {
+        try {
+            window.sessionStorage.setItem(MANUAL_ENTRY_KEY, JSON.stringify(entries));
+        } catch (error) {
+            // No storage, no restore: the page still holds the entry until it reloads.
+        }
+    }
+
+    /**
+     * Blank the `company_id` a quote address carries, which a saved address-book
+     * entry fills with the company of the last Two order. The quote is what
+     * places the order, and the address book is the buyer's own (TWO-26775).
+     *
+     * @param {?object} address quote address
+     */
+    function dropCompanyId(address) {
+        if (!address || !Array.isArray(address.customAttributes)) return;
+        address.customAttributes.forEach(function (item) {
+            if (item && item.attribute_code === 'company_id') item.value = '';
+        });
+    }
+
+    /** Every quote address a panel in manual entry speaks for loses its number. */
+    function dropManualCompanyIds() {
+        if (shippingIdentity.captureMode() === 'manual') {
+            dropCompanyId(quote.shippingAddress());
+            if (!billingIsDistinct()) dropCompanyId(quote.billingAddress());
+        }
+        if (billingIdentity.captureMode() === 'manual' && billingIsDistinct()) {
+            dropCompanyId(quote.billingAddress());
+        }
+    }
+
+    /**
+     * Restore a panel's manual entry from before a reload, then keep the record
+     * current: the name while the panel is in manual entry, nothing otherwise.
+     *
+     * @param {string} role
+     * @param {object} component
+     */
+    function keepManualEntry(role, component) {
+        const identity = component.identity();
+        const saved = readManualEntries()[role];
+        if (typeof saved === 'string') component.restoreManualEntry(saved);
+        const record = function () {
+            const entries = readManualEntries();
+            if (identity.captureMode() === 'manual') entries[role] = identity.companyName();
+            else delete entries[role];
+            writeManualEntries(entries);
+            dropManualCompanyIds();
+        };
+        record();
+        identity.subscribe(record);
+    }
+
+    // Before anything reads the quote addresses: the renderer's seed of a saved
+    // address's company must find the panel already in manual entry.
+    keepManualEntry('shipping', shippingComponent);
+    keepManualEntry('billing', billingComponent);
+    quote.shippingAddress.subscribe(dropManualCompanyIds);
+    quote.billingAddress.subscribe(dropManualCompanyIds);
+
     const resolver = new CompanySourceResolver({
         shipping: shippingIdentity,
         billing: billingIdentity,

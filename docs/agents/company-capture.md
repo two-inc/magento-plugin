@@ -279,8 +279,13 @@ per keystroke, which would fire order intents); and the quote address, whose
 from `fillCompanyData()` or `updateBillingAddress()`. A billing panel in manual
 entry resolves as itself, never falling back to the shipping panel's number.
 The component no longer calls a host's `clearField`: a host that blanked the
-field there would undo the kept name. A saved address-book
-entry still carries its number, and that is the route it took back before.
+field there would undo the kept name. A saved address-book entry still carries
+the number of its last Two order, and the buyer's address book is left alone:
+instead `company-capture.js` blanks `company_id` on every quote address a
+manual panel speaks for, and records the manual name per panel in
+`sessionStorage`, so a reload re-enters manual entry before the renderer reads
+the saved address. Order placement itself reads the number only from the
+payment's additional data, never from an address.
 
 ## The company relay resolves an ISO 3166-2 region to the store's own
 

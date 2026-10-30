@@ -913,3 +913,73 @@ describe('a resolved-company change starts a check WITHOUT writing the shipping 
         expect(capture.shipping.identity().companyName()).toBe('Shipping Co');
     });
 });
+
+describe('a manual entry survives a reload, and no quote address keeps its number (TWO-26775)', () => {
+    const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+    const MANUAL_ENTRY_KEY = 'two-company-manual-entry';
+
+    /** A saved address-book entry: the last Two order wrote its company and number onto it. */
+    function savedAddress() {
+        return quoteAddressValue({
+            company: 'Saved Co',
+            customAttributes: [
+                { attribute_code: 'company_id', value: '111' },
+                { attribute_code: 'company_name', value: 'Saved Co' }
+            ]
+        });
+    }
+
+    function companyIdOn(address) {
+        return address.customAttributes.find(function (item) { return item.attribute_code === 'company_id'; }).value;
+    }
+
+    test('entering manual records the name and blanks company_id on every quote address the panel speaks for', () => {
+        const { capture, quote } = load();
+        quote.shippingAddress(savedAddress());
+        quote.billingAddress(savedAddress());
+        capture.shipping.start();
+        capture.shipping.selectCompany({ text: 'Saved Co', companyId: '111', lookupId: '' });
+
+        capture.shipping.manualEntryMode();
+
+        expect([
+            JSON.parse(window.sessionStorage.getItem(MANUAL_ENTRY_KEY)),
+            companyIdOn(quote.shippingAddress()),
+            companyIdOn(quote.billingAddress())
+        ]).toEqual([{ shipping: 'Saved Co' }, '', '']);
+    });
+
+    test('leaving manual entry drops the record', () => {
+        const { capture } = load();
+        capture.shipping.start();
+        capture.shipping.manualEntryMode();
+
+        capture.shipping.registeredMode();
+
+        expect(JSON.parse(window.sessionStorage.getItem(MANUAL_ENTRY_KEY))).toEqual({});
+    });
+
+    test('after a reload the saved address cannot bring the number back: manual, its name, no id anywhere', () => {
+        window.sessionStorage.setItem(MANUAL_ENTRY_KEY, JSON.stringify({ shipping: 'Typed Co' }));
+        const { capture, dom, quote } = load();
+        capture.shipping.start();
+        const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), {
+            jquery: dom.$,
+            'Two_Gateway/js/model/company-capture': capture
+        }));
+        renderer.getCode = function () { return 'two_payment'; };
+        renderer.isOrderIntentEnabled = false;
+
+        // The checkout reloads onto the buyer's saved address.
+        quote.shippingAddress(savedAddress());
+        quote.billingAddress(savedAddress());
+        renderer.updateShippingAddress(quote.shippingAddress());
+        renderer.updateBillingAddress(quote.billingAddress());
+
+        const shipping = capture.shipping.identity();
+        expect([
+            shipping.captureMode(), shipping.companyName(), shipping.companyId(), capture.identity.companyId(),
+            companyIdOn(quote.shippingAddress()), companyIdOn(quote.billingAddress())
+        ]).toEqual(['manual', 'Typed Co', '', '', '', '']);
+    });
+});
