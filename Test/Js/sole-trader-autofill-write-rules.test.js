@@ -85,6 +85,31 @@ describe('a sole trader\'s record follows PrestaShop\'s rules', () => {
     });
 });
 
+describe('the next sole trader\'s record never keeps the previous one\'s region', () => {
+    test.each([
+        ['region_id', '1', { region: '' }, 'a blank region'],
+        ['region_id', '1', { region: 'Atlantis' }, 'a region that matches no option'],
+        ['region_id', '1', { city: 'Leeds' }, 'no region at all'],
+        ['region', 'Kent', { region: '' }, 'a blank region, on a country with a free-text region'],
+        ['region', 'Kent', { city: 'Leeds' }, 'no region at all, on a country with a free-text region']
+    ])('%s holding %p, then %p: cleared (%s)', (name, written, next, why) => {
+        // A country with no region list has a select of the placeholder alone,
+        // and shows the free-text field, which jsdom lays out as hidden.
+        if (name === 'region') {
+            field('region_id').innerHTML = '<option value="">Please select</option>';
+            field('region').getClientRects = function () { return [{}]; };
+        }
+        const model = loadModel();
+        const identity = {};
+        model.applyAddress({ region: 'Kent' }, $(FORM), identity, { buyerRules: true });
+        expect(field(name).value).toBe(written);
+
+        model.applyAddress(next, $(FORM), identity, { buyerRules: true });
+
+        expect([why, field('region_id').value, field('region').value]).toEqual([why, '', '']);
+    });
+});
+
 describe('a registry pick keeps its own rules', () => {
     test.each([
         ['city', 'Leeds', null, { city: '' }, '', 'a blank the registry sends is written'],
