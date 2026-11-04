@@ -732,12 +732,13 @@
     /**
      * The captured company number as it may be SHOWN, or '' for nothing to
      * show. Manual entry is name-only capture, so a number shown there would
-     * claim a registry identity the buyer never picked.
+     * claim a registry identity the buyer never picked. That includes a Sole
+     * trader click still pending over manual entry (TWO-26775).
      *
      * @returns {string}
      */
     CompanyCaptureComponent.prototype.displayCompanyNumber = function () {
-        if (this._identity.captureMode() === 'manual') return '';
+        if (this.isManualEntry()) return '';
         // The one shared display filter, so an internal prefixed identifier is
         // withheld here too (TWO-25326); a host adapter without it shows no
         // number rather than one the buyer cannot make sense of.

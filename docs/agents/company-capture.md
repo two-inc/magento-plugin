@@ -295,8 +295,10 @@ mode, a pending Sole trader click included, and goes when a registered pick or
 an adopted sole trader replaces it. It belongs to one quote and one customer:
 a placed order, a login or a logout moves on from it, and the next checkout
 drops it rather than restore another checkout's name. Every reader that keeps
-a number out of a manual capture (that blanking, the record, and the renderer's
-writes from a quote address) asks the component's one `isManualEntry()`, which
+a number out of a manual capture (that blanking, the record, the renderer's
+writes from a quote address, the number label under the field, and the source
+resolver's refusal to fall back from billing to shipping) asks the component's
+one `isManualEntry()`, which
 counts a pending Sole trader click from manual entry as manual entry, so a saved
 address arriving while the signup is up writes no number. Order placement itself reads the number only from the
 payment's additional data, never from an address.
