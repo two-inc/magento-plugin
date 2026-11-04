@@ -106,6 +106,28 @@ async function setConfigField(
     await apply();
 }
 
+// Save Config is a plain button that submits only once the admin page's scripts
+// have bound to it, and a restore (ticking Use Default boxes) reaches it fast
+// enough to click first, which sends nothing (TWO-27052). Click until the save
+// request leaves, so an ignored click retries rather than waiting out the banner.
+async function clickSaveConfig(page: Page) {
+    for (let attempt = 1; ; attempt++) {
+        const saving = page
+            .waitForRequest((r) => r.method() === 'POST' && /system_config\/save/.test(r.url()), {
+                timeout: 5_000
+            })
+            .then(() => true, () => false);
+        await page.locator('#save').click();
+        if (await saving) {
+            console.log(`[DIAG TEMP TWO-27052] save request sent on attempt ${attempt}`);
+            return;
+        }
+        if (attempt === 3) {
+            throw new Error('Save Config sent no save request after 3 clicks');
+        }
+    }
+}
+
 async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
     await gotoConfigSection(page, 'two_checkout_fields');
     await expandAvailabilityGroup(page);
@@ -162,7 +184,7 @@ async function saveMinimumConfig(page: Page, cfg: MinimumConfig) {
             await page.locator(BASIS_FIELD).selectOption(cfg.basis);
         }
     });
-    await page.locator('#save').click();
+    await clickSaveConfig(page);
     // The save reloads the page; a rejected value (e.g. below the platform
     // floor from the Two API) surfaces as an error banner instead of success.
     const success = page.locator('.message-success').first();
