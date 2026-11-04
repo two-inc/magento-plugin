@@ -595,6 +595,7 @@ define([
         billing: billingIdentity,
         resolved: resolvedIdentity,
         billingIsDistinct: billingIsDistinct,
+        billingIsManualEntry: function () { return billingComponent.isManualEntry(); },
         // Fails open while either address has no country yet.
         shippingCountryIsBillingCountry: function () {
             const shipping = (quote.shippingAddress() || {}).countryId;

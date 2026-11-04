@@ -108,6 +108,23 @@ describe('billing distinct — billing wins if it has a number, else shipping', 
         expect([why, resolved.companyName(), resolved.companyId()]).toEqual([why, name, id]);
     });
 
+    test.each([
+        [true, 'Billing Typed Name', '', 'a Sole trader click pending over manual entry is still manual entry (TWO-26775)'],
+        [false, 'Shipping Co', '111', 'one pending over a registered capture falls back']
+    ])('billing distinct, an unadopted sole trader the panel calls manual=%p resolves to "%s" %p (%s)', (manual, name, id, why) => {
+        const { shipping, billing, resolver, resolved, setBillingDistinct } = build({
+            billingIsManualEntry: function () { return manual; }
+        });
+        setBillingDistinct(true);
+        shipping.write({ companyName: 'Shipping Co', companyId: '111' }, { authoritative: true });
+        billing.companyName('Billing Typed Name');
+        billing.captureMode('soletrader');
+        billing.soleTraderAdopted(false);
+        resolver.connect();
+
+        expect([why, resolved.companyName(), resolved.companyId()]).toEqual([why, name, id]);
+    });
+
     test('billing distinct, sole trader ADOPTED wins over a shipping pick', () => {
         const { shipping, billing, resolver, resolved, setBillingDistinct } = build();
         setBillingDistinct(true);

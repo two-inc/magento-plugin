@@ -43,12 +43,20 @@ async function pendingOver(resting, handClosed) {
     chip('soletrader').click();
     expect(ctx.rec.handles).toHaveLength(1);
     if (handClosed) ctx.rec.handles[0].closed = true;
+    return Object.assign({ renderer: loadRenderer(ctx) }, ctx);
+}
+
+/**
+ * @param {object} ctx a started stack
+ * @returns {object} the real payment renderer over the stack's capture
+ */
+function loadRenderer(ctx) {
     const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), ctx.mocks, {
         'Two_Gateway/js/model/company-capture': ctx.capture
     }), ctx.globals);
     renderer.getCode = function () { return 'two_payment'; };
     renderer.isOrderIntentEnabled = false;
-    return Object.assign({ renderer: renderer }, ctx);
+    return renderer;
 }
 
 /** @returns {string} the number a quote address carries */
@@ -87,5 +95,25 @@ describe('a Sole trader click pending over manual entry is still manual entry (T
         }
 
         expect([why, ctx.identity.captureMode(), ctx.identity.companyId()]).toEqual([why, 'soletrader', expected]);
+    });
+
+    test.each([
+        ['manual', TYPED, '', 'the invoice company the buyer typed, never the shipping company\'s number'],
+        ['registered', SAVED.name, SAVED.id, 'billing with no number of its own falls back to shipping']
+    ])('a click on a distinct billing address over %s places the order as %p %p (%s)', async (resting, name, id, why) => {
+        const ctx = await startStack();
+        const quote = ctx.mocks['Magento_Checkout/js/model/quote'];
+        quote.billingAddress(quoteAddressValue({ countryId: 'GB' }, 'billing-address'));
+        ctx.identity.write({ companyName: SAVED.name, companyId: SAVED.id }, { authoritative: true });
+        const billing = ctx.capture.billing;
+        billing.start();
+        billing.identity().write({ companyName: TYPED, companyId: '' }, { authoritative: true });
+        if (resting === 'manual') billing.manualEntryMode();
+
+        billing.soleTraderMode();
+        const sent = loadRenderer(ctx).getData().additional_data;
+
+        expect([why, billing.identity().captureMode(), ctx.capture.identity.companyId(), sent.companyName, sent.companyId])
+            .toEqual([why, 'soletrader', id, name, id]);
     });
 });
