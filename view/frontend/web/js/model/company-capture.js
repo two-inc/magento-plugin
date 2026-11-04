@@ -550,11 +550,11 @@ define([
 
     /** Every quote address a panel in manual entry speaks for loses its number. */
     function dropManualCompanyIds() {
-        if (shippingIdentity.captureMode() === 'manual') {
+        if (shippingComponent.isManualEntry()) {
             dropCompanyId(quote.shippingAddress());
             if (!billingIsDistinct()) dropCompanyId(quote.billingAddress());
         }
-        if (billingIdentity.captureMode() === 'manual' && billingIsDistinct()) {
+        if (billingComponent.isManualEntry() && billingIsDistinct()) {
             dropCompanyId(quote.billingAddress());
         }
     }
@@ -574,8 +574,7 @@ define([
         if (typeof saved === 'string') component.restoreManualEntry(saved);
         const record = function () {
             const entries = readManualEntries();
-            const pending = identity.isSoleTrader() && component.restingMode() === 'manual';
-            if (identity.captureMode() === 'manual' || pending) entries[role] = identity.companyName();
+            if (component.isManualEntry()) entries[role] = identity.companyName();
             else delete entries[role];
             writeManualEntries(entries);
             dropManualCompanyIds();
@@ -596,6 +595,7 @@ define([
         billing: billingIdentity,
         resolved: resolvedIdentity,
         billingIsDistinct: billingIsDistinct,
+        billingIsManualEntry: function () { return billingComponent.isManualEntry(); },
         // Fails open while either address has no country yet.
         shippingCountryIsBillingCountry: function () {
             const shipping = (quote.shippingAddress() || {}).countryId;
@@ -646,6 +646,10 @@ define([
          */
         billingRoleIdentity: function () {
             return billingIsDistinct() ? billingIdentity : shippingIdentity;
+        },
+        /** The panel whose identity billingRoleIdentity() answers with. */
+        billingRoleComponent: function () {
+            return billingIsDistinct() ? billingComponent : shippingComponent;
         },
         start: function () {
             shippingComponent.start();

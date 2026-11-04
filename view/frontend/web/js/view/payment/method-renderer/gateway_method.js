@@ -815,11 +815,11 @@ define([
             companyName = typeof companyName == 'string' && companyName ? companyName : '';
             companyId = typeof companyId == 'string' ? companyId : '';
             if (!companyName || !companyId) return;
-            // Manual entry is name-only capture. A number arriving here then is
-            // the quote address still carrying the company the buyer left, and
-            // writing it would put that company's number on the order
-            // (TWO-26775).
-            if (companyCapture.shipping.identity().captureMode() === 'manual') return;
+            // Manual entry, a Sole trader click pending over it included, is
+            // name-only capture. A number arriving here then is the quote
+            // address still carrying the company the buyer left, and writing it
+            // would put that company's number on the order (TWO-26775).
+            if (companyCapture.shipping.isManualEntry()) return;
             // The shipping panel's own identity, never the resolved one: every
             // caller here is shipping-panel-sourced, and only the resolver may
             // change what resolvedIdentity mirrors (TWO-25554).
@@ -1099,7 +1099,7 @@ define([
             this.applyBuyerFields(fields);
             // Not into a manual capture: see fillCompanyData() (TWO-26775).
             if (fields.companyName && fields.companyId
-                && companyCapture.billingRoleIdentity().captureMode() !== 'manual') {
+                && !companyCapture.billingRoleComponent().isManualEntry()) {
                 companyCapture.billingRoleIdentity().write({
                     companyName: fields.companyName,
                     companyId: fields.companyId

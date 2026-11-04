@@ -211,6 +211,10 @@ function load() {
     const shippingIdentity = createIdentity();
     const billingIdentity = createIdentity();
     const search = loadAmdModule(SEARCH, { jquery: $ }, globals);
+    const billing = {
+        identity: function () { return billingIdentity; },
+        isManualEntry: function () { return billingIdentity.captureMode() === 'manual'; }
+    };
     const capture = {
         identity: shippingIdentity,
         shipping: {
@@ -219,12 +223,14 @@ function load() {
             countryCode: function () { return 'no'; },
             mountSelector: function () { return SHIPPING_COMPANY; },
             subscribeMount: function () {},
-            soleTrader: function () { return null; }
+            soleTrader: function () { return null; },
+            isManualEntry: function () { return shippingIdentity.captureMode() === 'manual'; }
         },
-        billing: { identity: function () { return billingIdentity; } },
+        billing: billing,
         // A distinct billing form is rendered in this fixture, so the billing
         // panel owns the billing role.
         billingRoleIdentity: function () { return billingIdentity; },
+        billingRoleComponent: function () { return billing; },
         refreshMount: function () {}
     };
 

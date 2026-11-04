@@ -247,6 +247,18 @@ describe('the company number is painted under its own panel\'s field', () => {
         expect(tagged(description, numbersIn(actor))).toEqual(tagged(description, []));
     });
 
+    test.each(DIRECTIONS)('%s clicks Sole trader over manual entry with a number restored in its form (%s)', (actor, description) => {
+        const restored = { shipping: 'shippingNumber', billing: 'billingNumber' };
+        const { panels, identities } = boot({ [restored[actor]]: '999999999' });
+        panels[actor].manualEntryMode();
+
+        // Still manual entry until a sole trader is adopted (TWO-26775).
+        panels[actor].soleTraderMode();
+
+        expect(tagged(description, [identities[actor].captureMode(), numbersIn(actor)]))
+            .toEqual(tagged(description, ['soletrader', []]));
+    });
+
     test.each(DIRECTIONS)('%s captures an internally-prefixed number (%s)', (actor, description) => {
         const { panels } = boot();
 

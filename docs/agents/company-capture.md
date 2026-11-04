@@ -134,8 +134,10 @@ control.
 
 Every `focusin` while the hosted sole-trader signup window is up is classified
 once, and these are the three rules (TWO-25658). A `mousedown` is classified the
-same way (TWO-26775): a press on page content nothing can focus moves no focus
-at all, and it is still the buyer back on the checkout.
+same way (TWO-26775): a press on page content nothing can focus, empty page
+space included, moves no focus at all, and it is still the buyer back on the
+checkout. Only a click counts: a right press, or one on the page's scrollbar or
+an element's, closes nothing.
 
 -   **A Sole trader chip inside the capture's own popover is inert.** Arrival
     moves the popup neither way — only an activation raises it, and the browser
@@ -292,7 +294,13 @@ the saved address. The record stands while manual entry is the panel's resting
 mode, a pending Sole trader click included, and goes when a registered pick or
 an adopted sole trader replaces it. It belongs to one quote and one customer:
 a placed order, a login or a logout moves on from it, and the next checkout
-drops it rather than restore another checkout's name. Order placement itself reads the number only from the
+drops it rather than restore another checkout's name. Every reader that keeps
+a number out of a manual capture (that blanking, the record, the renderer's
+writes from a quote address, the number label under the field, and the source
+resolver's refusal to fall back from billing to shipping) asks the component's
+one `isManualEntry()`, which
+counts a pending Sole trader click from manual entry as manual entry, so a saved
+address arriving while the signup is up writes no number. Order placement itself reads the number only from the
 payment's additional data, never from an address.
 
 ## The company relay resolves an ISO 3166-2 region to the store's own

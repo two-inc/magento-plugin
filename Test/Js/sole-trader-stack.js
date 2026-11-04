@@ -131,7 +131,8 @@ function makeEnv(buyerRef, email) {
 /**
  * @param {object} [options] `{ buyer, email, extraHtml }`: the held autofill
  *        record, the checkout email, markup added beside the form
- * @returns {Promise<object>} `{ component, identity, rec, buyerRef }`
+ * @returns {Promise<object>} `{ component, identity, rec, buyerRef, capture, mocks, globals }`:
+ *          `capture` is the whole company-capture module the component came from
  */
 async function startStack(options) {
     const settings = options || {};
@@ -150,12 +151,21 @@ async function startStack(options) {
             env.globals
         )
     });
-    const component = loadCompanyCapture(mocks, env.globals).shipping;
+    const capture = loadCompanyCapture(mocks, env.globals);
+    const component = capture.shipping;
     component.start();
     started.push(component);
     await flush();
     await flush();
-    return { component: component, identity: component.identity(), rec: env.rec, buyerRef: buyerRef };
+    return {
+        component: component,
+        identity: component.identity(),
+        rec: env.rec,
+        buyerRef: buyerRef,
+        capture: capture,
+        mocks: mocks,
+        globals: env.globals
+    };
 }
 
 /** Open the popover the buyer's way and hand back one of its chips. */

@@ -87,6 +87,29 @@
     }
 
     /**
+     * A press is the buyer clicking content only with the primary button and
+     * off any scrollbar: a right press opens the context menu, and one on the
+     * page's or an element's scrollbar scrolls (TWO-26775). A native scrollbar
+     * lies outside the target's client box. For the page's own (target `html`)
+     * that box is the viewport, measured in client coordinates because `html`'s
+     * offsets are page-relative; an empty client box has no scrollbar.
+     *
+     * @param {MouseEvent} event the mousedown
+     * @returns {boolean}
+     */
+    function pressIsClick(event) {
+        if (event.button !== 0) return false;
+        const target = event.target;
+        const width = target.clientWidth;
+        const height = target.clientHeight;
+        if (!width && !height) return true;
+        if (target === document.documentElement) {
+            return event.clientX < width && event.clientY < height;
+        }
+        return event.offsetX < width && event.offsetY < height;
+    }
+
+    /**
      * Page-level, not per-flow: the host builds one capture flow per address
      * panel, and only one delegation/autofill pair may be live per checkout
      * (TWO-25646).
@@ -622,6 +645,7 @@
         if (this._returnHandler) return;
         this._returnHandler = (event) => {
             if (!this.isPopupOpen()) return;
+            if (event.type === 'mousedown' && !pressIsClick(event)) return;
             const target = event.target;
             // A press on the parked field is the buyer's own; a focus re-fired there is the window's.
             if (event.type === 'focusin' && target === this._parkedFocus) return;
@@ -646,8 +670,9 @@
             if (event.type === 'focusin' && chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);
-        // A press counts as well as a focus: one on page content nothing can focus moves no focus,
-        // and it is still the buyer back on the checkout (TWO-26775).
+        // A press counts as well as a focus: one on page content nothing can focus, empty page
+        // space included, moves no focus, and it is still the buyer back on the checkout
+        // (TWO-26775). Only a click counts: see pressIsClick().
         document.addEventListener('mousedown', this._returnHandler, true);
     };
 
