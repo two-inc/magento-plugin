@@ -109,6 +109,51 @@ async function setConfigField(
 async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
     await gotoConfigSection(page, 'two_checkout_fields');
     await expandAvailabilityGroup(page);
+    // [DIAG TEMP TWO-27052] record the stored minimum and everything the save does.
+    console.log(
+        `[DIAG TEMP TWO-27052] found: amount=${JSON.stringify(await page.locator(MIN_FIELD).inputValue())} ` +
+            `amountInherited=${await page.locator(MIN_INHERIT).isChecked()} ` +
+            `basis=${JSON.stringify(await page.locator(BASIS_FIELD).inputValue())} ` +
+            `basisInherited=${await page.locator(BASIS_INHERIT).isChecked()}; writing ${JSON.stringify(cfg)}`
+    );
+    const diagConsole = (m: { type(): string; text(): string }) => {
+        if (m.type() === 'error' || m.type() === 'warning') {
+            console.log(`[DIAG TEMP TWO-27052] console.${m.type()}: ${m.text().slice(0, 300)}`);
+        }
+    };
+    const diagPageError = (e: Error) => console.log(`[DIAG TEMP TWO-27052] pageerror: ${e.message.slice(0, 300)}`);
+    const diagResponse = (r: { url(): string; status(): number; request(): { method(): string } }) => {
+        if (r.request().method() === 'POST' || /system_config\/(save|edit)/.test(r.url())) {
+            console.log(`[DIAG TEMP TWO-27052] ${r.request().method()} ${r.status()} ${r.url().split('?')[0]}`);
+        }
+    };
+    page.on('console', diagConsole);
+    page.on('pageerror', diagPageError);
+    page.on('response', diagResponse);
+    try {
+        await saveMinimumConfig(page, cfg);
+    } catch (err) {
+        const visible = await page
+            .locator('.message, .messages, .mage-error, .admin__field-error, label.mage-error')
+            .allInnerTexts()
+            .catch(() => []);
+        console.log(
+            `[DIAG TEMP TWO-27052] save failed at ${page.url().split('?')[0]} title=${JSON.stringify(await page.title())} ` +
+                `messages=${JSON.stringify(visible.map((t) => t.slice(0, 200)))}`
+        );
+        await page
+            .screenshot({ path: test.info().outputPath(`diag-save-failure-${Date.now()}.png`), fullPage: true })
+            .catch((e) => console.log(`[DIAG TEMP TWO-27052] screenshot failed: ${e}`));
+        throw err;
+    } finally {
+        page.off('console', diagConsole);
+        page.off('pageerror', diagPageError);
+        page.off('response', diagResponse);
+    }
+}
+
+// [DIAG TEMP TWO-27052] body of writeMinimumConfig, split out so the diagnostics can wrap it.
+async function saveMinimumConfig(page: Page, cfg: MinimumConfig) {
     await setConfigField(page, MIN_INHERIT, MIN_FIELD, cfg.amountInherited, () =>
         page.locator(MIN_FIELD).fill(cfg.amount)
     );
