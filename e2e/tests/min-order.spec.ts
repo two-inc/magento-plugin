@@ -202,6 +202,23 @@ test.describe('minimum order value gate', () => {
     // skipped and leave a pinned minimum on a store other work shares.
     let pending: MinimumConfig | null = null;
 
+    // A run whose restore failed leaves the minimum pinned on the shared store,
+    // hiding the method from every later run and tester until someone notices
+    // (TWO-27052). Always start from Use Default, so one bad run cannot outlive itself.
+    test.beforeAll(async ({ browser }) => {
+        test.setTimeout(180_000);
+        const context = await browser.newContext();
+        await authoriseStore(context);
+        const page = await context.newPage();
+        try {
+            await adminLogin(page);
+            await writeMinimumConfig(page, DEFAULT_MINIMUM);
+        } finally {
+            await adminLogout(page);
+            await context.close();
+        }
+    });
+
     test.afterAll(async ({ browser }) => {
         // The hook inherits the config timeout, not the test's.
         test.setTimeout(180_000);
