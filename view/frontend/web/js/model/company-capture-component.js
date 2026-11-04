@@ -1155,6 +1155,20 @@
         return this._modeBeforeSoleTrader === 'manual' ? 'manual' : 'registered';
     };
 
+    /**
+     * The capture takes a name only: manual entry, or a Sole trader click from
+     * manual entry that nobody has been adopted over yet, which leaves manual
+     * entry in place (TWO-26775). Every reader that keeps a company number out
+     * of a manual capture asks this, so the pending click cannot open a window
+     * where a saved address writes one.
+     *
+     * @returns {boolean}
+     */
+    CompanyCaptureComponent.prototype.isManualEntry = function () {
+        const mode = this._identity.captureMode();
+        return mode === 'manual' || (mode === 'soletrader' && this.restingMode() === 'manual');
+    };
+
     /** Leave a sole-trader mode that captured nothing for the resting mode, clearing nothing. */
     CompanyCaptureComponent.prototype.returnToRestingMode = function () {
         const mode = this.restingMode();
