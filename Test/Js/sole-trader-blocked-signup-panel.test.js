@@ -260,6 +260,48 @@ describe('a press on the checkout while the popup is open (TWO-26775)', () => {
     });
 });
 
+describe('which presses count as the buyer back on the checkout (TWO-26775)', () => {
+    const EXTRA = '<div id="background">page text</div>';
+    const PAGE = { clientWidth: 1000, clientHeight: 800 };
+    const BOX = { clientWidth: 200, clientHeight: 100 };
+
+    /** jsdom lays nothing out, so the client box a case is about is set on the node, and removed after. */
+    function withClientBox(node, box, run) {
+        Object.keys(box || {}).forEach(function (key) {
+            Object.defineProperty(node, key, { configurable: true, value: box[key] });
+        });
+        try {
+            run();
+        } finally {
+            Object.keys(box || {}).forEach(function (key) { delete node[key]; });
+        }
+    }
+
+    test.each([
+        ['a right press on page content', false, '#background', { button: 2 }, {}, null],
+        ['a press on the page\'s side scrollbar', false, 'html', { clientX: 1005, clientY: 10 }, {}, PAGE],
+        ['a press on the page\'s bottom scrollbar', false, 'html', { clientX: 10, clientY: 805 }, {}, PAGE],
+        ['a press on an element\'s scrollbar', false, '#background', {}, { offsetX: 205, offsetY: 10 }, BOX],
+        ['a press on empty page space', true, 'html', { clientX: 10, clientY: 10 }, {}, PAGE],
+        ['a press on an element\'s content', true, '#background', {}, { offsetX: 10, offsetY: 10 }, BOX],
+        ['a press on an element with no client box, which has no scrollbar', true, '#background', {}, { offsetX: 5, offsetY: 5 }, null]
+    ])('%s closes the popup: %p', async (why, popupCloses, selector, init, offsets, box) => {
+        const ctx = await startStack({ extraHtml: EXTRA });
+        chip('soletrader').click();
+        await flush();
+        const target = selector === 'html' ? document.documentElement : document.querySelector(selector);
+        const press = new MouseEvent('mousedown', Object.assign({ bubbles: true, cancelable: true, button: 0 }, init));
+        Object.keys(offsets).forEach(function (key) {
+            Object.defineProperty(press, key, { value: offsets[key] });
+        });
+
+        withClientBox(target, box, function () { target.dispatchEvent(press); });
+        await flush();
+
+        expect([why, ctx.rec.handles[0].closed]).toEqual([why, popupCloses]);
+    });
+});
+
 describe('the popup\'s watchers across window returns and relaunches (TWO-26775)', () => {
     /** The window regaining focus: the browser re-fires focus on the field it holds. */
     function windowReturn() {
