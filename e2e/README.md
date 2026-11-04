@@ -28,10 +28,18 @@ Screenshots land in `e2e/screenshots/`.
 `global-setup.ts` runs first and aborts the whole suite unless the store returns
 200 and its served `Two_Gateway/css/style.css` matches the checked-out
 `view/frontend/web/css/style.css` — a mismatch means the store is running a
-different ref, so every assertion afterwards would be meaningless. It polls both
-for up to five minutes, longer than the in-place static redeploy a plugin merge
-triggers. The digest only moves when that stylesheet does, so the check catches a
-store on a different plugin release rather than every possible divergence.
+different ref, so every assertion afterwards would be meaningless. The digest
+only moves when that stylesheet does, so the check catches a store on a different
+plugin release rather than every possible divergence.
+
+The dev store rebuilds in place after every push to a branch it git-syncs, and
+every page errors while it does. The rebuild starts minutes after the push, so
+until then the store still answers 200 on its old deployment. In CI the workflow
+therefore sets `E2E_DEPLOYED_AFTER` to the latest push to those branches, and the
+gate also waits until the timestamp in the store's own `/static/version<N>/`
+prefix is at least that recent, which means the rebuild has finished (TWO-27052).
+The gate polls for up to fifteen minutes. Locally the variable is unset and that
+check is skipped.
 
 ## Run on demand in CI
 

@@ -4,8 +4,18 @@ import { join } from 'node:path';
 import type { FullConfig } from '@playwright/test';
 import { storeAuthHeaders } from './tests/fixtures';
 
-const READY_TIMEOUT_MS = 5 * 60_000; // > the ~3min in-place static redeploy a plugin merge triggers
+// A push to a branch the store git-syncs starts an in-place rebuild only after
+// git-sync and the reload watcher notice it, which has taken up to five minutes,
+// and the rebuild itself takes several more (TWO-27052).
+const READY_TIMEOUT_MS = 15 * 60_000;
 const POLL_INTERVAL_MS = 10_000;
+
+// Unix seconds of the latest push to any branch the store git-syncs, set by the
+// workflow. Every such push triggers a rebuild that errors every page while it
+// runs, and until the rebuild starts the store still answers 200 on its old
+// deployment, so a 200 alone cannot tell "settled" from "about to rebuild".
+// Unset (a local run, or a store that does not git-sync) skips the check.
+const DEPLOYED_AFTER = Number(process.env.E2E_DEPLOYED_AFTER || 0);
 
 // The one plugin asset that is both deployed as static content and versioned in
 // the repo, so its digest identifies which ref the store is serving. It only
@@ -17,7 +27,11 @@ const REPO_ASSET = '../view/frontend/web/css/style.css';
 
 type Probe =
     | { ready: true }
-    | { ready: false; kind: 'unreachable' | 'no-storefront' | 'wrong-ref'; detail: string };
+    | {
+          ready: false;
+          kind: 'unreachable' | 'no-storefront' | 'stale-deploy' | 'wrong-ref';
+          detail: string;
+      };
 
 function sha256(body: Buffer | string): string {
     return createHash('sha256').update(body).digest('hex');
@@ -25,10 +39,15 @@ function sha256(body: Buffer | string): string {
 
 // Derive the static prefix from a stylesheet the store itself emits, so the
 // theme, locale and version segments come from the live deployment rather than
-// being guessed.
-function staticPrefix(html: string): string | null {
-    const m = html.match(/\/static\/version\d+\/frontend\/[^/"']+\/[^/"']+\/[^/"']+\//);
-    return m ? m[0] : null;
+// being guessed. With static signing on, the version segment is the Unix time
+// of the store's last static content deploy.
+function staticPrefix(html: string): { prefix: string; deployedAt: number } | null {
+    const m = html.match(/\/static\/version(\d+)\/frontend\/[^/"']+\/[^/"']+\/[^/"']+\//);
+    return m ? { prefix: m[0], deployedAt: Number(m[1]) } : null;
+}
+
+function utc(seconds: number): string {
+    return new Date(seconds * 1000).toISOString();
 }
 
 async function probe(baseURL: string, local: string): Promise<Probe> {
@@ -48,16 +67,23 @@ async function probe(baseURL: string, local: string): Promise<Probe> {
         return { ready: false, kind: 'unreachable', detail: `HTTP ${res.status}` };
     }
 
-    const prefix = staticPrefix(await res.text());
-    if (!prefix) {
+    const deployed = staticPrefix(await res.text());
+    if (!deployed) {
         return {
             ready: false,
             kind: 'no-storefront',
             detail: 'no /static/version.../frontend/ path in the page'
         };
     }
+    if (deployed.deployedAt < DEPLOYED_AFTER) {
+        return {
+            ready: false,
+            kind: 'stale-deploy',
+            detail: `static content deployed ${utc(deployed.deployedAt)}, last push ${utc(DEPLOYED_AFTER)}`
+        };
+    }
 
-    const url = new URL(prefix + ASSET, baseURL).toString();
+    const url = new URL(deployed.prefix + ASSET, baseURL).toString();
     const asset = await fetch(url, { headers: storeAuthHeaders(url) });
     if (!asset.ok) {
         return { ready: false, kind: 'no-storefront', detail: `HTTP ${asset.status} from ${url}` };
@@ -81,6 +107,13 @@ function readinessError(baseURL: string, last: Probe & { ready: false }): Error 
             `e2e readiness: ${baseURL} is not serving the checked-out branch.\n  ${last.detail}\n` +
                 `Specs would be asserting this branch's expectations against someone else's deployed code. ` +
                 `Point STORE_URL at the store that git-syncs this branch, or wait for its deployment to catch up.`
+        );
+    }
+    if (last.kind === 'stale-deploy') {
+        return new Error(
+            `e2e readiness: ${baseURL} has not redeployed since the last push to a branch it git-syncs ` +
+                `within ${minutes} minutes (${last.detail}). Its rebuild is still pending, in progress or ` +
+                `rolled back, so the specs would race it. Re-run once the store has redeployed.`
         );
     }
     if (last.kind === 'no-storefront') {
@@ -116,6 +149,9 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
         if (result.ready) {
             console.log(`e2e readiness: ${baseURL} is up and serving the checked-out branch`);
             return;
+        }
+        if (result.kind !== last.kind || result.detail !== last.detail) {
+            console.log(`e2e readiness: waiting (${result.kind}: ${result.detail})`);
         }
         last = result;
         if (Date.now() >= deadline) {
