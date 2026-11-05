@@ -88,7 +88,7 @@ class Confirm extends Action
             if (!$this->orderService->isAwaitingVerification($order)) {
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
             }
-            $twoOrder =$this->orderService->getTwoOrderFromApi($order);
+            $twoOrder = $this->orderService->getTwoOrderFromApi($order);
             if (isset($twoOrder['state']) && $twoOrder['state'] != 'UNVERIFIED') {
                 if (in_array($twoOrder['state'], ['VERIFIED', 'CONFIRMED'])) {
                     $this->orderService->confirmOrder($order);
