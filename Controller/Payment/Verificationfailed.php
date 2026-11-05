@@ -59,6 +59,10 @@ class Verificationfailed extends Action
         $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
+            // A replayed link changes nothing on an order that has moved on (TWO-27057).
+            if (!$this->orderService->isAwaitingVerification($order)) {
+                return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
+            }
             $message = __(
                 'Your invoice purchase with %1 failed verification. The cart will be restored.',
                 $this->brandRegistry->getProductName()

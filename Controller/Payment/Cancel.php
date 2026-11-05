@@ -61,17 +61,38 @@ class Cancel extends Action
         $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
-            $this->orderService->cancelTwoOrder($order, 'buyer_cancel');
-            $message = __(
-                'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
-                $this->brandRegistry->getProductName()
-            );
-            throw new LocalizedException($message);
         } catch (Exception $exception) {
-            // The order comment keeps the full account for the merchant; the
-            // buyer sees only a message meant for them (TWO-26295).
+            // The buyer sees only a message meant for them (TWO-26295).
             $this->messageManager->addErrorMessage($this->orderService->failBuyerReturn($order, $exception));
-            return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
+            return $this->toCart();
         }
+        // Only an order still awaiting the buyer's verification can be
+        // cancelled from here; a replayed link changes nothing (TWO-27057).
+        if (!$this->orderService->isAwaitingVerification($order)) {
+            return $this->toCart();
+        }
+        try {
+            $this->orderService->cancelTwoOrder($order, 'buyer_cancel');
+        } catch (Exception $exception) {
+            // Two did not cancel, so neither does the shop (TWO-27057).
+            $this->messageManager->addErrorMessage($this->orderService->keepRefusedCancel($order, $exception));
+            return $this->toCart();
+        }
+        $message = __(
+            'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
+            $this->brandRegistry->getProductName()
+        );
+        $this->messageManager->addErrorMessage(
+            $this->orderService->failBuyerReturn($order, new LocalizedException($message))
+        );
+        return $this->toCart();
+    }
+
+    /**
+     * @return ResponseInterface
+     */
+    private function toCart()
+    {
+        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
     }
 }

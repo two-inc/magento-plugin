@@ -40,3 +40,12 @@ the refusal's buyer message, this module's own translated sentence for a plain
 database error, whose text is logged and never shown. A server error (5xx) is
 always generic, whatever field path it carries. The full detail always reaches
 the merchant through the error log or the order comment.
+
+A return link acts only on an order still awaiting the buyer's verification
+(`OrderService::isAwaitingVerification()`: the pending-payment state and the
+pending status set at placement). Any other order, for example one invoiced,
+shipped or already failed, is left as it is and the buyer is sent to the cart,
+so a replayed link changes nothing (TWO-27057). A buyer cancel fails the order
+only after Two accepted the cancel: when Two refuses or does not answer,
+`OrderService::keepRefusedCancel()` records the account as an order comment and
+leaves both the order and the cart as they are.

@@ -170,6 +170,8 @@ if (!class_exists(Order::class, false)) {
     {
         public const STATE_PENDING_PAYMENT = 'pending_payment';
         public const STATE_PROCESSING = 'processing';
+        public const STATE_COMPLETE = 'complete';
+        public const STATE_CANCELED = 'canceled';
 
         /** @var iterable|false */
         private $creditmemos = false;
