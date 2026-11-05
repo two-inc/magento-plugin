@@ -171,7 +171,6 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
-                    <validate>required-entry</validate>
                     <config_path>payment/{{code}}/title</config_path>
                 </field>
                 <field id="subtitle" translate="label comment" type="text" sortOrder="20"

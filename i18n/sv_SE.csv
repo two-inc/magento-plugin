@@ -473,3 +473,4 @@
 "Staging (%1 internal test environment). Select Sandbox or Production.","Staging (intern testmiljö hos %1). Välj Sandbox eller Produktion."
 "Not recognised: Sandbox is in use. Select an environment and save.","Inte igenkänt: Sandbox används. Välj en miljö och spara."
 "Enter a vendor name of at most 255 characters, without line breaks or accented letters. The previously saved vendor name was kept.","Ange ett leverantörsnamn på högst 255 tecken, utan radbrytningar eller bokstäver med accent. Det tidigare sparade leverantörsnamnet behölls."
+"Business invoice","Företagsfaktura"

@@ -107,7 +107,6 @@
                        showInStore="1" canRestore="1">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
-                    <validate>required-entry</validate>
                     <config_path>payment/two_payment/title</config_path>
                 </field>
                 <!-- TWO-25386: showInStore="1" gives a per-store-view override;
