@@ -1,12 +1,13 @@
-import { test as setup, expect } from './fixtures';
+import { test as setup, expect, Page } from './fixtures';
 import { adminLogin, adminLogout } from './_helpers';
 
 // Runs before every spec (the chromium project depends on it): the specs that
 // check out all buy the same product, and every order they leave pending holds
 // a reservation, so the dev store's stock of it runs out and every checkout
-// spec fails with "Not enough items for sale" (TWO-26300). Tops the quantity
-// up through the admin product form, and saves only when it is low, so a
-// healthy store is left untouched.
+// spec fails with "Not enough items for sale" (TWO-26300). First cancels the
+// e2e buyer's orders left pending, which releases their reservations; then,
+// as a fallback, tops the quantity up through the admin product form when
+// what can still be sold is low, so a healthy store is left untouched.
 //
 // Admin UI rather than the REST API: the store's proxy takes the
 // Authorization header for its own token, so an admin API token cannot be
@@ -17,7 +18,81 @@ const PRODUCT_NAME = process.env.PRODUCT_NAME || 'Push It Messenger Bag';
 const LOW = 100;
 const TOP_UP = 1000;
 
+// The name every e2e checkout fills in (fillCheckout), and how long an order
+// of theirs may wait for the buyer before it counts as left behind.
+const E2E_BUYER = 'Demo Koper';
+const LEFTOVER_MINUTES = 60;
+
 const QTY = 'input[name="product[quantity_and_stock_status][qty]"]';
+
+const visible = (page: Page, selector: string) =>
+    page.locator(selector).filter({ visible: true }).first();
+
+async function gridSettled(page: Page) {
+    await expect(page.locator('.admin__data-grid-loading-mask:visible')).toHaveCount(0, {
+        timeout: 60_000
+    });
+}
+
+// Cancel the e2e buyer's orders left waiting for the buyer for over an hour,
+// which releases the stock their reservations hold. Best effort: the quantity
+// top-up below still runs if this fails.
+async function cancelLeftoverOrders(page: Page) {
+    const grid = await page.locator('a[href*="/sales/order/"]').first().getAttribute('href');
+    if (!grid) throw new Error('could not find the sales order grid link');
+    await page.goto(grid, { waitUntil: 'domcontentloaded' });
+    await expect(visible(page, '.admin__data-grid-header input#fulltext')).toBeVisible({
+        timeout: 60_000
+    });
+    await gridSettled(page);
+    try {
+        const clear = page.getByRole('button', { name: 'Clear all' }).filter({ visible: true });
+        if (await clear.count()) {
+            await clear.first().click();
+            await gridSettled(page);
+        }
+        await visible(page, 'button[data-action="grid-filter-expand"]').click();
+        await visible(page, '.admin__data-grid-filters select[name="status"]').selectOption(
+            'pending_two_payment'
+        );
+        await visible(page, 'button[data-action="grid-filter-apply"]').click();
+        await gridSettled(page);
+
+        const table = page.locator('table.data-grid').first();
+        const headers = (await table.locator('thead th').allInnerTexts()).map((h) => h.trim());
+        const dateColumn = headers.findIndex((h) => /Purchase Date/.test(h));
+        if (dateColumn < 0) throw new Error(`no Purchase Date column in: ${headers.join(', ')}`);
+        const rows = table.locator('tbody tr.data-row');
+        let selected = 0;
+        for (let i = 0; i < (await rows.count()); i++) {
+            const row = rows.nth(i);
+            if (!(await row.innerText()).includes(E2E_BUYER)) continue;
+            const placed = Date.parse(await row.locator('td').nth(dateColumn).innerText());
+            if (!(Date.now() - placed > LEFTOVER_MINUTES * 60_000)) continue;
+            await row
+                .locator('td')
+                .first()
+                .locator('input[type="checkbox"]')
+                .check({ force: true });
+            selected++;
+        }
+        console.log(`leftover e2e orders waiting for the buyer: ${selected}`);
+        if (selected === 0) return;
+        await visible(page, '.admin__data-grid-header button.action-select').click();
+        await visible(page, '.admin__data-grid-header .action-menu-item:text-is("Cancel")').click();
+        const result = page.locator('.messages .message').filter({ visible: true }).first();
+        await expect(result).toBeVisible({ timeout: 120_000 });
+        console.log(`cancelling them: ${(await result.innerText()).trim()}`);
+    } finally {
+        // Leave the grid unfiltered for the specs that read it.
+        const clear = page.getByRole('button', { name: 'Clear all' }).filter({ visible: true });
+        if (await clear.count().catch(() => 0))
+            await clear
+                .first()
+                .click()
+                .catch(() => {});
+    }
+}
 const IN_STOCK = 'select[name="product[quantity_and_stock_status][is_in_stock]"]';
 
 setup('the test product has stock', async ({ page }) => {
@@ -25,6 +100,9 @@ setup('the test product has stock', async ({ page }) => {
     setup.setTimeout(180_000);
     try {
         await adminLogin(page);
+        await cancelLeftoverOrders(page).catch((error) =>
+            console.log(`cancelling leftover orders failed: ${error}`)
+        );
         const catalog = await page
             .locator('a[href*="/catalog/product/"]')
             .first()

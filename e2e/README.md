@@ -20,9 +20,11 @@ the screenshots used in the docs (`two-inc/docs` → `static/images/magento/`).
   skip, because the dev store serves `staging`.
 
 Before any spec, `stock.setup.ts` makes sure the test product has stock: the
-checkout specs all buy it, so the shared store's stock of it runs out. It tops
-the quantity up through the admin product form when it is below 100, and skips
-without `ADMIN_PASS`. `pending-recovery.spec.ts` also cancels any order it left
+checkout specs all buy it, so the shared store's stock of it runs out. It first
+cancels the e2e buyer's orders left waiting for the buyer for over an hour,
+which releases the stock they reserve, then tops the quantity up through the
+admin product form when fewer than 100 can still be sold. It skips without
+`ADMIN_PASS`. `pending-recovery.spec.ts` also cancels any order it left
 waiting for the buyer, after failures too, so none keeps stock reserved
 (TWO-26300).
 
