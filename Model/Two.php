@@ -62,12 +62,13 @@ class Two extends AbstractMethod
     /** Payment information key: Two's refunded total after the last refund (TWO-26658). */
     public const REFUNDED_TOTAL = 'two_refunded_total';
 
-    /** The currencies Two invoices in; a basket in any other is not offered Two (TWO-27108). */
-    public const SUPPORTED_CURRENCIES = ['NOK', 'GBP', 'SEK', 'USD', 'DKK', 'EUR'];
-
     public const STATUS_NEW = 'two_new';
     public const STATUS_FAILED = 'two_failed';
     public const STATUS_PENDING = 'pending_two_payment';
+
+    /** The currencies Two invoices in; a basket in any other is not offered Two (TWO-27108). */
+    public const SUPPORTED_CURRENCIES = ['NOK', 'GBP', 'SEK', 'USD', 'DKK', 'EUR'];
+
     /**
      * @var RequestInterface
      */
