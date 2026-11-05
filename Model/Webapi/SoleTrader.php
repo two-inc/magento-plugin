@@ -8,6 +8,9 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Webapi\Exception as WebapiException;
+use Magento\Quote\Model\QuoteIdToMaskedQuoteIdInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\IdempotencyKey;
@@ -47,16 +50,30 @@ class SoleTrader implements SoleTraderInterface
      */
     private $checkoutSession;
 
+    /**
+     * @var ConfigRepository
+     */
+    private $configRepository;
+
+    /**
+     * @var QuoteIdToMaskedQuoteIdInterface
+     */
+    private $quoteIdToMaskedQuoteId;
+
     public function __construct(
         Adapter $adapter,
         SupportedCompanyTypes $supportedCompanyTypes,
         RateLimiter $rateLimiter,
-        CheckoutSession $checkoutSession
+        CheckoutSession $checkoutSession,
+        ConfigRepository $configRepository,
+        QuoteIdToMaskedQuoteIdInterface $quoteIdToMaskedQuoteId
     ) {
         $this->adapter = $adapter;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
         $this->rateLimiter = $rateLimiter;
         $this->checkoutSession = $checkoutSession;
+        $this->configRepository = $configRepository;
+        $this->quoteIdToMaskedQuoteId = $quoteIdToMaskedQuoteId;
     }
 
     /**
@@ -84,11 +101,58 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
+        $this->assertOwnCheckoutCart($cartId);
+
         $storeId = $this->quoteStoreId();
         $delegationToken = $this->getDelegationToken($storeId);
         $autofillToken = $this->getAutofillToken($storeId);
 
         return [['delegation_token' => $delegationToken, 'autofill_token' => $autofillToken]];
+    }
+
+    /**
+     * Tokens are a credential for one buyer's signup, so they are minted only
+     * for the session's own active quote, with items, on a store where this
+     * method is enabled, and only when the caller names that quote: by its
+     * masked id (a guest on the standard checkout) or its own id (a customer,
+     * or any buyer on checkouts that send it). Anything else is refused
+     * before Two is called (TWO-27057).
+     *
+     * @throws WebapiException
+     */
+    private function assertOwnCheckoutCart(string $cartId): void
+    {
+        try {
+            $quote = $this->checkoutSession->getQuote();
+            $quoteId = (int)$quote->getId();
+            $allowed = $quoteId > 0
+                && (bool)$quote->getIsActive()
+                && (int)$quote->getItemsCount() > 0
+                && $this->configRepository->isActive($this->quoteStoreId())
+                && $this->namesQuote($cartId, $quoteId);
+        } catch (\Throwable $e) {
+            $allowed = false;
+        }
+        if (!$allowed) {
+            throw new WebapiException(
+                __('Sole trader sign-up is not available for this cart.'),
+                0,
+                WebapiException::HTTP_FORBIDDEN
+            );
+        }
+    }
+
+    private function namesQuote(string $cartId, int $quoteId): bool
+    {
+        if ($cartId === '') {
+            return false;
+        }
+        if (hash_equals((string)$quoteId, $cartId)) {
+            return true;
+        }
+        $maskedId = (string)$this->quoteIdToMaskedQuoteId->execute($quoteId);
+
+        return $maskedId !== '' && hash_equals($maskedId, $cartId);
     }
 
     private function getDelegationToken(?int $storeId): string

@@ -90,6 +90,13 @@ namespace Magento\Directory\Model {
 }
 
 namespace Magento\Quote\Model {
+    if (!interface_exists(QuoteIdToMaskedQuoteIdInterface::class, false)) {
+        interface QuoteIdToMaskedQuoteIdInterface
+        {
+            public function execute(int $quoteId): string;
+        }
+    }
+
     if (!class_exists(Quote::class, false)) {
         class Quote implements \Magento\Quote\Api\Data\CartInterface
         {
@@ -117,6 +124,17 @@ namespace Magento\Quote\Model {
             }
 
             public function getItemsQty()
+            {
+                return 0;
+            }
+
+            /** TWO-27057: a sole-trader token is minted only for an active quote with items. */
+            public function getIsActive()
+            {
+                return null;
+            }
+
+            public function getItemsCount()
             {
                 return 0;
             }

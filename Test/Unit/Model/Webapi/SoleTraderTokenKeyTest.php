@@ -8,9 +8,12 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Webapi\Exception as WebapiException;
 use Magento\Quote\Model\Quote;
+use Magento\Quote\Model\QuoteIdToMaskedQuoteIdInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Webapi\SoleTrader;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
@@ -36,7 +39,12 @@ class SoleTraderTokenKeyTest extends TestCase
         $a = $this->keysFor(...$first);
         $b = $this->keysFor(...$second);
 
-        if ($first[0] === null || $first[1] === '') {
+        if ($first[0] === null) {
+            // TWO-27057: with no quote there is no mint, so no request and no key.
+            $this->assertSame([], $a, $description);
+            return;
+        }
+        if ($first[1] === '') {
             $this->assertSame([null, null], $a, $description);
             return;
         }
@@ -56,7 +64,7 @@ class SoleTraderTokenKeyTest extends TestCase
     {
         return [
             'one buyer, one session' => [[42, 'sess-a'], [42, 'sess-a'], true, 'a retry in one session reuses its keys'],
-            'no quote id' => [[null, 'sess-a'], [null, 'sess-b'], false, 'a buyer whose quote has no id sends no key, never a shared one'],
+            'no quote id' => [[null, 'sess-a'], [null, 'sess-b'], false, 'a buyer whose quote has no id mints nothing, so sends no key'],
             'no session id' => [[42, ''], [43, ''], false, 'a buyer with no session sends no key, never a shared one'],
             'one quote, a new session' => [[42, 'sess-a'], [42, 'sess-b'], false, 'a new session mints under new keys'],
         ];
@@ -78,16 +86,26 @@ class SoleTraderTokenKeyTest extends TestCase
         $adapter->method('execute')->willReturn([]);
         $quote = $this->createMock(Quote::class);
         $quote->method('getId')->willReturn($quoteId);
+        $quote->method('getIsActive')->willReturn(1);
+        $quote->method('getItemsCount')->willReturn(1);
         $session = new CheckoutSession();
         $session->setData('quote', $quote);
         $session->setData('session_id', $sessionId);
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('isActive')->willReturn(true);
 
-        (new SoleTrader(
-            $adapter,
-            $this->createMock(SupportedCompanyTypes::class),
-            $this->createMock(RateLimiter::class),
-            $session
-        ))->getTokens('cart-1');
+        try {
+            (new SoleTrader(
+                $adapter,
+                $this->createMock(SupportedCompanyTypes::class),
+                $this->createMock(RateLimiter::class),
+                $session,
+                $config,
+                $this->createMock(QuoteIdToMaskedQuoteIdInterface::class)
+            ))->getTokens((string)$quoteId);
+        } catch (WebapiException $e) {
+            // Refused before any request: $keys stays empty.
+        }
 
         return $keys;
     }
