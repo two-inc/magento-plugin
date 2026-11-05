@@ -48,6 +48,12 @@ never hiding the method for a reason unrelated to the key. A 200 carrying no
 merchant record counts as unresolved: a proxy, a captive portal or a maintenance
 page answers 200 too.
 
+**The stored API key never goes back to the browser** (TWO-27108). The field
+renders empty (`ApiKeyCheck::prepareKeyInput()`), with a "key saved" note when one
+is stored, and an empty submission keeps the stored key: `Backend\ApiKey` turns off
+its own save for an empty value or an all-asterisk placeholder. The field is
+therefore not `required-entry`.
+
 **The admin save stays permissive, and a rejected key blocks only the key field.**
 Refusing the save would lock the merchant out of correcting the very key that
 resolves the record, and a `LocalizedException` from a config backend model rolls

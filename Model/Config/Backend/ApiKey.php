@@ -79,10 +79,12 @@ class ApiKey extends Encrypted
     {
         $candidate = (string)$this->getValue();
 
-        // The obscured placeholder (all asterisks) and a blank submission both
-        // mean the stored key is not being changed, so there is nothing to verify.
+        // A blank submission keeps the stored key (TWO-27108): the field renders
+        // empty, so the key never goes back to the browser. An obscured
+        // placeholder (all asterisks), from a page rendered before that, means
+        // the same. Nothing is written, so there is nothing to verify.
         if ($candidate === '' || preg_match('/^\*+$/', $candidate)) {
-            parent::beforeSave();
+            $this->_dataSaveAllowed = false;
             return;
         }
 

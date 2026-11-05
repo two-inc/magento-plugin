@@ -196,7 +196,7 @@ class ApiKeyTest extends TestCase
 
         $model->beforeSave();
 
-        $this->assertSame($value, $model->getValue(), $description);
+        $this->assertFalse($model->isSaveAllowed(), $description . ': the stored key is kept, not overwritten (TWO-27108)');
     }
 
     /**

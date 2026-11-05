@@ -474,3 +474,4 @@
 "Not recognised: Sandbox is in use. Select an environment and save.","Ikke gjenkjent: Sandbox brukes. Velg et miljø og lagre."
 "Enter a vendor name of at most 255 characters, without line breaks or accented letters. The previously saved vendor name was kept.","Skriv inn et leverandørnavn på maks 255 tegn, uten linjeskift eller bokstaver med aksent. Det tidligere lagrede leverandørnavnet ble beholdt."
 "Business invoice","Bedriftsfaktura"
+"A key is saved. Leave this field empty to keep it.","En nøkkel er lagret. La feltet stå tomt for å beholde den."

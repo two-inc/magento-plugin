@@ -129,10 +129,30 @@ class ApiKeyCheck extends Field
     }
 
     /**
+     * The stored key never goes back to the browser (TWO-27108): the input
+     * renders empty and, when a key is saved, the field's note says so. An
+     * empty submission keeps the stored key (Backend\ApiKey). The note is
+     * read after this runs, when core renders the comment under the input.
+     *
+     * @param \Magento\Framework\DataObject $element the API key form element
+     */
+    public function prepareKeyInput(\Magento\Framework\DataObject $element): void
+    {
+        if ((string)$element->getValue() === '') {
+            return;
+        }
+        $element->setValue('');
+        $note = (string)__('A key is saved. Leave this field empty to keep it.');
+        $comment = trim((string)$element->getComment());
+        $element->setComment($comment === '' ? $note : $comment . ' ' . $note);
+    }
+
+    /**
      * @inheritDoc
      */
     public function _getElementHtml(AbstractElement $element)
     {
+        $this->prepareKeyInput($element);
         $this->setData('element', $element);
         return $this->_toHtml();
     }
