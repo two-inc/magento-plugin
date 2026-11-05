@@ -9,16 +9,13 @@ namespace Two\Gateway\Controller\Payment;
 
 use Exception;
 use Magento\Checkout\Model\Session as CheckoutSession;
-use Magento\Customer\Api\AddressRepositoryInterface;
-use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Exception\LocalizedException;
-use Magento\Sales\Model\Order\Email\Sender\OrderSender;
 use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Payment\OrderService;
+use Two\Gateway\Service\Payment\PendingOrderResolver as Resolver;
 
 /**
  * Payment confirm controller
@@ -27,36 +24,23 @@ use Two\Gateway\Service\Payment\OrderService;
  * `_two_order_reference` param (see OrderService::getOrderByReference()),
  * which is always checked — there is no separate session/token layer on
  * top of it to skip.
+ *
+ * What the order's state at Two means is decided by PendingOrderResolver,
+ * which the scheduled check and the admin's Check status button share
+ * (TWO-26300). This controller turns its outcome into the buyer's page.
  */
 class Confirm extends Action
 {
-    /**
-     * @var ConfigRepository
-     */
-    private $configRepository;
-
     /** @var BrandRegistryInterface */
     private $brandRegistry;
-
-    /**
-    * @var AddressRepositoryInterface
-     */
-    private $addressRepository;
-
-    /**
-     * @var SearchCriteriaBuilder
-     */
-    private $searchCriteriaBuilder;
 
     /**
      * @var OrderService
      */
     private $orderService;
 
-    /**
-     * @var OrderSender
-     */
-    private $orderSender;
+    /** @var Resolver */
+    private $pendingOrderResolver;
 
     /**
      * @var CheckoutSession
@@ -65,19 +49,13 @@ class Confirm extends Action
 
     public function __construct(
         Context $context,
-        AddressRepositoryInterface $addressRepository,
-        SearchCriteriaBuilder $searchCriteriaBuilder,
         OrderService $orderService,
-        OrderSender $orderSender,
-        ConfigRepository $configRepository,
+        Resolver $pendingOrderResolver,
         BrandRegistryInterface $brandRegistry,
         CheckoutSession $checkoutSession
     ) {
-        $this->addressRepository = $addressRepository;
-        $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->orderService = $orderService;
-        $this->orderSender = $orderSender;
-        $this->configRepository = $configRepository;
+        $this->pendingOrderResolver = $pendingOrderResolver;
         $this->brandRegistry = $brandRegistry;
         $this->checkoutSession = $checkoutSession;
         parent::__construct($context);
@@ -102,36 +80,32 @@ class Confirm extends Action
             if (!$this->orderService->isAwaitingVerification($order)) {
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
             }
-            $twoOrder = $this->orderService->getTwoOrderFromApi($order);
-            if (isset($twoOrder['state']) && $twoOrder['state'] != 'UNVERIFIED') {
-                if (in_array($twoOrder['state'], ['VERIFIED', 'CONFIRMED'])) {
-                    $this->orderService->confirmOrder($order);
-                    $this->orderSender->send($order);
-                }
-                try {
-                    $this->updateCustomerAddress($order, $twoOrder);
-                } catch (Exception $exception) {
-                    $message = __(
-                        "Failed to update %1 customer address: %2",
-                        $this->brandRegistry->getProductName(),
-                        $exception->getMessage()
-                    );
-                    $this->orderService->addOrderComment($order, $message);
-                }
-                $this->orderService->processOrder($order, $twoOrder['id']);
-                return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
-            } else {
-                $comment = __(
-                    'Unable to confirm %1 order with %2 state.',
-                    $this->brandRegistry->getProductName(),
-                    $twoOrder['state'] ?? 'undefined'
-                );
-                $this->orderService->addOrderComment($order, $comment);
-                $message = __(
-                    'Your invoice purchase with %1 could not be processed. The cart will be restored.',
-                    $this->brandRegistry->getProductName()
-                );
-                throw new LocalizedException($message);
+            $resolution = $this->pendingOrderResolver->resolve($order, Resolver::TRIGGER_BUYER_RETURN);
+            $order = $resolution->getOrder();
+            switch ($resolution->getOutcome()) {
+                case Resolver::OUTCOME_CONFIRMED:
+                case Resolver::OUTCOME_PROCESSED:
+                    return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
+                case Resolver::OUTCOME_ALREADY_PROCESSED:
+                    // The scheduled check or the admin settled it first.
+                    return $this->showSuccessPage($order);
+                case Resolver::OUTCOME_NOT_WAITING:
+                    return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
+                case Resolver::OUTCOME_BUSY:
+                    return $this->whileBusy($order);
+                case Resolver::OUTCOME_CANCELLED:
+                case Resolver::OUTCOME_DECLINED:
+                    // Two will not take this order, so the buyer gets the cart
+                    // back rather than a success page (TWO-26300).
+                    throw new LocalizedException(__(
+                        'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
+                        $this->brandRegistry->getProductName()
+                    ));
+                default:
+                    throw new LocalizedException(__(
+                        'Your invoice purchase with %1 could not be processed. The cart will be restored.',
+                        $this->brandRegistry->getProductName()
+                    ));
             }
         } catch (Exception $exception) {
             // The order comment keeps the full account for the merchant; the
@@ -139,6 +113,27 @@ class Confirm extends Action
             $this->messageManager->addErrorMessage($this->orderService->failBuyerReturn($order, $exception));
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
+    }
+
+    /**
+     * The scheduled check or the admin still holds the order after the wait.
+     * Show the success page if it has finished; otherwise leave the order
+     * alone, since failing it now could undo a confirm still in flight.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return ResponseInterface
+     */
+    private function whileBusy($order)
+    {
+        $order = $this->orderService->reloadOrder($order);
+        if ($this->orderService->isConfirmed($order)) {
+            return $this->showSuccessPage($order);
+        }
+        $this->messageManager->addNoticeMessage(__(
+            'Your order is still being confirmed with %1. You will receive an email once it is.',
+            $this->brandRegistry->getProductName()
+        ));
+        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
     }
 
     /**
@@ -157,76 +152,5 @@ class Confirm extends Action
         $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
         $this->checkoutSession->setLastOrderStatus($order->getStatus());
         return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
-    }
-
-    /**
-     * Update customer address
-     *
-     * @param $order
-     * @param array $twoOrder
-     *
-     * @return void
-     * @throws Exception
-     */
-    private function updateCustomerAddress($order, $twoOrder)
-    {
-        $customerAddress = null;
-        $billingAddress = $order->getBillingAddress();
-        if ($billingAddress->getCustomerAddressId()) {
-            // Try to load the customer address by ID
-            $customerAddress = $this->addressRepository->getById(
-                $billingAddress->getCustomerAddressId()
-            );
-        }
-        if ($customerAddress == null && $order->getCustomerId()) {
-            // Build a search criteria to find customer addresse that matches the billing address
-            $keys = [
-                'parent_id',
-                'firstname',
-                'middlename',
-                'lastname',
-                'street',
-                'city',
-                'postcode',
-                'country_id',
-                'region_id',
-                'region',
-                'telephone',
-                'company',
-            ];
-            foreach ($keys as $key) {
-                $value = ($key === 'parent_id')
-                    ? $order->getCustomerId()
-                    : $billingAddress->getData($key);
-                if (!empty($value)) {
-                    $this->searchCriteriaBuilder->addFilter($key, $value, 'eq');
-                }
-            }
-            $searchCriteria = $this->searchCriteriaBuilder->create();
-            $customerAddressCollection = $this->addressRepository
-                ->getList($searchCriteria)
-                ->getItems();
-            $customerAddress = $customerAddressCollection[0] ?? null;
-        }
-        if ($customerAddress && $customerAddress->getId()) {
-            if (isset($twoOrder['buyer']['company']['organization_number'])) {
-                $customerAddress->setData('company_id', $twoOrder['buyer']['company']['organization_number']);
-            }
-            if (isset($twoOrder['buyer']['company']['company_name'])) {
-                $customerAddress->setData('company_name', $twoOrder['buyer']['company']['company_name']);
-            }
-            if (isset($twoOrder['buyer_department'])) {
-                $customerAddress->setData('department', $twoOrder['buyer_department']);
-            }
-            if (isset($twoOrder['buyer_project'])) {
-                $customerAddress->setData('project', $twoOrder['buyer_project']);
-            }
-            $this->addressRepository->save($customerAddress);
-            $message = __(
-                "%1 customer address updated.",
-                $this->brandRegistry->getProductName(),
-            );
-            $this->orderService->addOrderComment($order, $message);
-        }
     }
 }

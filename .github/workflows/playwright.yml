@@ -137,6 +137,10 @@ jobs:
           STORE_URL: ${{ github.event.inputs.store_url }}
           STORE_ID_TOKEN: ${{ steps.store-token.outputs.id_token }}
           ADMIN_USER: ${{ vars.E2E_ADMIN_USER }}
+          # Set to 1 once the dev store runs the pending-order check every
+          # minute with a 2-minute threshold (TWO-26300); until then that
+          # test skips.
+          E2E_PENDING_CRON: ${{ vars.E2E_PENDING_CRON }}
           GREP: ${{ github.event.inputs.grep }}
         # Playwright's failure call logs print request headers, and this repo's logs
         # are public: redact cookie and authorization values. pipefail keeps a

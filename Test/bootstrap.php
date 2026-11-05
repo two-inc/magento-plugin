@@ -147,6 +147,11 @@ require_once __DIR__ . '/Stubs/AdminConfigField.php';
 // Loads after AdminConfigField.php, whose Field class it extends.
 require_once __DIR__ . '/Stubs/AdminFieldArray.php';
 
+// Admin order view block and its button list, for the toolbar plugin's
+// Check status button (TWO-26300). Loads after AdminFieldArray.php, whose
+// AbstractBlock the view extends; per-symbol guards live inside.
+require_once __DIR__ . '/Stubs/OrderViewToolbar.php';
+
 // Self-invoice-upload collaborators (Status\History/HistoryFactory,
 // OrderRepositoryInterface, SearchCriteriaBuilder, Pdf\Invoice) for
 // Service/Invoice/UploadService.php and Cron/ProcessInvoiceUploads.php;

@@ -78,6 +78,8 @@ class SalesOrderCancelAfter implements ObserverInterface
         if (!$order
             || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
             || !$order->getTwoOrderId()
+            // Cancelled here because Two already cancelled it (TWO-26300).
+            || $order->getData(OrderService::SKIP_CANCEL_SYNC)
         ) {
             return;
         }

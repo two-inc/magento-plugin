@@ -72,6 +72,9 @@
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
                 <model>Two\Gateway\Model\Two</model>
+                <!-- TWO-26300: hidden, no admin field. Minutes an order waits
+                     for the buyer before the scheduled check looks at it. -->
+                <pending_check_after_minutes>30</pending_check_after_minutes>
             </two_payment>
         </payment>
         <!--
