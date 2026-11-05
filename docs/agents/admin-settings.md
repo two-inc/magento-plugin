@@ -54,15 +54,26 @@ is stored, and an empty submission keeps the stored key: `Backend\ApiKey` turns 
 its own save for an empty value or an all-asterisk placeholder. The field is
 therefore not `required-entry`.
 
-**The admin save stays permissive, and a rejected key blocks only the key field.**
-Refusing the save would lock the merchant out of correcting the very key that
-resolves the record, and a `LocalizedException` from a config backend model rolls
-the WHOLE section back — one mistyped key would discard every unrelated field
-submitted with it. The key field turns off its own save through `_dataSaveAllowed`
-and reports the rejection through the admin message channel, so the rejected value
-is never stored and every sibling field still saves. Only a definitive upstream
-rejection is blocking; unreachable, erroring and malformed verdicts save the
-submitted key.
+**The API key and environment save as one pair, and a refusal blocks only the
+pair** (TWO-27108). A key is only good against the environment it was issued for,
+so `Service\Merchant\CredentialsSave` decides once per scope and request, and both
+`Backend\Mode` and `Backend\ApiKey` follow it: the pair is written when Two accepts
+it, or when Two could not judge it (no answer, a 5xx, a malformed reply) and the
+stored pair is not known good. A rejected key, a malformed key, a refused
+environment, or an unjudged key over a stored pair whose last definitive answer
+was ok keeps the stored key AND environment. Changing only the environment checks
+the stored key against it. An untouched save asks nothing, comparing environments
+by what they resolve to (`EnvironmentMode::normalise()`), so a legacy stored
+spelling is unchanged too. The last definitive answer is kept per key and resolved
+environment in the flag table (`ApiKeyStatus::lastDefinitiveStatus()`), written by
+every live verification that gets ok or a rejection and never by an outage, so it
+survives a cache flush and an outage alike.
+
+Refusing the whole save would lock the merchant out of correcting the very key
+that resolves the record, and a `LocalizedException` from a config backend model
+rolls the WHOLE section back. Both fields turn off their own save through
+`_dataSaveAllowed` and report why through the admin message channel, so every
+sibling field still saves.
 
 **A cached merchant record is keyed on the ENVIRONMENT as well as the API key.**
 One key configured against sandbox on one store view and production on another must
@@ -103,8 +114,9 @@ said no) and `not_configured` (there is no key). `unreachable`, `service_error`,
 so a correctly configured shop keeps serving buyers for as long as the outage
 lasts. `ApiKeyStatus::isDefinitiveFailure()` is the single definition of that set —
 do not re-list the categories at a gate. No admin surface is gated on the verdict
-at all; the one place it blocks an admin action is the api-key field refusing to
-store a key the API definitively rejected, and the health checklist still reads
+at all; the one place it blocks an admin action is the key and environment pair
+refusing to store a key the API rejected, or to replace a verified pair with one it
+could not judge, and the health checklist still reads
 "Not verified" on every category short of a verified key.
 
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`

@@ -12,37 +12,26 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Framework\Encryption\EncryptorInterface;
-use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
-use Two\Gateway\Model\Config\AdminScope;
-use Two\Gateway\Service\Merchant\ApiKeyStatus;
-use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
+use Two\Gateway\Service\Merchant\CredentialsSave;
 
 /**
- * Save-time guard on the API key field (TWO-25503).
+ * Save-time guard on the API key field (TWO-25503, TWO-27108).
  *
- * Verifies the submitted key before it replaces the stored one, so a
- * mistyped or wrong-environment key cannot silently take a working
- * integration offline until someone notices checkout is gone.
+ * The key and the environment beside it are saved as one pair or not at all,
+ * by the rule in {@see CredentialsSave}: a mistyped, rejected or
+ * wrong-environment key cannot take a working integration offline, and a key
+ * Two could not judge never replaces one that last verified. An empty field
+ * keeps the stored key, which never goes back to the browser.
  */
 class ApiKey extends Encrypted
 {
     /**
-     * @var ApiKeyStatus
+     * @var CredentialsSave
      */
-    private $apiKeyStatus;
-
-    /**
-     * @var ApiKeyStatusMessage
-     */
-    private $statusMessage;
-
-    /**
-     * @var MessageManager
-     */
-    private $messageManager;
+    private $credentialsSave;
 
     public function __construct(
         Context $context,
@@ -50,9 +39,7 @@ class ApiKey extends Encrypted
         ScopeConfigInterface $config,
         TypeListInterface $cacheTypeList,
         EncryptorInterface $encryptor,
-        ApiKeyStatus $apiKeyStatus,
-        ApiKeyStatusMessage $statusMessage,
-        MessageManager $messageManager,
+        CredentialsSave $credentialsSave,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -67,9 +54,7 @@ class ApiKey extends Encrypted
             $resourceCollection,
             $data
         );
-        $this->apiKeyStatus = $apiKeyStatus;
-        $this->statusMessage = $statusMessage;
-        $this->messageManager = $messageManager;
+        $this->credentialsSave = $credentialsSave;
     }
 
     /**
@@ -77,40 +62,42 @@ class ApiKey extends Encrypted
      */
     public function beforeSave()
     {
-        $candidate = (string)$this->getValue();
+        $candidate = trim((string)$this->getValue());
 
         // A blank submission keeps the stored key (TWO-27108): the field renders
         // empty, so the key never goes back to the browser. An obscured
         // placeholder (all asterisks), from a page rendered before that, means
-        // the same. Nothing is written, so there is nothing to verify.
-        if ($candidate === '' || preg_match('/^\*+$/', $candidate)) {
+        // the same. The environment beside it decides whether the stored key
+        // is checked against a new environment.
+        if (CredentialsSave::keepsStoredKey($candidate)) {
             $this->_dataSaveAllowed = false;
             return;
         }
 
-        [$scopeId, $scope] = AdminScope::fromScope((string)$this->getScope(), $this->getScopeId());
-        $result = $this->apiKeyStatus->verifyCandidate(
-            $candidate,
-            $scopeId,
-            $this->submittedMode(),
-            $scope
-        );
-
-        // ONLY a definitive upstream rejection stops the key being written. An
-        // unreachable or erroring service cannot be told apart from a bad key,
-        // and blocking on it would stop a merchant configuring their first key
-        // during an outage — a worse failure than accepting a key we could not
-        // confirm.
-        //
         // A field-level skip, not an exception: an exception rolls back the whole section.
-        if ($result['status'] === ApiKeyStatus::INVALID_KEY) {
+        $outcome = $this->credentialsSave->decide(
+            (string)$this->getPath(),
+            self::siblingPath((string)$this->getPath(), 'mode'),
+            (string)($this->getScope() ?: 'default'),
+            $this->getScopeId(),
+            $candidate,
+            $this->submittedMode()
+        );
+        if (!CredentialsSave::writesKey($outcome)) {
             $this->_dataSaveAllowed = false;
-            $this->messageManager->addErrorMessage($this->statusMessage->describe($result)['message']);
-
             return;
         }
 
+        $this->setValue($candidate);
         parent::beforeSave();
+    }
+
+    /** The path of another field in this key's group. */
+    public static function siblingPath(string $path, string $field): string
+    {
+        $slash = strrpos($path, '/');
+
+        return ($slash === false ? '' : substr($path, 0, $slash + 1)) . $field;
     }
 
     /**
@@ -118,10 +105,9 @@ class ApiKey extends Encrypted
      * request is not setting one.
      *
      * Switching environment and pasting that environment's key is ONE admin
-     * action, and the committed mode is still the old one while this runs —
-     * verifying against it rejects a perfectly good key and fails the whole
-     * section save. `mode` is a sibling field in the same group
-     * (two_general/general), so the submitted value is on this model.
+     * action, and the committed mode is still the old one while this runs:
+     * verifying against it rejects a perfectly good key. `mode` is a sibling
+     * field in the same group, so the submitted value is on this model.
      */
     private function submittedMode(): ?string
     {

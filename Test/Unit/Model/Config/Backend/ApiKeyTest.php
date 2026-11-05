@@ -14,6 +14,8 @@ use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Backend\ApiKey;
+use Two\Gateway\Model\Config\Backend\Mode;
+use Two\Gateway\Service\Merchant\CredentialsSave;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
@@ -30,6 +32,7 @@ class ApiKeyTest extends TestCase
     private const CANDIDATE = 'candidate-key';
 
     private const KEY_PATH = 'two_general/general/api_key';
+    private const MODE_PATH = 'two_general/general/mode';
 
     private const SIBLING_PATH = 'two_general/general/vendor_site_name';
 
@@ -52,28 +55,83 @@ class ApiKeyTest extends TestCase
      */
     private function build(array $data): ApiKey
     {
-        $encryptor = $this->createMock(EncryptorInterface::class);
-        $encryptor->method('encrypt')->willReturnCallback(
-            function ($value) {
-                return 'encrypted:' . $value;
-            }
-        );
-
-        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
-        $brandRegistry->method('getProductName')->willReturn('Acme Pay');
-
         return new ApiKey(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
-            $this->createMock(ScopeConfigInterface::class),
+            $this->config(),
             $this->createMock(TypeListInterface::class),
-            $encryptor,
-            $this->apiKeyStatus,
-            new ApiKeyStatusMessage($brandRegistry),
-            $this->messageManager,
+            $this->encryptor(),
+            $this->credentials(),
             null,
             null,
             $data
+        );
+    }
+
+    /** @var array<string, string> config path => stored value, what the scope holds before the save */
+    private $stored = [];
+
+    /** @var CredentialsSave|null one per request, shared by the fields, as DI shares it */
+    private $credentials;
+
+    private function config(): ScopeConfigInterface
+    {
+        $config = $this->createMock(ScopeConfigInterface::class);
+        $config->method('getValue')->willReturnCallback(function ($path) {
+            return $this->stored[$path] ?? null;
+        });
+
+        return $config;
+    }
+
+    private function encryptor(): EncryptorInterface
+    {
+        $encryptor = $this->createMock(EncryptorInterface::class);
+        $encryptor->method('encrypt')->willReturnCallback(static fn ($value) => 'encrypted:' . $value);
+        $encryptor->method('decrypt')->willReturnCallback(
+            static fn ($value) => strpos((string)$value, 'encrypted:') === 0 ? substr((string)$value, 10) : ''
+        );
+
+        return $encryptor;
+    }
+
+    private function credentials(): CredentialsSave
+    {
+        if ($this->credentials === null) {
+            $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+            $brandRegistry->method('getProductName')->willReturn('Acme Pay');
+            $this->credentials = new CredentialsSave(
+                $this->apiKeyStatus,
+                new ApiKeyStatusMessage($brandRegistry),
+                $this->messageManager,
+                $this->config(),
+                $this->encryptor()
+            );
+        }
+
+        return $this->credentials;
+    }
+
+    /**
+     * The environment field, posted in the same group as the key.
+     */
+    private function modeField(string $value, string $key): Mode
+    {
+        return new Mode(
+            $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
+            $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
+            $this->config(),
+            $this->createMock(TypeListInterface::class),
+            $this->messageManager,
+            $this->credentials(),
+            null,
+            null,
+            [
+                'value' => $value,
+                'path' => self::MODE_PATH,
+                'scope' => 'default',
+                'fieldset_data' => ['mode' => $value, 'api_key' => $key],
+            ]
         );
     }
 
@@ -331,5 +389,107 @@ class ApiKeyTest extends TestCase
             $byName['resourceCollection'],
             '$resourceCollection must stay typed, matching Encrypted/Value'
         );
+    }
+
+    /**
+     * TWO-27108: the key and the environment are saved as one pair or not at
+     * all; a key Two could not judge never replaces one that last verified;
+     * the field beside them saves whatever happens to the pair.
+     *
+     * @dataProvider pairs
+     */
+    public function testTheKeyAndEnvironmentSaveAsOnePair(
+        ?string $storedMode,
+        string $typedKey,
+        string $mode,
+        ?string $verdict,
+        ?string $lastDefinitive,
+        array $expected,
+        array $messages,
+        string $description
+    ): void {
+        $this->stored = [self::KEY_PATH => 'encrypted:old-key', self::MODE_PATH => $storedMode];
+        if ($storedMode === null) {
+            $this->stored = [];
+        }
+        $checks = 0;
+        $this->apiKeyStatus->method('verifyCandidate')->willReturnCallback(
+            function () use (&$checks, $verdict) {
+                $checks++;
+                return ['status' => $verdict, 'code' => null, 'merchant' => null];
+            }
+        );
+        $this->apiKeyStatus->method('lastDefinitiveStatus')->willReturn($lastDefinitive);
+        $said = ['error' => 0, 'warning' => 0];
+        $this->messageManager->method('addErrorMessage')->willReturnCallback(function () use (&$said) {
+            $said['error']++;
+            return $this->messageManager;
+        });
+        $this->messageManager->method('addWarningMessage')->willReturnCallback(function () use (&$said) {
+            $said['warning']++;
+            return $this->messageManager;
+        });
+
+        $stored = $this->saveSection([
+            self::MODE_PATH => $this->modeField($mode, $typedKey),
+            self::KEY_PATH => $this->build([
+                'value' => $typedKey,
+                'path' => self::KEY_PATH,
+                'scope' => 'default',
+                'fieldset_data' => ['mode' => $mode, 'api_key' => $typedKey],
+            ]),
+            self::SIBLING_PATH => $this->siblingField(),
+        ]);
+
+        $this->assertSame(self::SIBLING_VALUE, $stored[self::SIBLING_PATH] ?? null, $description . ': the sibling saves');
+        unset($stored[self::SIBLING_PATH]);
+        $this->assertSame($expected, $stored, $description);
+        $this->assertSame($messages, $said, $description . ': messages');
+        if ($verdict === null) {
+            $this->assertSame(0, $checks, $description . ': nothing to ask Two');
+        }
+    }
+
+    /**
+     * @return array<string, array>
+     */
+    public static function pairs(): array
+    {
+        $ok = ApiKeyStatus::OK;
+        $no = ApiKeyStatus::INVALID_KEY;
+        $down = ApiKeyStatus::UNREACHABLE;
+        $both = [self::MODE_PATH => 'production', self::KEY_PATH => 'encrypted:new-key'];
+        $none = [];
+        $quiet = ['error' => 0, 'warning' => 0];
+        $error = ['error' => 1, 'warning' => 0];
+        // stored environment, typed key, submitted environment, Two's verdict on the pair,
+        // the stored pair's last definitive answer, what is written, messages, description
+        return [
+            'new pair accepted' => ['sandbox', 'new-key', 'production', $ok, null, $both, $quiet,
+                'an accepted key is written with its environment'],
+            'new pair rejected' => ['sandbox', 'new-key', 'production', $no, $ok, $none, $error,
+                'a rejected key keeps the stored key AND environment'],
+            'new pair unjudged, stored pair last verified' => ['sandbox', 'new-key', 'production', $down, $ok, $none, $error,
+                'a key Two could not judge never replaces one that last verified'],
+            'new pair unjudged, stored pair never verified' => ['sandbox', 'new-key', 'production', $down, null, $both,
+                ['error' => 0, 'warning' => 1], 'nothing known good to protect: the pair saves, with a warning'],
+            'environment only, stored key rejected there' => ['sandbox', '', 'production', $no, $ok, $none, $error,
+                'switching environment checks the stored key there, and a rejection keeps both'],
+            'environment only, stored key accepted there' => ['sandbox', '', 'production', $ok, null,
+                [self::MODE_PATH => 'production'], $quiet, 'the environment saves; the stored key is not rewritten'],
+            'environment only during an outage, stored pair last verified' => ['sandbox', '', 'production', $down, $ok,
+                $none, $error, 'an outage cannot move a verified key to another environment'],
+            'untouched save' => ['sandbox', '', 'sandbox', null, $ok, [self::MODE_PATH => 'sandbox'], $quiet,
+                'nothing changed: nothing is asked, and nothing is refused'],
+            'untouched save over a legacy stored environment' => ['prod', '', 'production', null, $ok,
+                [self::MODE_PATH => 'production'], $quiet,
+                'a legacy spelling of the same environment is unchanged, so an outage cannot refuse the save'],
+            'refused environment with a new key' => ['sandbox', 'new-key', 'staging', null, $ok, $none,
+                ['error' => 2, 'warning' => 0], 'a refused environment keeps the key typed beside it, and says so'],
+            'malformed key' => ['sandbox', "new key", 'production', null, $ok, $none, $error,
+                'a key with a space is never sent, and keeps both'],
+            'no key anywhere' => [null, '', 'production', null, null, [self::MODE_PATH => 'production'], $error,
+                'with no key to protect the environment saves, and the merchant is asked for a key'],
+        ];
     }
 }
