@@ -78,9 +78,15 @@ class SalesOrderCancelAfter implements ObserverInterface
         if (!$order
             || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
             || !$order->getTwoOrderId()
-            // Cancelled here because Two already cancelled it (TWO-26300).
-            || $order->getData(OrderService::SKIP_CANCEL_SYNC)
         ) {
+            return;
+        }
+
+        // Cancelled here because Two already cancelled or declined it: there
+        // is nothing to send, but integrations still hear of the cancel
+        // (TWO-26300).
+        if ($order->getData(OrderService::SKIP_CANCEL_SYNC)) {
+            $this->lifecycleEvents->dispatchCancelled($order, ['cancelled_by' => 'two']);
             return;
         }
 

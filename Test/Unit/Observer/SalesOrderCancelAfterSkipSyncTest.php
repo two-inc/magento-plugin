@@ -26,13 +26,13 @@ class SalesOrderCancelAfterSkipSyncTest extends TestCase
     public static function cases(): array
     {
         return [
-            'a merchant cancel is sent to Two' => [false, 1],
-            'a cancel matching Two is not sent back' => [true, 0],
+            'a merchant cancel is sent to Two' => [false, 1, [[]]],
+            'a cancel matching Two is not sent back, and integrations still hear of it' => [true, 0, [['cancelled_by' => 'two']]],
         ];
     }
 
     #[DataProvider('cases')]
-    public function testTheCancelIsSentUnlessTwoAlreadyCancelled(bool $flag, int $expectedSends): void
+    public function testTheCancelIsSentUnlessTwoAlreadyCancelled(bool $flag, int $expectedSends, array $expectedEvents): void
     {
         $order = (new Order())->setTwoOrderId('two-1')->setPayment((new Order\Payment())->setMethod('two_payment'));
         if ($flag) {
@@ -48,8 +48,11 @@ class SalesOrderCancelAfterSkipSyncTest extends TestCase
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
         $lifecycle = new class {
+            public $events = [];
+
             public function dispatchCancelled($order, array $twoData = [])
             {
+                $this->events[] = $twoData;
             }
         };
 
@@ -79,5 +82,7 @@ class SalesOrderCancelAfterSkipSyncTest extends TestCase
                 return $this->event;
             }
         });
+
+        $this->assertSame($expectedEvents, $lifecycle->events, $this->dataName() . ': cancelled event');
     }
 }
