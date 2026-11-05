@@ -28,6 +28,15 @@ const QTY = 'input[name="product[quantity_and_stock_status][qty]"]';
 const visible = (page: Page, selector: string) =>
     page.locator(selector).filter({ visible: true }).first();
 
+// Names the step that failed, so a timeout says which control it was.
+async function step<T>(name: string, action: () => Promise<T>): Promise<T> {
+    try {
+        return await action();
+    } catch (error) {
+        throw new Error(`${name}: ${error}`);
+    }
+}
+
 async function gridSettled(page: Page) {
     await expect(page.locator('.admin__data-grid-loading-mask:visible')).toHaveCount(0, {
         timeout: 60_000
@@ -48,14 +57,20 @@ async function cancelLeftoverOrders(page: Page) {
     try {
         const clear = page.getByRole('button', { name: 'Clear all' }).filter({ visible: true });
         if (await clear.count()) {
-            await clear.first().click();
+            await step('clear earlier filters', () => clear.first().click());
             await gridSettled(page);
         }
-        await visible(page, 'button[data-action="grid-filter-expand"]').click();
-        await visible(page, '.admin__data-grid-filters select[name="status"]').selectOption(
-            'pending_two_payment'
+        await step('open the filters', () =>
+            visible(page, 'button[data-action="grid-filter-expand"]').click()
         );
-        await visible(page, 'button[data-action="grid-filter-apply"]').click();
+        await step('filter on the pending status', () =>
+            visible(page, '.admin__data-grid-filters select[name="status"]').selectOption(
+                'pending_two_payment'
+            )
+        );
+        await step('apply the filters', () =>
+            visible(page, 'button[data-action="grid-filter-apply"]').click()
+        );
         await gridSettled(page);
 
         const table = page.locator('table.data-grid').first();
@@ -78,8 +93,12 @@ async function cancelLeftoverOrders(page: Page) {
         }
         console.log(`leftover e2e orders waiting for the buyer: ${selected}`);
         if (selected === 0) return;
-        await visible(page, '.admin__data-grid-header button.action-select').click();
-        await visible(page, '.admin__data-grid-header .action-menu-item:text-is("Cancel")').click();
+        await step('open the mass actions', () =>
+            visible(page, '.admin__data-grid-header button.action-select').click()
+        );
+        await step('choose Cancel', () =>
+            visible(page, '.admin__data-grid-header .action-menu-item:text-is("Cancel")').click()
+        );
         const result = page.locator('.messages .message').filter({ visible: true }).first();
         await expect(result).toBeVisible({ timeout: 120_000 });
         console.log(`cancelling them: ${(await result.innerText()).trim()}`);
@@ -100,9 +119,15 @@ setup('the test product has stock', async ({ page }) => {
     setup.setTimeout(180_000);
     try {
         await adminLogin(page);
-        await cancelLeftoverOrders(page).catch((error) =>
-            console.log(`cancelling leftover orders failed: ${error}`)
-        );
+        await cancelLeftoverOrders(page).catch(async (error) => {
+            console.log(`cancelling leftover orders failed: ${error}`);
+            await page
+                .screenshot({
+                    path: setup.info().outputPath('leftover-cancel-failed.png'),
+                    fullPage: true
+                })
+                .catch(() => {});
+        });
         const catalog = await page
             .locator('a[href*="/catalog/product/"]')
             .first()
