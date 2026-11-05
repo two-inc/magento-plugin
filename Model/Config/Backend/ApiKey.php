@@ -12,6 +12,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
@@ -75,21 +76,48 @@ class ApiKey extends Encrypted
         }
 
         // A field-level skip, not an exception: an exception rolls back the whole section.
-        $outcome = $this->credentialsSave->decide(
-            (string)$this->getPath(),
-            self::siblingPath((string)$this->getPath(), 'mode'),
-            (string)($this->getScope() ?: 'default'),
-            $this->getScopeId(),
-            $candidate,
-            $this->submittedMode()
-        );
-        if (!CredentialsSave::writesKey($outcome)) {
+        if (!CredentialsSave::writesKey($this->pairOutcome($candidate, false))) {
             $this->_dataSaveAllowed = false;
             return;
         }
 
         $this->setValue($candidate);
         parent::beforeSave();
+    }
+
+    /**
+     * "Use Default" on this field deletes its row, without beforeSave(). The
+     * pair rule judges that change too, and only an exception stops the
+     * delete: it rolls back the whole save of the page, which is the price of
+     * never leaving a pair Two did not accept (TWO-27108).
+     *
+     * @return $this
+     * @throws LocalizedException when the stored pair is kept
+     */
+    public function beforeDelete()
+    {
+        if (CredentialsSave::keepsPair($this->pairOutcome('', true))) {
+            throw new LocalizedException(__(
+                'Nothing on this page was saved: the API key and environment are saved together, and this change would leave a key that does not work with its environment.'
+            ));
+        }
+        return parent::beforeDelete();
+    }
+
+    private function pairOutcome(string $key, bool $inherited): string
+    {
+        $modeInherited = CredentialsSave::isInherited($this, 'mode');
+
+        return $this->credentialsSave->decide(
+            (string)$this->getPath(),
+            self::siblingPath((string)$this->getPath(), 'mode'),
+            (string)($this->getScope() ?: 'default'),
+            $this->getScopeId(),
+            $key,
+            $modeInherited ? null : $this->submittedMode(),
+            $inherited,
+            $modeInherited
+        );
     }
 
     /** The path of another field in this key's group. */

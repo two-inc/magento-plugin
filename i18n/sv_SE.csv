@@ -114,6 +114,7 @@
 "The API key may only contain printable characters, with no spaces or line breaks. The previously saved key and environment were kept.","API-nyckeln får bara innehålla utskrivbara tecken, utan mellanslag eller radbrytningar. Den tidigare sparade nyckeln och miljön behölls."
 "The previously saved key and environment were kept.","Den tidigare sparade nyckeln och miljön behölls."
 "The previously saved key and environment were kept, because they last verified and the new ones could not be checked. Save again once the check succeeds.","Den tidigare sparade nyckeln och miljön behölls, eftersom de senast verifierades och de nya inte kunde kontrolleras. Spara igen när kontrollen lyckas."
+"Nothing on this page was saved: the API key and environment are saved together, and this change would leave a key that does not work with its environment.","Ingenting på den här sidan sparades: API-nyckeln och miljön sparas tillsammans, och den här ändringen skulle lämna en nyckel som inte fungerar i sin miljö."
 "The capture action is not available.","Infångningsåtgärden är inte tillgänglig."
 "Title","Titel"
 "Unable to confirm %1 order with %2 state.","Kan inte bekräfta %1 beställning med %2 status."

@@ -112,6 +112,7 @@
 "The API key may only contain printable characters, with no spaces or line breaks. The previously saved key and environment were kept.","API-nøkkelen kan bare inneholde utskrivbare tegn, uten mellomrom eller linjeskift. Den tidligere lagrede nøkkelen og miljøet ble beholdt."
 "The previously saved key and environment were kept.","Den tidligere lagrede nøkkelen og miljøet ble beholdt."
 "The previously saved key and environment were kept, because they last verified and the new ones could not be checked. Save again once the check succeeds.","Den tidligere lagrede nøkkelen og miljøet ble beholdt, fordi de sist ble bekreftet og de nye ikke kunne kontrolleres. Lagre på nytt når kontrollen lykkes."
+"Nothing on this page was saved: the API key and environment are saved together, and this change would leave a key that does not work with its environment.","Ingenting på denne siden ble lagret: API-nøkkelen og miljøet lagres sammen, og denne endringen ville gitt en nøkkel som ikke virker i miljøet sitt."
 "The capture action is not available.","Opptakshandlingen er ikke tilgjengelig."
 "Title","Tittel"
 "Unable to confirm %1 order with %2 state.","Kan ikke bekrefte %1 bestilling med %2 status."

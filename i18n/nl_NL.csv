@@ -115,6 +115,7 @@
 "The API key may only contain printable characters, with no spaces or line breaks. The previously saved key and environment were kept.","De API-sleutel mag alleen afdrukbare tekens bevatten, zonder spaties of regeleinden. De eerder opgeslagen sleutel en omgeving zijn behouden."
 "The previously saved key and environment were kept.","De eerder opgeslagen sleutel en omgeving zijn behouden."
 "The previously saved key and environment were kept, because they last verified and the new ones could not be checked. Save again once the check succeeds.","De eerder opgeslagen sleutel en omgeving zijn behouden, omdat die het laatst zijn geverifieerd en de nieuwe niet konden worden gecontroleerd. Sla opnieuw op zodra de controle slaagt."
+"Nothing on this page was saved: the API key and environment are saved together, and this change would leave a key that does not work with its environment.","Er is niets op deze pagina opgeslagen: de API-sleutel en de omgeving worden samen opgeslagen, en deze wijziging zou een sleutel achterlaten die niet werkt in de bijbehorende omgeving."
 "The capture action is not available.","De vastleg actie is niet beschikbaar."
 "Title","Titel"
 "Unable to confirm %1 order with %2 state.","Kan %1 bestelling met %2 status niet bevestigen."

@@ -10,6 +10,8 @@ use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Two\Gateway\Api\BrandRegistryInterface;
@@ -74,14 +76,38 @@ class ApiKeyTest extends TestCase
     /** @var CredentialsSave|null one per request, shared by the fields, as DI shares it */
     private $credentials;
 
+    /**
+     * @var array<string, array<string, string>>|null scope type => config path => effective value;
+     *      null reads every scope from $stored
+     */
+    private $layers;
+
     private function config(): ScopeConfigInterface
     {
         $config = $this->createMock(ScopeConfigInterface::class);
-        $config->method('getValue')->willReturnCallback(function ($path) {
+        $config->method('getValue')->willReturnCallback(function ($path, $scope = 'default') {
+            if ($this->layers !== null) {
+                return $this->layers[$scope][$path] ?? null;
+            }
             return $this->stored[$path] ?? null;
         });
 
         return $config;
+    }
+
+    /** Store view 3 belongs to website 2. */
+    private function storeManager(): StoreManagerInterface
+    {
+        $store = new class {
+            public function getWebsiteId()
+            {
+                return 2;
+            }
+        };
+        $manager = $this->createMock(StoreManagerInterface::class);
+        $manager->method('getStore')->willReturn($store);
+
+        return $manager;
     }
 
     private function encryptor(): EncryptorInterface
@@ -105,7 +131,8 @@ class ApiKeyTest extends TestCase
                 new ApiKeyStatusMessage($brandRegistry),
                 $this->messageManager,
                 $this->config(),
-                $this->encryptor()
+                $this->encryptor(),
+                $this->storeManager()
             );
         }
 
@@ -115,7 +142,7 @@ class ApiKeyTest extends TestCase
     /**
      * The environment field, posted in the same group as the key.
      */
-    private function modeField(string $value, string $key): Mode
+    private function modeField(string $value, string $key, array $extra = []): Mode
     {
         return new Mode(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
@@ -126,7 +153,7 @@ class ApiKeyTest extends TestCase
             $this->credentials(),
             null,
             null,
-            [
+            $extra + [
                 'value' => $value,
                 'path' => self::MODE_PATH,
                 'scope' => 'default',
@@ -497,6 +524,142 @@ class ApiKeyTest extends TestCase
                 'old key'],
             'no key anywhere' => [null, '', 'production', null, null, [self::MODE_PATH => 'production'], $error,
                 'with no key to protect the environment saves, and the merchant is asked for a key'],
+        ];
+    }
+
+    /**
+     * TWO-27108: "Use Default" on either half at a website or store view is a
+     * change of that half to the parent's value, judged by the same rule.
+     * Core deletes an inherited field without beforeSave(), so a pair that must
+     * be kept refuses the whole save (the delete throws, and nothing is saved).
+     *
+     * Website 2 holds sandbox + its own key; the default scope holds production
+     * + the default key. Store view 3, in website 2, holds production + the
+     * default key of its own.
+     *
+     * @dataProvider inheritedPairs
+     */
+    public function testUseDefaultOnEitherHalfFollowsThePairRule(
+        string $scope,
+        int $scopeId,
+        ?string $typedKey,
+        ?string $mode,
+        ?string $verdict,
+        $expected,
+        ?string $verifiedMode,
+        string $description
+    ): void {
+        $this->layers = [
+            'default' => [self::KEY_PATH => 'encrypted:default-key', self::MODE_PATH => 'production'],
+            'websites' => [self::KEY_PATH => 'encrypted:website-key', self::MODE_PATH => 'sandbox'],
+            'stores' => [self::KEY_PATH => 'encrypted:default-key', self::MODE_PATH => 'production'],
+        ];
+        $asked = [];
+        $this->apiKeyStatus->method('verifyCandidate')->willReturnCallback(
+            function ($key, $id, $mode) use (&$asked, $verdict) {
+                $asked[] = [$key, $mode];
+                return ['status' => $verdict, 'code' => null, 'merchant' => null];
+            }
+        );
+        $this->apiKeyStatus->method('lastDefinitiveStatus')->willReturn(ApiKeyStatus::OK);
+
+        // null = "Use Default" ticked: the input is disabled, so nothing is posted.
+        $groups = ['general' => ['fields' => [
+            'mode' => $mode === null ? ['inherit' => 1] : ['value' => $mode],
+            'api_key' => $typedKey === null ? ['inherit' => 1] : ['value' => $typedKey],
+        ]]];
+        $data = [
+            'scope' => $scope,
+            'scope_id' => $scopeId,
+            'groups' => $groups,
+            'group_id' => 'general',
+            'fieldset_data' => ['mode' => $mode, 'api_key' => $typedKey],
+        ];
+        $modeModel = $this->modeField((string)$mode, (string)$typedKey, $data);
+        $keyModel = $this->build(['value' => (string)$typedKey, 'path' => self::KEY_PATH] + $data);
+
+        $result = $this->saveWithUseDefault([
+            self::MODE_PATH => [$modeModel, $mode === null],
+            self::KEY_PATH => [$keyModel, $typedKey === null],
+        ]);
+
+        $this->assertSame($expected, $result, $description);
+        if ($verifiedMode !== null) {
+            $this->assertSame($verifiedMode, $asked[0][1] ?? null, $description . ': the environment the key is checked against');
+        }
+        if ($verdict === null) {
+            $this->assertSame([], $asked, $description . ': nothing to ask Two');
+        }
+    }
+
+    /**
+     * Mirrors core's section save: the inherited fields' delete runs first and
+     * an exception from it rolls everything back; then the rest are saved.
+     *
+     * @param array<string, array{0: Value, 1: bool}> $fields path => [model, "Use Default" ticked]
+     * @return array{written: array<string, mixed>, deleted: list<string>}|string
+     */
+    private function saveWithUseDefault(array $fields)
+    {
+        $deleted = [];
+        try {
+            foreach ($fields as $path => [$model, $inherited]) {
+                if ($inherited) {
+                    $model->beforeDelete();
+                    $deleted[] = $path;
+                }
+            }
+        } catch (LocalizedException $e) {
+            return 'rolled back';
+        }
+        $written = [];
+        foreach ($fields as $path => [$model, $inherited]) {
+            if (!$inherited) {
+                $model->beforeSave();
+                if ($model->isSaveAllowed()) {
+                    $written[$path] = $model->getValue();
+                }
+            }
+        }
+
+        return ['written' => $written, 'deleted' => $deleted];
+    }
+
+    /**
+     * @return array<string, array>
+     */
+    public static function inheritedPairs(): array
+    {
+        $ok = ApiKeyStatus::OK;
+        $no = ApiKeyStatus::INVALID_KEY;
+        // scope, scope id, typed key (null = Use Default), environment (null = Use Default),
+        // Two's verdict, the result, the environment the key is checked against, description
+        return [
+            'website: a new pair accepted' => ['websites', 2, 'new-key', 'production', $ok,
+                ['written' => [self::MODE_PATH => 'production', self::KEY_PATH => 'encrypted:new-key'], 'deleted' => []],
+                'production', 'a website saves its own pair by the same rule'],
+            'website: a new pair rejected' => ['websites', 2, 'new-key', 'production', $no,
+                ['written' => [], 'deleted' => []], 'production', 'a website keeps its pair on a rejection'],
+            'website: environment to Use Default, key blank, rejected there' => ['websites', 2, '', null, $no,
+                'rolled back', 'production', 'the website key is checked against the inherited environment, and a rejection stops the delete'],
+            'website: environment to Use Default, key blank, accepted there' => ['websites', 2, '', null, $ok,
+                ['written' => [], 'deleted' => [self::MODE_PATH]], 'production', 'an inherited environment the key works in is deleted'],
+            'website: environment to Use Default, new key pasted' => ['websites', 2, 'default-key-2', null, $ok,
+                ['written' => [self::KEY_PATH => 'encrypted:default-key-2'], 'deleted' => [self::MODE_PATH]],
+                'production', 'a pasted key is checked against the inherited environment, not the old one'],
+            'website: key to Use Default, environment changed, accepted' => ['websites', 2, null, 'production', $ok,
+                ['written' => [self::MODE_PATH => 'production'], 'deleted' => [self::KEY_PATH]],
+                'production', 'the inherited key is checked against the new environment'],
+            'website: key to Use Default, environment kept, rejected' => ['websites', 2, null, 'sandbox', $no,
+                'rolled back', 'sandbox', 'the inherited key is rejected in the website environment, so nothing is saved'],
+            'website: both to Use Default' => ['websites', 2, null, null, $ok,
+                ['written' => [], 'deleted' => [self::MODE_PATH, self::KEY_PATH]], 'production',
+                'inheriting the whole pair checks the parent pair'],
+            'store view: environment to Use Default, rejected there' => ['stores', 3, '', null, $no,
+                'rolled back', 'sandbox', 'a store view inherits from its website, and the rule holds'],
+            'store view: key to Use Default, accepted' => ['stores', 3, null, 'sandbox', $ok,
+                ['written' => [self::MODE_PATH => 'sandbox'], 'deleted' => [self::KEY_PATH]],
+                'sandbox', 'a store view takes its website key, checked against the environment being saved'],
         ];
     }
 }

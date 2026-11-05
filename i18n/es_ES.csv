@@ -112,6 +112,7 @@
 "The API key may only contain printable characters, with no spaces or line breaks. The previously saved key and environment were kept.","La clave API solo puede contener caracteres imprimibles, sin espacios ni saltos de línea. Se han conservado la clave y el entorno guardados anteriormente."
 "The previously saved key and environment were kept.","Se han conservado la clave y el entorno guardados anteriormente."
 "The previously saved key and environment were kept, because they last verified and the new ones could not be checked. Save again once the check succeeds.","Se han conservado la clave y el entorno guardados anteriormente, porque fueron los últimos verificados y los nuevos no se han podido comprobar. Vuelve a guardar cuando la comprobación funcione."
+"Nothing on this page was saved: the API key and environment are saved together, and this change would leave a key that does not work with its environment.","No se ha guardado nada en esta página: la clave API y el entorno se guardan juntos, y este cambio dejaría una clave que no funciona con su entorno."
 "The capture action is not available.","La acción de captura no está disponible."
 "Title","Título"
 "Unable to confirm %1 order with %2 state.","No se ha podido confirmar el pedido %1 con el estado %2."

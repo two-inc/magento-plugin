@@ -69,6 +69,14 @@ environment in the flag table (`ApiKeyStatus::lastDefinitiveStatus()`), written 
 every live verification that gets ok or a rejection and never by an outage, so it
 survives a cache flush and an outage alike.
 
+"Use Default" on either half at a website or store view is a change of that half
+to the parent scope's value (a website's from the default scope, a store view's
+from its website), judged by the same rule. Core deletes an inherited field's row
+without calling `beforeSave()`, so both backend models judge it in
+`beforeDelete()` too, and only an exception stops a delete: a pair that must be
+kept there refuses the whole save of the page, never leaving a pair Two did not
+accept.
+
 Refusing the whole save would lock the merchant out of correcting the very key
 that resolves the record, and a `LocalizedException` from a config backend model
 rolls the WHOLE section back. Both fields turn off their own save through

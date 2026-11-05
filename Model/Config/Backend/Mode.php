@@ -11,6 +11,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Value;
 use Magento\Framework\Data\Collection\AbstractDb;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
@@ -74,19 +75,48 @@ class Mode extends Value
             $this->messageManager->addErrorMessage(__('Select a valid environment.'));
             return $this;
         }
+        if (!CredentialsSave::writesEnvironment($this->pairOutcome((string)$this->getValue(), false))) {
+            $this->_dataSaveAllowed = false;
+            return $this;
+        }
+        return parent::beforeSave();
+    }
+
+    /**
+     * "Use Default" on this field deletes its row, without beforeSave(). The
+     * pair rule judges that change too, and only an exception stops the
+     * delete: it rolls back the whole save of the page, which is the price of
+     * never leaving a pair Two did not accept (TWO-27108).
+     *
+     * @return $this
+     * @throws LocalizedException when the stored pair is kept
+     */
+    public function beforeDelete()
+    {
+        if (CredentialsSave::keepsPair($this->pairOutcome(null, true))) {
+            throw new LocalizedException(__(
+                'Nothing on this page was saved: the API key and environment are saved together, and this change would leave a key that does not work with its environment.'
+            ));
+        }
+        return parent::beforeDelete();
+    }
+
+    /**
+     * @param string|null $mode the environment posted, null when inherited
+     */
+    private function pairOutcome(?string $mode, bool $inherited): string
+    {
         $key = $this->getFieldsetDataValue('api_key');
-        $outcome = $this->credentialsSave->decide(
+
+        return $this->credentialsSave->decide(
             ApiKey::siblingPath((string)$this->getPath(), 'api_key'),
             (string)$this->getPath(),
             (string)($this->getScope() ?: 'default'),
             $this->getScopeId(),
             is_string($key) ? $key : '',
-            (string)$this->getValue()
+            $mode,
+            CredentialsSave::isInherited($this, 'api_key'),
+            $inherited
         );
-        if (!CredentialsSave::writesEnvironment($outcome)) {
-            $this->_dataSaveAllowed = false;
-            return $this;
-        }
-        return parent::beforeSave();
     }
 }
