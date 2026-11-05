@@ -220,6 +220,19 @@ class OrderService
     }
 
     /**
+     * Whether the order has been confirmed: only the confirm return moves an
+     * order on to processing, so a later confirm return for it is a repeat
+     * (TWO-27057).
+     *
+     * @param Order $order
+     * @return bool
+     */
+    public function isConfirmed(Order $order): bool
+    {
+        return in_array($order->getState(), [Order::STATE_PROCESSING, Order::STATE_COMPLETE], true);
+    }
+
+    /**
      * Get order reference from param
      *
      * @return string|null

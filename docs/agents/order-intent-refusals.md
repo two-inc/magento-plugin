@@ -45,7 +45,12 @@ A return link acts only on an order still awaiting the buyer's verification
 (`OrderService::isAwaitingVerification()`: the pending-payment state and the
 pending status set at placement). Any other order, for example one invoiced,
 shipped or already failed, is left as it is and the buyer is sent to the cart,
-so a replayed link changes nothing (TWO-27057). A buyer cancel fails the order
-only after Two accepted the cancel: when Two refuses or does not answer,
+so a replayed link changes nothing (TWO-27057). The one exception is a repeated
+confirm return on a processing or complete order (`OrderService::isConfirmed()`),
+such as a refresh while the first confirm was still running: it changes nothing
+either, but sends the buyer to the success page, setting the checkout session's
+last order and quote from the order the reference found. A buyer cancel, and a
+failed verification, fail the order only after Two accepted the cancel: when Two
+refuses or does not answer,
 `OrderService::keepRefusedCancel()` records the account as an order comment and
 leaves both the order and the cart as they are.

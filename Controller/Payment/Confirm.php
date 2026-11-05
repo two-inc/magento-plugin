@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Controller\Payment;
 
 use Exception;
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Customer\Api\AddressRepositoryInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\App\Action\Action;
@@ -57,6 +58,11 @@ class Confirm extends Action
      */
     private $orderSender;
 
+    /**
+     * @var CheckoutSession
+     */
+    private $checkoutSession;
+
     public function __construct(
         Context $context,
         AddressRepositoryInterface $addressRepository,
@@ -64,7 +70,8 @@ class Confirm extends Action
         OrderService $orderService,
         OrderSender $orderSender,
         ConfigRepository $configRepository,
-        BrandRegistryInterface $brandRegistry
+        BrandRegistryInterface $brandRegistry,
+        CheckoutSession $checkoutSession
     ) {
         $this->addressRepository = $addressRepository;
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
@@ -72,6 +79,7 @@ class Confirm extends Action
         $this->orderSender = $orderSender;
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
+        $this->checkoutSession = $checkoutSession;
         parent::__construct($context);
     }
 
@@ -84,6 +92,12 @@ class Confirm extends Action
         $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
+            // A repeated return (a refresh, or the redirect sent twice) finds
+            // the order an earlier request confirmed: show its success page
+            // again and change nothing (TWO-27057).
+            if ($this->orderService->isConfirmed($order)) {
+                return $this->showSuccessPage($order);
+            }
             // A replayed link changes nothing on an order that has moved on (TWO-27057).
             if (!$this->orderService->isAwaitingVerification($order)) {
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
@@ -125,6 +139,24 @@ class Confirm extends Action
             $this->messageManager->addErrorMessage($this->orderService->failBuyerReturn($order, $exception));
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
+    }
+
+    /**
+     * Send the buyer to the success page for this order. The page reads the
+     * last order and quote from the checkout session, so they are set from the
+     * order the reference found, and from nothing else.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return ResponseInterface
+     */
+    private function showSuccessPage($order)
+    {
+        $this->checkoutSession->setLastQuoteId($order->getQuoteId());
+        $this->checkoutSession->setLastSuccessQuoteId($order->getQuoteId());
+        $this->checkoutSession->setLastOrderId($order->getId());
+        $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
+        $this->checkoutSession->setLastOrderStatus($order->getStatus());
+        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
     }
 
     /**
