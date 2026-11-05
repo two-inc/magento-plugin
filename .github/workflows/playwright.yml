@@ -41,7 +41,8 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The readiness gate may wait up to 15 minutes for a git-sync rebuild.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: e2e
@@ -103,6 +104,29 @@ jobs:
             echo "::error::$SECRET_NAME not accessible - failing rather than silently skipping the admin-gated specs"
             exit 1
           fi
+
+      # The dev store rebuilds in place after every push to a branch it git-syncs
+      # and errors every page while it does, starting minutes after the push
+      # (TWO-27052). A run triggered by that same push (the promotion PR) would
+      # otherwise pass the readiness gate on the old deployment and meet the
+      # rebuild mid-suite. Hand the gate the latest such push so it waits for a
+      # static deploy newer than it. The activity feed records force-pushes,
+      # which a commit date would miss. Skipped for a dispatch at another store.
+      - name: Find the dev store's last git-sync push
+        if: ${{ steps.store-token.outputs.id_token != '' && (github.event.inputs.store_url == '' || github.event.inputs.store_url == 'https://magento-dev.staging.two.inc') }}
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYNCED_REFS: two-inc/magento-plugin:staging two-inc/magento-hyva-extension:staging
+        run: |
+          latest=0
+          for ref in $SYNCED_REFS; do
+            pushed=$(gh api "repos/${ref%%:*}/activity?ref=refs/heads/${ref#*:}&per_page=1" --jq '.[0].timestamp')
+            secs=$(date -u -d "$pushed" +%s)
+            echo "$ref last pushed $pushed"
+            if [ "$secs" -gt "$latest" ]; then latest=$secs; fi
+          done
+          echo "E2E_DEPLOYED_AFTER=$latest" >> "$GITHUB_ENV"
 
       - name: Run Playwright e2e
         # The store is behind oauth2-proxy, so fork PRs (no ID token) cannot reach it.

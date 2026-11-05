@@ -67,7 +67,10 @@ answers with an HTML 404 page on these shops and settles nothing.
 
 A merge to `staging` triggers an in-place static redeploy on the dev shop and
 the storefront 500s for roughly three minutes, so a suite that starts mid-sync
-fails for environmental reasons. Warn testers before merging.
+fails for environmental reasons. The rebuild can start several minutes after the
+push. The e2e readiness gate waits for it in CI, holding the suite until the
+store's static deploy is newer than the last push to a branch it git-syncs
+(TWO-27052, `e2e/README.md`). Warn manual testers before merging.
 
 ## Task docs
 
