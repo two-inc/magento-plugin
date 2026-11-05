@@ -145,6 +145,7 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Vendor name (optional)</label>
                     <comment>If this store represents one of several vendor sites sharing the same {{provider}} merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order {{provider}} receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\VendorName</backend_model>
                     <config_path>payment/{{code}}/vendor_site_name</config_path>
                 </field>
             </group>

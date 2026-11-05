@@ -472,3 +472,4 @@
 "Select a valid environment.","Selecteer een geldige omgeving."
 "Staging (%1 internal test environment). Select Sandbox or Production.","Staging (interne testomgeving van %1). Selecteer Sandbox of Productie."
 "Not recognised: Sandbox is in use. Select an environment and save.","Niet herkend: Sandbox wordt gebruikt. Selecteer een omgeving en sla op."
+"Enter a vendor name of at most 255 characters, without line breaks or accented letters. The previously saved vendor name was kept.","Voer een leveranciersnaam in van maximaal 255 tekens, zonder regeleinden of letters met accenten. De eerder opgeslagen leveranciersnaam is behouden."

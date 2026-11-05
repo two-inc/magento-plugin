@@ -472,3 +472,4 @@
 "Select a valid environment.","Selecciona un entorno válido."
 "Staging (%1 internal test environment). Select Sandbox or Production.","Staging (entorno de pruebas interno de %1). Selecciona Entorno de pruebas o Producción."
 "Not recognised: Sandbox is in use. Select an environment and save.","No reconocido: se está usando el entorno de pruebas. Selecciona un entorno y guarda."
+"Enter a vendor name of at most 255 characters, without line breaks or accented letters. The previously saved vendor name was kept.","Introduce un nombre de proveedor de 255 caracteres como máximo, sin saltos de línea ni letras acentuadas. Se ha conservado el nombre de proveedor guardado anteriormente."

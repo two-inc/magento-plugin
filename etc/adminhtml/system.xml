@@ -80,6 +80,7 @@
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Vendor name (optional)</label>
                     <comment>If this store represents one of several vendor sites sharing the same Two merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order Two receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\VendorName</backend_model>
                     <config_path>payment/two_payment/vendor_site_name</config_path>
                 </field>
             </group>
