@@ -9,32 +9,46 @@ namespace Two\Gateway\Test\Unit\Model;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Two;
 
 /**
  * TWO-27108: no English title is stored at install; an empty title shows the
- * translated default, and a title the merchant set shows as set.
+ * translated default ("Business invoice", or the product name with a brand
+ * overlay active), and a title the merchant set shows as set.
  */
 class TwoTitleTest extends TestCase
 {
     public static function titles(): array
     {
         return [
-            // stored title, selected term, shown, description
-            'empty' => [null, 0, 'Business invoice', 'an empty title shows the translated default'],
-            'blank' => ['', 0, 'Business invoice', 'a blank title is empty too'],
-            'empty with a term' => [null, 30, 'Business invoice - 30 days', 'the default carries the chosen term'],
-            'set' => ['Pay by invoice', 0, 'Pay by invoice', 'a merchant title shows as set'],
-            'set with a term' => ['Pay by invoice', 60, 'Pay by invoice - 60 days', 'a merchant title carries the chosen term'],
+            // stored title, selected term, active brand code, shown, description
+            'empty' => [null, 0, Two::CODE, 'Business invoice', 'an empty title shows the translated default'],
+            'blank' => ['', 0, Two::CODE, 'Business invoice', 'a blank title is empty too'],
+            'empty with a term' => [null, 30, Two::CODE, 'Business invoice - 30 days', 'the default carries the chosen term'],
+            'set' => ['Pay by invoice', 0, Two::CODE, 'Pay by invoice', 'a merchant title shows as set'],
+            'set with a term' => ['Pay by invoice', 60, Two::CODE, 'Pay by invoice - 60 days', 'a merchant title carries the chosen term'],
+            'overlay, empty' => [null, 0, 'acme_payment', 'Acme Pay', 'with a brand overlay active, an empty title shows its product name'],
+            'overlay, empty with a term' => [null, 30, 'acme_payment', 'Acme Pay - 30 days', 'the overlay product name carries the chosen term'],
+            'overlay, set' => ['Pay by invoice', 0, 'acme_payment', 'Pay by invoice', 'an overlay shop\'s own title shows as set'],
         ];
     }
 
     #[DataProvider('titles')]
-    public function testTheTitleFallsBackToTheTranslatedDefault(?string $stored, int $term, string $shown, string $description): void
-    {
+    public function testTheTitleFallsBackToTheTranslatedDefault(
+        ?string $stored,
+        int $term,
+        string $brandCode,
+        string $shown,
+        string $description
+    ): void {
         $reflection = new \ReflectionClass(TitleTestTwo::class);
         $model = $reflection->newInstanceWithoutConstructor();
         (new \ReflectionProperty(Two::class, 'stubConfigData'))->setValue($model, ['title' => $stored]);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getCode')->willReturn($brandCode);
+        $brand->method('getProductName')->willReturn($brandCode === Two::CODE ? 'Two' : 'Acme Pay');
+        (new \ReflectionProperty(Two::class, 'brandRegistry'))->setValue($model, $brand);
         $model->info = new class ($term) {
             private $term;
 

@@ -523,10 +523,10 @@ declares the vanilla name. `etc/config.xml` is ungated because its `<title>`
 sits under the vanilla payment code: an overlay ships its own `etc/config.xml`
 under its own code, merged later, and its method reads the title from its own
 `getCode()` path. An overlay shipping no `<title>` is the safe case:
-`Model/Two::getTitle()` falls back to the translated "Business invoice", as the
-vanilla method does (TWO-27108). An overlay that wants its product name as the
-title ships it as its `<title>`; one shipping a branded-wrong `<title>` is the
-failure mode.
+with a brand overlay active, `Model/Two::getTitle()` falls back to the brand
+registry's product name, while the unbranded plugin falls back to the
+translated "Business invoice" (TWO-27108). One shipping a branded-wrong
+`<title>` is the failure mode.
 
 ## Local development
 

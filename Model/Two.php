@@ -464,8 +464,9 @@ class Two extends AbstractMethod
      *
      * Resolution order:
      *   1. `payment/<code>/title` from CCD (admin-saved override).
-     *   2. The translated "Business invoice" (TWO-27108); an overlay that
-     *      wants its product name as the title sets it as the title.
+     *   2. With a brand overlay active, BrandRegistry::getProductName();
+     *      on the unbranded plugin, the translated "Business invoice"
+     *      (TWO-27108).
      *
      * Optionally suffixed with the buyer's selected term in days
      * (e.g. "Partner Product - 60 days"). DataAssignObserver
@@ -483,10 +484,15 @@ class Two extends AbstractMethod
         }
         $configured = (string)$this->getConfigData('title');
         // An empty title shows the translated default for the store view
-        // (TWO-27108), the same default as the other plugins.
-        $noun = $configured !== ''
-            ? __($configured)
-            : __('Business invoice');
+        // (TWO-27108): "Business invoice" on the unbranded plugin, as on the
+        // other plugins, and the product name when a brand overlay is active.
+        if ($configured !== '') {
+            $noun = __($configured);
+        } elseif ($this->brandRegistry->getCode() !== self::CODE) {
+            $noun = __($this->brandRegistry->getProductName());
+        } else {
+            $noun = __('Business invoice');
+        }
         if ($days > 0) {
             return sprintf('%s - %s', $noun, __('%1 days', $days));
         }
