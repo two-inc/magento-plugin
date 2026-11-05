@@ -67,7 +67,11 @@ by what they resolve to (`EnvironmentMode::normalise()`), so a legacy stored
 spelling is unchanged too. The last definitive answer is kept per key and resolved
 environment in the flag table (`ApiKeyStatus::lastDefinitiveStatus()`), written by
 every live verification that gets ok or a rejection and never by an outage, so it
-survives a cache flush and an outage alike.
+survives a cache flush and an outage alike. The slot starts empty on upgrade and
+nothing back-fills it: until the first verification that gets an answer (an admin
+page load, a checkout render past the verdict cache, or a judged save), a key Two
+could not judge replaces the stored one as before. The window is short, since any
+of those seeds the slot, and is accepted rather than guessing a verdict.
 
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's
