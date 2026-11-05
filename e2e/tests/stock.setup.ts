@@ -13,8 +13,9 @@ import { adminLogin, adminLogout } from './_helpers';
 // sent alongside it. Skips without ADMIN_PASS, like the other admin specs.
 
 const PRODUCT_NAME = process.env.PRODUCT_NAME || 'Push It Messenger Bag';
+// Topped up when fewer than this many can still be sold.
 const LOW = 100;
-const TOP_UP = '1000';
+const TOP_UP = 1000;
 
 const QTY = 'input[name="product[quantity_and_stock_status][qty]"]';
 const IN_STOCK = 'select[name="product[quantity_and_stock_status][is_in_stock]"]';
@@ -47,6 +48,11 @@ setup('the test product has stock', async ({ page }) => {
             .first()
             .getAttribute('href');
         if (!edit) throw new Error(`no edit link for ${PRODUCT_NAME}`);
+        // What can still be sold is the quantity less the reservations of
+        // orders not yet shipped, which the grid shows per stock. Without that
+        // column (no multi-source inventory) the quantity is all there is.
+        const salableText = (await row.innerText()).match(/Default Stock:\s*(-?[\d.]+)/);
+        const salable = salableText ? Number(salableText[1]) : null;
         await page.goto(edit, { waitUntil: 'domcontentloaded' });
 
         const qty = page.locator(QTY);
@@ -57,16 +63,34 @@ setup('the test product has stock', async ({ page }) => {
         });
         const current = Number(await qty.inputValue());
         const inStock = (await page.locator(IN_STOCK).inputValue()) === '1';
-        console.log(`${PRODUCT_NAME}: quantity ${current}, ${inStock ? 'in' : 'out of'} stock`);
-        if (current >= LOW && inStock) return;
+        console.log(
+            `${PRODUCT_NAME}: quantity ${current}, salable ${salable ?? 'not shown'}, ` +
+                `${inStock ? 'in' : 'out of'} stock`
+        );
+        if ((salable ?? current) >= LOW && inStock) return;
 
-        await qty.fill(TOP_UP);
+        const target = String(current + TOP_UP);
+        await qty.fill(target);
         await page.locator(IN_STOCK).selectOption('1');
         await page.locator('#save-button').click();
         await expect(page.locator('.message-success')).toContainText(/saved the product/i, {
             timeout: 60_000
         });
-        console.log(`${PRODUCT_NAME}: quantity set to ${TOP_UP}, in stock`);
+        console.log(`${PRODUCT_NAME}: quantity set to ${target}, in stock`);
+    } catch (error) {
+        // Evidence from the page as it failed, before the logout replaces it.
+        await page
+            .screenshot({ path: setup.info().outputPath('before-logout.png'), fullPage: true })
+            .catch(() => {});
+        const shown = await page
+            .locator('.message-error, .admin__field-error, label.mage-error, .message-warning')
+            .filter({ visible: true })
+            .allInnerTexts()
+            .catch(() => []);
+        console.log(
+            `stock step failed on ${page.url().replace(/\/key\/[^/]+/, '/key/…')}: ${shown.join(' | ') || '(no message shown)'}`
+        );
+        throw error;
     } finally {
         await adminLogout(page);
     }
