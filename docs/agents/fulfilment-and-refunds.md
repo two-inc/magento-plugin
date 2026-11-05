@@ -264,3 +264,14 @@ granted then contains the surcharge VAT memo 1 never booked, so it defers
 again. No money is misstated — this is the pre-existing behaviour for that
 configuration — and the root cause is `Creditmemo\Surcharge`'s tax-delta
 assumption above, not this collector.
+
+## A Void Two accepted is the only cancel sent
+
+An admin Void posts the Two cancel through the payment method
+(`Two::void()`). When Two accepts it, the payment records
+`Two::CANCELLED_AT_TWO` in its additional information, saved with the order.
+Cancelling the Magento order afterwards still fires `order_cancel_after`,
+and `Observer\SalesOrderCancelAfter` skips the cancel when that flag is set:
+a second cancel could only be refused, and the observer refusing blocks the
+Magento cancel (TWO-26301). A Void Two refused sets nothing, so the Cancel
+still asks Two.
