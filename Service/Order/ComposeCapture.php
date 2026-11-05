@@ -49,7 +49,7 @@ class ComposeCapture extends OrderService
         $lineItems = $this->applyTaxCodes($lineItems, $order);
 
         $reqBody = [
-            'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
+            'discount_amount' => $this->roundAmt($this->getDiscountAmountOrder($invoice)),
             'line_items' => $lineItems,
         ];
         // "Validate tax subtotals" off: the key is left out, not sent as null.

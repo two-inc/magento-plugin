@@ -6,6 +6,7 @@ namespace Two\Gateway\Test\Unit\Service\Order;
 use Magento\Catalog\Model\Product;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -129,6 +130,25 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
                 $description
             );
         }
+    }
+
+    /**
+     * TWO-26279: the capture's top-level discount_amount follows create and
+     * edit (TWO-26277), row for row: the invoice's discount as a positive
+     * amount, less its tax compensation, never below 0.
+     */
+    #[DataProviderExternal(ComposeOrderDiscountAmountTest::class, 'discountCases')]
+    public function testCaptureSendsTheInvoiceDiscountAsCreateSendsTheOrders(
+        array $fields,
+        string $expected,
+        string $description
+    ): void {
+        $invoice = $this->invoice([[100.00, 25.00, 25]], [0.00, 0.00]);
+        foreach ($fields as $key => $value) {
+            $invoice->setData($key, $value);
+        }
+
+        $this->assertSame($expected, $this->composeCapture()->execute($invoice)['discount_amount'], $description);
     }
 
     public static function mismatchCases(): array

@@ -774,17 +774,18 @@ abstract class Order
      * value is sent, less the tax compensation, the same convention as the
      * line discounts it totals. The field is informational, so its sign never
      * refuses an order: a value below zero is sent as 0. The line discounts
-     * keep their guard (TWO-25099).
+     * keep their guard (TWO-25099). A capture sends its invoice's discount
+     * the same way (TWO-26279).
      *
-     * @param OrderModel $order
+     * @param OrderModel|OrderModel\Invoice $entity
      * @return float
      */
-    public function getDiscountAmountOrder(OrderModel $order): float
+    public function getDiscountAmountOrder($entity): float
     {
         // Native-precision compute, single round at the payload boundary:
         // see getDiscountAmountItem() for the rounding-order rationale.
-        $discountAmount = abs((float)$order->getDiscountAmount())
-            - (float)$order->getDiscountTaxCompensationAmount();
+        $discountAmount = abs((float)$entity->getDiscountAmount())
+            - (float)$entity->getDiscountTaxCompensationAmount();
 
         return round($discountAmount, 2) < 0 ? 0.0 : $discountAmount;
     }
