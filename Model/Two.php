@@ -32,6 +32,7 @@ use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
+use Two\Gateway\Observer\PaymentCaptureInvoice;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -873,15 +874,14 @@ class Two extends AbstractMethod
             $isPartialOrder = !$isWholeOrderInvoiced;
             while (true) {
                 if ($isPartialOrder) {
+                    // Core captures before saving the invoice, so the collection holds only
+                    // earlier ones; the invoice itself comes from PaymentCaptureInvoice (TWO-26278).
                     $invoices = $order->getInvoiceCollection();
-                    $totalInvoices = count($invoices);
-                    $cnt = 1;
-                    $createdInvoice = null;
-                    foreach ($invoices as $invoice) {
-                        if ($cnt == $totalInvoices) {
-                            $createdInvoice = $invoice;
-                        }
-                        $cnt++;
+                    $createdInvoice = $payment->getData(PaymentCaptureInvoice::INVOICE);
+                    if (!$createdInvoice instanceof Order\Invoice) {
+                        throw new LocalizedException(
+                            __('Could not initiate capture with %1', $this->brandRegistry->getProductName())
+                        );
                     }
                     $payload = [
                         'partial' => $this->composeCapture->execute($createdInvoice),

@@ -90,7 +90,8 @@ class ComposeCapture extends OrderService
         foreach ($invoice->getAllItems() as $item) {
             if ($item->getQty() > 0) {
                 $orderItem = $order->getItemById($item->getOrderItemId());
-                if (!$product = $this->getProduct($order, $item)) {
+                // The skip rules read the order item; an invoice line only points at it (TWO-26278).
+                if (!$product = $this->getProduct($order, $orderItem)) {
                     continue;
                 }
 

@@ -27,6 +27,9 @@
     <event name="sales_order_invoice_register">
         <observer name="two_invoice_registered_offline" instance="Two\Gateway\Observer\InvoiceRegisteredOffline"/>
     </event>
+    <event name="sales_order_payment_capture">
+        <observer name="two_payment_capture_invoice" instance="Two\Gateway\Observer\PaymentCaptureInvoice"/>
+    </event>
     <event name="sales_order_invoice_save_after">
         <observer name="two_invoice_surcharge_running_total" instance="Two\Gateway\Observer\InvoiceSurchargeRunningTotal"/>
     </event>

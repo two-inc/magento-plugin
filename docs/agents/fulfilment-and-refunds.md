@@ -1,5 +1,5 @@
 ---
-description: 'Offline invoices before the fulfilment trigger, status-change fulfilment, and refunding unitemized fees.'
+description: 'Offline invoices before the fulfilment trigger, status-change fulfilment, online partial capture, and refunding unitemized fees.'
 ---
 
 # Fulfilment and refunds
@@ -120,6 +120,18 @@ capture online: the REST invoice route names no capture case.
 **The comment names the trigger.** On shipment, or on reaching one of the
 configured fulfil-on statuses by their labels. With no status configured the
 complete trigger never fulfils, so no comment is added there.
+
+## An online partial capture composes the invoice being registered
+
+Core captures online from inside `Invoice::register()`, before the invoice is
+saved, and calls `Two::capture()` with the payment and an amount only. The
+order's invoice collection is read from the database, so it holds only the
+invoices saved before this one. `Observer\PaymentCaptureInvoice` keeps the
+invoice core names on `sales_order_payment_capture` on the payment, and the
+partial capture composes from that and keys it as the next unsaved invoice
+(TWO-26278). `ComposeCapture` resolves each invoice line's order item and
+passes that, not the invoice line, to `getProduct()`, as the shipment and
+refund builders do.
 
 ## An unitemized fee is reconciled per entity, and refundable
 

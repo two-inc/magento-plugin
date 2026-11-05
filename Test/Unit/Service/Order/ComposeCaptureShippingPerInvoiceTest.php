@@ -165,7 +165,7 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $grand = $invoiceShipping[0] + $invoiceShipping[1];
         $tax = $invoiceShipping[1];
         foreach ($lines as $i => [$net, $lineTax, $ratePercent]) {
-            $item = $this->item([
+            $data = [
                 'order_item_id' => $i + 1,
                 'name' => "Item $i",
                 'sku' => "SKU$i",
@@ -174,9 +174,14 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
                 'row_total' => $net,
                 'tax_amount' => $lineTax,
                 'tax_percent' => $ratePercent,
-            ]);
-            $order->itemsById[$i + 1] = $item;
-            $items[] = $item;
+            ];
+            // An invoice holds Invoice\Item lines, each pointing at its Order\Item (TWO-26278).
+            $order->itemsById[$i + 1] = new class ($data) extends Order\Item {
+                use ItemData;
+            };
+            $items[] = new class ($data) extends Invoice\Item {
+                use ItemData;
+            };
             $grand += $net + $lineTax;
             $tax += $lineTax;
         }
@@ -193,25 +198,6 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $invoice->setDiscountAmount(0.0);
 
         return $invoice;
-    }
-
-    private function item(array $data): Order\Item
-    {
-        return new class ($data) extends Order\Item {
-            /** @var array */
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function __call($method, $args)
-            {
-                $key = strtolower(preg_replace('/(.)([A-Z])/', '$1_$2', substr($method, 3)));
-                return $this->data[$key] ?? null;
-            }
-        };
     }
 
     /**
@@ -252,5 +238,25 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $service->configRepository = $config;
 
         return $service;
+    }
+}
+
+/**
+ * A sales item's magic getters over a fixed data array.
+ */
+trait ItemData
+{
+    /** @var array */
+    private $data;
+
+    public function __construct(array $data)
+    {
+        $this->data = $data;
+    }
+
+    public function __call($method, $args)
+    {
+        $key = strtolower(preg_replace('/(.)([A-Z])/', '$1_$2', substr($method, 3)));
+        return $this->data[$key] ?? null;
     }
 }
