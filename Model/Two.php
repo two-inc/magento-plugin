@@ -62,6 +62,12 @@ class Two extends AbstractMethod
     /** Payment information key: Two's refunded total after the last refund (TWO-26658). */
     public const REFUNDED_TOTAL = 'two_refunded_total';
 
+    /**
+     * Payment information key: Two accepted this order's cancel from an admin
+     * Void, so cancelling the Magento order sends nothing more (TWO-26301).
+     */
+    public const CANCELLED_AT_TWO = 'two_cancelled_at_two';
+
     public const STATUS_NEW = 'two_new';
     public const STATUS_FAILED = 'two_failed';
     public const STATUS_PENDING = 'pending_two_payment';
@@ -880,6 +886,10 @@ class Two extends AbstractMethod
                 );
                 $order->addStatusToHistory($order->getStatus(), $comment->render());
             } else {
+                // Saved with the order, so the Cancel that usually follows a
+                // Void, in a later request, knows Two already holds the order
+                // as cancelled.
+                $payment->setAdditionalInformation(self::CANCELLED_AT_TWO, true);
                 $order->addStatusToHistory(
                     $order->getStatus(),
                     __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())

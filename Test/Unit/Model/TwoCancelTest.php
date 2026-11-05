@@ -58,6 +58,12 @@ class TwoCancelTest extends TestCase
             {
                 return $this->order;
             }
+
+            // Core's InfoInterface declares it: a Void Two accepts records it (TWO-26301).
+            public function setAdditionalInformation($key, $value = null)
+            {
+                return $this;
+            }
         };
 
         $reflection = new \ReflectionClass(Two::class);

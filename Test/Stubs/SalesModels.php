@@ -158,6 +158,27 @@ if (!class_exists(Payment::class, false)) {
         {
             return $this->order;
         }
+
+        /**
+         * Keyed like core's Payment\Info: one key, or the whole array with none.
+         */
+        public function setAdditionalInformation($key, $value = null): self
+        {
+            $info = (array)($this->_data['additional_information'] ?? []);
+            if (is_array($key)) {
+                $info = $key;
+            } else {
+                $info[$key] = $value;
+            }
+            $this->_data['additional_information'] = $info;
+            return $this;
+        }
+
+        public function getAdditionalInformation($key = null)
+        {
+            $info = (array)($this->_data['additional_information'] ?? []);
+            return $key === null ? $info : ($info[$key] ?? null);
+        }
     }
 }
 
