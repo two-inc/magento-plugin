@@ -472,7 +472,7 @@
 "The buyer verified this order with %1 but did not return to the shop. Processed by the scheduled check: %1 had already confirmed it.","Köparen verifierade den här beställningen hos %1 men återvände inte till butiken. Behandlad av den schemalagda kontrollen: %1 hade redan bekräftat den."
 "The buyer verified this order with %1 but did not return to the shop. Confirmed with %1 by %2.","Köparen verifierade den här beställningen hos %1 men återvände inte till butiken. Bekräftad hos %1 av %2."
 "The buyer verified this order with %1 but did not return to the shop. Confirmed with %1 by the scheduled check.","Köparen verifierade den här beställningen hos %1 men återvände inte till butiken. Bekräftad hos %1 av den schemalagda kontrollen."
-"Your order is still being confirmed with %1. You will receive an email once it is.","Din beställning bekräftas fortfarande hos %1. Du får ett e-postmeddelande när den är bekräftad."
+"Your order is still being checked with %1. The shop will confirm your order by email if it goes through.","Din beställning kontrolleras fortfarande hos %1. Butiken bekräftar din beställning via e-post om den går igenom."
 "This order was not placed with %1.","Den här beställningen gjordes inte med %1."
 "The order is being checked with %1 by another process. Try again in a minute.","Beställningen kontrolleras hos %1 av en annan process. Försök igen om en minut."
 "This order is no longer waiting for the buyer, so it was not checked.","Den här beställningen väntar inte längre på köparen, så den kontrollerades inte."

@@ -472,7 +472,7 @@
 "The buyer verified this order with %1 but did not return to the shop. Processed by the scheduled check: %1 had already confirmed it.","El comprador verificó este pedido con %1 pero no volvió a la tienda. Procesado por la comprobación programada: %1 ya lo había confirmado."
 "The buyer verified this order with %1 but did not return to the shop. Confirmed with %1 by %2.","El comprador verificó este pedido con %1 pero no volvió a la tienda. Confirmado con %1 por %2."
 "The buyer verified this order with %1 but did not return to the shop. Confirmed with %1 by the scheduled check.","El comprador verificó este pedido con %1 pero no volvió a la tienda. Confirmado con %1 por la comprobación programada."
-"Your order is still being confirmed with %1. You will receive an email once it is.","Su pedido todavía se está confirmando con %1. Recibirá un correo electrónico cuando se confirme."
+"Your order is still being checked with %1. The shop will confirm your order by email if it goes through.","Su pedido todavía se está comprobando con %1. La tienda confirmará su pedido por correo electrónico si se completa."
 "This order was not placed with %1.","Este pedido no se realizó con %1."
 "The order is being checked with %1 by another process. Try again in a minute.","Otro proceso está comprobando el pedido con %1. Inténtelo de nuevo en un minuto."
 "This order is no longer waiting for the buyer, so it was not checked.","Este pedido ya no está esperando al comprador, por lo que no se ha comprobado."

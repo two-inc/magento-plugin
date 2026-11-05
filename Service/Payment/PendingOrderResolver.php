@@ -10,10 +10,13 @@ namespace Two\Gateway\Service\Payment;
 use Exception;
 use Magento\Customer\Api\AddressRepositoryInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Lock\LockManagerInterface;
-use Magento\Sales\Api\OrderRepositoryInterface;
+use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Email\Sender\OrderSender;
+use Magento\Sales\Model\Order\Status\HistoryFactory;
+use Magento\Sales\Model\ResourceModel\Order as OrderResource;
 use Throwable;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -25,13 +28,12 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * Three triggers share it: the buyer's return to the shop, the scheduled check
  * of orders whose buyer never came back, and the admin's Check status button.
  * They share one lock per order, and the order is read afresh once the lock is
- * held, so whichever arrives second finds the work done.
+ * held and again just before acting, so whichever arrives second finds the
+ * work done, and a cancel that lands while Two is being asked is not undone.
  *
- * For the buyer's return the resolver never fails the order itself: it reports
- * the outcome and the confirm controller restores the cart and fails the order
- * as for any other failed return. An error reading or confirming the order is
- * rethrown on that path for the same reason, and caught and recorded on the
- * other two, so the next scheduled run retries.
+ * A check that changes nothing writes only the time of the check and its
+ * comment, never the whole order. On the buyer's return, a failed return
+ * (restored cart, failed order) is also wound up while the lock is held.
  */
 class PendingOrderResolver
 {
@@ -57,7 +59,7 @@ class PendingOrderResolver
     public const OUTCOME_NOT_WAITING = 'not_waiting';
     /** Another request holds the order's lock. */
     public const OUTCOME_BUSY = 'busy';
-    /** Reading or acting on the order failed; nothing changed. */
+    /** Reading or acting on the order failed. */
     public const OUTCOME_FAILED = 'failed';
 
     /** Shared by every trigger, so they never act on one order at once. */
@@ -86,8 +88,14 @@ class PendingOrderResolver
     /** @var LockManagerInterface */
     private $lockManager;
 
-    /** @var OrderRepositoryInterface */
-    private $orderRepository;
+    /** @var OrderResource */
+    private $orderResource;
+
+    /** @var HistoryFactory */
+    private $historyFactory;
+
+    /** @var OrderStatusHistoryRepositoryInterface */
+    private $historyRepository;
 
     /** @var BrandRegistryInterface */
     private $brandRegistry;
@@ -105,7 +113,9 @@ class PendingOrderResolver
         OrderService $orderService,
         OrderSender $orderSender,
         LockManagerInterface $lockManager,
-        OrderRepositoryInterface $orderRepository,
+        OrderResource $orderResource,
+        HistoryFactory $historyFactory,
+        OrderStatusHistoryRepositoryInterface $historyRepository,
         BrandRegistryInterface $brandRegistry,
         LogRepository $logRepository,
         AddressRepositoryInterface $addressRepository,
@@ -114,7 +124,9 @@ class PendingOrderResolver
         $this->orderService = $orderService;
         $this->orderSender = $orderSender;
         $this->lockManager = $lockManager;
-        $this->orderRepository = $orderRepository;
+        $this->orderResource = $orderResource;
+        $this->historyFactory = $historyFactory;
+        $this->historyRepository = $historyRepository;
         $this->brandRegistry = $brandRegistry;
         $this->logRepository = $logRepository;
         $this->addressRepository = $addressRepository;
@@ -126,7 +138,6 @@ class PendingOrderResolver
      * @param string $trigger one of the TRIGGER_* constants
      * @param string $actor the admin user, for the button's order comment
      * @return PendingOrderResolution
-     * @throws Throwable on the buyer's return, when reading or confirming fails
      */
     public function resolve(Order $order, string $trigger, string $actor = ''): PendingOrderResolution
     {
@@ -141,7 +152,7 @@ class PendingOrderResolver
         try {
             $order = $this->orderService->reloadOrder($order);
             $resolution = $this->resolveLocked($order, $trigger, $actor);
-            $this->log($order, $trigger, $resolution->getTwoState(), $resolution->getOutcome());
+            $this->log($resolution->getOrder(), $trigger, $resolution->getTwoState(), $resolution->getOutcome());
             return $resolution;
         } finally {
             $this->lockManager->unlock($lockName);
@@ -164,6 +175,16 @@ class PendingOrderResolver
             $state = (string)($twoOrder['state'] ?? '');
             $status = (string)($twoOrder['status'] ?? '');
 
+            // A cancel without the lock (the buyer's cancel return, the admin's
+            // Cancel) may have landed while Two was being asked: act on the
+            // order as it stands now, never on the copy read before.
+            $checkedAt = $order->getData(OrderService::PENDING_CHECKED_AT);
+            $order = $this->orderService->reloadOrder($order);
+            $order->setData(OrderService::PENDING_CHECKED_AT, $checkedAt);
+            if (!$this->orderService->isAwaitingVerification($order)) {
+                return new PendingOrderResolution(self::OUTCOME_NOT_WAITING, $order, $state);
+            }
+
             if (in_array($status, self::DECLINED_STATUSES, true)) {
                 $comment = (string)__('%1 declined this order.', $this->product());
                 return $this->cancel($order, $trigger, self::OUTCOME_DECLINED, $state, $comment);
@@ -182,7 +203,10 @@ class PendingOrderResolver
             if (in_array($state, self::PROCESSED_STATES, true)) {
                 return $this->process($order, $twoOrder, $trigger, $actor, self::OUTCOME_PROCESSED);
             }
-            return $this->leave($order, $trigger, $state);
+            if ($state === 'UNVERIFIED') {
+                return $this->unverified($order, $trigger);
+            }
+            return $this->unchanged($order, $trigger, $state);
         } catch (Throwable $exception) {
             $this->logRepository->addErrorLog('pending-order-check-failed', [
                 'order_increment_id' => $order->getIncrementId(),
@@ -193,14 +217,16 @@ class PendingOrderResolver
                 'message' => $exception->getMessage(),
             ]);
             if ($trigger === self::TRIGGER_BUYER_RETURN) {
-                throw $exception;
+                // As before: a return that cannot be settled fails, with the
+                // full account for the merchant and a safe message for the buyer.
+                return $this->failReturn($order, $state, $exception);
             }
             $message = (string)__(
                 'Could not check the order with %1: %2',
                 $this->product(),
                 $exception->getMessage()
             );
-            $this->saveQuietly($order, $trigger === self::TRIGGER_ADMIN ? $message : null, $trigger);
+            $this->recordCheck($order, $trigger === self::TRIGGER_ADMIN ? $message : null, $trigger);
             return new PendingOrderResolution(self::OUTCOME_FAILED, $order, $state, $message);
         }
     }
@@ -237,8 +263,7 @@ class PendingOrderResolver
 
     /**
      * Two has cancelled or declined the order. Cancel it here without sending
-     * a cancel back. On the buyer's return the controller fails it instead,
-     * as for any other failed return.
+     * a cancel back; on the buyer's return, fail it as any failed return is.
      */
     private function cancel(
         Order $order,
@@ -247,51 +272,73 @@ class PendingOrderResolver
         string $state,
         string $comment
     ): PendingOrderResolution {
-        if ($trigger === self::TRIGGER_BUYER_RETURN) {
-            $this->orderService->addOrderComment($order, $comment);
-        } else {
+        if ($trigger !== self::TRIGGER_BUYER_RETURN) {
             $this->orderService->cancelLocally($order, $comment);
+            return new PendingOrderResolution($outcome, $order, $state, $comment);
         }
-        return new PendingOrderResolution($outcome, $order, $state, $comment);
+        $this->orderService->addOrderComment($order, $comment);
+        $buyerMessage = $this->orderService->failBuyerReturn($order, new LocalizedException(__(
+            'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
+            $this->product()
+        )));
+        return new PendingOrderResolution($outcome, $order, $state, $comment, $buyerMessage);
     }
 
     /**
-     * Two reports a state that leaves the order waiting (UNVERIFIED) or one
-     * this module does not act on (REFUNDED, anything new): change nothing.
+     * The buyer has not finished verification. The scheduled check and the
+     * button change nothing; a buyer back at the shop without verifying has
+     * the return failed, as it always was.
      */
-    private function leave(Order $order, string $trigger, string $state): PendingOrderResolution
+    private function unverified(Order $order, string $trigger): PendingOrderResolution
     {
-        $outcome = $state === 'UNVERIFIED' ? self::OUTCOME_UNVERIFIED : self::OUTCOME_UNCHANGED;
+        $state = 'UNVERIFIED';
         if ($trigger === self::TRIGGER_BUYER_RETURN) {
-            $comment = (string)__(
-                'Unable to confirm %1 order with %2 state.',
-                $this->product(),
-                $state !== '' ? $state : 'undefined'
-            );
+            $comment = (string)__('Unable to confirm %1 order with %2 state.', $this->product(), $state);
             $this->orderService->addOrderComment($order, $comment);
-            return new PendingOrderResolution($outcome, $order, $state, $comment);
+            $buyerMessage = $this->orderService->failBuyerReturn($order, new LocalizedException(__(
+                'Your invoice purchase with %1 could not be processed. The cart will be restored.',
+                $this->product()
+            )));
+            return new PendingOrderResolution(self::OUTCOME_UNVERIFIED, $order, $state, $comment, $buyerMessage);
         }
-        $comment = null;
-        if ($outcome === self::OUTCOME_UNVERIFIED) {
-            $message = (string)__('Checked with %1: the buyer has not finished verification.', $this->product());
-            $comment = $trigger === self::TRIGGER_ADMIN ? $message : null;
-        } else {
-            $this->logRepository->addErrorLog('pending-order-unknown-state', [
-                'order_increment_id' => $order->getIncrementId(),
-                'two_order_id' => $order->getTwoOrderId(),
-                'trigger' => $trigger,
-                'two_state' => $state,
-            ]);
-            $message = (string)__(
-                '%1 reports state %2; not changed. Check the order in the %1 portal.',
-                $this->product(),
-                $state !== '' ? $state : 'undefined'
-            );
-            // Once per state, so a run every 15 minutes does not fill the history.
-            $comment = $this->hasComment($order, $message) ? null : $message;
-        }
-        $this->saveQuietly($order, $comment, $trigger);
-        return new PendingOrderResolution($outcome, $order, $state, $message);
+        $message = (string)__('Checked with %1: the buyer has not finished verification.', $this->product());
+        $this->recordCheck($order, $trigger === self::TRIGGER_ADMIN ? $message : null, $trigger);
+        return new PendingOrderResolution(self::OUTCOME_UNVERIFIED, $order, $state, $message);
+    }
+
+    /**
+     * Two reports a state this module does not act on (REFUNDED, anything
+     * new, or none): change nothing, whichever trigger asked, and tell the
+     * merchant once per state. The order stays waiting, so a later check or
+     * the button can still settle it.
+     */
+    private function unchanged(Order $order, string $trigger, string $state): PendingOrderResolution
+    {
+        $this->logRepository->addErrorLog('pending-order-unknown-state', [
+            'order_increment_id' => $order->getIncrementId(),
+            'two_order_id' => $order->getTwoOrderId(),
+            'trigger' => $trigger,
+            'two_state' => $state,
+        ]);
+        $message = (string)__(
+            '%1 reports state %2; not changed. Check the order in the %1 portal.',
+            $this->product(),
+            $state !== '' ? $state : 'undefined'
+        );
+        $this->recordCheck($order, $this->hasComment($order, $message) ? null : $message, $trigger);
+        return new PendingOrderResolution(self::OUTCOME_UNCHANGED, $order, $state, $message);
+    }
+
+    private function failReturn(Order $order, string $state, Throwable $exception): PendingOrderResolution
+    {
+        $buyerMessage = $this->orderService->failBuyerReturn($order, $exception);
+        return new PendingOrderResolution(
+            self::OUTCOME_FAILED,
+            $order,
+            $state,
+            $exception->getMessage(),
+            $buyerMessage
+        );
     }
 
     private function recoveryComment(string $trigger, string $actor, bool $alreadyConfirmed): string
@@ -311,16 +358,27 @@ class PendingOrderResolver
     }
 
     /**
-     * Record the check (and a comment, if any) without letting a failed save
-     * end a scheduled run.
+     * Write the time of the check, and a comment if any, and nothing else: a
+     * whole-order save here could put back a state another request has just
+     * changed. A failed write never ends a scheduled run.
      */
-    private function saveQuietly(Order $order, ?string $comment, string $trigger): void
+    private function recordCheck(Order $order, ?string $comment, string $trigger): void
     {
         try {
+            $this->orderResource->getConnection()->update(
+                $this->orderResource->getMainTable(),
+                [OrderService::PENDING_CHECKED_AT => $order->getData(OrderService::PENDING_CHECKED_AT)],
+                ['entity_id = ?' => (int)$order->getId()]
+            );
             if ($comment !== null) {
-                $this->orderService->addOrderComment($order, $comment);
+                $history = $this->historyFactory->create();
+                $history->setParentId($order->getId())
+                    ->setComment($comment)
+                    ->setEntityName('order')
+                    ->setStatus($order->getStatus())
+                    ->setIsCustomerNotified(false);
+                $this->historyRepository->save($history);
             }
-            $this->orderRepository->save($order);
         } catch (Throwable $exception) {
             $this->logRepository->addErrorLog('pending-order-check-save-failed', [
                 'order_increment_id' => $order->getIncrementId(),
@@ -332,7 +390,7 @@ class PendingOrderResolver
 
     private function hasComment(Order $order, string $comment): bool
     {
-        foreach ($order->getStatusHistories() ?: [] as $history) {
+        foreach ($order->getStatusHistoryCollection() ?: [] as $history) {
             if ((string)$history->getComment() === $comment) {
                 return true;
             }

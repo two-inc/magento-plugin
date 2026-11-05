@@ -472,7 +472,7 @@
 "The buyer verified this order with %1 but did not return to the shop. Processed by the scheduled check: %1 had already confirmed it.","De koper heeft deze bestelling bij %1 geverifieerd maar is niet naar de winkel teruggekeerd. Verwerkt door de geplande controle: %1 had de bestelling al bevestigd."
 "The buyer verified this order with %1 but did not return to the shop. Confirmed with %1 by %2.","De koper heeft deze bestelling bij %1 geverifieerd maar is niet naar de winkel teruggekeerd. Bevestigd bij %1 door %2."
 "The buyer verified this order with %1 but did not return to the shop. Confirmed with %1 by the scheduled check.","De koper heeft deze bestelling bij %1 geverifieerd maar is niet naar de winkel teruggekeerd. Bevestigd bij %1 door de geplande controle."
-"Your order is still being confirmed with %1. You will receive an email once it is.","Uw bestelling wordt nog bevestigd bij %1. U ontvangt een e-mail zodra dat is gebeurd."
+"Your order is still being checked with %1. The shop will confirm your order by email if it goes through.","Uw bestelling wordt nog gecontroleerd bij %1. De winkel bevestigt uw bestelling per e-mail als deze doorgaat."
 "This order was not placed with %1.","Deze bestelling is niet geplaatst met %1."
 "The order is being checked with %1 by another process. Try again in a minute.","De bestelling wordt door een ander proces gecontroleerd bij %1. Probeer het over een minuut opnieuw."
 "This order is no longer waiting for the buyer, so it was not checked.","Deze bestelling wacht niet meer op de koper en is daarom niet gecontroleerd."

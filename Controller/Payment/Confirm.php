@@ -12,7 +12,6 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\ResponseInterface;
-use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Service\Payment\OrderService;
 use Two\Gateway\Service\Payment\PendingOrderResolver as Resolver;
@@ -93,19 +92,16 @@ class Confirm extends Action
                     return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
                 case Resolver::OUTCOME_BUSY:
                     return $this->whileBusy($order);
-                case Resolver::OUTCOME_CANCELLED:
-                case Resolver::OUTCOME_DECLINED:
-                    // Two will not take this order, so the buyer gets the cart
-                    // back rather than a success page (TWO-26300).
-                    throw new LocalizedException(__(
-                        'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
-                        $this->brandRegistry->getProductName()
-                    ));
+                case Resolver::OUTCOME_UNCHANGED:
+                    // Two reports a state this module does not act on: the
+                    // order stays as it is, for the merchant to look at.
+                    return $this->stillChecking();
                 default:
-                    throw new LocalizedException(__(
-                        'Your invoice purchase with %1 could not be processed. The cart will be restored.',
-                        $this->brandRegistry->getProductName()
-                    ));
+                    // Cancelled, declined, unverified or failed: the resolver
+                    // has already restored the cart and failed the order while
+                    // it held the order's lock (TWO-26300).
+                    $this->messageManager->addErrorMessage($resolution->getBuyerMessage());
+                    return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
             }
         } catch (Exception $exception) {
             // The order comment keeps the full account for the merchant; the
@@ -129,8 +125,19 @@ class Confirm extends Action
         if ($this->orderService->isConfirmed($order)) {
             return $this->showSuccessPage($order);
         }
+        return $this->stillChecking();
+    }
+
+    /**
+     * Neither a success page nor a restored cart: the order still stands,
+     * and how it ends is not known yet.
+     *
+     * @return ResponseInterface
+     */
+    private function stillChecking()
+    {
         $this->messageManager->addNoticeMessage(__(
-            'Your order is still being confirmed with %1. You will receive an email once it is.',
+            'Your order is still being checked with %1. The shop will confirm your order by email if it goes through.',
             $this->brandRegistry->getProductName()
         ));
         return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));

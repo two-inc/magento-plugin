@@ -26,12 +26,21 @@ class PendingOrderResolution
     /** @var string what was done, for the merchant */
     private $message;
 
-    public function __construct(string $outcome, Order $order, string $twoState = '', string $message = '')
-    {
+    /** @var string on a failed buyer return, what the buyer is shown */
+    private $buyerMessage;
+
+    public function __construct(
+        string $outcome,
+        Order $order,
+        string $twoState = '',
+        string $message = '',
+        string $buyerMessage = ''
+    ) {
         $this->outcome = $outcome;
         $this->order = $order;
         $this->twoState = $twoState;
         $this->message = $message;
+        $this->buyerMessage = $buyerMessage;
     }
 
     public function getOutcome(): string
@@ -52,6 +61,11 @@ class PendingOrderResolution
     public function getMessage(): string
     {
         return $this->message;
+    }
+
+    public function getBuyerMessage(): string
+    {
+        return $this->buyerMessage;
     }
 
     /**

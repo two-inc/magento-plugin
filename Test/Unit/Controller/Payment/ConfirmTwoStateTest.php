@@ -12,6 +12,7 @@ use Magento\Framework\DataObject;
 use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
+use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -31,6 +32,7 @@ class ConfirmTwoStateTest extends TestCase
 {
     private const CANCELLED = 'Your invoice purchase with Two has been cancelled. The cart will be restored.';
     private const NOT_PROCESSED = 'Your invoice purchase with Two could not be processed. The cart will be restored.';
+    private const CHECKING = 'Your order is still being checked with Two. The shop will confirm your order by email if it goes through.';
 
     /** @var string[] */
     private $calls = [];
@@ -60,8 +62,12 @@ class ConfirmTwoStateTest extends TestCase
                 [['state' => 'UNVERIFIED', 'status' => 'REJECTED'], array_merge(['getTwoOrderFromApi', 'addOrderComment'], $fail), $cart, [self::CANCELLED]],
             'UNVERIFIED restores the cart and fails the order' =>
                 [['state' => 'UNVERIFIED'], array_merge(['getTwoOrderFromApi', 'addOrderComment'], $fail), $cart, [self::NOT_PROCESSED]],
-            'REFUNDED restores the cart and fails the order' =>
-                [['state' => 'REFUNDED'], array_merge(['getTwoOrderFromApi', 'addOrderComment'], $fail), $cart, [self::NOT_PROCESSED]],
+            // Nothing is changed for a state this module does not act on: no
+            // restored cart, no failed order, and a neutral notice.
+            'REFUNDED leaves the order as it is' =>
+                [['state' => 'REFUNDED'], ['getTwoOrderFromApi', 'stamp', 'comment'], $cart, ['notice: ' . self::CHECKING]],
+            'no state leaves the order as it is' =>
+                [[], ['getTwoOrderFromApi', 'stamp', 'comment'], $cart, ['notice: ' . self::CHECKING]],
         ];
     }
 
@@ -170,6 +176,10 @@ class ConfirmTwoStateTest extends TestCase
             $this->shown[] = (string)$message;
             return $messages;
         });
+        $messages->method('addNoticeMessage')->willReturnCallback(function ($message) use ($messages) {
+            $this->shown[] = 'notice: ' . $message;
+            return $messages;
+        });
         $url = new class {
             public function getUrl($path = null, $params = null)
             {
@@ -227,7 +237,9 @@ class ConfirmTwoStateTest extends TestCase
             'orderService' => $service,
             'orderSender' => $sender,
             'lockManager' => $lock,
-            'orderRepository' => $this->createMock(OrderRepositoryInterface::class),
+            'orderResource' => $this->orderResource(),
+            'historyFactory' => new HistoryFactory(),
+            'historyRepository' => $this->historyRepository(),
             'brandRegistry' => $this->brand(),
             'logRepository' => $this->createMock(LogRepository::class),
         ];
@@ -237,6 +249,65 @@ class ConfirmTwoStateTest extends TestCase
             }
         }
         return $resolver;
+    }
+
+    /**
+     * Records the resolver's write of the check time alone.
+     */
+    private function orderResource(): object
+    {
+        $test = $this;
+        $connection = new class ($test) {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
+            }
+
+            public function update($table, array $bind, $where)
+            {
+                $this->test->record('stamp');
+                return 1;
+            }
+        };
+        return new class ($connection) {
+            private $connection;
+
+            public function __construct($connection)
+            {
+                $this->connection = $connection;
+            }
+
+            public function getConnection()
+            {
+                return $this->connection;
+            }
+
+            public function getMainTable()
+            {
+                return 'sales_order';
+            }
+        };
+    }
+
+    private function historyRepository(): object
+    {
+        $test = $this;
+        return new class ($test) {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
+            }
+
+            public function save($history)
+            {
+                $this->test->record('comment');
+                return $history;
+            }
+        };
     }
 
     public function recordRedirect(string $url): void

@@ -22,10 +22,19 @@ is called with a trigger:
 All three take one lock per order (`LockManagerInterface`, name
 `two_gateway_pending_order_<entity id>`), then read the order afresh
 (`OrderService::reloadOrder()`) and leave it alone unless it still awaits the
-buyer. The scheduled check takes the lock with no wait and skips a held order;
-the return and the button wait up to 10 seconds. A return that still finds the
-lock held shows the success page if the order has meanwhile been processed, and
-otherwise a notice, without failing the order. The confirm request carries the
+buyer. They read it once more after asking Two, just before acting, because the
+buyer's cancel return and the admin's Cancel do not take the lock: a cancel
+that lands while Two is being asked is never undone. The scheduled check takes
+the lock with no wait and skips a held order; the return and the button wait up
+to 10 seconds. A return that still finds the lock held shows the success page
+if the order has meanwhile been processed, and otherwise a neutral notice,
+without failing the order or restoring the cart.
+
+A check that changes nothing writes only `two_pending_checked_at` and its
+comment (a direct update and a status history save), never the whole order.
+On the buyer's return, the resolver itself restores the cart and fails the
+order (`OrderService::failBuyerReturn()`) while it still holds the lock, and
+hands the controller the buyer's message. The confirm request carries the
 existing idempotency key, so Two's side is safe too.
 
 What Two reports decides the action:
@@ -36,8 +45,8 @@ What Two reports decides the action:
 | CONFIRMED or later (FULFILLING, FULFILLED, DELIVERED, FULFILMENT_NEEDS_MANUAL_RESOLUTION) | Process without a confirm call | The same |
 | CANCELLED, or a `status` of REJECTED or DECLINED | `OrderService::cancelLocally()`: a Magento cancel with no cancel sent back to Two | Cart restored, order failed, cancelled message |
 | UNVERIFIED | Nothing; the button adds a comment | Cart restored, order failed |
-| REFUNDED or anything else | Nothing; error log, and one comment per state | Cart restored, order failed |
-| The read or the confirm fails | Nothing; error log, the button adds a comment; the next run retries | The exception goes to `failBuyerReturn()` as before |
+| REFUNDED, anything else, or no state | Nothing; error log, and one comment per state | The same; the buyer sees a neutral notice, with no success page and no restored cart |
+| The read or the confirm fails | Nothing; error log, the button adds a comment; the next run retries | Cart restored, order failed, as before |
 
 Every action by the scheduled check or the button adds a merchant-only comment
 naming the trigger (the admin user for the button). The return adds none beyond
@@ -45,7 +54,9 @@ what it always added.
 
 A local cancel must never send a cancel back: `cancelLocally()` sets
 `OrderService::SKIP_CANCEL_SYNC` on the order before `Order::cancel()`, and
-`Observer\SalesOrderCancelAfter` returns early on it.
+`Observer\SalesOrderCancelAfter` then sends nothing to Two. It still dispatches
+`two_payment_order_cancelled`, with `two_data` `['cancelled_by' => 'two']`, so
+integrations hear of cancels Two made as well as the merchant's.
 
 ## Selection
 

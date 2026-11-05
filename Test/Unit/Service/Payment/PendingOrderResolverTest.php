@@ -9,7 +9,7 @@ namespace Two\Gateway\Test\Unit\Service\Payment;
 
 use Magento\Framework\DataObject;
 use Magento\Framework\Lock\LockManagerInterface;
-use Magento\Sales\Api\OrderRepositoryInterface;
+use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -33,6 +33,9 @@ class PendingOrderResolverTest extends TestCase
     private const DECLINED = 'Two declined this order.';
     private const UNVERIFIED = 'Checked with Two: the buyer has not finished verification.';
     private const REFUNDED = 'Two reports state REFUNDED; not changed. Check the order in the Two portal.';
+    private const UNDEFINED = 'Two reports state undefined; not changed. Check the order in the Two portal.';
+    private const BUYER_CANCELLED = 'Your invoice purchase with Two has been cancelled. The cart will be restored.';
+    private const BUYER_NOT_PROCESSED = 'Your invoice purchase with Two could not be processed. The cart will be restored.';
 
     /** @var array[] [call, argument] in order */
     private $calls = [];
@@ -61,33 +64,47 @@ class PendingOrderResolverTest extends TestCase
                 ]];
             }
             $rows["$who: UNVERIFIED changes nothing"] = [$trigger, ['state' => 'UNVERIFIED'], R::OUTCOME_UNVERIFIED, array_merge(
-                [['getTwoOrderFromApi', null]],
-                $admin ? [['addOrderComment', self::UNVERIFIED]] : [],
-                [['save', null]]
+                [['getTwoOrderFromApi', null], ['stamp', null]],
+                $admin ? [['comment', self::UNVERIFIED]] : []
             )];
-            $rows["$who: REFUNDED changes nothing and says so"] = [$trigger, ['state' => 'REFUNDED'], R::OUTCOME_UNCHANGED, [
-                ['getTwoOrderFromApi', null], ['addOrderComment', self::REFUNDED], ['save', null],
-            ]];
-            $rows["$who: REFUNDED says so only once"] = [$trigger, ['state' => 'REFUNDED'], R::OUTCOME_UNCHANGED, [
-                ['getTwoOrderFromApi', null], ['save', null],
-            ], [self::REFUNDED]];
             $rows["$who: a failed read changes nothing"] = [$trigger, new \Exception('connection reset'), R::OUTCOME_FAILED, array_merge(
-                [['getTwoOrderFromApi', null]],
-                $admin ? [['addOrderComment', 'Could not check the order with Two: connection reset']] : [],
-                [['save', null]]
+                [['getTwoOrderFromApi', null], ['stamp', null]],
+                $admin ? [['comment', 'Could not check the order with Two: connection reset']] : []
             )];
         }
+        // Whichever trigger asks, a state this module does not act on changes
+        // nothing but the check time, and is reported once per state.
+        foreach ([R::TRIGGER_SCHEDULED => 'scheduled', R::TRIGGER_ADMIN => 'admin', R::TRIGGER_BUYER_RETURN => 'buyer return'] as $trigger => $who) {
+            foreach (['REFUNDED' => self::REFUNDED, '' => self::UNDEFINED] as $state => $comment) {
+                $label = $state !== '' ? $state : 'no state';
+                $rows["$who: $label changes nothing and says so"] = [$trigger, $state !== '' ? ['state' => $state] : [], R::OUTCOME_UNCHANGED, [
+                    ['getTwoOrderFromApi', null], ['stamp', null], ['comment', $comment],
+                ]];
+                $rows["$who: $label says so only once"] = [$trigger, $state !== '' ? ['state' => $state] : [], R::OUTCOME_UNCHANGED, [
+                    ['getTwoOrderFromApi', null], ['stamp', null],
+                ], [$comment]];
+            }
+        }
         $rows['scheduled: a refused confirm changes nothing'] = [R::TRIGGER_SCHEDULED, ['state' => 'VERIFIED'], R::OUTCOME_FAILED, [
-            ['getTwoOrderFromApi', null], ['confirmOrder', null], ['save', null],
+            ['getTwoOrderFromApi', null], ['confirmOrder', null], ['stamp', null],
         ], [], true];
+        $rows['buyer return: a refused confirm fails the return'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'VERIFIED'], R::OUTCOME_FAILED, [
+            ['getTwoOrderFromApi', null], ['confirmOrder', null], ['failBuyerReturn', 'refused'],
+        ], [], true];
+        $rows['buyer return: a failed read fails the return'] = [R::TRIGGER_BUYER_RETURN, new \Exception('connection reset'), R::OUTCOME_FAILED, [
+            ['getTwoOrderFromApi', null], ['failBuyerReturn', 'connection reset'],
+        ]];
         $rows['buyer return: VERIFIED is confirmed and processed without a recovery comment'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'VERIFIED'], R::OUTCOME_CONFIRMED, [
             ['getTwoOrderFromApi', null], ['confirmOrder', null], ['send', null], ['processOrder', 'two-1'],
         ]];
-        $rows['buyer return: CANCELLED is left for the controller to fail'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'CANCELLED'], R::OUTCOME_CANCELLED, [
-            ['getTwoOrderFromApi', null], ['addOrderComment', self::CANCELLED],
+        $rows['buyer return: CANCELLED fails the return while locked'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'CANCELLED'], R::OUTCOME_CANCELLED, [
+            ['getTwoOrderFromApi', null], ['addOrderComment', self::CANCELLED], ['failBuyerReturn', self::BUYER_CANCELLED],
         ]];
-        $rows['buyer return: UNVERIFIED is left for the controller to fail'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'UNVERIFIED'], R::OUTCOME_UNVERIFIED, [
-            ['getTwoOrderFromApi', null], ['addOrderComment', 'Unable to confirm Two order with UNVERIFIED state.'],
+        $rows['buyer return: a REJECTED status fails the return while locked'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'UNVERIFIED', 'status' => 'REJECTED'], R::OUTCOME_DECLINED, [
+            ['getTwoOrderFromApi', null], ['addOrderComment', self::DECLINED], ['failBuyerReturn', self::BUYER_CANCELLED],
+        ]];
+        $rows['buyer return: UNVERIFIED fails the return while locked'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'UNVERIFIED'], R::OUTCOME_UNVERIFIED, [
+            ['getTwoOrderFromApi', null], ['addOrderComment', 'Unable to confirm Two order with UNVERIFIED state.'], ['failBuyerReturn', self::BUYER_NOT_PROCESSED],
         ]];
         return $rows;
     }
@@ -102,7 +119,7 @@ class PendingOrderResolverTest extends TestCase
         bool $confirmRefused = false
     ): void {
         $order = $this->waitingOrder();
-        $order->setStatusHistories(array_map(static fn ($c) => new DataObject(['comment' => $c]), $earlierComments));
+        $order->setStatusHistoryCollection(array_map(static fn ($c) => new DataObject(['comment' => $c]), $earlierComments));
 
         $resolution = $this->resolver($order, $twoOrder, $confirmRefused)->resolve($order, $trigger, 'jane');
 
@@ -116,11 +133,20 @@ class PendingOrderResolverTest extends TestCase
         );
     }
 
-    public function testABuyerReturnRethrowsAFailedRead(): void
+    public function testACancelDuringTheReadIsNotUndone(): void
     {
-        $order = $this->waitingOrder();
-        $this->expectExceptionMessage('connection reset');
-        $this->resolver($order, new \Exception('connection reset'))->resolve($order, R::TRIGGER_BUYER_RETURN);
+        foreach ([R::TRIGGER_SCHEDULED, R::TRIGGER_ADMIN, R::TRIGGER_BUYER_RETURN] as $trigger) {
+            foreach (['CANCELLED', 'VERIFIED', 'REFUNDED'] as $state) {
+                $this->calls = [];
+                $waiting = $this->waitingOrder();
+                $cancelled = $this->waitingOrder()->setState(Order::STATE_CANCELED)->setStatus('canceled');
+                $resolution = $this->resolver($waiting, ['state' => $state], false, null, $cancelled)
+                    ->resolve($waiting, $trigger);
+                $description = "$trigger, Two says $state, the order was cancelled meanwhile";
+                $this->assertSame(R::OUTCOME_NOT_WAITING, $resolution->getOutcome(), "$description: outcome");
+                $this->assertSame([['getTwoOrderFromApi', null]], $this->calls, "$description: nothing written");
+            }
+        }
     }
 
     public static function lockCases(): array
@@ -185,13 +211,32 @@ class PendingOrderResolverTest extends TestCase
      * @param Order $fresh what the order reads as once the lock is held
      * @param array|\Exception $twoOrder the GET answer, or its failure
      */
-    private function resolver(Order $fresh, $twoOrder, bool $confirmRefused = false, ?callable $lock = null): R
-    {
+    /**
+     * @param Order $fresh what the order reads as once the lock is held
+     * @param Order|null $afterRead what it reads as after Two was asked, when another request changed it
+     */
+    private function resolver(
+        Order $fresh,
+        $twoOrder,
+        bool $confirmRefused = false,
+        ?callable $lock = null,
+        ?Order $afterRead = null
+    ): R {
         $service = $this->getMockBuilder(OrderService::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['reloadOrder', 'getTwoOrderFromApi', 'confirmOrder', 'processOrder', 'cancelLocally', 'addOrderComment'])
+            ->onlyMethods([
+                'reloadOrder', 'getTwoOrderFromApi', 'confirmOrder', 'processOrder', 'cancelLocally', 'addOrderComment',
+                'failBuyerReturn',
+            ])
             ->getMock();
-        $service->method('reloadOrder')->willReturn($fresh);
+        $reads = 0;
+        $service->method('reloadOrder')->willReturnCallback(function () use (&$reads, $fresh, $afterRead) {
+            return $reads++ === 0 ? $fresh : ($afterRead ?? $fresh);
+        });
+        $service->method('failBuyerReturn')->willReturnCallback(function ($order, \Throwable $exception) {
+            $this->calls[] = ['failBuyerReturn', $exception->getMessage()];
+            return 'shown to the buyer';
+        });
         $record = function (string $call) use ($service, $twoOrder, $confirmRefused) {
             return function (...$args) use ($call, $service, $twoOrder, $confirmRefused) {
                 $argument = in_array($call, ['addOrderComment', 'cancelLocally', 'processOrder'], true) ? (string)$args[1] : null;
@@ -214,11 +259,57 @@ class PendingOrderResolverTest extends TestCase
 
         $lockManager = $this->createMock(LockManagerInterface::class);
         $lockManager->method('lock')->willReturnCallback($lock ?? static fn () => true);
-        $repository = $this->createMock(OrderRepositoryInterface::class);
-        $repository->method('save')->willReturnCallback(function ($order) {
-            $this->calls[] = ['save', null];
-            return $order;
-        });
+        // The check time and its comment are written on their own, never by
+        // saving the whole order.
+        $connection = new class ($test = $this) {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
+            }
+
+            public function update($table, array $bind, $where)
+            {
+                $this->test->assertSame('sales_order', $table);
+                $this->test->assertSame([OrderService::PENDING_CHECKED_AT], array_keys($bind), 'only the check time');
+                $this->test->assertSame(['entity_id = ?' => 42], $where);
+                $this->test->record('stamp');
+                return 1;
+            }
+        };
+        $resource = new class ($connection) {
+            private $connection;
+
+            public function __construct($connection)
+            {
+                $this->connection = $connection;
+            }
+
+            public function getConnection()
+            {
+                return $this->connection;
+            }
+
+            public function getMainTable()
+            {
+                return 'sales_order';
+            }
+        };
+        $historyRepository = new class ($test) {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
+            }
+
+            public function save($history)
+            {
+                $this->test->record('comment', (string)$history->getComment());
+                return $history;
+            }
+        };
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
         $test = $this;
@@ -243,7 +334,9 @@ class PendingOrderResolverTest extends TestCase
             'orderService' => $service,
             'orderSender' => $sender,
             'lockManager' => $lockManager,
-            'orderRepository' => $repository,
+            'orderResource' => $resource,
+            'historyFactory' => new HistoryFactory(),
+            'historyRepository' => $historyRepository,
             'brandRegistry' => $brand,
             'logRepository' => $this->createMock(LogRepository::class),
         ];
@@ -253,8 +346,8 @@ class PendingOrderResolverTest extends TestCase
         return $resolver;
     }
 
-    public function record(string $call): void
+    public function record(string $call, ?string $argument = null): void
     {
-        $this->calls[] = [$call, null];
+        $this->calls[] = [$call, $argument];
     }
 }
