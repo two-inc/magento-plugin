@@ -21,8 +21,11 @@ use Two\Gateway\Model\Ui\AnchorOnlyHtmlEscaper;
  * Entry gate for the checkout tile subtitle, on both the Two section and the
  * generated brand forms - they are one field mechanism with two config paths.
  *
- * The tile emits the subtitle through AnchorOnlyHtmlEscaper, so anything that
- * escaper drops used to disappear at checkout with no merchant feedback.
+ * The subtitle is plain text (TWO-27108): the tile shows it escaped with any
+ * markup removed, so markup typed here is refused rather than disappearing at
+ * checkout with no merchant feedback. A value saved before, posted back
+ * unchanged, is not refused: the tile already shows it as plain text, and
+ * refusing it would fail every later save of the section.
  */
 class Subtitle extends Value
 {
@@ -52,16 +55,16 @@ class Subtitle extends Value
     public function beforeSave()
     {
         $value = (string)$this->getValue();
-        if (!$this->escaper->rendersUnchanged($value)) {
+        $shown = strip_tags($value);
+        if ($shown !== $value && $value !== (string)$this->getOldValue()) {
             // Admin notices render their text unescaped, and the whole point
             // of this message is to show markup as markup.
             throw new LocalizedException(__(
-                'Subtitle accepts plain text and a single link only; "%1" would be shown as "%2".',
+                'Subtitle accepts plain text only; "%1" would be shown as "%2".',
                 htmlspecialchars($value, ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($this->escaper->escape($value), ENT_QUOTES, 'UTF-8')
+                htmlspecialchars($shown, ENT_QUOTES, 'UTF-8')
             ));
         }
-
         return parent::beforeSave();
     }
 }

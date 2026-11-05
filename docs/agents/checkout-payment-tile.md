@@ -80,6 +80,12 @@ stay outside that label. The consent checkbox is named by `aria-labelledby` at
 the consent sentence instead, because that sentence carries the terms link and a
 link inside a label makes activation ambiguous.
 
+The merchant's subtitle is plain text (TWO-27108): `CheckoutTileCopy` shows it
+escaped with any markup removed, so a link saved before that rule keeps its words
+but not the link, and the `Subtitle` backend refuses newly typed markup. An empty
+subtitle shows the brand tagline when the brand defines one (a translation key
+with its one FAQ link, brand configuration rather than merchant copy), else none.
+
 ## A chip states its term type, not just a day count
 
 An end-of-month term falls due that many days after the end of the month, so a

@@ -21,16 +21,18 @@ class CheckoutTileCopy
     }
 
     /**
-     * Renderers bind the result unescaped, so AnchorOnlyHtmlEscaper is the only
-     * gate on it: a link survives, nothing else does. The merchant override
-     * (TWO-25386) wins over the brand tagline, which is a translation key whose
-     * %1/%2 the FAQ URL fills.
+     * Renderers bind the result unescaped, so it is escaped here: the merchant
+     * override (TWO-25386) as plain text, and the brand tagline, a translation
+     * key whose %1/%2 the FAQ URL fills, through AnchorOnlyHtmlEscaper so its
+     * one link survives. The override wins over the tagline.
      */
     public function getSubtitleHtml(): string
     {
         // Emptiness is judged after escaping: copy that is only markup the
         // escaper drops would otherwise emit a blank subtitle element.
-        $configured = trim($this->htmlEscaper->escape($this->configRepository->getSubtitle()));
+        // The merchant subtitle is plain text (TWO-27108): markup a subtitle
+        // saved before that rule still carries is removed, its words kept.
+        $configured = trim($this->htmlEscaper->escapeTextOnly(strip_tags($this->configRepository->getSubtitle())));
         if ($configured !== '') {
             return $configured;
         }
