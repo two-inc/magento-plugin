@@ -22,5 +22,10 @@ export default defineConfig({
         userAgent:
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
     },
-    projects: [{ name: 'chromium' }]
+    // Every spec runs after the stock check: the checkout specs need the test
+    // product to have stock (tests/stock.setup.ts, TWO-26300).
+    projects: [
+        { name: 'stock', testMatch: /stock\.setup\.ts/ },
+        { name: 'chromium', dependencies: ['stock'], testIgnore: /\.setup\.ts/ }
+    ]
 });

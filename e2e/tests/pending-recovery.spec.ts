@@ -66,7 +66,10 @@ async function placeOrderWithoutReturning(page: Page, email: string): Promise<Pl
                 headers: { ...request.headers(), ...storeAuthHeaders(request.url()) },
                 timeout: 60_000
             });
-            if (response.ok()) orderId = String(await response.json().catch(() => ''));
+            if (response.ok()) {
+                orderId = String(await response.json().catch(() => ''));
+                if (/^\d+$/.test(orderId)) placedOrders.push(orderId);
+            }
             await route.fulfill({ response });
         } catch {
             // The error would carry the request headers into the public log.
@@ -106,7 +109,7 @@ async function placeOrderWithoutReturning(page: Page, email: string): Promise<Pl
 // per route, not per order, so any order's View link from the grid serves
 // once its order id is swapped. Starts from the admin, so it can be called
 // from a storefront page.
-async function openOrder(page: Page, orderId: string, email: string) {
+async function openOrder(page: Page, orderId: string, email?: string) {
     await page.goto('/admin', { waitUntil: 'domcontentloaded' });
     const grid = await page.locator('a[href*="/sales/order/"]').first().getAttribute('href');
     if (!grid)
@@ -122,7 +125,7 @@ async function openOrder(page: Page, orderId: string, email: string) {
         waitUntil: 'domcontentloaded'
     });
     await expect(page.locator('#order_status')).toBeVisible({ timeout: 60_000 });
-    await expect(page.locator('.order-account-information')).toContainText(email);
+    if (email) await expect(page.locator('.order-account-information')).toContainText(email);
 }
 
 async function comments(page: Page, pattern: RegExp): Promise<number> {
@@ -134,10 +137,33 @@ function uniqueEmail(path: string): string {
     return `pending-recovery-${path}-${Date.now()}@example.com`;
 }
 
+// Orders this file placed and has not yet cleaned up.
+const placedOrders: string[] = [];
+
+// Cancel the order if it still waits for the buyer, which releases its stock
+// reservation. One the test settled is left as it is.
+async function cancelIfStillPending(page: Page, orderId: string) {
+    await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+    if (await page.locator('#username').isVisible()) await adminLogin(page);
+    await openOrder(page, orderId);
+    if (!/Pending/.test(await page.locator('#order_status').innerText())) return;
+    await page.locator('#order-view-cancel-button').click();
+    await page.locator('.modal-popup._show .action-accept').click();
+    await expect(page.locator('#order_status')).toHaveText(/Cancel/, { timeout: 60_000 });
+    console.log(`order ${orderId} cancelled after the test`);
+}
+
 test.describe('pending order recovery', () => {
     test.skip(!process.env.ADMIN_PASS, 'ADMIN_PASS not set; admin-gated spec skipped');
 
+    // Runs after failures too: an order left waiting for the buyer keeps its
+    // stock reserved, and enough of them empty the test product's stock.
     test.afterEach(async ({ page }) => {
+        for (const orderId of placedOrders.splice(0)) {
+            await cancelIfStillPending(page, orderId).catch((error) =>
+                console.warn(`could not cancel order ${orderId}: ${error}`)
+            );
+        }
         await adminLogout(page);
     });
 
