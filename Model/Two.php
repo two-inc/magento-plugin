@@ -62,6 +62,9 @@ class Two extends AbstractMethod
     /** Payment information key: Two's refunded total after the last refund (TWO-26658). */
     public const REFUNDED_TOTAL = 'two_refunded_total';
 
+    /** The currencies Two invoices in; a basket in any other is not offered Two (TWO-27108). */
+    public const SUPPORTED_CURRENCIES = ['NOK', 'GBP', 'SEK', 'USD', 'DKK', 'EUR'];
+
     public const STATUS_NEW = 'two_new';
     public const STATUS_FAILED = 'two_failed';
     public const STATUS_PENDING = 'pending_two_payment';
@@ -1212,6 +1215,19 @@ class Two extends AbstractMethod
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: API key rejected', $this->_code),
                 ['status' => $status['status'], 'http_status' => $status['code']]
+            );
+            return false;
+        }
+        // TWO-27108: Two invoices only in these currencies, so a basket in any
+        // other is not offered Two. Without a concrete quote currency there is
+        // nothing to judge, and the method stays offered.
+        $currency = $quote instanceof \Magento\Quote\Model\Quote
+            ? strtoupper(trim((string)$quote->getQuoteCurrencyCode()))
+            : '';
+        if ($currency !== '' && !in_array($currency, self::SUPPORTED_CURRENCIES, true)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: basket currency not supported', $this->_code),
+                ['currency' => $currency]
             );
             return false;
         }

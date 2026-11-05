@@ -7,7 +7,9 @@ description: 'Every gate `isAvailable()` withholds the Two method in, and why ea
 ## The order `isAvailable()` withholds in, and it is SILENT
 
 Core's own checks; a configured non-empty API key; the api-key verification
-verdict; the surcharge FX rate resolving and the stored surcharge method being
+verdict; the basket currency being one Two invoices in (`Two::SUPPORTED_CURRENCIES`,
+the same six as the other plugins, TWO-27108; no quote currency means nothing to
+judge, so the method stays offered); the surcharge FX rate resolving and the stored surcharge method being
 recognised; the buyer country; the fee quote for the term being charged; then an
 Amasty store view returns true early, deferring only the minimum-order gate to
 the client; then the platform and merchant minimum-order gate.
