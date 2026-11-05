@@ -61,6 +61,24 @@ async function grandTotal(page: Page): Promise<number> {
     );
 }
 
+// Grand total once the checkout totals stop changing. Shipping and tax can land
+// in separate totals refreshes, so a read taken as soon as the shipping amount
+// moves can catch a total without its tax (TWO-27052). Wait for two reads a
+// beat apart to agree.
+async function settledGrandTotal(page: Page): Promise<number> {
+    const deadline = Date.now() + 20_000;
+    let previous = await grandTotal(page);
+    for (;;) {
+        await page.waitForTimeout(2_000);
+        const current = await grandTotal(page);
+        if (current === previous) return current;
+        if (Date.now() > deadline) {
+            throw new Error(`grand total still moving after 20s (${previous} -> ${current})`);
+        }
+        previous = current;
+    }
+}
+
 // The minimum-order fields live in Checkout fields -> Availability. A section
 // landing leaves group state to a remembered UI cookie, so the fieldset can be
 // collapsed — the fields are then in the DOM but not visible, and fill() hangs
@@ -116,7 +134,10 @@ async function clickSaveConfig(page: Page) {
             .waitForRequest((r) => r.method() === 'POST' && /system_config\/save/.test(r.url()), {
                 timeout: 5_000
             })
-            .then(() => true, () => false);
+            .then(
+                () => true,
+                () => false
+            );
         await page.locator('#save').click();
         if (await saving) {
             return;
@@ -202,9 +223,9 @@ test.describe('minimum order value gate', () => {
         await addToCart(page);
         await fillCheckout(page);
         await selectShipping(page, 'flatrate');
-        const flatTotal = await grandTotal(page);
+        const flatTotal = await settledGrandTotal(page);
         await selectShipping(page, 'freeshipping');
-        const freeTotal = await grandTotal(page);
+        const freeTotal = await settledGrandTotal(page);
         expect(flatTotal, 'flat-rate shipping must cost more than free shipping').toBeGreaterThan(
             freeTotal + 0.02
         );
