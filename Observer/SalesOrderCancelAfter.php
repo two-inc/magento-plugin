@@ -14,6 +14,7 @@ use Psr\Log\LoggerInterface;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Payment\OrderService;
 
@@ -79,6 +80,13 @@ class SalesOrderCancelAfter implements ObserverInterface
             || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
             || !$order->getTwoOrderId()
         ) {
+            return;
+        }
+
+        // An admin Void already cancelled the order at Two and noted it on the
+        // order. Sending the cancel again could only be refused, and a refusal
+        // here blocks the Magento cancel (TWO-26301).
+        if ($order->getPayment()->getAdditionalInformation(Two::CANCELLED_AT_TWO)) {
             return;
         }
 
