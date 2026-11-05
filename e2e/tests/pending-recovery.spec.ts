@@ -1,4 +1,4 @@
-import { test, expect, Page } from './fixtures';
+import { test, expect, Page, storeAuthHeaders } from './fixtures';
 import {
     addToCart,
     adminLogin,
@@ -23,6 +23,7 @@ import {
 // running), so it runs only when E2E_PENDING_CRON=1 says the store has them.
 
 const RETURN_URL = /\/two\/payment\/confirm/;
+const PLACE_ORDER_URL = /\/payment-information(\?|$)/;
 const RECOVERED = /did not return to the shop/;
 
 // The dev store serves `staging`, so on a pull request that adds the button it
@@ -53,13 +54,23 @@ async function placeOrderWithoutReturning(page: Page, email: string): Promise<Pl
         returnUrl = route.request().url();
         await route.abort();
     });
-    page.on('response', async (response) => {
-        if (
-            response.request().method() === 'POST' &&
-            /\/payment-information(\?|$)/.test(response.url()) &&
-            response.ok()
-        ) {
-            orderId = String(await response.json().catch(() => ''));
+    // Read the order id from the place-order response here, before the page
+    // moves on to Two: a body read after that navigation can come back empty.
+    // A page route takes precedence over the context's, so it sends the store
+    // token itself.
+    await page.route(PLACE_ORDER_URL, async (route) => {
+        const request = route.request();
+        if (request.method() !== 'POST') return route.fallback();
+        try {
+            const response = await route.fetch({
+                headers: { ...request.headers(), ...storeAuthHeaders(request.url()) },
+                timeout: 60_000
+            });
+            if (response.ok()) orderId = String(await response.json().catch(() => ''));
+            await route.fulfill({ response });
+        } catch {
+            // The error would carry the request headers into the public log.
+            await route.abort().catch(() => {});
         }
     });
 
@@ -85,6 +96,7 @@ async function placeOrderWithoutReturning(page: Page, email: string): Promise<Pl
         }
     }
     await page.unroute(RETURN_URL);
+    await page.unroute(PLACE_ORDER_URL);
     if (!returnUrl) return null;
     expect(orderId, 'the place-order response named the order').toMatch(/^\d+$/);
     return { orderId, returnUrl };
