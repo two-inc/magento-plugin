@@ -503,7 +503,8 @@ class Two extends AbstractMethod
      * Get error from response
      *
      * With $atOrderCreate, any refusal at status 400 or above names the
-     * fields the buyer can fix ("Phone Number is not valid."), chosen from
+     * fields the buyer can fix ("Please enter a valid Phone number to pay on
+     * invoice."), chosen from
      * the structured field path and never from the API's wording, unless the
      * status is a server error (5xx), which is always generic; a
      * validation failure naming no field we know shows the general error;
@@ -536,7 +537,7 @@ class Two extends AbstractMethod
 
         $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
         $isClientError = $status === 400;
-        $sameCompany = __('The buyer and the seller are the same company.');
+        $sameCompany = $this->buyerSentence(__('Buyer and merchant may not be the same company'));
 
         $validation = $this->getValidationMessage($response);
 
@@ -629,7 +630,7 @@ class Two extends AbstractMethod
                 return $fieldError;
             }
             if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
-                return __('The buyer and the seller are the same company.');
+                return $this->buyerSentence(__('Buyer and merchant may not be the same company'));
             }
         }
         return __(
@@ -640,8 +641,9 @@ class Two extends AbstractMethod
     }
 
     /**
-     * "<Field> is not valid." for each field in a response's error_json whose
-     * path we recognise, or null when it names none (TWO-26295).
+     * "Please enter a valid <field> to pay on invoice." for each field in a
+     * response's error_json whose path we recognise, or null when it names
+     * none (TWO-26295; wording shared with the other plugins, TWO-27108).
      *
      * Chosen from the path, never the message, so nothing the API wrote
      * reaches the buyer.
@@ -654,27 +656,53 @@ class Two extends AbstractMethod
         if (!isset($response['error_json']) || !is_array($response['error_json'])) {
             return null;
         }
-        $labels = [];
+        $sentences = [];
         foreach ($response['error_json'] as $err) {
-            $label = is_array($err) && isset($err['loc']) && is_array($err['loc'])
-                ? $this->fieldLabelForLoc($err['loc'])
+            $sentence = is_array($err) && isset($err['loc']) && is_array($err['loc'])
+                ? ($this->getFieldErrorMessages()[$this->fieldPath($err['loc'])] ?? null)
                 : null;
-            if ($label !== null) {
-                $labels[(string)$label] = (string)__('%1 is not valid.', $label);
+            if ($sentence !== null) {
+                $sentences[(string)$sentence] = true;
             }
         }
-        if ($labels === []) {
+        if ($sentences === []) {
             return null;
         }
         // Each entry is already translated.
-        return __('%1', implode(' ', array_values($labels)));
+        return __('%1', implode(' ', array_keys($sentences)));
     }
 
     /**
-     * Field path => buyer-facing label, for every field a buyer can fix. The
-     * path drops model-name segments a validator may insert (any segment
-     * starting with a capital letter), so the same field matches however the
-     * request was validated.
+     * Field path => the whole buyer-facing sentence, full stop included, for
+     * every field a buyer can fix. One sentence per field rather than a noun
+     * dropped into a template, so each locale can phrase it naturally; the
+     * wording is the other plugins' (TWO-27108). The path drops model-name
+     * segments a validator may insert (any segment starting with a capital
+     * letter), so the same field matches however the request was validated.
+     *
+     * @return array<string, Phrase>
+     */
+    public function getFieldErrorMessages(): array
+    {
+        $sentences = [
+            'buyer.representative.phone_number' => __('Please enter a valid Phone number to pay on invoice'),
+            'buyer.company.organization_number' => __('Please enter a valid Organization number to pay on invoice'),
+            'buyer.representative.first_name' => __('Please enter a valid First name to pay on invoice'),
+            'buyer.representative.last_name' => __('Please enter a valid Last name to pay on invoice'),
+            'buyer.representative.email' => __('Please enter a valid Email to pay on invoice'),
+            'billing_address.street_address' => __('Please enter a valid Address to pay on invoice'),
+            'billing_address.city' => __('Please enter a valid City to pay on invoice'),
+            'billing_address.country' => __('Please enter a valid Country to pay on invoice'),
+            'billing_address.postal_code' => __('Please enter a valid Postal code to pay on invoice'),
+        ];
+
+        return array_map([$this, 'buyerSentence'], $sentences);
+    }
+
+    /**
+     * Field path => the field's name, for a message that quotes the API's own
+     * reason after it ("Phone Number: ..."). Same paths as
+     * getFieldErrorMessages().
      *
      * @return array<string, Phrase>
      */
@@ -694,15 +722,35 @@ class Two extends AbstractMethod
     }
 
     /**
+     * Closes a buyer message with a full stop unless it has its own end mark:
+     * the shared wording has none, because one plugin shows each message as
+     * its own notice.
+     */
+    private function buyerSentence(Phrase $message): Phrase
+    {
+        $text = rtrim((string)$message);
+
+        return __('%1', preg_match('/[.!?]$/u', $text) ? $text : $text . '.');
+    }
+
+    /**
      * @param array $loc a field path as the API reports it
      * @return Phrase|null
      */
     private function fieldLabelForLoc(array $loc): ?Phrase
     {
-        $segments = array_filter($loc, static function ($segment): bool {
+        return $this->getFieldErrorLabels()[$this->fieldPath($loc)] ?? null;
+    }
+
+    /**
+     * @param array $loc a field path as the API reports it
+     * @return string the dotted path without model-name segments
+     */
+    private function fieldPath(array $loc): string
+    {
+        return implode('.', array_filter($loc, static function ($segment): bool {
             return is_string($segment) && $segment !== '' && !preg_match('/^[A-Z]/', $segment);
-        });
-        return $this->getFieldErrorLabels()[implode('.', $segments)] ?? null;
+        }));
     }
 
     /**
@@ -729,7 +777,7 @@ class Two extends AbstractMethod
                 // not the template's full stop.
                 $errs[] = preg_match('/[!?]$/', $msg) ? preg_replace('/\.$/', '', $entry) : $entry;
             } elseif ($fieldName) {
-                $errs[] = __('%1 is not valid.', $fieldName);
+                $errs[] = $this->buyerSentence(__('Please enter a valid %1 to pay on invoice', $fieldName));
             } elseif ($msg) {
                 $errs[] = preg_match('/[.!?]$/', $msg) ? $msg : $msg . '.';
             }

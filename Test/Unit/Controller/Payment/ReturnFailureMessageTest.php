@@ -44,7 +44,7 @@ class ReturnFailureMessageTest extends TestCase
     {
         $refusal = static fn (): \Exception => new TwoRefusalException(
             __('Two refused: raw api account'),
-            __('Phone Number is not valid.')
+            __('Please enter a valid Phone number to pay on invoice.')
         );
         $plain = static fn (): \Exception => new \Exception('internal detail at line 42');
         $database = static fn (): \Exception => new \PDOException(
@@ -56,11 +56,11 @@ class ReturnFailureMessageTest extends TestCase
         foreach ([Confirm::class, Cancel::class, Verificationfailed::class] as $controller) {
             $name = substr($controller, strrpos($controller, '\\') + 1);
             $rows += [
-                "$name: a refusal shows its buyer message" => [$controller, $refusal, false, 'Phone Number is not valid.'],
+                "$name: a refusal shows its buyer message" => [$controller, $refusal, false, 'Please enter a valid Phone number to pay on invoice.'],
                 "$name: a plain exception shows the general message" => [$controller, $plain, false, self::GENERAL],
                 "$name: a database error shows the general message" => [$controller, $database, false, self::GENERAL],
                 "$name: our own sentence is shown as it is" => [$controller, $own, false, 'Our own sentence.'],
-                "$name: a failing cart restore still shows the buyer message" => [$controller, $refusal, true, 'Phone Number is not valid.'],
+                "$name: a failing cart restore still shows the buyer message" => [$controller, $refusal, true, 'Please enter a valid Phone number to pay on invoice.'],
             ];
         }
         return $rows;

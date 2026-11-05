@@ -20,10 +20,14 @@ invoice company, and the shipping number would bill another one (TWO-26775).
 
 The API's own text never reaches the buyer: it is written for an integrator or
 for the merchant. A refusal whose `error_json` names a field the buyer can fix
-says which, in our own words ("Phone Number is not valid."), with the field
-chosen from its path and never from the message; `Two::getFieldErrorLabels()` is
-the one path-to-label map, and both the order intent tile (through the checkout
-config) and order create read it. A path drops any segment starting with a
+says which, in our own words ("Please enter a valid Phone number to pay on
+invoice."), with the field chosen from its path and never from the message.
+`Two::getFieldErrorMessages()` is the one path-to-sentence map, one whole
+sentence per field in the wording the other plugins use (TWO-27108), and both
+the order intent tile (through the checkout config) and order create read it.
+`Two::getFieldErrorLabels()` keeps the field names, for the merchant-facing
+message that quotes the API's reason after the name. A same-company refusal
+reads "Buyer and merchant may not be the same company." A path drops any segment starting with a
 capital letter, which is where a validator inserts model names. A refusal that
 names nothing the buyer can fix shows a standard message: the general error, or
 at order create the "not available for this order" notice for a non-validation
