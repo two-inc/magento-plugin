@@ -84,10 +84,24 @@ async function openOrder(page: Page, email: string) {
     await expect(search).toBeVisible({ timeout: 60_000 });
     await search.fill(email);
     await search.press('Enter');
+    await expect(page.locator('.admin__current-filters-list')).toContainText(email, {
+        timeout: 60_000
+    });
+    await expect(page.locator('.admin__data-grid-loading-mask:visible')).toHaveCount(0, {
+        timeout: 60_000
+    });
+    // The keyword search matches on words, so earlier runs' orders can match
+    // too: this run's order is the newest, and the view must show its email.
     const rows = page.locator('tr.data-row');
-    await expect(rows).toHaveCount(1, { timeout: 60_000 });
-    await rows.first().getByRole('link', { name: 'View' }).click();
+    await expect(rows.first()).toBeVisible({ timeout: 60_000 });
+    const ids = (await rows.locator('td:nth-child(2)').allInnerTexts()).map((t) => t.trim());
+    const newest = ids.reduce((a, b) => (Number(b) > Number(a) ? b : a));
+    await rows
+        .filter({ has: page.locator('td:nth-child(2)', { hasText: newest }) })
+        .getByRole('link', { name: 'View' })
+        .click();
     await expect(page.locator('#order_status')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.order-account-information')).toContainText(email);
 }
 
 async function comments(page: Page, pattern: RegExp): Promise<number> {
