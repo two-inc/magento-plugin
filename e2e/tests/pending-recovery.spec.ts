@@ -76,7 +76,11 @@ async function openOrder(page: Page, email: string) {
     if (!grid)
         throw new Error('could not find the sales order grid link (admin login likely failed)');
     await page.goto(grid, { waitUntil: 'domcontentloaded' });
-    const search = page.locator('.admin__data-grid-header input#fulltext');
+    // The grid renders a second, sticky copy of its header: use the visible one.
+    const search = page
+        .locator('.admin__data-grid-header input#fulltext')
+        .filter({ visible: true })
+        .first();
     await expect(search).toBeVisible({ timeout: 60_000 });
     await search.fill(email);
     await search.press('Enter');
