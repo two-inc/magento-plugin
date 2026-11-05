@@ -146,7 +146,8 @@ class CredentialsSave
     ): string {
         $scopeCode = $scope === ScopeConfigInterface::SCOPE_TYPE_DEFAULT ? null : $scopeId;
         $storedRaw = $this->scopeConfig->getValue($keyPath, $scope, $scopeCode);
-        $storedKey = is_string($storedRaw) && $storedRaw !== '' ? (string)$this->encryptor->decrypt($storedRaw) : '';
+        // Trimmed: a key stored before keys were trimmed on save may carry stray whitespace.
+        $storedKey = is_string($storedRaw) && $storedRaw !== '' ? trim((string)$this->encryptor->decrypt($storedRaw)) : '';
         $storedModeRaw = $this->scopeConfig->getValue($modePath, $scope, $scopeCode);
         $storedMode = is_scalar($storedModeRaw) ? (string)$storedModeRaw : '';
         $typed = self::keepsStoredKey(trim($submittedKey)) ? '' : trim($submittedKey);
@@ -166,7 +167,9 @@ class CredentialsSave
             $this->messageManager->addErrorMessage(__('Enter an API key.'));
             return self::MISSING;
         }
-        if (preg_match(self::WELL_FORMED_KEY, $key) !== 1) {
+        // Only a typed key is checked for its form: a stored one is Two's to judge,
+        // so an old stored key never blocks a change of environment.
+        if ($typed !== '' && preg_match(self::WELL_FORMED_KEY, $typed) !== 1) {
             $this->messageManager->addErrorMessage(__(
                 'The API key may only contain printable characters, with no spaces or line breaks. The previously saved key and environment were kept.'
             ));

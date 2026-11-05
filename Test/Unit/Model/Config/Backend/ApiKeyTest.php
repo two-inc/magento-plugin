@@ -406,9 +406,10 @@ class ApiKeyTest extends TestCase
         ?string $lastDefinitive,
         array $expected,
         array $messages,
-        string $description
+        string $description,
+        string $storedKey = 'old-key'
     ): void {
-        $this->stored = [self::KEY_PATH => 'encrypted:old-key', self::MODE_PATH => $storedMode];
+        $this->stored = [self::KEY_PATH => 'encrypted:' . $storedKey, self::MODE_PATH => $storedMode];
         if ($storedMode === null) {
             $this->stored = [];
         }
@@ -488,6 +489,12 @@ class ApiKeyTest extends TestCase
                 ['error' => 2, 'warning' => 0], 'a refused environment keeps the key typed beside it, and says so'],
             'malformed key' => ['sandbox', "new key", 'production', null, $ok, $none, $error,
                 'a key with a space is never sent, and keeps both'],
+            'untouched save over a stored key with stray whitespace' => ['sandbox', '', 'sandbox', null, $ok,
+                [self::MODE_PATH => 'sandbox'], $quiet, 'a stored key is trimmed before it is compared, and never refused for its form',
+                " old-key\t"],
+            'environment only over a stored key with an inner space' => ['sandbox', '', 'production', $ok, null,
+                [self::MODE_PATH => 'production'], $quiet, 'a stored key is Two\'s to judge, never refused for its form',
+                'old key'],
             'no key anywhere' => [null, '', 'production', null, null, [self::MODE_PATH => 'production'], $error,
                 'with no key to protect the environment saves, and the merchant is asked for a key'],
         ];
