@@ -9,6 +9,7 @@ use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\Webapi\Exception as WebapiException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
+use Magento\Quote\Model\QuoteIdToMaskedQuoteIdInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -157,7 +158,9 @@ class AnonymousRouteRateLimitsTest extends TestCase
             $this->createMock(Adapter::class),
             $this->createMock(SupportedCompanyTypes::class),
             $limiter,
-            $this->createMock(CheckoutSession::class)
+            $this->createMock(CheckoutSession::class),
+            $this->createMock(ConfigRepository::class),
+            $this->createMock(QuoteIdToMaskedQuoteIdInterface::class)
         );
     }
 

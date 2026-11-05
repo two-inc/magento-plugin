@@ -9,6 +9,7 @@ namespace Two\Gateway\Test\Unit\Controller\Payment;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Message\ManagerInterface;
+use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -18,6 +19,7 @@ use Two\Gateway\Controller\Payment\Cancel;
 use Two\Gateway\Controller\Payment\Confirm;
 use Two\Gateway\Controller\Payment\Verificationfailed;
 use Two\Gateway\Exception\TwoRefusalException;
+use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Payment\OrderService;
 
 /**
@@ -72,7 +74,7 @@ class ReturnFailureMessageTest extends TestCase
         string $expected
     ): void {
         $exception = $makeException();
-        $order = new Order();
+        $order = (new Order())->setState(Order::STATE_PENDING_PAYMENT)->setStatus(Two::STATUS_PENDING);
         $service = $this->orderService($controllerClass, $exception, $order, $restoreFails);
 
         $this->controller($controllerClass, $service)->execute();
@@ -91,7 +93,7 @@ class ReturnFailureMessageTest extends TestCase
     {
         $service = $this->getMockBuilder(OrderService::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['getOrderByReference', 'getTwoOrderFromApi', 'cancelTwoOrder', 'restoreQuote', 'failOrder'])
+            ->onlyMethods(['getOrderByReference', 'getTwoOrderFromApi', 'cancelTwoOrder', 'restoreQuote', 'failOrder', 'addOrderComment'])
             ->getMock();
         if ($controllerClass === Verificationfailed::class) {
             $service->method('getOrderByReference')->willThrowException($exception);
@@ -103,10 +105,13 @@ class ReturnFailureMessageTest extends TestCase
         if ($restoreFails) {
             $service->method('restoreQuote')->willThrowException(new \PDOException('SQLSTATE[HY000]: quote table'));
         }
-        $service->method('failOrder')->willReturnCallback(function ($order, $reason) use ($service) {
-            $this->comments[] = (string)$reason;
-            return $service;
-        });
+        // A failed order and a refused cancel both leave the full account as a comment.
+        foreach (['failOrder', 'addOrderComment'] as $commenting) {
+            $service->method($commenting)->willReturnCallback(function ($order, $reason) use ($service) {
+                $this->comments[] = (string)$reason;
+                return $service;
+            });
+        }
 
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
@@ -114,7 +119,8 @@ class ReturnFailureMessageTest extends TestCase
         $log->method('addErrorLog')->willReturnCallback(function ($type, $data) {
             $this->logs[] = [$type, $data];
         });
-        foreach (['brandRegistry' => $brand, 'logRepository' => $log] as $property => $value) {
+        $repository = $this->createMock(OrderRepositoryInterface::class);
+        foreach (['brandRegistry' => $brand, 'logRepository' => $log, 'orderRepository' => $repository] as $property => $value) {
             (new \ReflectionProperty(OrderService::class, $property))->setValue($service, $value);
         }
 

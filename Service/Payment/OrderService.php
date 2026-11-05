@@ -205,6 +205,34 @@ class OrderService
     }
 
     /**
+     * Whether the order still awaits the buyer's verification: the state and
+     * status set when it was placed. A buyer return link acts only on such an
+     * order, so replaying one cannot fail or reprocess an order that has
+     * since moved on, for example been invoiced or shipped (TWO-27057).
+     *
+     * @param Order $order
+     * @return bool
+     */
+    public function isAwaitingVerification(Order $order): bool
+    {
+        return $order->getState() === Order::STATE_PENDING_PAYMENT
+            && $order->getStatus() === Two::STATUS_PENDING;
+    }
+
+    /**
+     * Whether the order has been confirmed: only the confirm return moves an
+     * order on to processing, so a later confirm return for it is a repeat
+     * (TWO-27057).
+     *
+     * @param Order $order
+     * @return bool
+     */
+    public function isConfirmed(Order $order): bool
+    {
+        return in_array($order->getState(), [Order::STATE_PROCESSING, Order::STATE_COMPLETE], true);
+    }
+
+    /**
      * Get order reference from param
      *
      * @return string|null
@@ -348,6 +376,29 @@ class OrderService
             } catch (\Throwable $e) {
                 $this->logBuyerReturnFailure('fail-order', $e);
             }
+        }
+
+        return $this->buyerMessageFor($exception);
+    }
+
+    /**
+     * Wind up a buyer's cancel that Two did not carry out. The order is left
+     * as it is, because cancelling it here would leave the shop and Two
+     * disagreeing, and the cart is not restored, because the order still
+     * stands. The merchant gets the full account as an order comment
+     * (TWO-27057).
+     *
+     * @param Order $order
+     * @param \Throwable $exception why the cancel did not go through
+     * @return string the message for the buyer
+     */
+    public function keepRefusedCancel(Order $order, \Throwable $exception): string
+    {
+        try {
+            $this->addOrderComment($order, $exception->getMessage());
+            $this->orderRepository->save($order);
+        } catch (\Throwable $e) {
+            $this->logBuyerReturnFailure('refused-cancel', $e);
         }
 
         return $this->buyerMessageFor($exception);
