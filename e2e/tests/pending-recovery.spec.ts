@@ -35,14 +35,32 @@ function featureMayBeUndeployed(): boolean {
     );
 }
 
+interface Placed {
+    // Magento's entity id for the order, from the place-order response.
+    orderId: string;
+    // The return to the shop the buyer never made.
+    returnUrl: string;
+}
+
 // Place a Two order and stop the buyer before they return to the shop: the
-// return request is aborted and its URL kept. Returns null if the sandbox
-// declined every attempt (logged, as the checkout spec does).
-async function placeOrderWithoutReturning(page: Page, email: string): Promise<string | null> {
+// return request is aborted and its URL kept, and the order's entity id is
+// read from the place-order response. Returns null if the sandbox declined
+// every attempt (logged, as the checkout spec does).
+async function placeOrderWithoutReturning(page: Page, email: string): Promise<Placed | null> {
     let returnUrl = '';
+    let orderId = '';
     await page.route(RETURN_URL, async (route) => {
         returnUrl = route.request().url();
         await route.abort();
+    });
+    page.on('response', async (response) => {
+        if (
+            response.request().method() === 'POST' &&
+            /\/payment-information(\?|$)/.test(response.url()) &&
+            response.ok()
+        ) {
+            orderId = String(await response.json().catch(() => ''));
+        }
     });
 
     await addToCart(page);
@@ -67,41 +85,30 @@ async function placeOrderWithoutReturning(page: Page, email: string): Promise<st
         }
     }
     await page.unroute(RETURN_URL);
-    return returnUrl || null;
+    if (!returnUrl) return null;
+    expect(orderId, 'the place-order response named the order').toMatch(/^\d+$/);
+    return { orderId, returnUrl };
 }
 
-// Open the admin order view of the order placed with this email.
-async function openOrder(page: Page, email: string) {
+// Open the admin view of exactly this order. Admin URLs carry a secret key
+// per route, not per order, so any order's View link from the grid serves
+// once its order id is swapped. Starts from the admin, so it can be called
+// from a storefront page.
+async function openOrder(page: Page, orderId: string, email: string) {
+    await page.goto('/admin', { waitUntil: 'domcontentloaded' });
     const grid = await page.locator('a[href*="/sales/order/"]').first().getAttribute('href');
     if (!grid)
         throw new Error('could not find the sales order grid link (admin login likely failed)');
     await page.goto(grid, { waitUntil: 'domcontentloaded' });
-    // The grid renders a second, sticky copy of its header: use the visible one.
-    const search = page
-        .locator('.admin__data-grid-header input#fulltext')
-        .filter({ visible: true })
-        .first();
-    await expect(search).toBeVisible({ timeout: 60_000 });
-    await search.fill(email);
-    await search.press('Enter');
-    await expect(
-        page.locator('.admin__current-filters-list').filter({ visible: true }).first()
-    ).toContainText(email, {
-        timeout: 60_000
+    const view = page.locator('tr.data-row a[href*="/sales/order/view/"]').first();
+    await expect(view).toBeAttached({ timeout: 60_000 });
+    const href = await view.getAttribute('href');
+    if (!href || !/\/order_id\/\d+\//.test(href)) {
+        throw new Error(`unexpected order view link: ${href}`);
+    }
+    await page.goto(href.replace(/\/order_id\/\d+\//, `/order_id/${orderId}/`), {
+        waitUntil: 'domcontentloaded'
     });
-    await expect(page.locator('.admin__data-grid-loading-mask:visible')).toHaveCount(0, {
-        timeout: 60_000
-    });
-    // The keyword search matches on words, so earlier runs' orders can match
-    // too: this run's order is the newest, and the view must show its email.
-    const rows = page.locator('tr.data-row');
-    await expect(rows.first()).toBeVisible({ timeout: 60_000 });
-    const ids = (await rows.locator('td:nth-child(2)').allInnerTexts()).map((t) => t.trim());
-    const newest = ids.reduce((a, b) => (Number(b) > Number(a) ? b : a));
-    await rows
-        .filter({ has: page.locator('td:nth-child(2)', { hasText: newest }) })
-        .getByRole('link', { name: 'View' })
-        .click();
     await expect(page.locator('#order_status')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('.order-account-information')).toContainText(email);
 }
@@ -125,11 +132,12 @@ test.describe('pending order recovery', () => {
     test('the admin button settles an order the buyer never returned to', async ({ page }) => {
         test.setTimeout(300_000);
         const email = uniqueEmail('button');
-        const returnUrl = await placeOrderWithoutReturning(page, email);
-        test.skip(!returnUrl, 'Two order declined by sandbox risk after 3 attempts');
+        const placed = await placeOrderWithoutReturning(page, email);
+        test.skip(!placed, 'Two order declined by sandbox risk after 3 attempts');
+        const { orderId, returnUrl } = placed as Placed;
 
         await adminLogin(page);
-        await openOrder(page, email);
+        await openOrder(page, orderId, email);
         await expect(page.locator('#order_status')).toHaveText(/Pending/);
 
         const button = page.locator('button.two-check-status');
@@ -155,9 +163,9 @@ test.describe('pending order recovery', () => {
 
         // The buyer's late return now finds the order settled: success page,
         // and nothing done a second time.
-        await page.goto(returnUrl as string, { waitUntil: 'domcontentloaded' });
+        await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
         await expect(page).toHaveURL(/checkout\/onepage\/success/, { timeout: 60_000 });
-        await openOrder(page, email);
+        await openOrder(page, orderId, email);
         expect(await comments(page, RECOVERED)).toBe(1);
         expect(await comments(page, /verified by the customer/)).toBe(1);
     });
@@ -169,11 +177,11 @@ test.describe('pending order recovery', () => {
         );
         test.setTimeout(600_000);
         const email = uniqueEmail('cron');
-        const returnUrl = await placeOrderWithoutReturning(page, email);
-        test.skip(!returnUrl, 'Two order declined by sandbox risk after 3 attempts');
+        const placed = await placeOrderWithoutReturning(page, email);
+        test.skip(!placed, 'Two order declined by sandbox risk after 3 attempts');
 
         await adminLogin(page);
-        await openOrder(page, email);
+        await openOrder(page, (placed as Placed).orderId, email);
         await expect
             .poll(
                 async () => {
