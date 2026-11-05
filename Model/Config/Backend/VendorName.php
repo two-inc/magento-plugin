@@ -23,7 +23,9 @@ use Magento\Framework\Registry;
  * vendor_name, and checks it on save the same way.
  *
  * A field-level skip, not an exception: the stored name stays, every sibling
- * field still saves, and the merchant is told why.
+ * field still saves, and the merchant is told why. A name saved before the
+ * rule, posted back unchanged, is not refused: it is sent as it always was,
+ * and refusing it would report an error on every save of the section.
  */
 class VendorName extends Value
 {
@@ -63,7 +65,7 @@ class VendorName extends Value
             return parent::beforeSave();
         }
         $name = trim((string)$this->getValue());
-        if ($name !== '' && !self::isSendable($name)) {
+        if ($name !== '' && !self::isSendable($name) && $name !== trim((string)$this->getOldValue())) {
             $this->_dataSaveAllowed = false;
             $this->messageManager->addErrorMessage(__(
                 'Enter a vendor name of at most 255 characters, without line breaks or accented letters. The previously saved vendor name was kept.'

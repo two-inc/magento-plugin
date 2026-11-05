@@ -35,18 +35,33 @@ class VendorNameTest extends TestCase
             'accented' => ['Café Nord', false, null, 'an accented letter is refused'],
             'line break' => ["Shop\r\nB", false, null, 'a line break is refused'],
             'tab' => ["Shop\tB", false, null, 'a control character is refused'],
+            'unchanged old name' => ['Café Nord', true, 'Café Nord', 'a name saved before the rule, posted back unchanged, still saves', 'Café Nord'],
+            'changed old name' => ['Café Sud', false, null, 'changing a name saved before the rule applies the rule', 'Café Nord'],
         ];
     }
 
-    #[DataProvider('names')]
-    public function testTheVendorNameIsCheckedOnSave(string $submitted, bool $saved, ?string $written, string $description): void
+    private function config(?string $stored): ScopeConfigInterface
     {
+        $config = $this->createMock(ScopeConfigInterface::class);
+        $config->method('getValue')->willReturn($stored);
+
+        return $config;
+    }
+
+    #[DataProvider('names')]
+    public function testTheVendorNameIsCheckedOnSave(
+        string $submitted,
+        bool $saved,
+        ?string $written,
+        string $description,
+        ?string $stored = null
+    ): void {
         $messages = $this->createMock(MessageManager::class);
         $messages->expects($saved ? $this->never() : $this->once())->method('addErrorMessage');
         $model = new VendorName(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
-            $this->createMock(ScopeConfigInterface::class),
+            $this->config($stored),
             $this->createMock(TypeListInterface::class),
             $messages,
             null,
