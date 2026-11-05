@@ -84,7 +84,9 @@ async function openOrder(page: Page, email: string) {
     await expect(search).toBeVisible({ timeout: 60_000 });
     await search.fill(email);
     await search.press('Enter');
-    await expect(page.locator('.admin__current-filters-list')).toContainText(email, {
+    await expect(
+        page.locator('.admin__current-filters-list').filter({ visible: true }).first()
+    ).toContainText(email, {
         timeout: 60_000
     });
     await expect(page.locator('.admin__data-grid-loading-mask:visible')).toHaveCount(0, {
@@ -143,9 +145,9 @@ test.describe('pending order recovery', () => {
             button.click()
         ]);
 
-        await expect(page.locator('.message-success')).toContainText(
-            /order state: (VERIFIED|CONFIRMED)/
-        );
+        await expect(
+            page.locator('.message-success', { hasText: /order state: (VERIFIED|CONFIRMED)/ })
+        ).toBeVisible();
         await expect(page.locator('#order_status')).toHaveText(/Processing/);
         expect(await comments(page, RECOVERED)).toBe(1);
         expect(await comments(page, /verified by the customer/)).toBe(1);
