@@ -25,6 +25,7 @@ use Two\Gateway\Model\Config\Repository;
 use Two\Gateway\Model\Config\Source\Mode as ModeSource;
 use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Service\Merchant\CredentialsSave;
 
 /**
  * Environment setting (TWO-26604), driven by the shared case table
@@ -133,6 +134,7 @@ class EnvironmentModeTest extends TestCase
             $scopeConfig,
             $this->createMock(TypeListInterface::class),
             $messages,
+            $this->unchangedPair(),
             null,
             null,
             ['value' => $case['submitted'], 'path' => 'payment/two_payment/mode']
@@ -141,6 +143,19 @@ class EnvironmentModeTest extends TestCase
         $backend->beforeSave();
 
         $this->assertSame($case['accepted'], $backend->isSaveAllowed(), $case['description']);
+    }
+
+    /**
+     * The key saved beside the environment is not this test's subject
+     * (TWO-27108): the pair reads as unchanged, so only the environment's own
+     * rule decides.
+     */
+    private function unchangedPair(): CredentialsSave
+    {
+        $pair = $this->createMock(CredentialsSave::class);
+        $pair->method('decide')->willReturn(CredentialsSave::UNCHANGED);
+
+        return $pair;
     }
 
     /**

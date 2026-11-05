@@ -305,10 +305,10 @@ describe('gateway_method intent-approved notice', () => {
     const PHONE = ['buyer', 'representative', 'phone_number'];
     const fieldError = (loc) => ({ loc: loc, msg: 'Value error, raw validator text' });
     test.each([
-        [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(PHONE)] }, 'Phone Number is not valid.', 'a field the buyer can fix'],
-        [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(['buyer', 'SomeSchema', 'company', 'organization_number'])] }, 'Company Number is not valid.', 'a field behind a model-name segment'],
-        [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(PHONE), fieldError(['billing_address', 'city']), fieldError(PHONE)] }, 'Phone Number is not valid. City is not valid.', 'two fields, one repeated'],
-        [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details', error_json: [fieldError(PHONE)] }, 'Phone Number is not valid.', 'ORDER_INVALID carrying a field path'],
+        [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(PHONE)] }, 'Please enter a valid Phone number to pay on invoice.', 'a field the buyer can fix'],
+        [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(['buyer', 'SomeSchema', 'company', 'organization_number'])] }, 'Please enter a valid Organization number to pay on invoice.', 'a field behind a model-name segment'],
+        [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(PHONE), fieldError(['billing_address', 'city']), fieldError(PHONE)] }, 'Please enter a valid Phone number to pay on invoice. Please enter a valid City to pay on invoice.', 'two fields, one repeated'],
+        [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details', error_json: [fieldError(PHONE)] }, 'Please enter a valid Phone number to pay on invoice.', 'ORDER_INVALID carrying a field path'],
         [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(['buyer', 'unknown'])] }, GENERAL, 'a field we do not know'],
         [{ error_code: 'JSON_MISSING_FIELD', error_details: 'raw details' }, GENERAL, 'a field missing, no path'],
         [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'ORDER_INVALID naming nothing'],
@@ -320,12 +320,11 @@ describe('gateway_method intent-approved notice', () => {
         const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.generalErrorMessage = GENERAL;
         ctx.orderIntentFieldErrors = {
-            labels: {
-                'buyer.representative.phone_number': 'Phone Number',
-                'buyer.company.organization_number': 'Company Number',
-                'billing_address.city': 'City'
-            },
-            notValid: '%1 is not valid.'
+            messages: {
+                'buyer.representative.phone_number': 'Please enter a valid Phone number to pay on invoice.',
+                'buyer.company.organization_number': 'Please enter a valid Organization number to pay on invoice.',
+                'billing_address.city': 'Please enter a valid City to pay on invoice.'
+            }
         };
         const pushed = [];
         ctx.messageContainer.errorMessages = {

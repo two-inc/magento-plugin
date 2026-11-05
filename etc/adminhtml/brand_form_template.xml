@@ -134,7 +134,6 @@
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\ApiKey</backend_model>
-                    <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
                     </depends>
@@ -145,6 +144,7 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Vendor name (optional)</label>
                     <comment>If this store represents one of several vendor sites sharing the same {{provider}} merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order {{provider}} receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\VendorName</backend_model>
                     <config_path>payment/{{code}}/vendor_site_name</config_path>
                 </field>
             </group>
@@ -170,7 +170,6 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
-                    <validate>required-entry</validate>
                     <config_path>payment/{{code}}/title</config_path>
                 </field>
                 <field id="subtitle" translate="label comment" type="text" sortOrder="20"

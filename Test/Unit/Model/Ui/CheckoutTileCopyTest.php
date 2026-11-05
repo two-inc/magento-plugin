@@ -79,13 +79,13 @@ class CheckoutTileCopyTest extends TestCase
             'admin subtitle carrying a link' => [
                 '', self::TAGLINE_KEY, self::FAQ_URL, false,
                 'Pay in 30 days, <a href="' . self::FAQ_URL . '" target="_blank" rel="noopener">read more</a>.',
-                false, '', 'Pay in 30 days, ' . $anchor . 'read more</a>.',
-                'the merchant field may carry a link of its own, and it survives as a link',
+                false, '', 'Pay in 30 days, read more.',
+                'the merchant subtitle is plain text: a link saved before keeps its words, not the link (TWO-27108)',
             ],
             'admin subtitle set' => [
                 '', self::TAGLINE_KEY, self::FAQ_URL, false, '  Pay later & <b>relax</b>  ',
                 false, '', 'Pay later &amp; relax',
-                'merchant free text replaces the tagline and keeps only what the escaper allows',
+                'merchant free text replaces the tagline, escaped, with its markup removed',
             ],
             'admin subtitle of markup around whitespace' => [
                 '', self::TAGLINE_KEY, self::FAQ_URL, false, '<b> </b>',

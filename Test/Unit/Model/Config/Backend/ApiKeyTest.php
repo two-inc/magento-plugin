@@ -10,10 +10,14 @@ use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Backend\ApiKey;
+use Two\Gateway\Model\Config\Backend\Mode;
+use Two\Gateway\Service\Merchant\CredentialsSave;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
@@ -30,6 +34,7 @@ class ApiKeyTest extends TestCase
     private const CANDIDATE = 'candidate-key';
 
     private const KEY_PATH = 'two_general/general/api_key';
+    private const MODE_PATH = 'two_general/general/mode';
 
     private const SIBLING_PATH = 'two_general/general/vendor_site_name';
 
@@ -52,28 +57,108 @@ class ApiKeyTest extends TestCase
      */
     private function build(array $data): ApiKey
     {
-        $encryptor = $this->createMock(EncryptorInterface::class);
-        $encryptor->method('encrypt')->willReturnCallback(
-            function ($value) {
-                return 'encrypted:' . $value;
-            }
-        );
-
-        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
-        $brandRegistry->method('getProductName')->willReturn('Acme Pay');
-
         return new ApiKey(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
-            $this->createMock(ScopeConfigInterface::class),
+            $this->config(),
             $this->createMock(TypeListInterface::class),
-            $encryptor,
-            $this->apiKeyStatus,
-            new ApiKeyStatusMessage($brandRegistry),
-            $this->messageManager,
+            $this->encryptor(),
+            $this->credentials(),
             null,
             null,
             $data
+        );
+    }
+
+    /** @var array<string, string> config path => stored value, what the scope holds before the save */
+    private $stored = [];
+
+    /** @var CredentialsSave|null one per request, shared by the fields, as DI shares it */
+    private $credentials;
+
+    /**
+     * @var array<string, array<string, string>>|null scope type => config path => effective value;
+     *      null reads every scope from $stored
+     */
+    private $layers;
+
+    private function config(): ScopeConfigInterface
+    {
+        $config = $this->createMock(ScopeConfigInterface::class);
+        $config->method('getValue')->willReturnCallback(function ($path, $scope = 'default') {
+            if ($this->layers !== null) {
+                return $this->layers[$scope][$path] ?? null;
+            }
+            return $this->stored[$path] ?? null;
+        });
+
+        return $config;
+    }
+
+    /** Store view 3 belongs to website 2. */
+    private function storeManager(): StoreManagerInterface
+    {
+        $store = new class {
+            public function getWebsiteId()
+            {
+                return 2;
+            }
+        };
+        $manager = $this->createMock(StoreManagerInterface::class);
+        $manager->method('getStore')->willReturn($store);
+
+        return $manager;
+    }
+
+    private function encryptor(): EncryptorInterface
+    {
+        $encryptor = $this->createMock(EncryptorInterface::class);
+        $encryptor->method('encrypt')->willReturnCallback(static fn ($value) => 'encrypted:' . $value);
+        $encryptor->method('decrypt')->willReturnCallback(
+            static fn ($value) => strpos((string)$value, 'encrypted:') === 0 ? substr((string)$value, 10) : ''
+        );
+
+        return $encryptor;
+    }
+
+    private function credentials(): CredentialsSave
+    {
+        if ($this->credentials === null) {
+            $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+            $brandRegistry->method('getProductName')->willReturn('Acme Pay');
+            $this->credentials = new CredentialsSave(
+                $this->apiKeyStatus,
+                new ApiKeyStatusMessage($brandRegistry),
+                $this->messageManager,
+                $this->config(),
+                $this->encryptor(),
+                $this->storeManager()
+            );
+        }
+
+        return $this->credentials;
+    }
+
+    /**
+     * The environment field, posted in the same group as the key.
+     */
+    private function modeField(string $value, string $key, array $extra = []): Mode
+    {
+        return new Mode(
+            $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
+            $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
+            $this->config(),
+            $this->createMock(TypeListInterface::class),
+            $this->messageManager,
+            $this->credentials(),
+            null,
+            null,
+            $extra + [
+                'value' => $value,
+                'path' => self::MODE_PATH,
+                'scope' => 'default',
+                'fieldset_data' => ['mode' => $value, 'api_key' => $key],
+            ]
         );
     }
 
@@ -196,7 +281,7 @@ class ApiKeyTest extends TestCase
 
         $model->beforeSave();
 
-        $this->assertSame($value, $model->getValue(), $description);
+        $this->assertFalse($model->isSaveAllowed(), $description . ': the stored key is kept, not overwritten (TWO-27108)');
     }
 
     /**
@@ -331,5 +416,250 @@ class ApiKeyTest extends TestCase
             $byName['resourceCollection'],
             '$resourceCollection must stay typed, matching Encrypted/Value'
         );
+    }
+
+    /**
+     * TWO-27108: the key and the environment are saved as one pair or not at
+     * all; a key Two could not judge never replaces one that last verified;
+     * the field beside them saves whatever happens to the pair.
+     *
+     * @dataProvider pairs
+     */
+    public function testTheKeyAndEnvironmentSaveAsOnePair(
+        ?string $storedMode,
+        string $typedKey,
+        string $mode,
+        ?string $verdict,
+        ?string $lastDefinitive,
+        array $expected,
+        array $messages,
+        string $description,
+        string $storedKey = 'old-key'
+    ): void {
+        $this->stored = [self::KEY_PATH => 'encrypted:' . $storedKey, self::MODE_PATH => $storedMode];
+        if ($storedMode === null) {
+            $this->stored = [];
+        }
+        $checks = 0;
+        $this->apiKeyStatus->method('verifyCandidate')->willReturnCallback(
+            function () use (&$checks, $verdict) {
+                $checks++;
+                return ['status' => $verdict, 'code' => null, 'merchant' => null];
+            }
+        );
+        $this->apiKeyStatus->method('lastDefinitiveStatus')->willReturn($lastDefinitive);
+        $said = ['error' => 0, 'warning' => 0];
+        $this->messageManager->method('addErrorMessage')->willReturnCallback(function () use (&$said) {
+            $said['error']++;
+            return $this->messageManager;
+        });
+        $this->messageManager->method('addWarningMessage')->willReturnCallback(function () use (&$said) {
+            $said['warning']++;
+            return $this->messageManager;
+        });
+
+        $stored = $this->saveSection([
+            self::MODE_PATH => $this->modeField($mode, $typedKey),
+            self::KEY_PATH => $this->build([
+                'value' => $typedKey,
+                'path' => self::KEY_PATH,
+                'scope' => 'default',
+                'fieldset_data' => ['mode' => $mode, 'api_key' => $typedKey],
+            ]),
+            self::SIBLING_PATH => $this->siblingField(),
+        ]);
+
+        $this->assertSame(self::SIBLING_VALUE, $stored[self::SIBLING_PATH] ?? null, $description . ': the sibling saves');
+        unset($stored[self::SIBLING_PATH]);
+        $this->assertSame($expected, $stored, $description);
+        $this->assertSame($messages, $said, $description . ': messages');
+        if ($verdict === null) {
+            $this->assertSame(0, $checks, $description . ': nothing to ask Two');
+        }
+    }
+
+    /**
+     * @return array<string, array>
+     */
+    public static function pairs(): array
+    {
+        $ok = ApiKeyStatus::OK;
+        $no = ApiKeyStatus::INVALID_KEY;
+        $down = ApiKeyStatus::UNREACHABLE;
+        $both = [self::MODE_PATH => 'production', self::KEY_PATH => 'encrypted:new-key'];
+        $none = [];
+        $quiet = ['error' => 0, 'warning' => 0];
+        $error = ['error' => 1, 'warning' => 0];
+        // stored environment, typed key, submitted environment, Two's verdict on the pair,
+        // the stored pair's last definitive answer, what is written, messages, description
+        return [
+            'new pair accepted' => ['sandbox', 'new-key', 'production', $ok, null, $both, $quiet,
+                'an accepted key is written with its environment'],
+            'new pair rejected' => ['sandbox', 'new-key', 'production', $no, $ok, $none, $error,
+                'a rejected key keeps the stored key AND environment'],
+            'new pair unjudged, stored pair last verified' => ['sandbox', 'new-key', 'production', $down, $ok, $none, $error,
+                'a key Two could not judge never replaces one that last verified'],
+            'new pair unjudged, stored pair never verified' => ['sandbox', 'new-key', 'production', $down, null, $both,
+                ['error' => 0, 'warning' => 1], 'nothing known good to protect: the pair saves, with a warning'],
+            'environment only, stored key rejected there' => ['sandbox', '', 'production', $no, $ok, $none, $error,
+                'switching environment checks the stored key there, and a rejection keeps both'],
+            'environment only, stored key accepted there' => ['sandbox', '', 'production', $ok, null,
+                [self::MODE_PATH => 'production'], $quiet, 'the environment saves; the stored key is not rewritten'],
+            'environment only during an outage, stored pair last verified' => ['sandbox', '', 'production', $down, $ok,
+                $none, $error, 'an outage cannot move a verified key to another environment'],
+            'untouched save' => ['sandbox', '', 'sandbox', null, $ok, [self::MODE_PATH => 'sandbox'], $quiet,
+                'nothing changed: nothing is asked, and nothing is refused'],
+            'untouched save over a legacy stored environment' => ['prod', '', 'production', null, $ok,
+                [self::MODE_PATH => 'production'], $quiet,
+                'a legacy spelling of the same environment is unchanged, so an outage cannot refuse the save'],
+            'refused environment with a new key' => ['sandbox', 'new-key', 'staging', null, $ok, $none,
+                ['error' => 2, 'warning' => 0], 'a refused environment keeps the key typed beside it, and says so'],
+            'malformed key' => ['sandbox', "new key", 'production', null, $ok, $none, $error,
+                'a key with a space is never sent, and keeps both'],
+            'untouched save over a stored key with stray whitespace' => ['sandbox', '', 'sandbox', null, $ok,
+                [self::MODE_PATH => 'sandbox'], $quiet, 'a stored key is trimmed before it is compared, and never refused for its form',
+                " old-key\t"],
+            'environment only over a stored key with an inner space' => ['sandbox', '', 'production', $ok, null,
+                [self::MODE_PATH => 'production'], $quiet, 'a stored key is Two\'s to judge, never refused for its form',
+                'old key'],
+            'no key anywhere' => [null, '', 'production', null, null, [self::MODE_PATH => 'production'], $error,
+                'with no key to protect the environment saves, and the merchant is asked for a key'],
+        ];
+    }
+
+    /**
+     * TWO-27108: "Use Default" on either half at a website or store view is a
+     * change of that half to the parent's value, judged by the same rule.
+     * Core deletes an inherited field without beforeSave(), so a pair that must
+     * be kept refuses the whole save (the delete throws, and nothing is saved).
+     *
+     * Website 2 holds sandbox + its own key; the default scope holds production
+     * + the default key. Store view 3, in website 2, holds production + the
+     * default key of its own.
+     *
+     * @dataProvider inheritedPairs
+     */
+    public function testUseDefaultOnEitherHalfFollowsThePairRule(
+        string $scope,
+        int $scopeId,
+        ?string $typedKey,
+        ?string $mode,
+        ?string $verdict,
+        $expected,
+        ?string $verifiedMode,
+        string $description
+    ): void {
+        $this->layers = [
+            'default' => [self::KEY_PATH => 'encrypted:default-key', self::MODE_PATH => 'production'],
+            'websites' => [self::KEY_PATH => 'encrypted:website-key', self::MODE_PATH => 'sandbox'],
+            'stores' => [self::KEY_PATH => 'encrypted:default-key', self::MODE_PATH => 'production'],
+        ];
+        $asked = [];
+        $this->apiKeyStatus->method('verifyCandidate')->willReturnCallback(
+            function ($key, $id, $mode) use (&$asked, $verdict) {
+                $asked[] = [$key, $mode];
+                return ['status' => $verdict, 'code' => null, 'merchant' => null];
+            }
+        );
+        $this->apiKeyStatus->method('lastDefinitiveStatus')->willReturn(ApiKeyStatus::OK);
+
+        // null = "Use Default" ticked: the input is disabled, so nothing is posted.
+        $groups = ['general' => ['fields' => [
+            'mode' => $mode === null ? ['inherit' => 1] : ['value' => $mode],
+            'api_key' => $typedKey === null ? ['inherit' => 1] : ['value' => $typedKey],
+        ]]];
+        $data = [
+            'scope' => $scope,
+            'scope_id' => $scopeId,
+            'groups' => $groups,
+            'group_id' => 'general',
+            'fieldset_data' => ['mode' => $mode, 'api_key' => $typedKey],
+        ];
+        $modeModel = $this->modeField((string)$mode, (string)$typedKey, $data);
+        $keyModel = $this->build(['value' => (string)$typedKey, 'path' => self::KEY_PATH] + $data);
+
+        $result = $this->saveWithUseDefault([
+            self::MODE_PATH => [$modeModel, $mode === null],
+            self::KEY_PATH => [$keyModel, $typedKey === null],
+        ]);
+
+        $this->assertSame($expected, $result, $description);
+        if ($verifiedMode !== null) {
+            $this->assertSame($verifiedMode, $asked[0][1] ?? null, $description . ': the environment the key is checked against');
+        }
+        if ($verdict === null) {
+            $this->assertSame([], $asked, $description . ': nothing to ask Two');
+        }
+    }
+
+    /**
+     * Mirrors core's section save: the inherited fields' delete runs first and
+     * an exception from it rolls everything back; then the rest are saved.
+     *
+     * @param array<string, array{0: Value, 1: bool}> $fields path => [model, "Use Default" ticked]
+     * @return array{written: array<string, mixed>, deleted: list<string>}|string
+     */
+    private function saveWithUseDefault(array $fields)
+    {
+        $deleted = [];
+        try {
+            foreach ($fields as $path => [$model, $inherited]) {
+                if ($inherited) {
+                    $model->beforeDelete();
+                    $deleted[] = $path;
+                }
+            }
+        } catch (LocalizedException $e) {
+            return 'rolled back';
+        }
+        $written = [];
+        foreach ($fields as $path => [$model, $inherited]) {
+            if (!$inherited) {
+                $model->beforeSave();
+                if ($model->isSaveAllowed()) {
+                    $written[$path] = $model->getValue();
+                }
+            }
+        }
+
+        return ['written' => $written, 'deleted' => $deleted];
+    }
+
+    /**
+     * @return array<string, array>
+     */
+    public static function inheritedPairs(): array
+    {
+        $ok = ApiKeyStatus::OK;
+        $no = ApiKeyStatus::INVALID_KEY;
+        // scope, scope id, typed key (null = Use Default), environment (null = Use Default),
+        // Two's verdict, the result, the environment the key is checked against, description
+        return [
+            'website: a new pair accepted' => ['websites', 2, 'new-key', 'production', $ok,
+                ['written' => [self::MODE_PATH => 'production', self::KEY_PATH => 'encrypted:new-key'], 'deleted' => []],
+                'production', 'a website saves its own pair by the same rule'],
+            'website: a new pair rejected' => ['websites', 2, 'new-key', 'production', $no,
+                ['written' => [], 'deleted' => []], 'production', 'a website keeps its pair on a rejection'],
+            'website: environment to Use Default, key blank, rejected there' => ['websites', 2, '', null, $no,
+                'rolled back', 'production', 'the website key is checked against the inherited environment, and a rejection stops the delete'],
+            'website: environment to Use Default, key blank, accepted there' => ['websites', 2, '', null, $ok,
+                ['written' => [], 'deleted' => [self::MODE_PATH]], 'production', 'an inherited environment the key works in is deleted'],
+            'website: environment to Use Default, new key pasted' => ['websites', 2, 'default-key-2', null, $ok,
+                ['written' => [self::KEY_PATH => 'encrypted:default-key-2'], 'deleted' => [self::MODE_PATH]],
+                'production', 'a pasted key is checked against the inherited environment, not the old one'],
+            'website: key to Use Default, environment changed, accepted' => ['websites', 2, null, 'production', $ok,
+                ['written' => [self::MODE_PATH => 'production'], 'deleted' => [self::KEY_PATH]],
+                'production', 'the inherited key is checked against the new environment'],
+            'website: key to Use Default, environment kept, rejected' => ['websites', 2, null, 'sandbox', $no,
+                'rolled back', 'sandbox', 'the inherited key is rejected in the website environment, so nothing is saved'],
+            'website: both to Use Default' => ['websites', 2, null, null, $ok,
+                ['written' => [], 'deleted' => [self::MODE_PATH, self::KEY_PATH]], 'production',
+                'inheriting the whole pair checks the parent pair'],
+            'store view: environment to Use Default, rejected there' => ['stores', 3, '', null, $no,
+                'rolled back', 'sandbox', 'a store view inherits from its website, and the rule holds'],
+            'store view: key to Use Default, accepted' => ['stores', 3, null, 'sandbox', $ok,
+                ['written' => [self::MODE_PATH => 'sandbox'], 'deleted' => [self::KEY_PATH]],
+                'sandbox', 'a store view takes its website key, checked against the environment being saved'],
+        ];
     }
 }

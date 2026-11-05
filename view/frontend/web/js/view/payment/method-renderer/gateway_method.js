@@ -1543,8 +1543,8 @@ define([
             }
         },
         /**
-         * "<Field> is not valid." for each field a refusal's error_json names
-         * that the buyer can fix, or '' when it names none (TWO-26295).
+         * The buyer sentence for each field a refusal's error_json names that
+         * the buyer can fix, or '' when it names none (TWO-26295, TWO-27108).
          * Chosen from the field path, never the message, with model-name
          * segments a validator may insert (a capital first letter) dropped,
          * exactly as order create does.
@@ -1554,17 +1554,15 @@ define([
          */
         orderIntentFieldErrorMessage: function (errors) {
             const copy = this.orderIntentFieldErrors;
-            if (!copy || !copy.labels || !copy.notValid || !Array.isArray(errors)) return '';
+            if (!copy || !copy.messages || !Array.isArray(errors)) return '';
             const messages = [];
             errors.forEach(function (error) {
                 if (!error || !Array.isArray(error.loc)) return;
                 const path = error.loc.filter(function (segment) {
                     return typeof segment === 'string' && segment !== '' && !/^[A-Z]/.test(segment);
                 }).join('.');
-                const label = Object.prototype.hasOwnProperty.call(copy.labels, path) ? copy.labels[path] : '';
-                if (!label) return;
-                const text = copy.notValid.replace('%1', label);
-                if (messages.indexOf(text) === -1) messages.push(text);
+                const text = Object.prototype.hasOwnProperty.call(copy.messages, path) ? copy.messages[path] : '';
+                if (text && messages.indexOf(text) === -1) messages.push(text);
             });
             return messages.join(' ');
         },

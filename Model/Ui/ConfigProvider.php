@@ -322,8 +322,7 @@ class ConfigProvider implements ConfigProviderInterface
                     // can fix says which, in our own words, chosen by the
                     // field path. One map, shared with order create.
                     'orderIntentFieldErrors' => [
-                        'labels' => array_map('strval', $this->two->getFieldErrorLabels()),
-                        'notValid' => (string)__('%1 is not valid.'),
+                        'messages' => array_map('strval', $this->two->getFieldErrorMessages()),
                     ],
                     // TWO-25326: the Two method stays selectable with a
                     // manual (name-only, no organisation number) capture —

@@ -138,7 +138,7 @@ class OrderServiceRefusalTest extends TestCase
         ] + $extra];
         $field = ['error_json' => [['loc' => ['buyer', 'representative', 'email'], 'msg' => 'raw validator text']]];
         return [
-            'confirm refused naming a field' => ['confirmOrder', [self::CONFIRM => [$refused($field)]], 'Email Address is not valid.'],
+            'confirm refused naming a field' => ['confirmOrder', [self::CONFIRM => [$refused($field)]], 'Please enter a valid Email to pay on invoice.'],
             'confirm refused naming nothing' => ['confirmOrder', [self::CONFIRM => [$refused([])]], 'Something went wrong with your request to Two. Please try again later.'],
             'order fetch refused by a server error' => ['getTwoOrderFromApi', [self::FETCH => [self::GATEWAY_502]], 'Something went wrong with your request to Two. Please try again later.'],
         ];

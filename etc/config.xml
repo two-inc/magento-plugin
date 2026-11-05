@@ -16,7 +16,8 @@
             <two_payment>
                 <active>1</active>
                 <version>4.1.0</version>
-                <title>Two - Buy Now Pay Later on Invoice Terms</title>
+                <!-- TWO-27108: no English title stored; empty shows the translated default. -->
+                <title/>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
                 <merchant_minimum_order_basis>gross</merchant_minimum_order_basis>
