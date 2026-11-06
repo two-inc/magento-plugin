@@ -28,7 +28,8 @@ use Two\Gateway\Test\Unit\Service\Order\Doubles\PostprocessorFactory;
 
 /**
  * With no subscriber, what the real composers build is sent unchanged and
- * never refused (TWO-26092), including the residuals the plugin already
+ * never refused (TWO-26092), including a line whose tax does not follow its
+ * rate (TWO-26284), and the residuals the plugin already
  * leaves unitemised: store credit, gift cards and reward points (payment,
  * not taxed lines), and a taxed third-party fee whose rate Magento does not
  * vouch for.
@@ -70,7 +71,9 @@ class OrderPostprocessorGoldenTest extends TestCase
             [Hook::REQUEST_CAPTURE, 'partialShipment', '0.00', 'shipment of 1 of 2 discounted units, shipping on the first shipment'],
             [Hook::REQUEST_REFUND, 'proratedRefundWithRewardPoints', '-5.00', 'prorated refund of 1 of 3 units with float tax, reward points returned'],
             [Hook::REQUEST_REFUND, 'refundWithAdjustmentsAndFee', '12.50', 'refund with adjustment lines and a taxed third-party fee'],
-            [Hook::REQUEST_CAPTURE, 'captureOfUnreconciledLine', '0.00', 'capture of an order whose line tax does not follow its rate, placed before the line tax gate'],
+            [Hook::REQUEST_ORDER_CREATE, 'createWithUnreconciledLine', '0.00', 'create with a line whose tax does not follow its rate: sent for the API to validate (TWO-26284)'],
+            [Hook::REQUEST_ORDER_UPDATE, 'createWithUnreconciledLine', '0.00', 'the same order re-sent on an address edit'],
+            [Hook::REQUEST_CAPTURE, 'captureOfUnreconciledLine', '0.00', 'capture of an order whose line tax does not follow its rate'],
             [Hook::REQUEST_REFUND, 'refundOfUnreconciledLine', '0.00', 'refund of that order'],
         ];
     }
@@ -151,6 +154,13 @@ class OrderPostprocessorGoldenTest extends TestCase
         $creditmemo->setOrder($order);
 
         return $this->composer(ComposeRefund::class, $order)->execute($creditmemo, 140.50, $order);
+    }
+
+    private function createWithUnreconciledLine(): array
+    {
+        $order = $this->order([[1, 1, 100.00, 26.00, 25.0, 0.0]], 126.00, 26.00);
+
+        return $this->composeOrder()->execute($order, 'ref', []);
     }
 
     private function captureOfUnreconciledLine(): array

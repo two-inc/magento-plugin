@@ -8,10 +8,12 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Merchant;
 
 use Magento\Framework\App\CacheInterface;
+use Magento\Framework\FlagManager;
 use Magento\Framework\Serialize\Serializer\Json;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\AdminScope;
+use Two\Gateway\Model\Config\EnvironmentMode;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -91,6 +93,13 @@ class ApiKeyStatus
 
     private const CACHE_KEY_PREFIX = 'two_gateway_api_key_status_';
 
+    /**
+     * Flag code prefix for the last DEFINITIVE answer (ok or rejected) about
+     * a key in an environment, kept apart from the cached verdict, which an
+     * outage overwrites (TWO-27108).
+     */
+    public const DEFINITIVE_FLAG_PREFIX = 'two_gateway_api_key_definitive_';
+
     /** Seconds a successful verification is served from cache. */
     private const CACHE_LIFETIME = 300;
 
@@ -102,7 +111,7 @@ class ApiKeyStatus
      */
     private const FAILURE_CACHE_LIFETIME = 60;
 
-    /** The verdict gates every cart and checkout render, so a verification may not outlast a page (ABN-535). */
+    /** The verdict gates every cart and checkout render, so a verification may not outlast a page. */
     private const FETCH_TIMEOUT_SECONDS = 10;
 
     /**
@@ -140,13 +149,20 @@ class ApiKeyStatus
      */
     private $memo = [];
 
+    /**
+     * @var FlagManager
+     */
+    private $flagManager;
+
     public function __construct(
         Adapter $apiAdapter,
         ConfigRepository $configRepository,
         CacheInterface $cache,
         Json $json,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        FlagManager $flagManager
     ) {
+        $this->flagManager = $flagManager;
         $this->apiAdapter = $apiAdapter;
         $this->configRepository = $configRepository;
         $this->cache = $cache;
@@ -251,9 +267,64 @@ class ApiKeyStatus
     }
 
     /**
+     * The last definitive answer Two gave about this key in this environment,
+     * ok or invalid_key, however old, or null when it never gave one.
+     * Outages, 5xx answers and malformed replies never change it, so it says
+     * whether a stored key is known good even while Two is down: a save must
+     * not replace a known-good key with one Two could not judge (TWO-27108).
+     */
+    public function lastDefinitiveStatus(string $apiKey, ?string $mode): ?string
+    {
+        if ($apiKey === '') {
+            return null;
+        }
+        $slot = $this->flagManager->getFlagData(self::definitiveFlag($apiKey, $mode));
+        $status = is_array($slot) ? ($slot['status'] ?? null) : null;
+
+        return $status === self::OK || $status === self::INVALID_KEY ? $status : null;
+    }
+
+    /**
+     * Keeps an ok or invalid_key answer as the key's last definitive one, and
+     * ignores every other category. Written only when the answer changes, so
+     * the checkout path's regular re-verification costs a read, not a write.
+     * A failed write is logged and never fails the caller: it sits on the
+     * payment method's availability path.
+     */
+    public function recordDefinitive(string $apiKey, ?string $mode, string $status): void
+    {
+        if ($apiKey === '' || ($status !== self::OK && $status !== self::INVALID_KEY)) {
+            return;
+        }
+        try {
+            if ($this->lastDefinitiveStatus($apiKey, $mode) !== $status) {
+                $this->flagManager->saveFlag(
+                    self::definitiveFlag($apiKey, $mode),
+                    ['status' => $status, 'verified_on' => time()]
+                );
+            }
+        } catch (\Throwable $e) {
+            $this->logRepository->addDebugLog(
+                'ApiKeyStatus: could not record the last definitive verdict',
+                ['status' => $status, 'error' => get_class($e)]
+            );
+        }
+    }
+
+    /**
+     * On the environment a stored value RESOLVES to, the one the key is sent
+     * to, so a legacy spelling of an environment finds the same slot as the
+     * canonical one. sha256 of the key, never the key itself.
+     */
+    private static function definitiveFlag(string $apiKey, ?string $mode): string
+    {
+        return self::DEFINITIVE_FLAG_PREFIX . hash('sha256', EnvironmentMode::normalise($mode) . "\0" . $apiKey);
+    }
+
+    /**
      * True only for a DEFINITIVE rejection of the stored key: Two said no, or
      * there is no key to say no to. Every other failure category is false —
-     * ABN-533: a 5xx, a timeout or a malformed answer says nothing about the
+     * A 5xx, a timeout or a malformed answer says nothing about the
      * key, and treating it as a rejection took the payment method off
      * correctly-configured shops within one CACHE_LIFETIME of any outage.
      */
@@ -336,6 +407,7 @@ class ApiKeyStatus
             );
         }
 
+        $this->recordDefinitive($apiKey, $this->configRepository->getMode($storeId, $scope), $status['status']);
         $lifetime = $status['status'] === self::OK ? self::CACHE_LIFETIME : self::FAILURE_CACHE_LIFETIME;
         $this->cache->save($this->json->serialize($status), $cacheKey, [], $lifetime);
         $this->memo[$cacheKey] = $status;

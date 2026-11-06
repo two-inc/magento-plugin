@@ -17,6 +17,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\RoundingBasis;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\SurchargeCapProvider;
 
 /**
@@ -196,7 +197,9 @@ class SurchargeCalculator
             return $this->responseCache[$cacheKey] = $this->json->unserialize($cached);
         }
 
-        $response = $this->apiAdapter->execute(
+        $response = $this->apiAdapter->withIdempotencyKey(
+            IdempotencyKey::build('fee_quote', IdempotencyKey::hash($request))
+        )->execute(
             '/v1/pricing/order/fee',
             $request,
             'POST',

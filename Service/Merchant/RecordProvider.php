@@ -28,7 +28,7 @@ use Two\Gateway\Service\Api\Adapter;
  *
  * The entry has no expiry: only the scheduled hourly refresh replaces it, so
  * a read that finds no record at all is a fresh install or a cache flush, and
- * is logged (ABN-519).
+ * is logged.
  *
  * Freshness is the stored success stamp. The cron refreshes a record once it
  * is MAX_AGE old; one that reaches STALE_AFTER says the cron is not running,
@@ -143,7 +143,7 @@ class RecordProvider
     {
         $mode = $this->configRepository->getMode($storeId, $scope);
         $apiKey = $this->configRepository->getApiKey($storeId, $scope);
-        // A website or default scope id is not a store id, so it cannot travel as one (ABN-530).
+        // A website or default scope id is not a store id, so it cannot travel as one.
         $headerStoreId = AdminScope::isStoreScope($scope) ? $storeId : null;
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
@@ -282,7 +282,7 @@ class RecordProvider
      * A record at STALE_AFTER means the scheduled refresh is not running, so a
      * read stands in for it, once per run the cron owes and on a budget a page
      * render can afford. A record with no stamp is left to the cron, which
-     * already counts it due (ABN-519).
+     * already counts it due.
      *
      * @param array<string,mixed> $held record already cached, kept on a failed fetch
      * @return array<string,mixed>|null

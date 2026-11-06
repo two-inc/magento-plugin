@@ -168,8 +168,8 @@ Explicit boolean only, each governing its own outcome. **They are not
 symmetrical.** The approved switch is an on/off switch. The declined one
 chooses between the brand's wording and the platform's, because that
 sentence is the buyer's only account of why the Place Order button is
-disabled, and a switchable explanation for a blocked control is the defect
-ABN-563 reports.
+disabled, and a switchable explanation for a blocked control is a
+defect.
 
 | brand.xml                                          | Behaviour                                                                                                                                                                                                                                                                        |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -385,7 +385,7 @@ ordering.
 ### Derive the list; do not transcribe it
 
 Writing forty-odd paths by hand invites a typo that silently hides a
-control. `magento-abn-plugin` derives its list from the live template with
+control. The reference overlay plugin derives its list from the live template with
 `dev/derive-allowed-fields.sh` and keeps only its exclusions by hand. Note
 that counting raw `<field>` tags overstates the template: a
 `<depends><field id="…"/></depends>` is a REFERENCE to another field, not a
@@ -522,9 +522,11 @@ comments no user ever sees, `etc/brand.xml` because it is the registry that
 declares the vanilla name. `etc/config.xml` is ungated because its `<title>`
 sits under the vanilla payment code: an overlay ships its own `etc/config.xml`
 under its own code, merged later, and its method reads the title from its own
-`getCode()` path. An overlay shipping no `<title>` is the safe case —
-`Model/Two::getTitle()` falls back to the brand registry's product name; one
-shipping a branded-wrong `<title>` is the failure mode.
+`getCode()` path. An overlay shipping no `<title>` is the safe case:
+with a brand overlay active, `Model/Two::getTitle()` falls back to the brand
+registry's product name, while the unbranded plugin falls back to the
+translated "Business invoice" (TWO-27108). One shipping a branded-wrong
+`<title>` is the failure mode.
 
 ## Local development
 

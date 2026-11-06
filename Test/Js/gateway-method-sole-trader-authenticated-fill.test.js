@@ -34,9 +34,11 @@ const BUYER = {
  * The real flow, reached through Luma's wired capture component, with `fetch`
  * recorded.
  *
- * @param {object} [options] `{ buyer, mode, customHeaders }` — what the buyer
- *        endpoint answers with (null for a 404), the capture mode to start in,
- *        and the headers the merchant config exposes to the browser
+ * @param {object} [options] `{ buyer, buyerStatus, mode, customHeaders, popup,
+ *        realAbandon }`: what the buyer endpoint answers with (null for a 404,
+ *        or `buyerStatus` for a failure), the capture mode to start in, the
+ *        headers the merchant config exposes to the browser, the tracked popup,
+ *        and whether the component's own abandon runs
  * @returns {Promise<object>} `{ flow, rec, identity, handler }`
  */
 async function loadFlow(options) {
@@ -46,6 +48,7 @@ async function loadFlow(options) {
         errors: [],
         adopted: [],
         abandons: [],
+        nobody: 0,
         listeners: [],
         /** Whether `identity.isBusy()` was still true as the write landed. */
         busyDuringWrite: null
@@ -92,6 +95,7 @@ async function loadFlow(options) {
                         }
                     });
                 }
+                if (opts.buyerStatus) return Promise.resolve({ ok: false, status: opts.buyerStatus });
                 if (!opts.buyer) return Promise.resolve({ ok: false, status: 404 });
                 return Promise.resolve({
                     ok: true,
@@ -115,13 +119,18 @@ async function loadFlow(options) {
         rec.adopted.push(buyer);
         return adopt(buyer);
     };
-    component.abandonSoleTrader = function () { rec.abandons.push(true); };
+    const abandon = component.abandonSoleTrader.bind(component);
+    component.abandonSoleTrader = function (abandonOptions) {
+        rec.abandons.push(abandonOptions || {});
+        if (opts.realAbandon) abandon(abandonOptions);
+    };
+    component.signupFoundNobody = function () { rec.nobody += 1; };
 
     const flow = component.soleTrader();
     flow.autofillToken = 'at';
     // The tracked popup, set directly: opening one would also arm the close
     // watcher, whose own flight would mask the handshake's.
-    flow._popupWindow = POPUP;
+    flow._popupWindow = opts.popup || POPUP;
     const bound = rec.listeners.filter((entry) => entry.name === 'message');
     expect(bound).toHaveLength(1);
 
@@ -217,12 +226,14 @@ describe('which messages the handshake acts on', () => {
 describe('what an authenticated buyer produces', () => {
     test.each([
         [BUYER, 'a buyer whose email matches nothing on the checkout is still adopted'],
+        [Object.assign({}, BUYER, { company_name: '' }), 'a blank name keeps the one in the field'],
         [
             Object.assign({}, BUYER, { email: null }),
             'a buyer with no email at all is adopted — the handshake is the proof'
         ]
     ])('%p (%s)', async (buyer) => {
         const { rec, identity, handler } = await loadFlow({ buyer: buyer });
+        identity.companyName(BUYER.company_name);
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
@@ -233,15 +244,54 @@ describe('what an authenticated buyer produces', () => {
         expect(identity.isSoleTrader()).toBe(true);
     });
 
-    test('an ACCEPTED message the lookup cannot answer surfaces an error and fills nothing', async () => {
-        const { rec, identity, handler } = await loadFlow({ buyer: null });
+    // TWO-26775: the three ways the lookup after ACCEPTED can answer.
+    test.each([
+        [{ buyer: BUYER }, { adopted: 1, errors: 0, nobody: 0, abandons: 0 }, 'a buyer is adopted'],
+        [{ buyer: null }, { adopted: 0, errors: 0, nobody: 1, abandons: 0 }, 'nobody asks again, as PrestaShop does'],
+        [{ buyerStatus: 503 }, { adopted: 0, errors: 1, nobody: 0, abandons: 0 }, 'a failure with the popup still up shows the error only'],
+        [
+            { buyerStatus: 503, popup: { closed: true, close: function () {} } },
+            { adopted: 0, errors: 1, nobody: 0, abandons: 1 },
+            'a failure after the popup closed shows the error and abandons'
+        ]
+    ])('lookup %p -> %p (%s)', async (lookup, expected, why) => {
+        const popup = lookup.popup || POPUP;
+        const { rec, identity, handler } = await loadFlow(Object.assign({}, lookup));
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: popup });
+        await settle();
+
+        expect([why, {
+            adopted: rec.adopted.length,
+            errors: rec.errors.length,
+            nobody: rec.nobody,
+            abandons: rec.abandons.length
+        }]).toEqual([why, expected]);
+        if (!expected.adopted) expect(identity.companyId()).toBe('');
+    });
+
+    test('a failed lookup after the popup closed does not leave the checkout in sole-trader mode', async () => {
+        // The close watcher stands down while the lookup confirms, so nothing
+        // else would run the abandon (TWO-26775).
+        const popup = { closed: true, close: function () {} };
+        const { identity, handler } = await loadFlow({ buyerStatus: 503, popup: popup, realAbandon: true });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: popup });
+        await settle();
+
+        expect(identity.captureMode()).toBe('registered');
+        expect(identity.isBusy()).toBe(false);
+    });
+
+    test('a lookup answering after the buyer chose another mode writes nothing', async () => {
+        const { rec, identity, handler } = await loadFlow({ buyer: BUYER });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        identity.captureMode('manual');
         await settle();
 
         expect(rec.adopted).toEqual([]);
-        expect(rec.errors).toHaveLength(1);
-        expect(identity.companyId()).toBe('');
+        expect(rec.nobody).toBe(0);
     });
 
     test('a replayed ACCEPTED lands on the same identity rather than clobbering it', async () => {

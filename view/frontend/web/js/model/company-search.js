@@ -586,6 +586,21 @@ define([
     }
 
     /**
+     * Does the region `<select>` carry an option with this exact value?
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string} value a region id
+     * @returns {boolean}
+     */
+    function hasRegionOption(select, value) {
+        const options = (select && select.options) || [];
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value === value) return true;
+        }
+        return false;
+    }
+
+    /**
      * Write an address payload into one form via the shared field-routing
      * engine (resolveAddressValues()/resolveRegion(), both below).
      *
@@ -604,9 +619,12 @@ define([
      *        to; document-wide when null
      * @param {object} identity the calling panel's own identity, keying the
      *        recording
+     * @param {object} [options] `{ buyerRules: true }` for a sole trader's
+     *        autofill record; see keepBuyerWritableValues()
      */
-    function writeAddressInto(self, address, $root, identity) {
+    function writeAddressInto(self, address, $root, identity, options) {
         const values = self.resolveAddressValues(address, $root);
+        if (options && options.buyerRules) keepBuyerWritableValues(values, $root);
         const names = Object.keys(values);
         // What the marker attribute records for each written field — the
         // value ITSELF for an `<input>`, but the selected option's DISPLAYED
@@ -642,6 +660,33 @@ define([
         );
         names.forEach(function (name) {
             scopedFind($root, fieldSelector(name)).trigger('change');
+        });
+    }
+
+    /**
+     * PrestaShop's rules for a sole trader's autofill record (TWO-26775), applied
+     * to the resolved values in place:
+     *  - a blank writes nothing; the field is then left to the retraction, which
+     *    clears it only where it still holds what this module wrote;
+     *  - the region is written only into a region field that is empty or still
+     *    holds this module's own write.
+     *
+     * @param {object} values field name -> value, from resolveAddressValues()
+     * @param {object} $root the form to scope to
+     */
+    function keepBuyerWritableValues(values, $root) {
+        Object.keys(values).forEach(function (name) {
+            if (values[name] === '') {
+                delete values[name];
+                return;
+            }
+            if (name !== 'region' && name !== 'region_id') return;
+            const node = firstElement(scopedFind($root, fieldSelector(name)));
+            if (!node) return;
+            // As retractStaleFields() reads it: a select by its option's text.
+            const current = name === 'region_id' ? selectedOptionText(node) : String(node.value || '');
+            const filled = name === 'region_id' ? !!node.value : !!current.trim();
+            if (filled && node.getAttribute(AUTOFILL_MARKER_ATTR) !== current) delete values[name];
         });
     }
 
@@ -834,6 +879,19 @@ define([
         if (!$root || !$root.length) return '';
         const selected = scopedField($root, COUNTRY_FIELD.selector).val();
         return typeof selected === 'string' ? selected.toLowerCase() : '';
+    }
+
+    /**
+     * Is `region` an ISO 3166-2 subdivision code of `country` ("ES-M" for
+     * "es")? A code for some other country is not, and stays free text.
+     *
+     * @param {string} region trimmed region text
+     * @param {string} country the form's own country code, any case
+     * @returns {boolean}
+     */
+    function isOwnSubdivisionCode(region, country) {
+        const match = /^([A-Z]{2})-[A-Z0-9]{1,3}$/i.exec(region);
+        return !!match && !!country && match[1].toLowerCase() === country.toLowerCase();
     }
 
     /**
@@ -1226,15 +1284,17 @@ define([
          * @param {object} root jQuery set for the calling panel's own form
          * @param {object} identity the calling panel's own identity, keying the
          *        recording a later revert reads
+         * @param {object} [options] `{ buyerRules: true }` for a sole trader's
+         *        autofill record (see keepBuyerWritableValues())
          * @returns {number} 0 — no address other than `root` is ever written
          */
-        applyAddress: function (address, root, identity) {
+        applyAddress: function (address, root, identity, options) {
             console.debug({ logger: 'companySearch.applyAddress', address });
             if (!root || !root.length || !identity) {
                 console.debug({ logger: 'companySearch.applyAddress.refused' });
                 return 0;
             }
-            writeAddressInto(this, address, root, identity);
+            writeAddressInto(this, address, root, identity, options);
             return 0;
         },
 
@@ -1242,8 +1302,11 @@ define([
          * Write a verified buyer's own phone number into the telephone field.
          *
          * The deliberate exception to applyAddress() never touching telephone,
-         * and left unrecorded because the buyer's own number is not something a
-         * country switch invalidates the way a registry address is.
+         * and kept out of the country-switch revert because the buyer's own
+         * number is not something a country switch invalidates the way a
+         * registry address is. The write is marked all the same, because a
+         * blank clears the field only where it still holds this write
+         * (TWO-26775, as PrestaShop).
          *
          * @param {string} phone
          * @param {object} root the calling panel's own form. Required: an
@@ -1252,11 +1315,17 @@ define([
          * @returns {boolean} whether a field was written
          */
         applyTelephone: function (phone, root) {
-            if (typeof phone !== 'string' || !phone.trim()) return false;
             if (!root || !root.length) return false;
             const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
             if (!$field.length) return false;
-            $field.val(phone.trim()).trigger('change');
+            const value = typeof phone === 'string' ? phone.trim() : '';
+            if (!value) {
+                const current = $field.val() || '';
+                if (!current || $field.attr(AUTOFILL_MARKER_ATTR) !== current) return false;
+                $field.val('').removeAttr(AUTOFILL_MARKER_ATTR).trigger('change');
+                return true;
+            }
+            $field.val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
             return true;
         },
 
@@ -1286,13 +1355,15 @@ define([
          * allows (TWO-25461):
          *
          *  1. the region `<select>`, when the country has predefined regions AND
-         *     an option matches the region text (best-effort — see
+         *     either the payload's `region_id` is one of its options or an
+         *     option matches the region text (best-effort, see
          *     regionOptionValue());
          *  2. the free-text region input, for a country with no predefined
          *     regions;
          *  3. failing both, appended to the city with a comma ("Ashford, Kent")
          *     — a lossy home, but a visible and correctable one, where dropping
-         *     the region silently is neither.
+         *     the region silently is neither. An ISO 3166-2 code for the
+         *     form's own country is the exception: it is not appended.
          *
          * Which control is in play is resolveRegionField()'s call (shared with
          * the country-switch revert above), not CSS visibility — core keeps both
@@ -1314,6 +1385,15 @@ define([
 
             const handle = resolveRegionField($root);
             if (handle.select) {
+                // The store's own region id, when the module's relay resolved
+                // the registry's region to one (TWO-26263, TWO-26266). Taken
+                // only where this select offers it: the form may be showing
+                // another country's regions. A region taken here is never
+                // appended to the city.
+                const storeRegionId = hasValue(address.region_id) ? String(address.region_id) : '';
+                if (storeRegionId && hasRegionOption(handle.select, storeRegionId)) {
+                    return { region_id: storeRegionId };
+                }
                 const optionValue = regionOptionValue(handle.select, region);
                 // An unmatched region falls through to the city rather than
                 // guessing at a region id — a wrong id is a wrong address, and
@@ -1331,6 +1411,12 @@ define([
                     : true;
                 if (handle.$field.length && isVisible) return { region: region };
             }
+
+            // An ISO 3166-2 code for the form's own country ("ES-M" on a
+            // Spanish address) is no use to anyone reading the city, so it is
+            // not appended (TWO-26258). The required region select is left
+            // for the buyer, and Magento's own validation prompts them.
+            if (isOwnSubdivisionCode(region, currentAddressFormCountry($root))) return {};
 
             const $city = scopedFind($root, 'input[name="city"]');
             if (!$city.length) return {};

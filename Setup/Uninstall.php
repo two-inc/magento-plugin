@@ -13,6 +13,7 @@ use Magento\Framework\Setup\ModuleContextInterface;
 use Magento\Framework\Setup\UninstallInterface;
 use Magento\Framework\Setup\SchemaSetupInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Service\Api\TaxCodes;
 
 /**
  * Fires on `bin/magento module:uninstall Two_Gateway` (TWO-25386).
@@ -24,6 +25,9 @@ use Two\Gateway\Api\BrandRegistryInterface;
  * ONLY when the merchant opted in via the "Clear settings on module
  * uninstall" toggle. Default off, so uninstall leaves configuration in
  * place unless the merchant asked otherwise.
+ *
+ * Always deletes the tax code section's last code lists from the flag
+ * table (TWO-26153): they are answers kept from the API, not settings.
  *
  * `<code>` is resolved from BrandRegistryInterface::getCode() rather than
  * hardcoded to `two_payment` — every field this module ships writes to
@@ -50,6 +54,15 @@ class Uninstall implements UninstallInterface
     public function uninstall(SchemaSetupInterface $setup, ModuleContextInterface $context): void
     {
         $code = $this->brandRegistry->getCode();
+
+        // TWO-26153: the tax code section's last code lists are kept answers, not
+        // configuration, so they go whatever the toggle below says.
+        $setup->startSetup();
+        $connection = $setup->getConnection();
+        $connection->delete($setup->getTable('flag'), [
+            $connection->quoteInto("flag_code LIKE ? ESCAPE '\\\\'", $this->escapeLike(TaxCodes::LAST_FLAG_PREFIX) . '%'),
+        ]);
+        $setup->endSetup();
 
         // Default scope, explicitly: the toggle is showInWebsite="0"
         // showInStore="0" (see system.xml) — it can only ever be set at

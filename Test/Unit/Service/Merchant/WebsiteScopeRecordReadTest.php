@@ -18,7 +18,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * A website-scoped read resolves the website's own API key, so the record it gets is the
  * merchant that key names — not the default scope's merchant, and not the merchant of a
- * child store that overrides the key (ABN-530).
+ * child store that overrides the key.
  */
 class WebsiteScopeRecordReadTest extends TestCase
 {
@@ -104,7 +104,7 @@ class WebsiteScopeRecordReadTest extends TestCase
 
     /**
      * 30 is offered by the default scope's merchant and not by the website's, so a
-     * website-scoped save of it is refused rather than accepted (ABN-530).
+     * website-scoped save of it is refused rather than accepted.
      *
      * @dataProvider savedTermProvider
      */

@@ -26,7 +26,7 @@ use Two\Gateway\Model\Brand\Loader;
  *    superseded TWO-25213 three-state contract).
  *  - <about_url> / <checkout_subtitle_faq_url> — checkout link targets
  *    where '' means the link is not rendered, so whitespace must trim to
- *    '' rather than become a dead href (ABN-496).
+ *    '' rather than become a dead href.
  *  - <intent_declined_notice_enabled> / <intent_declined_notice> — the same
  *    pair for the "order intent NOT approved" outcome (TWO-25326). A
  *    declared switch decides; absent one, the notice renders when

@@ -20,7 +20,7 @@ use Two\Gateway\Model\Config\StoredTerm;
 
 /**
  * Renders the deprecated custom term as keep-or-remove, so the only edit the merchant is
- * offered is the only one the save accepts (ABN-522).
+ * offered is the only one the save accepts.
  */
 class PaymentTermsCustomDays extends Field
 {
@@ -142,7 +142,7 @@ class PaymentTermsCustomDays extends Field
     }
 
     /**
-     * Scope being edited, as the config repository reads it (ABN-530).
+     * Scope being edited, as the config repository reads it.
      *
      * @return array{int|null, string}
      */

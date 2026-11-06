@@ -50,11 +50,16 @@ use Two\Gateway\Service\UrlCookie;
  */
 class OrderPostprocessingSendSitesTest extends TestCase
 {
+    use BuildsStatusFulfilment;
+
     /** @var array<int, array{0: string, 1: array, 2: array}> */
     private $fired = [];
 
     /** @var int */
     private $sent = 0;
+
+    /** @var list<string|null> the Idempotency-Keys the adapter was handed */
+    private $keys = [];
 
     /**
      * @dataProvider sendSites
@@ -91,13 +96,72 @@ class OrderPostprocessingSendSitesTest extends TestCase
             ['captureShipment', Hook::REQUEST_CAPTURE, 'shipment', '/v1/order/{id}/fulfillments', 'capture on a shipment'],
             ['captureStatus', Hook::REQUEST_CAPTURE, 'status_change', '/v1/order/{id}/fulfillments', 'capture on a fulfil-on-complete status'],
             ['refund', Hook::REQUEST_REFUND, 'credit_memo', '/v1/order/{id}/refund', 'refund on a credit memo'],
-            ['cancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from the payment method'],
+            ['void', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel from an admin Void'],
             ['orderCancel', Hook::REQUEST_CANCEL, 'cancel', '/v1/order/{id}/cancel', 'cancel when the Magento order is cancelled'],
             ['buyerCancel', Hook::REQUEST_CANCEL, 'buyer_cancel', '/v1/order/{id}/cancel', 'cancel when the buyer abandons Two\'s checkout'],
         ];
     }
 
-    private function orderIntent(): void
+    /**
+     * Every order request names its operation in one Idempotency-Key
+     * (TWO-26658), set before its body is built.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('keySites')]
+    public function testEachRequestSendsTheKeyOfItsOperation(string $site, ?string $pattern, string $description): void
+    {
+        try {
+            $this->{$site}();
+        } catch (StopAtSend $stop) {
+            // The recorder ends the path where the request would go out.
+        }
+
+        $this->assertCount(1, $this->keys, $description . ': one key per request');
+        if ($pattern === null) {
+            $this->assertNull($this->keys[0], $description);
+            return;
+        }
+        $this->assertMatchesRegularExpression($pattern, (string)$this->keys[0], $description);
+    }
+
+    /**
+     * @return list<array{0: string, 1: string|null, 2: string}>
+     */
+    public static function keySites(): array
+    {
+        return [
+            ['orderIntent', null, 'order intent with no quote id: no key rather than one buyers could share'],
+            ['authorize', '/^create_100000042_[0-9a-f]{16}$/', 'order create: the reserved order id and the attempt reference'],
+            ['addressUpdate', '/^edit_remote-order-id_[0-9a-f]{12}$/', 'order edit: the order and a hash of the previous key and the edit'],
+            ['confirm', '/^confirm_remote-order-id$/', 'confirm: the order'],
+            ['captureInvoice', '/^fulfil_remote-order-id$/', 'whole fulfil on an invoice: the order'],
+            ['captureShipment', '/^fulfil_remote-order-id$/', 'whole fulfil on a shipment: the order'],
+            ['captureStatus', '/^fulfil_remote-order-id$/', 'fulfil on a status change: the order'],
+            ['refund', '/^refund_remote-order-id_creditmemo-n1-[0-9a-f]{12}$/', 'refund: the first credit memo and its amount and lines'],
+            ['void', '/^cancel_remote-order-id$/', 'cancel from an admin Void: the order'],
+            ['orderCancel', '/^cancel_remote-order-id$/', 'cancel of the Magento order: the order'],
+            ['buyerCancel', '/^cancel_remote-order-id$/', 'buyer cancel: the order'],
+        ];
+    }
+
+    /**
+     * The intent hands the hook the unsaved order its lines were composed
+     * from, for the shop-match checks (TWO-26276).
+     */
+    public function testTheIntentCarriesTheOrderItsLinesWereComposedFrom(): void
+    {
+        $order = $this->createMock(Order::class);
+
+        try {
+            $this->orderIntent($order);
+        } catch (StopAtSend $stop) {
+            // Stopped at the send.
+        }
+
+        $this->assertCount(1, $this->fired);
+        $this->assertSame($order, $this->fired[0][2]['intent_order'] ?? null);
+    }
+
+    private function orderIntent(?Order $order = null): void
     {
         $status = $this->createMock(ApiKeyStatus::class);
         $status->method('isDefinitiveFailure')->willReturn(false);
@@ -108,7 +172,14 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $session = new CheckoutSession();
         $session->setData('quote', $this->createMock(Quote::class));
         $composeIntent = $this->createMock(ComposeIntent::class);
-        $composeIntent->method('execute')->willReturn(['buyer' => []]);
+        if ($order !== null) {
+            $composeIntent->method('toOrder')->willReturn($order);
+            $composeIntent->expects($this->once())->method('execute')
+                ->with($this->anything(), [], $this->identicalTo($order))
+                ->willReturn(['buyer' => []]);
+        } else {
+            $composeIntent->method('execute')->willReturn(['buyer' => []]);
+        }
 
         (new OrderIntent(
             $this->adapter(),
@@ -220,17 +291,20 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $config->method('getFulfillTrigger')->willReturn('complete');
         $config->method('getFulfillOrderStatusList')->willReturn(['complete']);
 
+        $order = $this->order();
+        $orderFactory = $this->getMockBuilder(\Magento\Sales\Model\OrderFactory::class)
+            ->addMethods(['create'])
+            ->getMock();
+        $orderFactory->method('create')->willReturn($order);
         (new SalesOrderSaveAfter(
-            $config,
-            $this->createMock(BrandRegistryInterface::class),
-            $this->adapter(),
-            $this->createMock(\Magento\Sales\Model\Order\Status\HistoryFactory::class),
-            $this->createMock(\Magento\Sales\Api\OrderStatusHistoryRepositoryInterface::class),
-            $this->createMock(\Magento\Sales\Model\Service\InvoiceService::class),
-            $this->createMock(\Magento\Framework\DB\TransactionFactory::class),
-            $this->overlay(),
-            $this->recorder()
-        ))->execute(new SendSiteObserver(new DataObject(['order' => $this->order()])));
+            $this->buildStatusFulfilment([
+                'configRepository' => $config,
+                'apiAdapter' => $this->adapter(),
+                'overlayRegistry' => $this->overlay(),
+                'orderPostprocessor' => $this->recorder(),
+                'orderFactory' => $orderFactory,
+            ])
+        ))->execute(new SendSiteObserver(new DataObject(['order' => $order])));
     }
 
     private function refund(): void
@@ -243,9 +317,9 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $this->two(['composeRefund' => $composeRefund])->refund($payment, 0.0);
     }
 
-    private function cancel(): void
+    private function void(): void
     {
-        $this->two([])->cancel(new SendSitePayment($this->order()));
+        $this->two([])->void(new SendSitePayment($this->order()));
     }
 
     private function two(array $collaborators): Two
@@ -282,6 +356,7 @@ class OrderPostprocessingSendSitesTest extends TestCase
         $order->setData('store_id', 1);
         $order->setData('two_order_reference', 'reference');
         $order->setData('entity_id', 7);
+        $order->setData('increment_id', '100000042');
         $order->setData('two_order_id', 'remote-order-id');
         $order->setData('order_currency_code', 'EUR');
         $order->setData('status', 'complete');
@@ -297,6 +372,11 @@ class OrderPostprocessingSendSitesTest extends TestCase
     private function adapter(): Adapter
     {
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withLogSubject')->willReturnSelf();
+        $adapter->method('withIdempotencyKey')->willReturnCallback(function (?string $key) use (&$adapter): Adapter {
+            $this->keys[] = $key;
+            return $adapter;
+        });
         // A GET is a read with no body, so the hook does not cover it.
         $adapter->method('execute')->willReturnCallback(function (string $endpoint, array $payload = [], string $method = 'POST'): array {
             if ($method !== 'GET') {
@@ -334,6 +414,13 @@ class OrderPostprocessingSendSitesTest extends TestCase
 
 class SendSiteOrder extends Order implements \Magento\Sales\Api\Data\OrderInterface
 {
+    /**
+     * The status fulfilment's fresh load: the order stands in for its own row.
+     */
+    public function load($id): self
+    {
+        return $this;
+    }
 }
 
 /**

@@ -59,7 +59,11 @@ function makeHost(config) {
                 prefetchCalls.push(true);
                 return Promise.resolve(null);
             };
-            this.forgetAdoptions = function () {};
+            this.closeSignupPopup = function () { return false; };
+            this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+            this.isPopupOpen = function () { return false; };
+            this.showSignupPanel = function () {};
+            this.launcherToRefocus = function () { return null; };
             this.forgetAutofilledBuyer = function () {};
             this.autofilledSoleTrader = function () { return null; };
             this.focusSignupPopup = function () { return false; };

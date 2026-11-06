@@ -1,0 +1,69 @@
+name: Staging API
+
+# Runs the Test/E2E suite against Two's staging API with a staging test
+# merchant key (TWO-26325), including the canary that staging still refuses an
+# order whose lines do not add up to its totals.
+#
+# TWO_E2E_REQUIRED makes a missing key or buyer fail the job rather than skip
+# the tests, so the canary cannot go quiet. Fork PRs get no OIDC token and
+# cannot read the key, so the job runs only for this repository's own events.
+
+on:
+  pull_request:
+    branches: [main, staging]
+  push:
+    branches: [main, staging]
+  # Nightly, so the canary reports even when no PR is open.
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Per event, and only a PR's newer push cancels: a push never stops a running nightly.
+concurrency:
+  group: staging-api-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    name: E2E (staging API)
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          token_format: access_token
+          service_account: gha-magento-plugin-e2e@two-beta.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER_PREFIX_TWO_BETA }}/${{ github.event.repository.name }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      # The WooCommerce suite's staging merchant, so both plugins exercise the same one.
+      - name: Fetch the staging merchant key
+        id: secrets
+        run: |
+          set -o pipefail
+          TWO_API_KEY=$(gcloud secrets versions access latest --secret="STAGING_SHOP_MERCHANT_API_KEY_GB" --project=two-beta)
+          echo "::add-mask::$TWO_API_KEY"
+          echo "TWO_API_KEY=$TWO_API_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Run the staging API tests
+        env:
+          TWO_API_KEY: ${{ steps.secrets.outputs.TWO_API_KEY }}
+          TWO_E2E_REQUIRED: "1"
+          # The staging test buyer the WooCommerce suite checks out as: no secret.
+          TWO_E2E_BUYER: >-
+            {"currency": "GBP",
+            "buyer": {"company": {"company_name": "RESTAURANT 53 LTD", "country_prefix": "GB", "organization_number": "15717462"},
+            "representative": {"email": "bot@two.inc", "first_name": "E2E", "last_name": "Buyer", "phone_number": "+447777777777"}},
+            "billing_address": {"organization_name": "RESTAURANT 53 LTD", "street_address": "1 Test Street", "postal_code": "EC1A 1BB", "city": "London", "region": "", "country": "GB"},
+            "shipping_address": {"organization_name": "RESTAURANT 53 LTD", "street_address": "1 Test Street", "postal_code": "EC1A 1BB", "city": "London", "region": "", "country": "GB"}}
+        run: make test-e2e

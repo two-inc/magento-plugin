@@ -24,7 +24,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * The about control is one control: when it is withheld, no key of its
- * subtree ships a value to the storefront renderer (ABN-554).
+ * subtree ships a value to the storefront renderer.
  */
 class ConfigProviderAboutControlTest extends TestCase
 {

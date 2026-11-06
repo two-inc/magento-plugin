@@ -560,11 +560,18 @@ define([
                 // buyer is no longer looking at.
                 if (identity._addressStepWatcher !== watcher) return;
                 // Manual entry is the buyer's own typing, published by the
-                // company-number field's own change handler, so nothing is
-                // mirrored for it here.
+                // company-number field's own change handler, so it is mirrored
+                // here only as it starts: the number withdrawn and the name the
+                // field shows kept (TWO-26775). Publishing per keystroke would
+                // fire order intents.
                 const manual = identity.captureMode() === 'manual';
+                const enteringManual = manual && self._publishedMode !== 'manual';
+                self._publishedMode = identity.captureMode();
+                if (manual && !enteringManual) return;
                 const companyId = manual ? '' : identity.companyId();
-                const companyName = manual ? '' : identity.companyName();
+                const companyName = manual
+                    ? String($(self.companyNameSelector).val() || '')
+                    : identity.companyName();
                 if (
                     companyId === self._appliedCompanyId &&
                     companyName === self._appliedCompanyName

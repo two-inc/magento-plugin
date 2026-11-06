@@ -82,6 +82,17 @@ class Value extends \Magento\Framework\DataObject
         return $this;
     }
 
+    /**
+     * AbstractModel's hook before the row is deleted: "Use Default" sends a
+     * field to the delete transaction, and only an exception stops it.
+     *
+     * @return $this
+     */
+    public function beforeDelete()
+    {
+        return $this;
+    }
+
     public function isSaveAllowed()
     {
         return (bool)$this->_dataSaveAllowed;

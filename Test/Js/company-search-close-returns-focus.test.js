@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554 — every way the popover closes hands the buyer back to the company
+ * Every way the popover closes hands the buyer back to the company
  * field, and the field's own open-on-focus opener is held off for that one
  * programmatic focus alone.
  *

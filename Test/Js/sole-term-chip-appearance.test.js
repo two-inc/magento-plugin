@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554. A sole offered term is rendered as a natively disabled button so
+ * A sole offered term is rendered as a natively disabled button so
  * Tab skips it, which puts it in reach of Luma's own `button:disabled` fade.
  * The chip is the term the buyer is being given, not an unavailable control,
  * so the plugin's rules have to out-score the theme's.
@@ -57,7 +57,7 @@ afterEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the sole offered term reads as a selected chip (ABN-554)', () => {
+describe('the sole offered term reads as a selected chip', () => {
     test.each([
         ['opacity', '0.5', '1', 'solid, not faded out'],
         ['cursor', 'not-allowed', 'default', 'no refusal pointer over an offer']

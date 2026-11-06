@@ -35,7 +35,7 @@ define([
         // ── Helpers ──────────────────────────────────────────────────────
 
         // Server-normalised term for the current selection; parsing the raw value here would
-        // disagree with the save on shapes like '1e2' (ABN-522).
+        // disagree with the save on shapes like '1e2'.
         function getCustomTerm() {
             return Number($customDays.find('option:selected').attr('data-two-term')) || 0;
         }
@@ -95,7 +95,7 @@ define([
 
             $defaultTerm.empty();
             // First, so a selection that is no longer offered lands here rather
-            // than on a day count nobody chose (ABN-548).
+            // than on a day count nobody chose.
             $defaultTerm.append($('<option></option>').attr('value', '').text($t('Automatic')));
             $.each(terms, function (_, days) {
                 $defaultTerm.append(
@@ -146,7 +146,7 @@ define([
         // ── Custom payment terms visibility ──────────────────────────────
 
         // The marker carries what the server settles before the post; the sibling's inherit box is
-        // the rest of it, and an inheriting sibling makes the save keep the value (ABN-522).
+        // the rest of it, and an inheriting sibling makes the save keep the value.
         function customDaysFoldsIn() {
             return $customDays.closest('tr').find('.two-legacy-term-folds-in').length > 0
                 && !$termsInherit.is(':checked');
@@ -301,7 +301,7 @@ define([
         // when the response arrives.
         //
         // An empty span means that term carries no fee, so a failed fetch says
-        // so in the notice rather than leaving the spans empty (ABN-512).
+        // so in the notice rather than leaving the spans empty.
         var lastFeesKey = null;
 
         function setFeeNotice(text) {

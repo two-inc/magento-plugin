@@ -88,8 +88,9 @@ class LifecycleEventDispatcherTest extends TestCase
     }
 
     /**
-     * One Magento cancellation reaches both Two::cancel() and
-     * SalesOrderCancelAfter, so observers must not have to be idempotent.
+     * A transition reported twice for one order (a retried request, a
+     * second code path) reaches observers once, so they need not be
+     * idempotent.
      */
     public function testTheSameTransitionOnTheSameOrderDispatchesOnce(): void
     {

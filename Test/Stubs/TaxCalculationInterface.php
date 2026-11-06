@@ -6,8 +6,8 @@ namespace Magento\Tax\Model;
 /**
  * Minimal stub for Magento\Tax\Model\Calculation used in unit tests.
  *
- * Provides the two methods used by Repository::getDefaultTaxRate():
- * getRateRequest() and getRate().
+ * Provides the methods the plugin calls: getRateRequest(), getRate() and
+ * getAppliedRates().
  */
 class Calculation
 {
@@ -37,5 +37,14 @@ class Calculation
     public function getRate($request)
     {
         return 0.0;
+    }
+
+    /**
+     * @param \Magento\Framework\DataObject $request
+     * @return array
+     */
+    public function getAppliedRates($request)
+    {
+        return [];
     }
 }

@@ -19,7 +19,7 @@ use Two\Gateway\Model\Ui\ConfigProvider;
  * may for the approved notice. The switch — not the copy — decides whether a
  * payload reaches the renderer at all. `null` is not silence: the renderer
  * substitutes platform wording, pinned in
- * Test/Js/gateway-method-intent-declined-explanation.test.js (ABN-563).
+ * Test/Js/gateway-method-intent-declined-explanation.test.js.
  */
 class ConfigProviderIntentDeclinedNoticeTest extends TestCase
 {

@@ -185,7 +185,7 @@ class RepositoryPaymentTermsTest extends TestCase
 
     /**
      * config:set bypasses the admin fields' save-time entitlement check, so
-     * the read path intersects with the merchant record too (ABN-493).
+     * the read path intersects with the merchant record too.
      *
      * @param int[] $offered
      * @param int[] $expected

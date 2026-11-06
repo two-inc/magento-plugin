@@ -41,7 +41,7 @@ class ComposeRefund extends OrderService
         $lineItems = $this->reconcileOtherCharges(
             $lineItems,
             $creditmemo,
-            (float)$creditmemo->getGrandTotal(),
+            (float)$creditmemo->getGrandTotal() + $this->declaredTenders($creditmemo, $order),
             (float)$creditmemo->getTaxAmount()
         );
         $lineItems = $this->applyTaxCodes($lineItems, $order);
@@ -58,9 +58,20 @@ class ComposeRefund extends OrderService
             'currency' => $order->getOrderCurrencyCode(),
             'line_items' => $lineItems,
         ];
-        $taxSubtotals = $this->getTaxSubtotals($lineItems);
+        $taxSubtotals = $this->getTaxSubtotals($lineItems, (int)$order->getStoreId());
         if ($taxSubtotals) {
             $result['tax_subtotals'] = $taxSubtotals;
+        }
+        // TWO-26309: what the credit memo returns to a tender (a gift card,
+        // store credit) is refunded lines Two did not fund. It goes as the
+        // prepaid part, up to the prepaid Two has fulfilled and not refunded;
+        // the rest of the lines is the amount, so the two sum to the lines.
+        if ($this->declaredTenders($order, $order) > 0) {
+            $returned = (int)round($this->declaredTenders($creditmemo, $order) * 100);
+            $grand = (int)round((float)$creditmemo->getGrandTotal() * 100);
+            $prepaid = $this->refundPrepaid($order, $returned, $grand + $returned);
+            $result['amount'] = $this->roundAmt(($grand + $returned - $prepaid) / 100);
+            $result['prepaid_amount'] = $this->roundAmt($prepaid / 100);
         }
         return $result;
     }
@@ -119,40 +130,14 @@ class ComposeRefund extends OrderService
         }
 
         if ((float)$creditmemo->getTwoSurchargeAmount() > 0) {
-            // Match ComposeOrder's component-rounding pattern (each
-            // value rounded independently to 2dp from the 6dp stamped
-            // source, gross computed from the unrounded sum). Pre-
-            // rounding net and tax then summing would diverge from
-            // ComposeOrder by a cent at half-cent boundaries — the
-            // resulting refund line gross would mismatch the order
-            // line gross and Two would reject the refund. See internal ticket.
-            $netAmountRaw = (float)$creditmemo->getTwoSurchargeAmount();
-            $taxAmountRaw = (float)$creditmemo->getTwoSurchargeTaxAmount();
-            $netAmount = $this->roundAmt($netAmountRaw);
-            $taxAmount = $this->roundAmt($taxAmountRaw);
-            $grossAmount = $this->roundAmt($netAmountRaw + $taxAmountRaw);
-            $taxRatePercent = (float)$creditmemo->getTwoSurchargeTaxRate();
-            $description = (string)$creditmemo->getTwoSurchargeDescription() ?: (string)__('Payment terms fee');
-
-            // order_item_id is not interpreted by the API (ABN-554); matching
+            // order_item_id is not interpreted by the API; matching
             // ComposeOrder keeps the fee line traceable across payloads.
-            $items['surcharge'] = [
-                'order_item_id'   => 'surcharge',
-                'name'            => $description,
-                'description'     => $description,
-                'type'            => 'BUYER_FEE',
-                'image_url'       => '',
-                'product_page_url' => '',
-                'gross_amount'    => $grossAmount,
-                'net_amount'      => $netAmount,
-                'tax_amount'      => $taxAmount,
-                'discount_amount' => '0.00',
-                'unit_price'      => $this->roundAmt($netAmountRaw, 6),
-                'tax_rate'        => $this->roundAmt($taxRatePercent / 100, 6),
-                'tax_class_name'  => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
-                'quantity'        => 1,
-                'quantity_unit'   => 'sc',
-            ];
+            $items['surcharge'] = $this->getSurchargeLine(
+                (float)$creditmemo->getTwoSurchargeAmount(),
+                (float)$creditmemo->getTwoSurchargeTaxAmount(),
+                (string)$creditmemo->getTwoSurchargeDescription(),
+                (float)$creditmemo->getTwoSurchargeTaxRate()
+            );
         }
 
         // OTHER-type adjustment line. Magento's "Adjustment

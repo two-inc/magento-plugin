@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Magento builds the storefront's JS dictionary by scanning for literal `$t()`
  * calls, so a phrase the picker only ever asks its host for by name renders in
- * English with no error and no log line (ABN-555).
+ * English with no error and no log line.
  */
 class SharedCapturePhraseHarvestTest extends TestCase
 {

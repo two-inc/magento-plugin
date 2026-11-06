@@ -117,7 +117,7 @@ class SettingsProvider
      * The merchant's identity off the never-expiring record — the
      * last-known-good `id` and `short_name` from GET /v1/merchant.
      *
-     * ABN-533: the verification verdict carries a merchant only on a success,
+     * The verification verdict carries a merchant only on a success,
      * so the surfaces that keep serving a buyer through an upstream failure
      * read their identity from here instead. Null when nothing has resolved
      * yet, which is the one state that genuinely has no identity to send.

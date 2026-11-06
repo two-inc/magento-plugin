@@ -176,25 +176,6 @@
 }
 
 
-/* Sole trader part */
-.two-sole-trader-note {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding: 12px 6px;
-
-    border-bottom: 1px solid var(--color-gray89);
-    color: var(--color-brownie-vanilla);
-}
-
-.two-sole-trader-note__link {
-    color: var(--color-blue2);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
-}
-
 [data-element='error-message'] {
     margin-bottom: 24px !important;
 }
@@ -220,7 +201,7 @@
 /*
  * Both chip families carry `--color-chip-accent`, not the `--color-blue2` the
  * link controls keep. A brand overlay's own palette has to OUT-SCORE these
- * rules, not merely load after them (ABN-591).
+ * rules, not merely load after them.
  */
 .two-term-chip {
     display: flex;
@@ -252,7 +233,7 @@
     border-color: var(--color-chip-accent);
     background: var(--color-gray89);
     /* Pinned here, not inherited: a theme's `button:hover` out-scores the base
-       rule the label would otherwise fall through to (ABN-598). */
+       rule the label would otherwise fall through to. */
     color: var(--color-chip-accent);
 }
 
@@ -287,7 +268,7 @@
 /* Empty alternative text: aria-checked already states the selection, so the
    tick must not reach the chip's accessible name. A browser too old for the
    syntax drops the declaration and draws no tick, leaving the selection to the
-   chip's own fill (ABN-554). */
+   chip's own fill. */
 .two-term-chip--selected .two-term-chip__days::before {
     content: '\2713' / '';
     color: var(--color-white);
@@ -472,7 +453,7 @@
  *
  * Deliberately low-key: this is reassurance, not a call to action, and it
  * sits directly under the term chips. A brand overlay's own palette has to
- * out-score these rules, not merely load after them (ABN-591).
+ * out-score these rules, not merely load after them.
  */
 .two-order-intent-message {
     margin: 0 0 1.5em;
@@ -822,12 +803,12 @@
     border-color: var(--color-chip-accent);
     background-color: var(--color-gray89);
     /* Pinned here, not inherited: a theme's `button:hover` out-scores the base
-       rule the label would otherwise fall through to (ABN-598). */
+       rule the label would otherwise fall through to. */
     color: var(--color-chip-accent);
 }
 
 /* The term chips' ring, offset outside so it is not lost against the chip's own
-   edge (ABN-554). */
+   edge. */
 .two-company-mode-chip:focus-visible {
     outline: 2px solid var(--color-chip-accent);
     outline-offset: 2px;

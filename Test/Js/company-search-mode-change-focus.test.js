@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554 — changing capture mode inside the popover, and pressing on the
+ * Changing capture mode inside the popover, and pressing on the
  * popover's own dead space, both leave the buyer somewhere.
  *
  * jsdom CAVEATS this suite works around explicitly:

@@ -27,7 +27,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  * Two-family brand by scanning `window.checkoutConfig.payment` for a
  * subtree carrying a truthy `redirectUrlCookieCode`, and both mount only
  * when that resolves. It must therefore withhold on exactly the verdicts
- * Two::isAvailable() withholds on (ABN-533) — a rejected key and no key —
+ * Two::isAvailable() withholds on (a rejected key and no key),
  * or an outage leaves the method offered with no config to render it.
  */
 class ConfigProviderApiKeyGateTest extends TestCase
@@ -284,7 +284,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * ABN-518: the category and HTTP status, never a response body.
+     * The category and HTTP status, never a response body.
      *
      * @dataProvider definitiveFailureCategories
      */
@@ -304,7 +304,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * Only these two withhold the subtree (ABN-533), so only these two have a
+     * Only these two withhold the subtree, so only these two have a
      * withholding to record.
      *
      * @return array<string, array{0: string, 1: int|null}>
@@ -319,7 +319,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
 
     /**
      * A transient verdict leaves the subtree in place, so there is nothing to
-     * record about it here (ABN-533).
+     * record about it here.
      *
      * @dataProvider transientVerdicts
      */

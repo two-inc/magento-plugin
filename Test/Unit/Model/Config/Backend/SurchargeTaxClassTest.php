@@ -313,7 +313,7 @@ class SurchargeTaxClassTest extends TestCase
     }
 
     /**
-     * ABN-497: a blank submission over a stored never-taxed treatment used to
+     * A blank submission over a stored never-taxed treatment used to
      * be accepted and overwrite it with an empty string — a silent change to
      * how the surcharge is taxed, and the stored sentinel is what the field
      * renderer's warning depends on. Surcharges are OFF in every case here, so
