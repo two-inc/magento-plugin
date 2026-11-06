@@ -39,6 +39,15 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 class OrderService
 {
     /**
+     * Order data flag: the order is being cancelled because Two already has
+     * cancelled it, so no cancel is sent to Two (TWO-26300).
+     */
+    public const SKIP_CANCEL_SYNC = 'two_skip_cancel_sync';
+
+    /** sales_order column: when the order was last checked with Two (UTC). */
+    public const PENDING_CHECKED_AT = 'two_pending_checked_at';
+
+    /**
      * @var Adapter
      */
     private $apiAdapter;
@@ -481,6 +490,48 @@ class OrderService
         $order->setState(Order::STATE_CANCELED);
         $this->addOrderComment($order, $reason);
         $order->getPayment()->save();
+        $this->orderRepository->save($order);
+        return $this;
+    }
+
+    /**
+     * Load the order afresh from the database, so a caller holding the
+     * order's lock acts on what another request may just have saved, not on
+     * the copy it loaded before waiting (TWO-26300).
+     *
+     * @param Order $order
+     * @return Order
+     */
+    public function reloadOrder(Order $order): Order
+    {
+        $fresh = $this->orderFactory->create();
+        $this->orderResource->load($fresh, $order->getId());
+        if (!$fresh->getId()) {
+            throw new LocalizedException(
+                __('Unable to find the requested %1 order', $this->brandRegistry->getProductName())
+            );
+        }
+        return $fresh;
+    }
+
+    /**
+     * Cancel the order in Magento only, because Two has already cancelled or
+     * declined it: the flag keeps SalesOrderCancelAfter from sending a cancel
+     * back to Two (TWO-26300).
+     *
+     * @param Order $order
+     * @param string|\Magento\Framework\Phrase $comment why, for the merchant
+     * @return $this
+     * @throws LocalizedException when Magento will not cancel the order
+     */
+    public function cancelLocally(Order $order, $comment)
+    {
+        $order->setData(self::SKIP_CANCEL_SYNC, true);
+        $order->cancel();
+        if ($order->getState() !== Order::STATE_CANCELED) {
+            throw new LocalizedException(__('Magento did not allow the order to be cancelled.'));
+        }
+        $this->addOrderComment($order, $comment);
         $this->orderRepository->save($order);
         return $this;
     }

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Controller\Payment;
 
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -21,6 +22,7 @@ use Two\Gateway\Controller\Payment\Verificationfailed;
 use Two\Gateway\Exception\TwoRefusalException;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Payment\OrderService;
+use Two\Gateway\Service\Payment\PendingOrderResolver;
 
 /**
  * TWO-26295: a buyer's failed return to the shop shows a refusal's buyer
@@ -93,8 +95,12 @@ class ReturnFailureMessageTest extends TestCase
     {
         $service = $this->getMockBuilder(OrderService::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['getOrderByReference', 'getTwoOrderFromApi', 'cancelTwoOrder', 'restoreQuote', 'failOrder', 'addOrderComment'])
+            ->onlyMethods([
+                'getOrderByReference', 'reloadOrder', 'getTwoOrderFromApi', 'cancelTwoOrder', 'restoreQuote',
+                'failOrder', 'addOrderComment',
+            ])
             ->getMock();
+        $service->method('reloadOrder')->willReturn($order);
         if ($controllerClass === Verificationfailed::class) {
             $service->method('getOrderByReference')->willThrowException($exception);
         } else {
@@ -154,6 +160,7 @@ class ReturnFailureMessageTest extends TestCase
 
         $values = [
             'orderService' => $service,
+            'pendingOrderResolver' => $this->resolver($service, $brand),
             'brandRegistry' => $brand,
             'messageManager' => $messages,
             '_url' => $url,
@@ -170,5 +177,27 @@ class ReturnFailureMessageTest extends TestCase
         }
 
         return $controller;
+    }
+
+    /**
+     * The real resolver the confirm return hands its order to (TWO-26300),
+     * with its own log so this test's log assertions stay the order service's.
+     */
+    private function resolver(OrderService $service, BrandRegistryInterface $brand): PendingOrderResolver
+    {
+        $lock = $this->createMock(LockManagerInterface::class);
+        $lock->method('lock')->willReturn(true);
+        $reflection = new \ReflectionClass(PendingOrderResolver::class);
+        $resolver = $reflection->newInstanceWithoutConstructor();
+        $values = [
+            'orderService' => $service,
+            'lockManager' => $lock,
+            'brandRegistry' => $brand,
+            'logRepository' => $this->createMock(LogRepository::class),
+        ];
+        foreach ($values as $property => $value) {
+            $reflection->getProperty($property)->setValue($resolver, $value);
+        }
+        return $resolver;
     }
 }

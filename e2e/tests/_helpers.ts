@@ -182,10 +182,10 @@ export async function selectCompany(
     expect(rowText).toContain(captured);
 }
 
-export async function fillCheckout(page: Page) {
+export async function fillCheckout(page: Page, email = 'docs-demo@example.com') {
     await page.goto('/checkout', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#customer-email')).toBeVisible({ timeout: 30_000 });
-    await fill(page, '#customer-email', 'docs-demo@example.com');
+    await fill(page, '#customer-email', email);
     await fill(page, '[name="firstname"]', 'Demo');
     await fill(page, '[name="lastname"]', 'Koper');
     await fill(page, '[name="street[0]"]', 'Gustav Mahlerlaan 10');
@@ -196,6 +196,30 @@ export async function fillCheckout(page: Page) {
     await selectCompany(page);
     await expect(page.locator('[name="city"]').first()).toHaveValue(/.+/, { timeout: 15_000 });
     await waitIdle(page);
+}
+
+// On the payment step: select the Two method, wait for its form, and tick its
+// terms checkbox(es). Returns the Place Order button.
+export async function chooseTwoPayment(page: Page) {
+    const twoRadio = page.locator('#two_payment');
+    await expect(twoRadio).toBeVisible({ timeout: 15_000 });
+    await twoRadio.click();
+    const twoBlock = page.locator('.two-payment-method');
+    await expect(twoBlock.getByRole('button', { name: /place order/i })).toBeVisible({
+        timeout: 15_000
+    });
+    // Custom-styled checkboxes: a native click is the reliable way to tick them.
+    await expect(twoBlock.locator('input[type="checkbox"]').first()).toBeVisible({
+        timeout: 10_000
+    });
+    await page.evaluate(() => {
+        document.querySelectorAll('.two-payment-method input[type="checkbox"]').forEach((cb) => {
+            if (!(cb as HTMLInputElement).checked) (cb as HTMLInputElement).click();
+        });
+    });
+    const placeOrder = page.getByRole('button', { name: /place order/i });
+    await expect(placeOrder).toBeVisible();
+    return placeOrder;
 }
 
 // Admin login. Password comes from env ADMIN_PASS (never committed / printed).

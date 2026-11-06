@@ -90,6 +90,14 @@ class SalesOrderCancelAfter implements ObserverInterface
             return;
         }
 
+        // Cancelled here because Two already cancelled or declined it: there
+        // is nothing to send, but integrations still hear of the cancel
+        // (TWO-26300).
+        if ($order->getData(OrderService::SKIP_CANCEL_SYNC)) {
+            $this->lifecycleEvents->dispatchCancelled($order, ['cancelled_by' => 'two']);
+            return;
+        }
+
         try {
             // The only cancel sent for a Magento cancellation: the payment
             // method's own cancel() makes no call (TWO-26298).

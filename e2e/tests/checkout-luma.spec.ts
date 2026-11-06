@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import {
     addToCart,
     availableMethods,
+    chooseTwoPayment,
     fillCheckout,
     goToPaymentStep,
     selectShipping,
@@ -20,27 +21,7 @@ test('magento checkout journey', async ({ page }) => {
     await goToPaymentStep(page);
     await expect.poll(() => availableMethods(page), { timeout: 25_000 }).toContain('two_payment');
 
-    // Select the Two method and wait for its expanded form to render.
-    const twoRadio = page.locator('#two_payment');
-    await expect(twoRadio).toBeVisible({ timeout: 15_000 });
-    await twoRadio.click();
-    const twoBlock = page.locator('.two-payment-method');
-    await expect(twoBlock.getByRole('button', { name: /place order/i })).toBeVisible({
-        timeout: 15_000
-    });
-
-    // Accept the terms agreement checkbox(es) in the Two block (custom-styled -> native click).
-    await expect(twoBlock.locator('input[type="checkbox"]').first()).toBeVisible({
-        timeout: 10_000
-    });
-    await page.evaluate(() => {
-        document.querySelectorAll('.two-payment-method input[type="checkbox"]').forEach((cb) => {
-            if (!(cb as HTMLInputElement).checked) (cb as HTMLInputElement).click();
-        });
-    });
-
-    const placeOrder = page.getByRole('button', { name: /place order/i });
-    await expect(placeOrder).toBeVisible();
+    const placeOrder = await chooseTwoPayment(page);
     await waitIdle(page);
     await page.screenshot({ path: `${OUT}/checkout_2_filled.png`, fullPage: true });
 

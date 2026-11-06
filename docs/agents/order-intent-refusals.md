@@ -53,7 +53,11 @@ so a replayed link changes nothing (TWO-27057). The one exception is a repeated
 confirm return on a processing or complete order (`OrderService::isConfirmed()`),
 such as a refresh while the first confirm was still running: it changes nothing
 either, but sends the buyer to the success page, setting the checkout session's
-last order and quote from the order the reference found. A buyer cancel, and a
+last order and quote from the order the reference found. What the confirm
+return does with the state Two reports, including a cancelled order (cart
+restored, order failed), is decided by the resolver it shares with the
+scheduled check and the admin button: see
+[pending-order-recovery.md](pending-order-recovery.md) (TWO-26300). A buyer cancel, and a
 failed verification, fail the order only after Two accepted the cancel: when Two
 refuses or does not answer,
 `OrderService::keepRefusedCancel()` records the account as an order comment and
