@@ -394,6 +394,16 @@ describe('a re-pick that fills nothing still retracts the previous pick\'s regis
         expect(phoneWrites(recorder)).toEqual([[PHONE, '']]);
     });
 
+    test('a phone the buyer edited after the pick survives a re-pick that fills nothing', () => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+        recorder.values[PHONE] = '+31209999999';
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
+        settleLatest(recorder, { addresses: [] });
+
+        expect(phoneWrites(recorder)).toEqual([]);
+    });
+
     test('a superseded lookup failing leaves the phone to the pick that replaced it', () => {
         const { recorder, companySearch, root, identity } = pickWithPhone();
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
