@@ -112,6 +112,25 @@ define([
     }
 
     /**
+     * Supersede the panel's company lookup still in flight, so its reply
+     * writes nothing: a newer pick starts its own, and a sole trader's
+     * verified address or phone must not be overwritten by a company picked
+     * before it (TWO-27168).
+     *
+     * @param {object} root jQuery-wrapped form the lookup was scoped to
+     * @returns {{generation: number, pending: ?object}} the panel's state
+     */
+    function supersedeAddressLookup(root) {
+        const state = addressLookupState(root);
+        state.generation += 1;
+        if (state.pending) {
+            state.pending.abort();
+            state.pending = null;
+        }
+        return state;
+    }
+
+    /**
      * What applyAddress() last wrote for ONE panel, field name → value.
      *
      * The DOM markers are the primary record and this is their survivor: a
@@ -1238,12 +1257,8 @@ define([
 
             const notify = identity;
             const scope = identity;
-            const lookupState = addressLookupState(root);
-            const generation = ++lookupState.generation;
-            if (lookupState.pending) {
-                lookupState.pending.abort();
-                lookupState.pending = null;
-            }
+            const lookupState = supersedeAddressLookup(root);
+            const generation = lookupState.generation;
 
             // Withdrawn as this pick STARTS, so no notice outlives the
             // company it was about.
@@ -1336,6 +1351,9 @@ define([
                 console.debug({ logger: 'companySearch.applyAddress.refused' });
                 return 0;
             }
+            // A sole trader's verified address supersedes a company lookup
+            // still in flight, so its reply cannot overwrite it (TWO-27168).
+            if (options && options.buyerRules) supersedeAddressLookup(root);
             writeAddressInto(this, address, root, identity, options);
             return 0;
         },
@@ -1366,6 +1384,9 @@ define([
         applyTelephone: function (phone, root, identity) {
             if (identity) registryPhoneWrites.delete(identity);
             if (!root || !root.length) return false;
+            // A sole trader's verified phone supersedes a company lookup still
+            // in flight, so its reply cannot overwrite it (TWO-27168).
+            supersedeAddressLookup(root);
             const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
             if (!$field.length) return false;
             const value = typeof phone === 'string' ? phone.trim() : '';
