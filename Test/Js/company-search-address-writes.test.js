@@ -32,8 +32,8 @@ const FIELD_SELECTORS = {
     city: 'input[name="city"]',
     postcode: 'input[name="postcode"]',
     country: 'select[name="country_id"]',
-    // Not one of the pin's fields — applyTelephone() is the one write that
-    // lands outside them, and it has a form of its own to stay inside.
+    // Not one of the pin's fields. applyTelephone() and applyRegistryTelephone()
+    // are the writes that land outside them, each inside the panel's own form.
     telephone: 'input[name="telephone"]'
 };
 

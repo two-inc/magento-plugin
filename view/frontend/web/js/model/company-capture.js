@@ -453,7 +453,7 @@ define([
             companySearch.applyAddress(source, shippingWriteTarget(), shippingIdentity, { buyerRules: true });
         },
         applyTelephone: function (phoneNumber) {
-            companySearch.applyTelephone(phoneNumber, shippingWriteTarget());
+            companySearch.applyTelephone(phoneNumber, shippingWriteTarget(), shippingIdentity);
         },
         getFallbackCountry: function () {
             return companySearch.hasPrimaryAddressForm()
@@ -493,7 +493,7 @@ define([
             companySearch.applyAddress(source, billingWriteTarget(), billingIdentity, { buyerRules: true });
         },
         applyTelephone: function (phoneNumber) {
-            companySearch.applyTelephone(phoneNumber, billingWriteTarget());
+            companySearch.applyTelephone(phoneNumber, billingWriteTarget(), billingIdentity);
         },
         getFallbackCountry: function () {
             return companySearch.currentAddressFormCountry($(BILLING_FORM_ROOT));

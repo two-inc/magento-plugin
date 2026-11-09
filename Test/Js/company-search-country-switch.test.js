@@ -623,14 +623,21 @@ describe('the registry phone from a company pick (TWO-27158)', () => {
         expect(node(PHONE).val()).toBe('+31209999999');
     });
 
-    test('a country switch keeps a sole trader\'s verified phone written over the registry\'s', () => {
+    test.each([
+        // [verified phone written over the registry's, what follows, description]
+        ['+4790000000', 'switch', 'a country switch keeps a sole trader\'s verified phone'],
+        ['+31201234567', 'switch', 'a country switch keeps a verified phone equal to the registry\'s'],
+        ['+4790000000', 'repick', 'a re-pick with no phone keeps a sole trader\'s verified phone'],
+        ['+31201234567', 'repick', 'a re-pick with no phone keeps a verified phone equal to the registry\'s']
+    ])('%#: %s then %s', (verified, then, description) => {
         const { model, node, root, panel } = loadModel();
         pick(model, root, panel, '+31201234567');
-        model.applyTelephone('+4790000000', root);
+        model.applyTelephone(verified, root, panel);
 
-        model.revertAutofilledAddress(root, panel);
+        if (then === 'switch') model.revertAutofilledAddress(root, panel);
+        else pick(model, root, panel, undefined);
 
-        expect(node(PHONE).val()).toBe('+4790000000');
+        expect({ description, value: node(PHONE).val() }).toEqual({ description, value: verified });
     });
 
     test('another panel\'s registry phone is not this panel\'s to clear', () => {

@@ -1249,8 +1249,16 @@ define([
             // company it was about.
             withdrawAddressUnavailable(notify);
 
-            if (isRegistrySuspended(scope)) {
+            // A pick that fills nothing still replaces the company, so the
+            // previous pick's registry phone goes (TWO-27158). The address is
+            // left as it was on these paths.
+            const unavailable = function () {
+                retractRegistryTelephone(root, identity);
                 announceAddressUnavailable(notify);
+            };
+
+            if (isRegistrySuspended(scope)) {
+                unavailable();
                 return null;
             }
 
@@ -1271,7 +1279,7 @@ define([
                     self.applyRegistryTelephone(response.addresses[0].phone_number, root, identity);
                     return;
                 }
-                announceAddressUnavailable(notify);
+                unavailable();
             });
             addressResponse.fail(function (jqXHR, textStatus) {
                 // Recorded even for a superseded pick: the ceiling is
@@ -1280,7 +1288,7 @@ define([
                     suspendRegistry(scope);
                 }
                 if (!isCurrent()) return;
-                if (textStatus !== 'abort') announceAddressUnavailable(notify);
+                if (textStatus !== 'abort') unavailable();
             });
             addressResponse.always(function () {
                 if (lookupState.pending === addressResponse) lookupState.pending = null;
@@ -1343,13 +1351,20 @@ define([
          * blank clears the field only where it still holds this write
          * (TWO-26775, as PrestaShop).
          *
+         * The phone in the field is the buyer's own from here on, so the
+         * panel's record of a registry phone is dropped (TWO-27158): a verified
+         * number equal to the registry's must survive a country switch too.
+         *
          * @param {string} phone
          * @param {object} root the calling panel's own form. Required: an
          *        unscoped write lands in whichever form the page happens to
          *        offer first, which is the other panel's as often as not.
+         * @param {object} [identity] the calling panel's own identity, whose
+         *        registry phone record is dropped
          * @returns {boolean} whether a field was written
          */
-        applyTelephone: function (phone, root) {
+        applyTelephone: function (phone, root, identity) {
+            if (identity) registryPhoneWrites.delete(identity);
             if (!root || !root.length) return false;
             const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
             if (!$field.length) return false;
