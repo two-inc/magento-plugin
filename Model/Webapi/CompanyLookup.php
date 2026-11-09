@@ -11,6 +11,7 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
 use Two\Gateway\Service\Address\IsoRegionResolver;
+use Two\Gateway\Service\Address\PostcodeFormat;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -116,6 +117,9 @@ class CompanyLookup implements CompanyLookupInterface
      * gains `region_id` and `region_code`, so a checkout can select it.
      * `region` itself is relayed as answered.
      *
+     * TWO-27158: each `postal_code` is fitted to its country's written format
+     * (PostcodeFormat), against the address's own country, else the company's.
+     *
      * @param array{status: int, body: mixed} $result from Adapter::executeWithStatus()
      * @return array{status: int, body: mixed}
      */
@@ -124,7 +128,11 @@ class CompanyLookup implements CompanyLookupInterface
         $status = (int)($result['status'] ?? 0);
         $addresses = $result['body']['addresses'] ?? null;
         if ($status >= 200 && $status < 300 && is_array($addresses)) {
-            $result['body']['addresses'] = array_map([$this->regionResolver, 'enrich'], $addresses);
+            $country = is_string($result['body']['country'] ?? null) ? $result['body']['country'] : '';
+            $result['body']['addresses'] = array_map(
+                fn ($address) => $this->regionResolver->enrich(PostcodeFormat::fitAddress($address, $country)),
+                $addresses
+            );
         }
 
         return $result;

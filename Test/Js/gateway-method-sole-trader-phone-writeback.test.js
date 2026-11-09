@@ -5,10 +5,10 @@
  * TWO-25503 — adopting a sole trader writes the buyer's own phone number, same
  * as woocommerce-plugin PR #496 and prestashop-plugin PR #186 now do.
  *
- * The route matters as much as the outcome. `applyAddress()` deliberately never
- * touches telephone — a registry business number is not the buyer's own — so
- * the phone goes through `applyTelephone()`, a separate call with its own
- * scope. Asserted against the REAL company-search model and a real form: a
+ * The route matters as much as the outcome. `applyAddress()` never touches
+ * telephone: a company pick's registry phone goes through
+ * `applyRegistryTelephone()` (TWO-27158), and the buyer's own phone through
+ * `applyTelephone()`, a separate call with its own scope. Asserted against the REAL company-search model and a real form: a
  * double recording "applyTelephone was called" would stay green if the two
  * writes were merged back into one.
  */
