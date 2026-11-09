@@ -364,3 +364,9 @@ holds, as the address fields do. A pick with no phone writes nothing and clears
 only a registry phone that panel wrote and the buyer has not changed. A country
 switch retracts it with the address. A sole trader's verified phone, written by
 `applyTelephone()`, is recorded apart and survives the switch.
+
+Only the latest company lookup for a form writes anything. A newer pick
+supersedes the one in flight, and so does a sole trader's verified address
+(`applyAddress()` with `buyerRules`) or phone (`applyTelephone()`) written into
+that form: the earlier pick's reply, when it lands, writes neither its address
+nor its phone and announces nothing (TWO-27168).

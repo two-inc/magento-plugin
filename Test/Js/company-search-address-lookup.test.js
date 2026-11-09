@@ -49,6 +49,7 @@ const ADDRESS_FORM_SELECTOR = '#shipping-new-address-form';
  */
 function makeSpyJQuery(recorder, present) {
     const matching = present || [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR];
+    const nodes = {};
     function $(selector) {
         const obj = {
             length: matching.indexOf(selector) === -1 ? 0 : 1,
@@ -105,7 +106,13 @@ function makeSpyJQuery(recorder, present) {
             toggleClass: function () { return obj; },
             hide: function () { return obj; },
             show: function () { return obj; },
-            get: function () { return { style: {} }; },
+            // One node per selector, as a page has: the lookup's in-flight
+            // guard is keyed on the form's node, and a fresh object per call
+            // gave every lookup a guard of its own (TWO-27168).
+            get: function () {
+                if (!nodes[selector]) nodes[selector] = { style: {} };
+                return nodes[selector];
+            },
             on: function () { return obj; }
         };
         return obj;
@@ -413,6 +420,46 @@ describe('a re-pick that fills nothing still retracts the previous pick\'s regis
         superseded.forEach(function (cb) { cb({ status: 0 }, 'abort'); });
 
         expect(phoneWrites(recorder)).toEqual([]);
+    });
+});
+
+describe('a sole trader verified while a pick\'s lookup is in flight is not overwritten by its reply (TWO-27168)', () => {
+    const PHONE = 'input[name="telephone"]';
+
+    const soleTraderAddress = (companySearch, root, identity) => companySearch.applyAddress(
+        { city: 'Ashford', postal_code: 'TN23 1AA', street_address: 'Mill Lane' },
+        root,
+        identity,
+        { buyerRules: true }
+    );
+    const soleTraderPhone = (companySearch, root, identity) => companySearch.applyTelephone('+447700900000', root, identity);
+    const addressArrives = (recorder) => settleLatest(recorder, {
+        addresses: [{ city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1', phone_number: '+31201234567' }]
+    });
+    const noAddressArrives = (recorder) => settleLatest(recorder, { addresses: [] });
+    const lookupFails = (recorder) => recorder.failByCall[recorder.failByCall.length - 1]
+        .forEach(function (cb) { cb({ status: 500 }, 'error'); });
+
+    test.each([
+        ['the sole trader\'s address, then company A\'s address and phone arrive', soleTraderAddress, addressArrives],
+        ['the sole trader\'s phone, then company A\'s address and phone arrive', soleTraderPhone, addressArrives],
+        ['the sole trader\'s address, then company A has no address', soleTraderAddress, noAddressArrives],
+        ['the sole trader\'s phone, then company A\'s lookup fails', soleTraderPhone, lookupFails]
+    ])('%s', (description, verify, answer) => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, PHONE]);
+        const companySearch = loadCompanySearch($);
+        const root = $(ADDRESS_FORM_SELECTOR);
+        const identity = makeIdentity();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        verify(companySearch, root, identity);
+        recorder.values[PHONE] = recorder.attrs[PHONE] ? recorder.attrs[PHONE]['data-two-autofilled-value'] : '';
+        recorder.written.length = 0;
+        answer(recorder);
+
+        expect(tagged(description, { written: recorder.written, notice: identity.addressNotice() }))
+            .toEqual(tagged(description, { written: [], notice: '' }));
     });
 });
 
