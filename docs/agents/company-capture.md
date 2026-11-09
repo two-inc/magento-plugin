@@ -345,3 +345,22 @@ nothing. Anything else resolves to nothing and the address is relayed as before;
 do not add a guess or a fuzzy match, because a wrong region is worse than none.
 Both checkouts never append a region they selected to the city; one that
 resolved to nothing is appended as before.
+
+## A company pick also writes the postcode as its country does, and the registry phone
+
+`CompanyLookup::get()` fits each address's `postal_code` to its country's
+written format before relaying it (`Service\Address\PostcodeFormat`, TWO-27158):
+"1234AB" becomes "1234 AB" in the Netherlands, "00950" becomes "00-950" in
+Poland. The address's own country decides, else the company's. Only a country
+with one fixed pattern has a format, and a postcode that does not fill it
+exactly is relayed unchanged. The formats are held in the class because
+Magento's own postcode configuration holds validation patterns, often
+accepting either spelling, rather than one format to write.
+
+The Luma checkout writes the address's `phone_number`, when the register has
+one, into the telephone field of the same form as the address
+(`applyRegistryTelephone()` in `company-search.js`). It replaces what the field
+holds, as the address fields do. A pick with no phone writes nothing and clears
+only a registry phone that panel wrote and the buyer has not changed. A country
+switch retracts it with the address. A sole trader's verified phone, written by
+`applyTelephone()`, is recorded apart and survives the switch.

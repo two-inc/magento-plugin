@@ -296,6 +296,27 @@ describe('company-search shared module', () => {
         );
     });
 
+    test('lookupCompanyAddress also writes the registry phone into the same form (TWO-27158)', () => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, 'input[name="telephone"]']);
+        const companySearch = loadCompanySearch($);
+
+        companySearch.lookupCompanyAddress(
+            BASE_CONFIG,
+            { lookupId: 'lookup-abc-123' },
+            $(ADDRESS_FORM_SELECTOR),
+            makeIdentity()
+        );
+        settleLatest(recorder, {
+            addresses: [
+                { city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1', phone_number: '+31201234567' }
+            ]
+        });
+
+        expect(recorder.written).toEqual(expect.arrayContaining([['input[name="telephone"]', '+31201234567']]));
+        expect(recorder.attrs['input[name="telephone"]']).toEqual({ 'data-two-autofilled-value': '+31201234567' });
+    });
+
     test.each([
         [{ isAddressSearchEnabled: false }, { lookupId: 'lookup-abc-123' }, 'address search is off'],
         [{}, {}, 'the picked result carries no lookupId']

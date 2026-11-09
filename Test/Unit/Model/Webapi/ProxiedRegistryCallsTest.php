@@ -426,6 +426,23 @@ class ProxiedRegistryCallsTest extends TestCase
         ], $relayed['body']['addresses']);
     }
 
+    public function testCompanyDetailFitsThePostcodeAndRelaysThePhone(): void
+    {
+        // TWO-27158: the postcode is written as its country writes it (the
+        // address's own country, else the company's); the phone passes through.
+        $this->stageUpstream(200, (string)json_encode(['name' => 'Example BV', 'country' => 'NL', 'addresses' => [
+            ['postal_code' => '1234AB', 'phone_number' => '+31201234567'],
+            ['postal_code' => '00950', 'country' => 'PL'],
+        ]]));
+
+        $relayed = json_decode($this->companyLookup()->get('lookup-1'), true);
+
+        $this->assertSame([
+            ['postal_code' => '1234 AB', 'phone_number' => '+31201234567'],
+            ['postal_code' => '00-950', 'country' => 'PL'],
+        ], $relayed['body']['addresses']);
+    }
+
     public function testCompanyDetailEncodesTheLookupIdIntoThePath(): void
     {
         $this->companyLookup()->get('NO/123 456');

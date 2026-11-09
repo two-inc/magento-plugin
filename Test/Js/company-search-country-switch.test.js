@@ -553,6 +553,96 @@ describe('reverting an address autofilled from the previous country', () => {
     });
 });
 
+describe('the registry phone from a company pick (TWO-27158)', () => {
+    const PHONE = 'input[name="telephone"]';
+    const ADDRESS = { city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1' };
+
+    /** One pick as lookupCompanyAddress() makes it: the address, then the phone. */
+    function pick(model, root, panel, phone) {
+        model.applyAddress(ADDRESS, root, panel);
+        return model.applyRegistryTelephone(phone, root, panel);
+    }
+
+    test.each([
+        // [field before, phone of pick A or null for no pick A, buyer edit after A, phone of pick B, field after, description]
+        ['', null, null, '+31201234567', '+31201234567', 'a registry phone fills an empty field'],
+        ['+4790000000', null, null, '+31201234567', '+31201234567', 'a registry phone replaces a typed one, as the address fields do'],
+        ['', null, null, '  +31201234567 ', '+31201234567', 'the phone is trimmed'],
+        ['+4790000000', null, null, undefined, '+4790000000', 'a register with no phone leaves a typed phone alone'],
+        ['+4790000000', null, null, '', '+4790000000', 'an empty registry phone leaves a typed phone alone'],
+        ['', '+31201234567', null, undefined, '', 'a re-pick with no phone clears the previous pick\'s phone'],
+        ['', '+31201234567', '+31209999999', undefined, '+31209999999', 'a re-pick with no phone keeps a phone the buyer changed'],
+        ['', '+31201234567', null, '+31107654321', '+31107654321', 'a re-pick with a phone replaces the previous pick\'s phone']
+    ])('%#: %s', (before, phoneA, edit, phoneB, after, description) => {
+        const { model, node, root, panel } = loadModel();
+        node(PHONE).val(before);
+        if (phoneA !== null) pick(model, root, panel, phoneA);
+        if (edit !== null) node(PHONE).val(edit);
+
+        pick(model, root, panel, phoneB);
+
+        expect({ description, value: node(PHONE).val() }).toEqual({ description, value: after });
+    });
+
+    test('a written phone carries the autofill marker and changes once', () => {
+        const { model, node, dom, root, panel } = loadModel();
+
+        pick(model, root, panel, '+31201234567');
+
+        expect(node(PHONE).attr(MARKER)).toBe('+31201234567');
+        expect(dom.triggered.filter((t) => t[0] === PHONE && t[1] === 'change')).toHaveLength(1);
+    });
+
+    test('a country switch retracts the registry phone with the address', () => {
+        const { model, node, root, panel } = loadModel();
+        pick(model, root, panel, '+31201234567');
+
+        expect(model.revertAutofilledAddress(root, panel)).toBe(4);
+
+        expect(node(PHONE).val()).toBe('');
+        expect(node(PHONE).attr(MARKER)).toBeUndefined();
+    });
+
+    test('a country switch retracts it after a rebuild has dropped the marker', () => {
+        const { model, node, root, panel } = loadModel();
+        pick(model, root, panel, '+31201234567');
+        node(PHONE).removeAttr(MARKER);
+
+        model.revertAutofilledAddress(root, panel);
+
+        expect(node(PHONE).val()).toBe('');
+    });
+
+    test('a country switch keeps a phone the buyer changed', () => {
+        const { model, node, root, panel } = loadModel();
+        pick(model, root, panel, '+31201234567');
+        node(PHONE).val('+31209999999');
+
+        expect(model.revertAutofilledAddress(root, panel)).toBe(3);
+
+        expect(node(PHONE).val()).toBe('+31209999999');
+    });
+
+    test('a country switch keeps a sole trader\'s verified phone written over the registry\'s', () => {
+        const { model, node, root, panel } = loadModel();
+        pick(model, root, panel, '+31201234567');
+        model.applyTelephone('+4790000000', root);
+
+        model.revertAutofilledAddress(root, panel);
+
+        expect(node(PHONE).val()).toBe('+4790000000');
+    });
+
+    test('another panel\'s registry phone is not this panel\'s to clear', () => {
+        const { model, node, root, panel } = loadModel();
+        pick(model, root, panel, '+31201234567');
+
+        expect(model.applyRegistryTelephone(undefined, root, {})).toBe(false);
+
+        expect(node(PHONE).val()).toBe('+31201234567');
+    });
+});
+
 describe('the capture component on a country change', () => {
     /**
      * A checkout with a live mount, a captured GB company and a resolved

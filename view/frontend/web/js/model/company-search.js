@@ -382,8 +382,40 @@ define([
         { name: 'region_id', selector: 'select[name="region_id"]' }
     ];
 
-    /** @see applyTelephone — the one field written outside AUTOFILLED_FIELDS. */
+    /**
+     * @see applyTelephone and applyRegistryTelephone, the two writers of the
+     * one field kept outside AUTOFILLED_FIELDS.
+     */
     const TELEPHONE_FIELD_SELECTOR = 'input[name="telephone"]';
+
+    /**
+     * The registry phone applyRegistryTelephone() last wrote for ONE panel,
+     * keyed on the panel's identity as addressWriteRecords is, and kept apart
+     * from it: applyAddress() replaces that record wholesale on every write,
+     * including a sole trader's, and the phone has to outlive the address
+     * write that precedes it (TWO-27158). Apart from the DOM marker too, which
+     * a sole trader's verified phone shares, so a country switch can retract
+     * the registry's number and leave the buyer's own.
+     */
+    const registryPhoneWrites = new WeakMap();
+
+    /**
+     * Clear the registry phone this panel wrote, where the field still holds
+     * it, and forget the recording.
+     *
+     * @param {object} $root the panel's own form
+     * @param {object} identity the panel's own identity
+     * @returns {boolean} whether the field was cleared
+     */
+    function retractRegistryTelephone($root, identity) {
+        const written = registryPhoneWrites.get(identity);
+        registryPhoneWrites.delete(identity);
+        if (typeof written === 'undefined') return false;
+        const $field = scopedFind($root, TELEPHONE_FIELD_SELECTOR);
+        if (!$field.length || trimmedString($field.val()) !== written) return false;
+        $field.val('').removeAttr(AUTOFILL_MARKER_ATTR).trigger('change');
+        return true;
+    }
 
     /**
      * A value off an address payload, trimmed, with null/undefined coalesced to
@@ -955,6 +987,7 @@ define([
             handle.$field.trigger('change');
             cleared.push(field.name);
         });
+        if (retractRegistryTelephone($root, identity)) cleared.push('telephone');
         return cleared;
     }
 
@@ -1235,6 +1268,7 @@ define([
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
                     self.applyAddress(response.addresses[0], root, identity);
+                    self.applyRegistryTelephone(response.addresses[0].phone_number, root, identity);
                     return;
                 }
                 announceAddressUnavailable(notify);
@@ -1301,8 +1335,9 @@ define([
         /**
          * Write a verified buyer's own phone number into the telephone field.
          *
-         * The deliberate exception to applyAddress() never touching telephone,
-         * and kept out of the country-switch revert because the buyer's own
+         * One of two exceptions to applyAddress() never touching telephone
+         * (applyRegistryTelephone() below is the other), and kept out of the
+         * country-switch revert because the buyer's own
          * number is not something a country switch invalidates the way a
          * registry address is. The write is marked all the same, because a
          * blank clears the field only where it still holds this write
@@ -1325,6 +1360,36 @@ define([
                 $field.val('').removeAttr(AUTOFILL_MARKER_ATTR).trigger('change');
                 return true;
             }
+            $field.val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
+            return true;
+        },
+
+        /**
+         * Write the company's registered phone from a company pick into the
+         * telephone field of the panel's own form, beside the address the same
+         * pick wrote there (TWO-27158, as PrestaShop and OpenCart).
+         *
+         * A registry phone replaces whatever the field holds, as the address
+         * fields do. A pick whose register has no phone writes nothing, and
+         * clears only a registry phone this panel wrote that the buyer has not
+         * since changed, so company B never leaves company A's number standing.
+         * The write is recorded for the country-switch revert, which retracts
+         * it with the address.
+         *
+         * @param {*} phone the address's `phone_number`, absent when the
+         *        register has none
+         * @param {object} root the calling panel's own form
+         * @param {object} identity the calling panel's own identity, keying
+         *        the recording
+         * @returns {boolean} whether the field changed
+         */
+        applyRegistryTelephone: function (phone, root, identity) {
+            if (!root || !root.length || !identity) return false;
+            const value = typeof phone === 'string' ? phone.trim() : '';
+            if (!value) return retractRegistryTelephone(root, identity);
+            const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
+            if (!$field.length) return false;
+            registryPhoneWrites.set(identity, value);
             $field.val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
             return true;
         },
@@ -1437,7 +1502,8 @@ define([
 
         /**
          * Undo an applyAddress() write in ONE form, field by field, and forget
-         * the recording.
+         * the recording. A registry phone applyRegistryTelephone() wrote goes
+         * with it (TWO-27158); a sole trader's own phone stays.
          *
          * Called when the buyer switches country: an address autofilled from
          * the previous country's registry is not a hint about the new one, it
