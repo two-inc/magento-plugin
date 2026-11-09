@@ -366,7 +366,7 @@ switch retracts it with the address. A sole trader's verified phone, written by
 `applyTelephone()`, is recorded apart and survives the switch.
 
 Only the latest company lookup for a form writes anything. A newer pick
-supersedes the one in flight, and so does a sole trader's verified address
-(`applyAddress()` with `buyerRules`) or phone (`applyTelephone()`) written into
-that form: the earlier pick's reply, when it lands, writes neither its address
-nor its phone and announces nothing (TWO-27168).
+supersedes the one in flight, and so does a sole trader adopted into that form
+(`applyAddress()` with `buyerRules`, or `applyTelephone()`, even with a blank
+phone or no telephone field): the earlier pick's reply, when it lands, writes
+neither its address nor its phone and announces nothing (TWO-27168).
