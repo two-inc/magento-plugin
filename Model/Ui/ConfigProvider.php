@@ -336,10 +336,10 @@ class ConfigProvider implements ConfigProviderInterface
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
                     // TWO-25503: shown when the term selected at render time is
                     // no longer among the terms the server offers at submit —
-                    // see the renderer's isSelectedTermStillAvailable().
-                    'termUnavailableMessage' => __(
-                        'The payment terms you selected are no longer available. Please select your payment terms again.'
-                    ),
+                    // see the renderer's isSelectedTermStillAvailable(). The
+                    // server's own refusal sentence, so the buyer reads the
+                    // same words whichever side catches it (TWO-27214).
+                    'termUnavailableMessage' => __('Selected payment term is not available.'),
                     // Bound `html:` by the renderer, and every part of it -
                     // the sentence, the link text - is an admin-editable
                     // translation. The escaper keeps the one anchor this

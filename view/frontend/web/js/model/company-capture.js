@@ -258,8 +258,11 @@ define([
                 '%1 results are available, use up and down arrow keys to navigate.'
             ),
             'Company Number': $t('Company Number'),
+            // The one key whose value is not its own literal: the shared panel
+            // keeps its original wording, and this host maps it to the
+            // standard sentence every checkout shows (TWO-27214).
             'Company search is unavailable right now. Please try again shortly.':
-                $t('Company search is unavailable right now. Please try again shortly.'),
+                $t('Company search is temporarily unavailable. Please try again.'),
             'Enter manually': $t('Enter manually'),
             'Registered company': $t('Registered company'),
             'Search for company': $t('Search for company'),

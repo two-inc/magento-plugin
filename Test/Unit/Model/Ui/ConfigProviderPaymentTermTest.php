@@ -283,6 +283,21 @@ class ConfigProviderPaymentTermTest extends TestCase
     }
 
     /**
+     * The submit-time check says what order create and /select-term say when
+     * they refuse a term, so a buyer reads one sentence whichever side catches
+     * it (TWO-27214).
+     */
+    public function testTheTermUnavailableMessageIsTheServersRefusal(): void
+    {
+        $provider = $this->build($this->statusService(ApiKeyStatus::OK, 200, []), 30);
+
+        $this->assertSame(
+            'Selected payment term is not available.',
+            (string) $this->publish($provider, 0)['termUnavailableMessage']
+        );
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private function publish(ConfigProvider $provider, int $sessionTerm): array

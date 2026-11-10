@@ -30,6 +30,14 @@ which is what lets the Hyvä checkout load this repo's own copy by
 `Two_Gateway::` reference instead of reimplementing the panel. Anything that
 makes it depend on this checkout's framework breaks that arrangement.
 
+**The panel's unavailable line keeps its original wording, and every host maps
+it** (TWO-27214). The panel asks its host's `translate()` for "Company search is
+unavailable right now. Please try again shortly."; this checkout's host
+(`buildSharedPhrases()` in `company-capture.js`) answers with the standard
+"Company search is temporarily unavailable. Please try again.", and so does the
+Hyvä host. Every other phrase is answered with its own literal.
+`SharedCapturePhraseHarvestTest` lists the reworded key in `HOST_WORDING`.
+
 **There is no checkout-specific copy.** Every Magento checkout variant a store may
 run — the default one and any third-party one-step replacement — loads this same
 file, so a "fix it for that checkout" copy is a fork, not a fix.
@@ -366,7 +374,9 @@ switch retracts it with the address. A sole trader's verified phone, written by
 `applyTelephone()`, is recorded apart and survives the switch.
 
 Only the latest company lookup for a form writes anything. A newer pick
-supersedes the one in flight, and so does a sole trader adopted into that form
+supersedes the one in flight, including a pick that makes no lookup of its own
+(no lookup id, or address search off), which also withdraws the previous pick's
+"We could not fetch this company's address" notice (TWO-27214). So does a sole trader adopted into that form
 (`applyAddress()` with `buyerRules`, or `applyTelephone()`, even with a blank
 phone or no telephone field): the earlier pick's reply, when it lands, writes
 neither its address nor its phone and announces nothing (TWO-27168).

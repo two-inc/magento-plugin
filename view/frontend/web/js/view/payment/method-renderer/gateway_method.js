@@ -1283,8 +1283,8 @@ define([
 
             // Refuse a placement the backend is certain to reject because the
             // selected term is no longer on offer — see
-            // isSelectedTermStillAvailable(). The buyer has to reselect, so say
-            // that rather than posting and surfacing an API error.
+            // isSelectedTermStillAvailable(). Say so in the server's own refusal
+            // sentence rather than posting and surfacing an API error.
             if (!this.isSelectedTermStillAvailable()) {
                 this.showErrorMessage(this.termUnavailableMessage);
                 return;

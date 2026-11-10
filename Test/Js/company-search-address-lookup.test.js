@@ -411,6 +411,19 @@ describe('a re-pick that fills nothing still retracts the previous pick\'s regis
         expect(phoneWrites(recorder)).toEqual([]);
     });
 
+    test.each([
+        ['the registry phone still in the field is cleared', { lookupId: '' }, REGISTRY_PHONE, [[PHONE, '']]],
+        ['a company with no lookupId key clears it too', {}, REGISTRY_PHONE, [[PHONE, '']]],
+        ['a phone the buyer typed over it is left alone', { lookupId: '' }, '+31209999999', []]
+    ])('a re-pick with no lookup id: %s (TWO-27214)', (description, company, fieldValue, expected) => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+        recorder.values[PHONE] = fieldValue;
+
+        expect(companySearch.lookupCompanyAddress(BASE_CONFIG, company, root, identity)).toBeNull();
+
+        expect(tagged(description, phoneWrites(recorder))).toEqual(tagged(description, expected));
+    });
+
     test('a superseded lookup failing leaves the phone to the pick that replaced it', () => {
         const { recorder, companySearch, root, identity } = pickWithPhone();
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
@@ -456,6 +469,63 @@ describe('a sole trader verified while a pick\'s lookup is in flight is not over
         verify(companySearch, root, identity);
         recorder.values[PHONE] = recorder.attrs[PHONE] ? recorder.attrs[PHONE]['data-two-autofilled-value'] : '';
         recorder.written.length = 0;
+        answer(recorder);
+
+        expect(tagged(description, { written: recorder.written, notice: identity.addressNotice() }))
+            .toEqual(tagged(description, { written: [], notice: '' }));
+    });
+});
+
+describe('a pick that makes no lookup still retires the previous pick\'s notice and lookup (TWO-27214)', () => {
+    const PHONE = 'input[name="telephone"]';
+    const NOTICE = 'We could not fetch this company\'s address. Please enter it below.';
+
+    const noLookupId = (companySearch, root, identity) =>
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: '' }, root, identity);
+    const searchOff = (companySearch, root, identity) => companySearch.lookupCompanyAddress(
+        Object.assign({}, BASE_CONFIG, { isAddressSearchEnabled: false }),
+        { lookupId: 'lookup-def-456' },
+        root,
+        identity
+    );
+    const addressArrives = (recorder) => settleLatest(recorder, {
+        addresses: [{ city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1', phone_number: '+31201234567' }]
+    });
+    const noAddressArrives = (recorder) => settleLatest(recorder, { addresses: [] });
+    const lookupFails = (recorder) => recorder.failByCall[recorder.failByCall.length - 1]
+        .forEach(function (cb) { cb({ status: 500 }, 'error'); });
+
+    function setUp() {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, PHONE]);
+        return { recorder, companySearch: loadCompanySearch($), root: $(ADDRESS_FORM_SELECTOR), identity: makeIdentity() };
+    }
+
+    test.each([
+        ['a pick with no lookup id', noLookupId],
+        ['a pick while address search is off', searchOff]
+    ])('%s withdraws the notice an earlier failed lookup put up', (description, nextPick) => {
+        const { recorder, companySearch, root, identity } = setUp();
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        lookupFails(recorder);
+        expect(identity.addressNotice()).toBe(NOTICE);
+
+        nextPick(companySearch, root, identity);
+
+        expect(tagged(description, identity.addressNotice())).toEqual(tagged(description, ''));
+    });
+
+    test.each([
+        ['a pick with no lookup id, then company A\'s address and phone arrive', noLookupId, addressArrives],
+        ['a pick with no lookup id, then company A has no address', noLookupId, noAddressArrives],
+        ['a pick with no lookup id, then company A\'s lookup fails', noLookupId, lookupFails],
+        ['a pick while address search is off, then company A\'s address and phone arrive', searchOff, addressArrives],
+        ['a pick while address search is off, then company A\'s lookup fails', searchOff, lookupFails]
+    ])('%s', (description, nextPick, answer) => {
+        const { recorder, companySearch, root, identity } = setUp();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        nextPick(companySearch, root, identity);
         answer(recorder);
 
         expect(tagged(description, { written: recorder.written, notice: identity.addressNotice() }))
