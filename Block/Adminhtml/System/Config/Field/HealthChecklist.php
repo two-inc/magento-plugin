@@ -112,6 +112,7 @@ class HealthChecklist extends Field
         $sslDisabled = $this->configRepository->isSslVerificationDisabled($storeId);
         $mode = $this->configRepository->getMode($storeId);
         $storedMode = $this->configRepository->getStoredMode($storeId);
+        $checkoutVisibility = $this->checkoutVisibilityRow($storeId, $status);
 
         return [
             [
@@ -130,8 +131,8 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
-            $this->checkoutVisibilityRow($storeId, $status),
-            $this->companySearchRow($storeId, $status),
+            $checkoutVisibility,
+            $this->companySearchRow($storeId, $status, $checkoutVisibility['ok']),
         ];
     }
 
@@ -198,14 +199,22 @@ class HealthChecklist extends Field
 
     /**
      * Whether the company-search control reaches checkout, and where
-     * (TWO-27224). Luma and Hyvä both mount it from the checkout config,
-     * which is emptied exactly when the api-key verdict is a definitive
-     * failure, so that one question decides the row whichever section the
-     * control sits in.
+     * (TWO-27224). The row reports the gate of the checkout config Luma mounts
+     * the control from: that config is emptied exactly when the api-key
+     * verdict is a definitive failure. The Hyvä extension does not read it; it
+     * asks the same question of the same key through its own copy of the
+     * verification service, in its own cache slot, so the two agree apart from
+     * cache staleness (60 s for a failure, 300 s for a verified key), and its
+     * own admin row stands in on Hyvä until it moves onto this service.
+     *
+     * With Enable company search in address entry off, the control lives in the
+     * payment method, so it is shown only where the payment method row is ok.
+     * With it on, the control mounts in address entry from the config alone,
+     * whether or not the method is shown.
      *
      * @return array{label: string, ok: bool, value: string}
      */
-    private function companySearchRow(?int $storeId, array $apiKeyStatus): array
+    private function companySearchRow(?int $storeId, array $apiKeyStatus, bool $methodShown): array
     {
         $label = (string)__('Company search');
         if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
@@ -215,15 +224,24 @@ class HealthChecklist extends Field
 
             return ['label' => $label, 'ok' => false, 'value' => $this->notShown($reason)];
         }
-        if (!$this->configRepository->isCompanySearchEnabled($storeId)) {
+        if ($this->configRepository->isCompanySearchEnabled($storeId)) {
+            return ['label' => $label, 'ok' => true, 'value' => (string)__('Shown in address entry')];
+        }
+        if (!$methodShown) {
             return [
                 'label' => $label,
-                'ok' => true,
-                'value' => (string)__('Shown in the payment method (Enable company search in address entry is No)'),
+                'ok' => false,
+                'value' => $this->notShown(
+                    (string)__('it moves into the payment method, which is not shown. See Payment method at checkout.')
+                ),
             ];
         }
 
-        return ['label' => $label, 'ok' => true, 'value' => (string)__('Shown in address entry')];
+        return [
+            'label' => $label,
+            'ok' => true,
+            'value' => (string)__('Shown in the payment method (Enable company search in address entry is No)'),
+        ];
     }
 
     private function notShown(string $reason): string

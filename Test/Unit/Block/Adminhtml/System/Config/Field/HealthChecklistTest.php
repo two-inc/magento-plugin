@@ -495,6 +495,11 @@ class HealthChecklistTest extends TestCase
             ->willReturn('sandbox');
         $this->configRepository->expects($this->once())->method('isSslVerificationDisabled')
             ->with($expectedStoreId)->willReturn(false);
+        // The Company search row reads its setting and the gate at the same scope.
+        $this->configRepository->expects($this->once())->method('isCompanySearchEnabled')
+            ->with($expectedStoreId)->willReturn(false);
+        $this->apiKeyStatus->expects($this->once())->method('isDefinitiveFailure')
+            ->with($expectedStoreId)->willReturn(false);
         // Every verdict read on the panel judges the page's scope.
         $scopesAsked = [];
         $this->apiKeyStatus->method('getStatus')
@@ -503,11 +508,14 @@ class HealthChecklistTest extends TestCase
                 return ['status' => ApiKeyStatus::OK];
             });
 
-        $row = $this->block->getChecklistRows()[4];
+        $rows = $this->block->getChecklistRows();
+        $row = $rows[4];
 
         // The scope assertion is `isActive()`'s own `with($expectedStoreId)`;
         // this proves the read reached the row rather than being swallowed.
         $this->assertStringContainsString('Check Enable payment method', $row['value'], $description);
+        // And that the store's disabled method reached the Company search row.
+        $this->assertStringContainsString('See Payment method at checkout.', $rows[5]['value'], $description);
         // Every verdict read on the panel judges the page's scope, not just the row's.
         $this->assertSame([$expectedStoreId], array_values(array_unique($scopesAsked, SORT_REGULAR)), $description);
     }
@@ -794,10 +802,14 @@ class HealthChecklistTest extends TestCase
         string $apiKeyStatus,
         bool $definitive,
         bool $inAddressEntry,
+        bool $methodEnabled,
         bool $expectedOk,
         string $expectedFragment,
         string $description
     ): void {
+        // Disabling the method is the simplest way to make the payment method
+        // row not ok; the row reuses that verdict whatever its reason.
+        $this->configRepository->method('isActive')->willReturn($methodEnabled);
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $apiKeyStatus]);
         $this->apiKeyStatus->expects($this->once())->method('isDefinitiveFailure')
             ->with(null)
@@ -805,8 +817,11 @@ class HealthChecklistTest extends TestCase
         $this->configRepository->method('isCompanySearchEnabled')->with(null)->willReturn($inAddressEntry);
         $this->configRepository->method('getMode')->willReturn('sandbox');
 
-        $row = $this->block->getChecklistRows()[5];
+        $rows = $this->block->getChecklistRows();
+        $row = $rows[5];
 
+        // Precondition: the payment method row says what the case claims.
+        $this->assertSame($methodEnabled && !$definitive, $rows[4]['ok'], $description);
         $this->assertSame('Company search', $row['label'], $description);
         $this->assertSame($expectedOk, $row['ok'], $description);
         $this->assertStringStartsWith($expectedOk ? 'Shown' : 'Not shown at checkout', $row['value'], $description);
@@ -814,21 +829,25 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: bool, 2: bool, 3: bool, 4: string, 5: string}>
+     * @return array<string, array{0: string, 1: bool, 2: bool, 3: bool, 4: bool, 5: string, 6: string}>
      */
     public static function companySearchStates(): array
     {
         return [
-            'rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, false,
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, true, false,
                 'the API key was rejected. Check API key and Environment.', 'a rejected key withholds the control'],
-            'no key, relocated to the tile' => [ApiKeyStatus::NOT_CONFIGURED, true, false, false,
+            'no key, relocated to the tile' => [ApiKeyStatus::NOT_CONFIGURED, true, false, true, false,
                 'no API key is saved. Check API key.', 'the tile it would move into is withheld too'],
-            'outage' => [ApiKeyStatus::UNREACHABLE, false, true, true,
+            'outage' => [ApiKeyStatus::UNREACHABLE, false, true, true, true,
                 'Shown in address entry', 'an outage falls through, as the checkout gate does'],
-            'verified, in address entry' => [ApiKeyStatus::OK, false, true, true,
+            'verified, in address entry' => [ApiKeyStatus::OK, false, true, true, true,
                 'Shown in address entry', 'the setting on keeps it in address entry'],
-            'verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, true,
+            'verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, true, true,
                 'Shown in the payment method', 'the setting off moves it into the payment method'],
+            'relocated to the tile, method not shown' => [ApiKeyStatus::OK, false, false, false, false,
+                'See Payment method at checkout.', 'the tile it moves into is not on the page'],
+            'in address entry, method not shown' => [ApiKeyStatus::OK, false, true, false, true,
+                'Shown in address entry', 'the config still mounts it in address entry'],
         ];
     }
 

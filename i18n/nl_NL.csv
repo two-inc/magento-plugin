@@ -413,6 +413,7 @@
 "Company search","Bedrijf zoeken"
 "Shown in address entry","Zichtbaar bij adresinvoer"
 "Shown in the payment method (Enable company search in address entry is No)","Zichtbaar in de betaalmethode (Bedrijf zoeken bij adresinvoer inschakelen staat op Nee)"
+"it moves into the payment method, which is not shown. See Payment method at checkout.","het verhuist naar de betaalmethode, die niet zichtbaar is. Zie Betaalmethode in de checkout."
 "no buyer countries are currently enabled for your account. Contact %1 to have them enabled.","er zijn momenteel geen landen van de koper geactiveerd voor uw account. Neem contact op met %1 om ze te laten activeren."
 "hidden for baskets below %1","verborgen voor winkelwagens onder %1"
 "hidden for baskets below %1 or %2","verborgen voor winkelwagens onder %1 of %2"

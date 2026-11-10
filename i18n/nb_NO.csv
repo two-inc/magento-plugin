@@ -413,6 +413,7 @@
 "Company search","Firmasøk"
 "Shown in address entry","Vises i adresseskjemaet"
 "Shown in the payment method (Enable company search in address entry is No)","Vises i betalingsmåten (Aktiver firmasøk i adresseskjemaet er Nei)"
+"it moves into the payment method, which is not shown. See Payment method at checkout.","det flyttes til betalingsmåten, som ikke vises. Se Betalingsmåte i kassen."
 "no buyer countries are currently enabled for your account. Contact %1 to have them enabled.","ingen kjøperland er aktivert for kontoen din for øyeblikket. Kontakt %1 for å få dem aktivert."
 "hidden for baskets below %1","skjult for handlekorger under %1"
 "hidden for baskets below %1 or %2","skjult for handlekorger under %1 eller %2"
