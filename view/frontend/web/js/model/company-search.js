@@ -1245,9 +1245,18 @@ define([
          * @returns {object|null} the jqXHR, or null when gated off / no id
          */
         lookupCompanyAddress: function (config, selectedCompany, root, identity) {
+            const hasForm = !!(root && root.length);
+            // Every pick retires the previous one's lookup and takes its notice
+            // down before deciding whether to look anything up, so a pick that
+            // makes no lookup (no lookup id, address search off) neither leaves
+            // the last company's notice standing nor lets that company's late
+            // reply write or announce under the new one (TWO-27214).
+            if (hasForm) supersedeAddressLookup(root);
+            if (identity) withdrawAddressUnavailable(identity);
+
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
-            if (!root || !root.length || !identity) {
+            if (!hasForm || !identity) {
                 // A picked company that fills nothing in, with nothing said,
                 // reads as the picker having done nothing.
                 if (identity) announceAddressUndeliverable(identity);
@@ -1257,12 +1266,8 @@ define([
 
             const notify = identity;
             const scope = identity;
-            const lookupState = supersedeAddressLookup(root);
+            const lookupState = addressLookupState(root);
             const generation = lookupState.generation;
-
-            // Withdrawn as this pick STARTS, so no notice outlives the
-            // company it was about.
-            withdrawAddressUnavailable(notify);
 
             // A pick that fills nothing still replaces the company, so the
             // previous pick's registry phone goes (TWO-27158). The address is
