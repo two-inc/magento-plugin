@@ -784,6 +784,54 @@ class HealthChecklistTest extends TestCase
         ];
     }
 
+    /**
+     * TWO-27224: the company-search row stands down on the same question that
+     * empties the checkout config, and otherwise says where the control sits.
+     *
+     * @dataProvider companySearchStates
+     */
+    public function testTheCompanySearchRowFollowsTheCheckoutConfigGate(
+        string $apiKeyStatus,
+        bool $definitive,
+        bool $inAddressEntry,
+        bool $expectedOk,
+        string $expectedFragment,
+        string $description
+    ): void {
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $apiKeyStatus]);
+        $this->apiKeyStatus->expects($this->once())->method('isDefinitiveFailure')
+            ->with(null)
+            ->willReturn($definitive);
+        $this->configRepository->method('isCompanySearchEnabled')->with(null)->willReturn($inAddressEntry);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+
+        $row = $this->block->getChecklistRows()[5];
+
+        $this->assertSame('Company search', $row['label'], $description);
+        $this->assertSame($expectedOk, $row['ok'], $description);
+        $this->assertStringStartsWith($expectedOk ? 'Shown' : 'Not shown at checkout', $row['value'], $description);
+        $this->assertStringContainsString($expectedFragment, $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: bool, 3: bool, 4: string, 5: string}>
+     */
+    public static function companySearchStates(): array
+    {
+        return [
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, false,
+                'the API key was rejected. Check API key and Environment.', 'a rejected key withholds the control'],
+            'no key, relocated to the tile' => [ApiKeyStatus::NOT_CONFIGURED, true, false, false,
+                'no API key is saved. Check API key.', 'the tile it would move into is withheld too'],
+            'outage' => [ApiKeyStatus::UNREACHABLE, false, true, true,
+                'Shown in address entry', 'an outage falls through, as the checkout gate does'],
+            'verified, in address entry' => [ApiKeyStatus::OK, false, true, true,
+                'Shown in address entry', 'the setting on keeps it in address entry'],
+            'verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, true,
+                'Shown in the payment method', 'the setting off moves it into the payment method'],
+        ];
+    }
+
     public function testSslDisabledRowIsNotOk(): void
     {
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);

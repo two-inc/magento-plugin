@@ -131,6 +131,13 @@ refusing to store a key the API rejected, or to replace a verified pair with one
 could not judge, and the health checklist still reads
 "Not verified" on every category short of a verified key.
 
+**The checklist's Company search row asks `isDefinitiveFailure()` and nothing
+else** (TWO-27224): that verdict is what empties `ConfigProvider::getConfig()`,
+and both Luma and Hyvä mount the control from that config, so the row reports it
+withheld on both, wherever Enable company search in address entry places it.
+Otherwise the row names that placement. Do not give the row a gate of its own;
+it reports the checkout's.
+
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
 carries no default-state attribute, so an install has to write the state itself:
 a data patch enables every type this module declares, on a fresh install and on

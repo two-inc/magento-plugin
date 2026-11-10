@@ -131,6 +131,7 @@ class HealthChecklist extends Field
             ],
             $this->merchantProfileRow($mode),
             $this->checkoutVisibilityRow($storeId, $status),
+            $this->companySearchRow($storeId, $status),
         ];
     }
 
@@ -144,7 +145,6 @@ class HealthChecklist extends Field
     private function checkoutVisibilityRow(?int $storeId, array $apiKeyStatus): array
     {
         $label = (string)__('Payment method at checkout');
-        $notShown = (string)__('Not shown at checkout');
         $reason = null;
 
         if (!$this->configRepository->isActive($storeId)) {
@@ -190,10 +190,45 @@ class HealthChecklist extends Field
             );
         }
         if ($reason !== null) {
-            return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
+            return ['label' => $label, 'ok' => false, 'value' => $this->notShown($reason)];
         }
 
         return ['label' => $label, 'ok' => true, 'value' => $this->offeredValue($storeId)];
+    }
+
+    /**
+     * Whether the company-search control reaches checkout, and where
+     * (TWO-27224). Luma and Hyvä both mount it from the checkout config,
+     * which is emptied exactly when the api-key verdict is a definitive
+     * failure, so that one question decides the row whichever section the
+     * control sits in.
+     *
+     * @return array{label: string, ok: bool, value: string}
+     */
+    private function companySearchRow(?int $storeId, array $apiKeyStatus): array
+    {
+        $label = (string)__('Company search');
+        if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
+            $reason = $apiKeyStatus['status'] === ApiKeyStatus::NOT_CONFIGURED
+                ? (string)__('no API key is saved. Check API key.')
+                : (string)__('the API key was rejected. Check API key and Environment.');
+
+            return ['label' => $label, 'ok' => false, 'value' => $this->notShown($reason)];
+        }
+        if (!$this->configRepository->isCompanySearchEnabled($storeId)) {
+            return [
+                'label' => $label,
+                'ok' => true,
+                'value' => (string)__('Shown in the payment method (Enable company search in address entry is No)'),
+            ];
+        }
+
+        return ['label' => $label, 'ok' => true, 'value' => (string)__('Shown in address entry')];
+    }
+
+    private function notShown(string $reason): string
+    {
+        return (string)__('Not shown at checkout') . ' — ' . $reason;
     }
 
     /** "Shown at checkout", plus the constraints that hide it for some baskets. */
