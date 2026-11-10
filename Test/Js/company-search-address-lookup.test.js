@@ -412,13 +412,14 @@ describe('a re-pick that fills nothing still retracts the previous pick\'s regis
     });
 
     test.each([
-        ['the registry phone still in the field is cleared', REGISTRY_PHONE, [[PHONE, '']]],
-        ['a phone the buyer typed over it is left alone', '+31209999999', []]
-    ])('a re-pick with no lookup id: %s (TWO-27214)', (description, fieldValue, expected) => {
+        ['the registry phone still in the field is cleared', { lookupId: '' }, REGISTRY_PHONE, [[PHONE, '']]],
+        ['a company with no lookupId key clears it too', {}, REGISTRY_PHONE, [[PHONE, '']]],
+        ['a phone the buyer typed over it is left alone', { lookupId: '' }, '+31209999999', []]
+    ])('a re-pick with no lookup id: %s (TWO-27214)', (description, company, fieldValue, expected) => {
         const { recorder, companySearch, root, identity } = pickWithPhone();
         recorder.values[PHONE] = fieldValue;
 
-        expect(companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: '' }, root, identity)).toBeNull();
+        expect(companySearch.lookupCompanyAddress(BASE_CONFIG, company, root, identity)).toBeNull();
 
         expect(tagged(description, phoneWrites(recorder))).toEqual(tagged(description, expected));
     });
