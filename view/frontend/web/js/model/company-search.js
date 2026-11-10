@@ -1255,7 +1255,12 @@ define([
             if (identity) withdrawAddressUnavailable(identity);
 
             if (!config.isAddressSearchEnabled) return null;
-            if (!selectedCompany || !selectedCompany.lookupId) return null;
+            if (!selectedCompany || !selectedCompany.lookupId) {
+                // A re-pick that fills nothing still replaces the company, so
+                // the previous pick's registry phone goes with it (TWO-27214).
+                if (hasForm && identity) retractRegistryTelephone(root, identity);
+                return null;
+            }
             if (!hasForm || !identity) {
                 // A picked company that fills nothing in, with nothing said,
                 // reads as the picker having done nothing.

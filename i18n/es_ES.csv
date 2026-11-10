@@ -237,7 +237,6 @@
 "Down","Abajo"
 "Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Ajustar la línea de recargo del comprador a un incremento exacto. Selecciona Ninguno para importes estándar de dos decimales."
 "Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Incremento al que se redondea el recargo (p. ej. 1 = unidades enteras, 0,50 = medio más cercano)."
-"Company search is temporarily unavailable. Please try again, or enter details manually.","La búsqueda de empresa no está disponible temporalmente. Inténtalo de nuevo o introduce los datos manualmente."
 "Company search is unavailable right now. Please try again shortly.","La búsqueda de empresa no está disponible en este momento. Inténtalo de nuevo en unos instantes."
 "Minimum order value","Valor mínimo del pedido"
 "Minimum order value tax basis","Base imponible del valor mínimo del pedido"

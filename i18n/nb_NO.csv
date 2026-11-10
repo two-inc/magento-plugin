@@ -237,7 +237,6 @@
 "Down","Ned"
 "Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Rund tilleggslinjen til et fast trinn. Velg Ingen for vanlige beløp med to desimaler."
 "Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Trinnet tillegget rundes til (f.eks. 1 = hele enheter, 0,50 = nærmeste halve)."
-"Company search is temporarily unavailable. Please try again, or enter details manually.","Firmasøket er midlertidig utilgjengelig. Prøv igjen, eller skriv inn detaljer manuelt."
 "Company search is unavailable right now. Please try again shortly.","Firmasøket er utilgjengelig akkurat nå. Prøv igjen om kort tid."
 "Minimum order value","Minimum bestillingsverdi"
 "Minimum order value tax basis","MVA-grunnlag for minimum bestillingsverdi"
