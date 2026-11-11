@@ -881,6 +881,16 @@ CI runs the same suite against staging in `.github/workflows/staging-api.yml`
 with `TWO_E2E_REQUIRED=1`, which turns a missing key or buyer into a failure
 rather than a skip.
 
+The `CI` workflow's version matrix is discovered on every run by
+`dev/magento-support-matrix.sh`: the Magento 2.4 minors in its support window,
+times every PHP minor each one accepts that php.net still supports, with each
+combination that can't run listed as not tested in the run summary. PHPStan, DI compile and the
+upgrade smoke run inside `michielgerritsen/magento-project-community-edition`
+images, and each of those legs first runs `dev/check-php-patch.sh`, which reads
+the PHP version inside the container and compares it with php.net's newest
+patch for that minor. An image behind it gets a warning on the run, however
+long it has lagged; the check never fails a leg (TWO-27174).
+
 ### Other useful targets
 
 | Target | Description |
