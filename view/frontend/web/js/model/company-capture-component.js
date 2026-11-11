@@ -340,7 +340,10 @@
         if (!this._config || !this._started) return;
         const country = String(observedCountry || this.countryCode() || '').toLowerCase();
         if (!country) {
-            this.onCountryCleared();
+            // Only the clear itself: the checkout re-notifies with the country
+            // still empty (a totals reload, a re-render), and a repeat would
+            // drop the search the buyer has typed since, spinner left on.
+            if (!this._countryCleared) this.onCountryCleared();
             return;
         }
         const wasCleared = this._countryCleared;

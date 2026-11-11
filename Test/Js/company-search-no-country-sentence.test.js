@@ -13,7 +13,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const CONTROLLER = 'view/frontend/web/js/model/company-capture-component.js';
@@ -107,7 +107,7 @@ describe('the search itself answers a missing country with the sentence', () => 
  * A started component on a fake panel that records `setDisabled` and aborts,
  * with the country read from `state.country`, the way the host's select reads.
  */
-function makeStartedComponent(state) {
+function makeStartedComponent(state, overrides) {
     const Controller = loadAmdModule(CONTROLLER, {}, {
         fetch: function () {
             const envelope = JSON.stringify({ ok: true, status: 200, body: { supported_countries: ['GB', 'NO'] } });
@@ -150,7 +150,7 @@ function makeStartedComponent(state) {
         watchCountryChanges: function () {},
         supportedCompanyTypesUrl: function (country) { return `https://registry.example/types/${country}`; },
         supportedCountriesUrl: function () { return COUNTRIES_URL; }
-    });
+    }, overrides || {});
     const component = new Controller(host);
     return { component, calls };
 }
@@ -171,6 +171,9 @@ describe('the search row stays up for a missing country, and comes back on re-se
         const { component, calls } = makeStartedComponent(state);
         component.start();
         await flush();
+        // Before any notification, so the load row answers for start() alone.
+        expect({ withdrawn: calls.disabled[calls.disabled.length - 1], description, at: 'start' })
+            .toEqual({ withdrawn: steps[0][1], description, at: 'start' });
 
         for (const [country, withdrawn] of steps) {
             state.country = country;
@@ -181,15 +184,51 @@ describe('the search row stays up for a missing country, and comes back on re-se
         }
     });
 
-    test('clearing the country aborts a search still on the wire for the old one', async () => {
+    // Each step notifies the component of a country, starting from GB, and
+    // the row states how many searches on the wire the whole run aborts.
+    test.each([
+        [[''], 1, 'clearing the country aborts a search still on the wire for the old one'],
+        [['', ''], 1, 'a second empty notification aborts nothing'],
+        [['', 'gb', ''], 2, 'clearing again after re-selecting a country aborts again'],
+    ])('%j', async (steps, aborts, description) => {
         const state = { country: 'gb' };
         const { component, calls } = makeStartedComponent(state);
         component.start();
         await flush();
 
+        for (const country of steps) {
+            state.country = country;
+            component.onCountryChanged(country);
+        }
+
+        expect({ aborts: calls.aborts, description }).toEqual({ aborts, description });
+    });
+
+    test('a repeated empty-country notification leaves a typed search to answer with the sentence', async () => {
+        document.body.innerHTML = '<div class="field"><div class="control"><input id="company" /></div></div>';
+        const requests = installAjaxRecorder();
+        const companySearch = loadCompanySearch();
+        companySearch.SEARCH_DEBOUNCE_MS = 20;
+        const state = { country: 'gb' };
+        const { component } = makeStartedComponent(state, {
+            Panel: loadCompanySearchPanel($, companySearch, GLOBALS),
+            search: companySearch
+        });
+        component.start();
+        await flush();
+
         state.country = '';
         component.onCountryChanged('');
+        component.panel().open();
+        dispatchNative(document.querySelector('.two-company-dropdown__query'), 'input', 'acme');
+        // The checkout re-notifies with the country still empty (a totals
+        // reload, a re-render) while the typed search waits out its debounce.
+        component.onCountryChanged('');
+        await new Promise((resolve) => setTimeout(resolve, 40));
 
-        expect(calls.aborts).toBe(1);
+        expect(requests).toHaveLength(0);
+        expect(document.querySelector('.two-company-dropdown__spinner')
+            .classList.contains('two-company-dropdown__spinner--active')).toBe(false);
+        expect(document.querySelector('.two-company-dropdown__message').textContent).toBe(SENTENCE);
     });
 });

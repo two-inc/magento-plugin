@@ -54,7 +54,9 @@ on load or because the buyer cleared it, the query row stays up and a search
 answers "Select your country above to search for your company." without
 sending anything: the search model resolves an empty answer and words it
 through `noResultsMessage()`. Clearing the country aborts a search still in
-flight and keeps the captured company; re-selecting a country restores normal
+flight and keeps the captured company; a later notification with the select
+still empty (a totals reload, a re-render) aborts nothing, or it would drop a
+search typed since; re-selecting a country restores normal
 search. The relay refuses an empty country with a 400 before calling Two.
 
 **The chip row is shown whenever it offers a mode the buyer is not already in**,
