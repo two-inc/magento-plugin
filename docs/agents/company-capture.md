@@ -49,6 +49,14 @@ the sole-trader flow, and the company field never carries the native `disabled`
 flag. Anything that closes or refuses the panel on an uncovered country leaves a
 buyer there with no way to name their company at all.
 
+**No country is not an uncovered country** (TWO-27235). With the select empty,
+on load or because the buyer cleared it, the query row stays up and a search
+answers "Select your country above to search for your company." without
+sending anything: the search model resolves an empty answer and words it
+through `noResultsMessage()`. Clearing the country aborts a search still in
+flight and keeps the captured company; re-selecting a country restores normal
+search. The relay refuses an empty country with a 400 before calling Two.
+
 **The chip row is shown whenever it offers a mode the buyer is not already in**,
 not merely whenever it holds two chips. A lone chip for the current mode is no
 choice; a lone chip for a different mode is the buyer's whole way out.

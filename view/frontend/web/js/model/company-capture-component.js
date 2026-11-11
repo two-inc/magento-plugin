@@ -199,6 +199,8 @@
         this._companySearchAvailable = true;
         this._searchCountriesInFlight = null;
         this._lastCountry = '';
+        /** The buyer emptied the country select since `_lastCountry` was set. */
+        this._countryCleared = false;
         this._started = false;
         /** Selectors with a manual-edit MutationObserver already registered. */
         this._manualWatchedSelectors = {};
@@ -337,7 +339,21 @@
         // invalidate — and a host hook calls this on every address change.
         if (!this._config || !this._started) return;
         const country = String(observedCountry || this.countryCode() || '').toLowerCase();
-        if (!country || country === this._lastCountry) return;
+        if (!country) {
+            this.onCountryCleared();
+            return;
+        }
+        const wasCleared = this._countryCleared;
+        this._countryCleared = false;
+        if (country === this._lastCountry) {
+            // Back to the country the clear left: the captured company still
+            // belongs to its registry, and only the search has to come back.
+            if (wasCleared) {
+                this.refreshSoleTraderAvailability(country);
+                this.refreshCompanySearchAvailability(country);
+            }
+            return;
+        }
         const hadCountry = !!this._lastCountry;
         this._lastCountry = country;
         // Not on first resolution: the quote's own country arrives after load
@@ -358,6 +374,20 @@
         // retire it.
         this.refreshSoleTraderAvailability(country);
         this.refreshCompanySearchAvailability(country);
+    };
+
+    /**
+     * The buyer emptied the country select (TWO-27235). The search row stays
+     * up and answers with the select-a-country sentence, never with a request:
+     * a search still on the wire answers for the country just left, so it goes.
+     * The captured company is kept, since re-selecting the same country
+     * leaves it valid and selecting another runs the change path above.
+     */
+    CompanyCaptureComponent.prototype.onCountryCleared = function () {
+        this._countryCleared = true;
+        if (this._panel) this._panel.abortActiveRequest();
+        this.refreshSoleTraderAvailability('');
+        this.refreshCompanySearchAvailability('');
     };
 
     // ----------------------------------------------------------- availability
@@ -459,7 +489,10 @@
         const self = this;
         return this.getSupportedSearchCountries().then(function (result) {
             const country = String(observedCountry || self.countryCode() || '').toUpperCase();
-            const available = !result.known || result.countries.indexOf(country) !== -1;
+            // No country is not an uncovered one (TWO-27235): the row stays
+            // up, and a search there answers with the select-a-country
+            // sentence instead of the row vanishing with nothing said.
+            const available = !country || !result.known || result.countries.indexOf(country) !== -1;
             self._companySearchAvailable = available;
             if (self._panel) self._panel.setDisabled(!available);
             return available;

@@ -463,6 +463,36 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertSame('0', $query['offset']);
     }
 
+    /**
+     * TWO-27235: a search with no country is refused before anything reaches
+     * Two. The browser shows the select-a-country sentence instead of
+     * searching, so an empty country here is a caller that skipped that step.
+     *
+     * @dataProvider searchCountryCases
+     */
+    public function testSearchIsRefusedBeforeRelayingWithoutACountry(
+        string $country,
+        bool $relayed,
+        string $description
+    ): void {
+        $decoded = json_decode($this->companyLookup()->search($country, 'acme'), true);
+
+        $this->assertSame($relayed, $this->requestedUrl !== '', $description);
+        $this->assertSame($relayed ? 200 : 400, $decoded['status'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: string}>
+     */
+    public static function searchCountryCases(): array
+    {
+        return [
+            'empty' => ['', false, 'an empty country is refused before the relay'],
+            'blank' => ['  ', false, 'a whitespace-only country is refused before the relay'],
+            'set' => ['no', true, 'a selected country is relayed'],
+        ];
+    }
+
     public function testCompanyDetailAddsTheStoreRegionBesideTheIsoCodeItRelays(): void
     {
         // TWO-26263: the region is relayed as answered; a resolved one gains the
