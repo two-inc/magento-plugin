@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Phrase;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
@@ -489,16 +490,18 @@ class HealthChecklistTest extends TestCase
             $this->scopeConfig,
             $request
         );
-        $this->configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)
+        // Read twice, once for each row it decides (TWO-27227).
+        $this->configRepository->expects($this->exactly(2))->method('isActive')->with($expectedStoreId)
             ->willReturn(false);
         $this->configRepository->expects($this->once())->method('getMode')->with($expectedStoreId)
             ->willReturn('sandbox');
         $this->configRepository->expects($this->once())->method('isSslVerificationDisabled')
             ->with($expectedStoreId)->willReturn(false);
-        // The Company search row reads its setting and the gate at the same scope.
-        $this->configRepository->expects($this->once())->method('isCompanySearchEnabled')
+        // The disabled method decides the Company search row before its
+        // setting or the key gate is read; any read still judges this scope.
+        $this->configRepository->method('isCompanySearchEnabled')
             ->with($expectedStoreId)->willReturn(false);
-        $this->apiKeyStatus->expects($this->once())->method('isDefinitiveFailure')
+        $this->apiKeyStatus->method('isDefinitiveFailure')
             ->with($expectedStoreId)->willReturn(false);
         // Every verdict read on the panel judges the page's scope.
         $scopesAsked = [];
@@ -515,7 +518,7 @@ class HealthChecklistTest extends TestCase
         // this proves the read reached the row rather than being swallowed.
         $this->assertStringContainsString('Check Enable payment method', $row['value'], $description);
         // And that the store's disabled method reached the Company search row.
-        $this->assertStringContainsString('See Payment method at checkout.', $rows[5]['value'], $description);
+        $this->assertStringContainsString('Check Enable payment method', $rows[5]['value'], $description);
         // Every verdict read on the panel judges the page's scope, not just the row's.
         $this->assertSame([$expectedStoreId], array_values(array_unique($scopesAsked, SORT_REGULAR)), $description);
     }
@@ -793,8 +796,9 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * TWO-27224: the company-search row stands down on the same question that
-     * empties the checkout config, and otherwise says where the control sits.
+     * TWO-27224: the company-search row stands down on the same questions that
+     * empty the checkout config (a disabled method, TWO-27227, or a rejected
+     * key), and otherwise says where the control sits.
      *
      * @dataProvider companySearchStates
      */
@@ -802,16 +806,21 @@ class HealthChecklistTest extends TestCase
         string $apiKeyStatus,
         bool $definitive,
         bool $inAddressEntry,
-        bool $methodEnabled,
+        string $methodState,
         bool $expectedOk,
         string $expectedFragment,
         string $description
     ): void {
-        // Disabling the method is the simplest way to make the payment method
-        // row not ok; the row reuses that verdict whatever its reason.
-        $this->configRepository->method('isActive')->willReturn($methodEnabled);
+        // 'hidden' is an enabled method the payment method row withholds for
+        // another reason (an unreadable surcharge setting); the row reuses
+        // that verdict whatever its reason.
+        $this->configRepository->method('isActive')->willReturn($methodState !== 'disabled');
+        if ($methodState === 'hidden') {
+            $this->configRepository->method('getSurchargeType')
+                ->willThrowException(new LocalizedException(new Phrase('unreadable')));
+        }
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $apiKeyStatus]);
-        $this->apiKeyStatus->expects($this->once())->method('isDefinitiveFailure')
+        $this->apiKeyStatus->method('isDefinitiveFailure')
             ->with(null)
             ->willReturn($definitive);
         $this->configRepository->method('isCompanySearchEnabled')->with(null)->willReturn($inAddressEntry);
@@ -821,7 +830,7 @@ class HealthChecklistTest extends TestCase
         $row = $rows[5];
 
         // Precondition: the payment method row says what the case claims.
-        $this->assertSame($methodEnabled && !$definitive, $rows[4]['ok'], $description);
+        $this->assertSame($methodState === 'enabled' && !$definitive, $rows[4]['ok'], $description);
         $this->assertSame('Company search', $row['label'], $description);
         $this->assertSame($expectedOk, $row['ok'], $description);
         $this->assertStringStartsWith($expectedOk ? 'Shown' : 'Not shown at checkout', $row['value'], $description);
@@ -829,25 +838,34 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: bool, 2: bool, 3: bool, 4: bool, 5: string, 6: string}>
+     * @return array<string, array{0: string, 1: bool, 2: bool, 3: string, 4: bool, 5: string, 6: string}>
      */
     public static function companySearchStates(): array
     {
         return [
-            'rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, true, false,
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, 'enabled', false,
                 'the API key was rejected. Check API key and Environment.', 'a rejected key withholds the control'],
-            'no key, relocated to the tile' => [ApiKeyStatus::NOT_CONFIGURED, true, false, true, false,
+            'no key, relocated to the tile' => [ApiKeyStatus::NOT_CONFIGURED, true, false, 'enabled', false,
                 'no API key is saved. Check API key.', 'the tile it would move into is withheld too'],
-            'outage' => [ApiKeyStatus::UNREACHABLE, false, true, true, true,
+            'outage' => [ApiKeyStatus::UNREACHABLE, false, true, 'enabled', true,
                 'Shown in address entry', 'an outage falls through, as the checkout gate does'],
-            'verified, in address entry' => [ApiKeyStatus::OK, false, true, true, true,
+            'verified, in address entry' => [ApiKeyStatus::OK, false, true, 'enabled', true,
                 'Shown in address entry', 'the setting on keeps it in address entry'],
-            'verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, true, true,
+            'verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, 'enabled', true,
                 'Shown in the payment method', 'the setting off moves it into the payment method'],
-            'relocated to the tile, method not shown' => [ApiKeyStatus::OK, false, false, false, false,
+            'relocated to the tile, method not shown' => [ApiKeyStatus::OK, false, false, 'hidden', false,
                 'See Payment method at checkout.', 'the tile it moves into is not on the page'],
-            'in address entry, method not shown' => [ApiKeyStatus::OK, false, true, false, true,
+            'in address entry, method not shown' => [ApiKeyStatus::OK, false, true, 'hidden', true,
                 'Shown in address entry', 'the config still mounts it in address entry'],
+            'disabled, verified, in address entry' => [ApiKeyStatus::OK, false, true, 'disabled', false,
+                'the payment method is disabled. Check Enable payment method.',
+                'a disabled method stands the control down even in address entry'],
+            'disabled, verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, 'disabled', false,
+                'the payment method is disabled. Check Enable payment method.',
+                'a disabled method stands the control down in the tile too'],
+            'disabled, rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, 'disabled', false,
+                'the payment method is disabled. Check Enable payment method.',
+                'the disabled method is named first, as on the payment method row'],
         ];
     }
 

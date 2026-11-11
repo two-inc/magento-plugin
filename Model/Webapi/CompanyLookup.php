@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
 use Two\Gateway\Service\Address\IsoRegionResolver;
@@ -48,7 +49,8 @@ class CompanyLookup implements CompanyLookupInterface
         private readonly RateLimiter $rateLimiter,
         private readonly LogRepository $logRepository,
         private readonly CheckoutSession $checkoutSession,
-        private readonly IsoRegionResolver $regionResolver
+        private readonly IsoRegionResolver $regionResolver,
+        private readonly ConfigRepository $configRepository
     ) {
     }
 
@@ -62,6 +64,10 @@ class CompanyLookup implements CompanyLookupInterface
             self::SEARCH_LIMIT_PER_MINUTE,
             self::WINDOW_SECONDS
         );
+        $refused = $this->refusedWhileDisabled();
+        if ($refused !== null) {
+            return $refused;
+        }
 
         $country = strtoupper(trim($country));
         $query = trim($query);
@@ -95,6 +101,10 @@ class CompanyLookup implements CompanyLookupInterface
             self::DETAIL_LIMIT_PER_MINUTE,
             self::WINDOW_SECONDS
         );
+        $refused = $this->refusedWhileDisabled();
+        if ($refused !== null) {
+            return $refused;
+        }
 
         if (mb_strlen($lookupId) > self::MAX_LOOKUP_ID_LENGTH) {
             return $this->refusal(400, (string)__('Invalid company lookup request.'));
@@ -148,6 +158,10 @@ class CompanyLookup implements CompanyLookupInterface
             self::SUPPORTED_COUNTRIES_LIMIT_PER_MINUTE,
             self::WINDOW_SECONDS
         );
+        $refused = $this->refusedWhileDisabled();
+        if ($refused !== null) {
+            return $refused;
+        }
 
         return $this->envelope($this->adapter->executeWithStatus(
             self::SUPPORTED_COUNTRIES_ENDPOINT,
@@ -155,6 +169,19 @@ class CompanyLookup implements CompanyLookupInterface
             'GET',
             $this->quoteStoreId()
         ));
+    }
+
+    /**
+     * TWO-27227: a disabled method stands company search down, so the relay
+     * refuses before Two is called, judged for the same store whose key it
+     * would call with. The checkout config is withheld in the same state, so
+     * no checkout control is mounted to send these.
+     */
+    private function refusedWhileDisabled(): ?string
+    {
+        return $this->configRepository->isActive($this->quoteStoreId())
+            ? null
+            : $this->refusal(403, (string)__('Company search is not available.'));
     }
 
     /**

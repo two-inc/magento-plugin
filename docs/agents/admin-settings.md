@@ -132,9 +132,11 @@ could not judge, and the health checklist still reads
 "Not verified" on every category short of a verified key.
 
 **The checklist's Company search row reports the checkout config's gate**
-(TWO-27224): `isDefinitiveFailure()` empties `ConfigProvider::getConfig()`, and
-Luma mounts the control from that config, so the row reports it withheld
-wherever Enable company search in address entry places it. The Hyvä extension
+(TWO-27224): a disabled method (TWO-27227) or `isDefinitiveFailure()` empties
+`ConfigProvider::getConfig()`, and Luma mounts the control from that config, so
+the row reports it withheld wherever Enable company search in address entry
+places it, naming the disabled method first as the Payment method at checkout
+row does. The Hyvä extension
 does not read that config. It asks the same question of the same key through
 its own copy of the verification service, in its own cache slot, so the two
 agree apart from cache staleness (60 s for a failure, 300 s for a verified key);
@@ -142,7 +144,8 @@ the extension's own admin row stands in on Hyvä until it moves onto this
 service. With the setting off the control lives in the payment method, so the
 row is red whenever the Payment method at checkout row is, reusing that row's
 verdict rather than re-deriving availability. With it on, the control mounts in
-address entry from the config alone, even while the method is hidden.
+address entry from the config alone, even while the method is hidden for any
+reason other than being disabled.
 "Shown in address entry" names where the control starts: on a saved address or
 a virtual cart it falls back to the payment method. Do not give the row a gate
 of its own; it reports the checkout's.
