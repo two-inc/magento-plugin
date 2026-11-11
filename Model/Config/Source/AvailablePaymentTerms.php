@@ -13,7 +13,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * Options for the default-payment-term select: the merchant's offerable terms
  * on GET /v1/merchant, behind an empty option that leaves the choice to the
- * checkout's own resolver (ABN-548).
+ * checkout's own resolver.
  */
 class AvailablePaymentTerms implements OptionSourceInterface
 {

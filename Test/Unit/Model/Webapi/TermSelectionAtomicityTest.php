@@ -19,7 +19,7 @@ use Two\Gateway\Service\RateLimiter;
 /**
  * The session term is what the surcharge is priced on and what placement
  * composes the order from, so a call that did not answer must not leave it
- * moved (ABN-550).
+ * moved.
  */
 class TermSelectionAtomicityTest extends TestCase
 {

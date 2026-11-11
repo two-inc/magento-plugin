@@ -56,7 +56,6 @@ const HOST_MEMBERS = [
     ['supportedCompanyTypesUrl', 'sole-trader availability cannot be asked'],
     ['applyCompanyAddress', 'a registry pick writes no address'],
     ['revertAutofilledAddress', 'a country change throws mid-invalidation'],
-    ['clearField', 'manual entry leaves the previous company in the field'],
     ['tokensUrl', 'no signup token can be minted'],
     ['quoteId', 'the token mint is scoped to nothing'],
     ['apiClientParams', 'the buyer read identifies no client'],
@@ -64,8 +63,7 @@ const HOST_MEMBERS = [
     ['signupCountry', 'the signup runs the wrong country identity checks'],
     ['applyBuyerAddress', 'an adopted sole trader writes no address'],
     ['applyTelephone', 'an adopted sole trader writes no phone'],
-    ['showError', 'a failed signup reports nothing'],
-    ['renderSignupPrompt', 'a blocked popup leaves no way through']
+    ['showError', 'a failed signup reports nothing']
 ];
 
 /** @returns {object} a host satisfying every member of the contract */
@@ -155,7 +153,11 @@ function load(options) {
         this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
     };
 
@@ -505,8 +507,8 @@ describe('an adopted sole trader never inherits half of the previous company', (
         ],
         [
             { organization_number: 'ST-1', company_name: '' },
-            { companyName: '', companyId: 'ST-1' },
-            'no trading name of their own'
+            { companyName: 'Previous Ltd', companyId: 'ST-1' },
+            'no trading name of their own, so the name in the field stays (TWO-26775)'
         ],
         [
             { organization_number: 'ST-2', company_name: 'Kari Nordmann' },
@@ -515,6 +517,18 @@ describe('an adopted sole trader never inherits half of the previous company', (
         ]
     ])('a sole trader with %p adopts as %p (%s)', (buyer, expected) => {
         expect(adoptOver(buyer)).toEqual(expected);
+    });
+});
+
+describe('the host contract after TWO-26775', () => {
+    test.each([
+        ['clearField', 'manual entry keeps the name in the field, so there is nothing to blank'],
+        ['renderSignupPrompt', 'the blocked-popup panel is drawn by the popover itself']
+    ])('a host without %s still constructs (%s)', (member) => {
+        const Controller = loadAmdModule(CONTROLLER);
+        const host = completeHost();
+        delete host[member];
+        expect(() => new Controller(host)).not.toThrow();
     });
 });
 
@@ -701,10 +715,11 @@ describe('a typed company name carries no vouched number', () => {
         component.refreshMount();
         expect(component._boundSelector).toBe(TILE_FIELD);
 
-        const registrationsBeforeReentry = $.async.registrations(TILE_FIELD);
+        // The move itself arms the tile field (TWO-26775), so re-entry adds no second watcher.
+        const registrationsAfterMove = $.async.registrations(TILE_FIELD);
         component.manualEntryMode();
 
-        expect($.async.registrations(TILE_FIELD)).toBe(registrationsBeforeReentry + 1);
+        expect($.async.registrations(TILE_FIELD)).toBe(registrationsAfterMove);
 
         const field = document.querySelector(TILE_FIELD);
         field.value = 'Acme Limited';
@@ -713,19 +728,20 @@ describe('a typed company name carries no vouched number', () => {
         expect(identity.companyName()).toBe('Acme Limited');
     });
 
-    test('manual entry before anything has mounted asks the host to clear nothing', () => {
-        // Nothing bound means there is no selector, and a host handed one
-        // resolves it against the whole document — Hyva's `querySelector(null)`
-        // would answer for a field this control does not own.
+    test.each([
+        [null, 'nothing mounted: a host handed no selector resolves it against the whole document'],
+        [TILE_FIELD, 'a mounted field: the host blanks the name manual entry keeps (TWO-26775)']
+    ])('manual entry with %p bound never asks the host to clear the field (%s)', (bound, why) => {
         const Controller = loadAmdModule(CONTROLLER);
         const cleared = [];
         const controller = new Controller(Object.assign(completeHost(), {
             identity: loadAmdModule(IDENTITY)(),
             clearField: function (selector) { cleared.push(selector); }
         }));
+        controller._boundSelector = bound;
 
         controller.manualEntryMode();
 
-        expect(cleared).toEqual([]);
+        expect([why, cleared]).toEqual([why, []]);
     });
 });

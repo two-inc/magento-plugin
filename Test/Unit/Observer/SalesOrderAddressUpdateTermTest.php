@@ -77,6 +77,7 @@ class SalesOrderAddressUpdateTermTest extends TestCase
 
         $sent = null;
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturnCallback(
             function (string $endpoint, array $payload = [], string $method = 'POST') use (&$sent, $apiError): array {
                 if ($method === 'GET') {
@@ -123,7 +124,7 @@ class SalesOrderAddressUpdateTermTest extends TestCase
             return;
         }
         $this->assertNotNull($sent, $description . ': edit request sent; history: ' . implode(' | ', $order->historyComments));
-        $this->assertArrayNotHasKey('available_terms', $sent, $description . ': not in the edit schema');
+        $this->assertArrayNotHasKey('available_terms', $sent, $description . ': not sent on edit');
         $this->assertSame($apiError === null ? [] : [$apiError], $warnings, $description . ': admin warning');
         if ($apiError !== null) {
             $this->assertSame([$apiError], $order->historyComments, $description . ': history note');
@@ -145,7 +146,6 @@ class SalesOrderAddressUpdateTermTest extends TestCase
                 'getAddress',
                 'getBuyer',
                 'getTaxSubtotals',
-                'getDiscountAmountItem',
                 'getFeeLines',
                 'getOtherChargesLineItem',
             ])
@@ -154,7 +154,6 @@ class SalesOrderAddressUpdateTermTest extends TestCase
         $composeOrder->method('getAddress')->willReturn([]);
         $composeOrder->method('getBuyer')->willReturn([]);
         $composeOrder->method('getTaxSubtotals')->willReturn([]);
-        $composeOrder->method('getDiscountAmountItem')->willReturn(0.0);
         $composeOrder->method('getFeeLines')->willReturn([]);
         $composeOrder->method('getOtherChargesLineItem')->willReturn(null);
 

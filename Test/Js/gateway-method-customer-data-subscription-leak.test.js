@@ -83,7 +83,8 @@ function makeCaptureComponent(config) {
                 mountSelector: function () { return ''; },
                 subscribeMount: function () {},
                 soleTrader: function () { return null; },
-                identity: function () { return identity; }
+                identity: function () { return identity; },
+                isManualEntry: function () { return identity.captureMode() === 'manual'; }
             },
             refreshMount: function () { calls.refreshMount += 1; }
         }

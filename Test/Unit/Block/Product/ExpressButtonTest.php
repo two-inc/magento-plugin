@@ -79,7 +79,7 @@ class ExpressButtonTest extends TestCase
 
     /**
      * Only a DEFINITIVE rejection withholds. An outage leaves the button up
-     * exactly as it leaves the method on offer (ABN-533).
+     * exactly as it leaves the method on offer.
      */
     public function testATransientVerdictStillRenders(): void
     {

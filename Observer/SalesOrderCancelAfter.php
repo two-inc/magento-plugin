@@ -14,6 +14,7 @@ use Psr\Log\LoggerInterface;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Payment\OrderService;
 
@@ -82,8 +83,29 @@ class SalesOrderCancelAfter implements ObserverInterface
             return;
         }
 
+        // An admin Void already cancelled the order at Two and noted it on the
+        // order. Sending the cancel again could only be refused, and a refusal
+        // here blocks the Magento cancel (TWO-26301).
+        if ($order->getPayment()->getAdditionalInformation(Two::CANCELLED_AT_TWO)) {
+            return;
+        }
+
+        // Cancelled here because Two already cancelled or declined it: there
+        // is nothing to send, but integrations still hear of the cancel
+        // (TWO-26300).
+        if ($order->getData(OrderService::SKIP_CANCEL_SYNC)) {
+            $this->lifecycleEvents->dispatchCancelled($order, ['cancelled_by' => 'two']);
+            return;
+        }
+
         try {
+            // The only cancel sent for a Magento cancellation: the payment
+            // method's own cancel() makes no call (TWO-26298).
             $this->orderService->cancelTwoOrder($order);
+            $order->addStatusToHistory(
+                $order->getStatus(),
+                __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())
+            );
             $this->lifecycleEvents->dispatchCancelled($order);
         } catch (LocalizedException $e) {
             // Already user-friendly — let it propagate so the admin sees

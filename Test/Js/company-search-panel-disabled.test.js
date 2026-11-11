@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-525 — a country the registry search does not cover withdraws the SEARCH
+ * A country the registry search does not cover withdraws the SEARCH
  * and nothing else. `setDisabled()` hides the query row; the panel still
  * opens, because the chips inside it are the buyer's only route to manual
  * entry, and the company field is never given the native `disabled` flag.

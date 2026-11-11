@@ -70,6 +70,7 @@ class OrderServiceStoreScopeTest extends TestCase
     private function makeService(): OrderService
     {
         $apiAdapter = $this->createMock(Adapter::class);
+        $apiAdapter->method('withIdempotencyKey')->willReturnSelf();
         $apiAdapter->method('execute')->willReturnCallback(function (
             string $endpoint,
             array $payload = [],

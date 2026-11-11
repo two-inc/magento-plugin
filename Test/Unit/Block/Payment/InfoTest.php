@@ -19,7 +19,7 @@ use Two\Gateway\Block\Payment\Info;
 /**
  * The order id row on the native admin Payment Information section must
  * carry the active brand's product name in its label, not a hardcoded
- * "Two" — this is what lets a brand overlay (e.g. ABN) get its own
+ * "Two": this is what lets a brand overlay get its own
  * "<brand> order id" label for free from BrandRegistryInterface instead
  * of needing its own suppression/override.
  */
@@ -66,7 +66,7 @@ class InfoTest extends TestCase
                 ['Two order id' => 'ord_123'],
                 'base brand label must use the resolved product name, not be hardcoded',
             ],
-            'admin, order id present, ABN brand' => [
+            'admin, order id present, overlay brand' => [
                 Area::AREA_ADMINHTML,
                 'Business Invoice',
                 'ord_456',

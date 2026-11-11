@@ -18,7 +18,7 @@ use Two\Gateway\Api\Fee\FeeLineProviderInterface;
  *
  * Amasty runs its own credit-memo total collector, so claiming the fee here
  * keeps it out of the residual Model\Total\Creditmemo\OtherCharges offers the
- * merchant to refund — a fee its owner already accounts for (ABN-554).
+ * merchant to refund: a fee its owner already accounts for.
  *
  * Reads the tables, not Amasty's classes, so an install without the module
  * still compiles.

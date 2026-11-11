@@ -7,6 +7,7 @@ use Magento\Framework\App\CacheInterface;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
@@ -55,6 +56,7 @@ class SurchargeCalculatorTest extends TestCase
                 $this->createMock(CurlFactory::class),
                 $this->createMock(LogRepository::class),
                 new NullApiTranslator(),
+                $this->createMock(LoggerInterface::class),
             ])
             ->onlyMethods(['execute'])
             ->getMock();

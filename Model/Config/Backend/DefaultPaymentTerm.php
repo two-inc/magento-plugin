@@ -12,7 +12,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Model\Config\StoredTerm;
 
 /**
- * Refuses a default term outside the terms saved alongside it (ABN-495).
+ * Refuses a default term outside the terms saved alongside it.
  */
 class DefaultPaymentTerm extends Value
 {

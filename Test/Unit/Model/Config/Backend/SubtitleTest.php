@@ -15,16 +15,19 @@ use Two\Gateway\Model\Ui\AnchorOnlyHtmlEscaper;
 /**
  * The tile emits the subtitle through AnchorOnlyHtmlEscaper, so copy that
  * escaper drops used to vanish at checkout with no merchant feedback. The save
- * refuses it instead (ABN-554).
+ * refuses it instead.
  */
 class SubtitleTest extends TestCase
 {
-    private function buildModel(string $value): Subtitle
+    private function buildModel(string $value, ?string $stored = null): Subtitle
     {
+        $config = $this->createMock(ScopeConfigInterface::class);
+        $config->method('getValue')->willReturn($stored);
+
         return new Subtitle(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
-            $this->createMock(ScopeConfigInterface::class),
+            $config,
             $this->createMock(TypeListInterface::class),
             new AnchorOnlyHtmlEscaper(),
             null,
@@ -43,7 +46,7 @@ class SubtitleTest extends TestCase
     {
         $this->expectException(LocalizedException::class);
         $this->expectExceptionMessage(sprintf(
-            'Subtitle accepts plain text and a single link only; "%s" would be shown as "%s".',
+            'Subtitle accepts plain text only; "%s" would be shown as "%s".',
             htmlspecialchars($value, ENT_QUOTES, 'UTF-8'),
             htmlspecialchars($shown, ENT_QUOTES, 'UTF-8')
         ));
@@ -59,10 +62,11 @@ class SubtitleTest extends TestCase
         return [
             'dropped tag' => ['<b>Pay</b> later', 'Pay later'],
             'refused href' => ['<a href="javascript:alert(1)">go</a>', 'go'],
-            'dropped attribute' => [
+            'a link with a bad attribute' => [
                 '<a href="https://faq.example.test/x" onclick="steal()">read more</a>',
-                '<a href="https://faq.example.test/x">read more</a>',
+                'read more',
             ],
+            'a link (TWO-27108)' => ['Pay later, <a href="https://faq.example.test/x">read more</a>', 'Pay later, read more'],
         ];
     }
 
@@ -86,8 +90,21 @@ class SubtitleTest extends TestCase
             'cleared' => [''],
             'plain copy' => ['Pay later, interest free'],
             'apostrophe and ampersand' => ["Don't wait & save"],
-            'single link' => ['<a href="https://faq.example.test/x">read more</a>'],
+            'a less-than sign' => ['Orders < 1000 EUR'],
         ];
+    }
+
+    /**
+     * TWO-27108: a link saved before plain text was the rule posts back with
+     * every save of the section; the tile already shows it as plain text, so
+     * refusing it would block every other change on the page.
+     */
+    public function testAStoredLinkPostedBackUnchangedStillSaves(): void
+    {
+        $stored = 'Pay later, <a href="https://faq.example.test/x">read more</a>';
+        $model = $this->buildModel($stored, $stored);
+        $model->beforeSave();
+        $this->assertSame($stored, $model->getValue());
     }
 
     /**

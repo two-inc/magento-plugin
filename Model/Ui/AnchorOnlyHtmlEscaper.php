@@ -73,7 +73,7 @@ class AnchorOnlyHtmlEscaper
 
     /**
      * Whether escaping leaves the value's content alone - the admin
-     * accept/reject boundary, so it is the render boundary (ABN-554).
+     * accept/reject boundary, so it is the render boundary.
      * Entity encoding is not a change; only markup this class drops or
      * rewrites fails.
      *

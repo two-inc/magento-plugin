@@ -237,6 +237,29 @@ describe('closing drops the search the buyer walked away from', () => {
     });
 });
 
+// TWO-27235: an aborted search never settles, so the search itself cannot
+// stop the spinner. A host aborting with the panel open (a country clear on a
+// re-render) relies on the abort to do it.
+describe('abortActiveRequest() with the panel open stops the spinner', () => {
+    test.each([
+        [0, 'a request already on the wire'],
+        [60000, 'a debounced search that has not fired yet'],
+    ])('debounce %j: %s', async (debounceMs, description) => {
+        const ctx = setup(debounceMs);
+        const spinning = () => document.querySelector('.two-company-dropdown__spinner')
+            .classList.contains('two-company-dropdown__spinner--active');
+        ctx.panel.open();
+        typeQuery('alp');
+        await nextTick();
+        expect({ spinning: spinning(), description }).toEqual({ spinning: true, description });
+
+        ctx.panel.abortActiveRequest();
+
+        expect({ open: panelIsOpen(), spinning: spinning(), description })
+            .toEqual({ open: true, spinning: false, description });
+    });
+});
+
 describe('the panel closes when the buyer clicks away from it', () => {
     test.each([
         [OUTSIDE, false, 'a click elsewhere on the page closes it'],

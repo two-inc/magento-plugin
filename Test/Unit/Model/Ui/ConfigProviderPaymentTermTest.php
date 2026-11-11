@@ -28,13 +28,13 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  * Two-family brand by scanning `window.checkoutConfig.payment` for a
  * subtree carrying a truthy `redirectUrlCookieCode`, and both mount only
  * when that resolves. It must therefore withhold on exactly the verdicts
- * Two::isAvailable() withholds on (ABN-533) — a rejected key and no key —
+ * Two::isAvailable() withholds on (a rejected key and no key),
  * or an outage leaves the method offered with no config to render it.
  */
 /**
  * The published term seam: `defaultPaymentTerm` / `selectedPaymentTerm` are
  * what the renderer preselects a chip from, so a day count published here is
- * offered to the buyer even when the offered set is empty (ABN-544).
+ * offered to the buyer even when the offered set is empty.
  */
 class ConfigProviderPaymentTermTest extends TestCase
 {
@@ -56,6 +56,8 @@ class ConfigProviderPaymentTermTest extends TestCase
         // getBrandVersion() are declared on the implementation only, and
         // getConfig() reaches both through buildBrandQueryString().
         $configRepository = $this->createMock(ConfigRepositoryImpl::class);
+        // An enabled method: a disabled one withholds the whole config (TWO-27227).
+        $configRepository->method('isActive')->willReturn(true);
         $configRepository->method('getApiKey')->willReturn('test-api-key');
         $configRepository->method('getBrand')->willReturn('');
         $configRepository->method('getBrandVersion')->willReturn('');
@@ -178,7 +180,7 @@ class ConfigProviderPaymentTermTest extends TestCase
     /**
      * The chip text depends on the term type, so the type has to reach the
      * browser: an end-of-month term falls due that many days after the end of
-     * the month (ABN-554).
+     * the month.
      *
      * @dataProvider publishedTermsTypes
      */
@@ -204,7 +206,7 @@ class ConfigProviderPaymentTermTest extends TestCase
 
     /**
      * Given an admin-supplied translation carrying markup; when the consent
-     * sentence is published; then only the terms link survives (ABN-554).
+     * sentence is published; then only the terms link survives.
      *
      * @dataProvider consentSentenceRows
      */
@@ -280,6 +282,21 @@ class ConfigProviderPaymentTermTest extends TestCase
                 return $text;
             }
         };
+    }
+
+    /**
+     * The submit-time check says what order create and /select-term say when
+     * they refuse a term, so a buyer reads one sentence whichever side catches
+     * it (TWO-27214).
+     */
+    public function testTheTermUnavailableMessageIsTheServersRefusal(): void
+    {
+        $provider = $this->build($this->statusService(ApiKeyStatus::OK, 200, []), 30);
+
+        $this->assertSame(
+            'Selected payment term is not available.',
+            (string) $this->publish($provider, 0)['termUnavailableMessage']
+        );
     }
 
     /**

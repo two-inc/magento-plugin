@@ -149,7 +149,7 @@ class SurchargeTaxClassTest extends TestCase
 
     /**
      * A website is read at website scope, never through one of its stores, whose own
-     * override would decide the answer (ABN-530).
+     * override would decide the answer.
      *
      * @param array<string, string> $params
      * @dataProvider editedScopeProvider

@@ -8,8 +8,12 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Webapi\Exception as WebapiException;
+use Magento\Quote\Model\QuoteIdToMaskedQuoteIdInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\RateLimiter;
 
@@ -46,16 +50,30 @@ class SoleTrader implements SoleTraderInterface
      */
     private $checkoutSession;
 
+    /**
+     * @var ConfigRepository
+     */
+    private $configRepository;
+
+    /**
+     * @var QuoteIdToMaskedQuoteIdInterface
+     */
+    private $quoteIdToMaskedQuoteId;
+
     public function __construct(
         Adapter $adapter,
         SupportedCompanyTypes $supportedCompanyTypes,
         RateLimiter $rateLimiter,
-        CheckoutSession $checkoutSession
+        CheckoutSession $checkoutSession,
+        ConfigRepository $configRepository,
+        QuoteIdToMaskedQuoteIdInterface $quoteIdToMaskedQuoteId
     ) {
         $this->adapter = $adapter;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
         $this->rateLimiter = $rateLimiter;
         $this->checkoutSession = $checkoutSession;
+        $this->configRepository = $configRepository;
+        $this->quoteIdToMaskedQuoteId = $quoteIdToMaskedQuoteId;
     }
 
     /**
@@ -69,7 +87,16 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
-        return $this->supportedCompanyTypes->getForCountry($countryCode, $this->quoteStoreId());
+        // TWO-27227: a disabled method stands company search down, so this
+        // anonymous route makes no registry call under the merchant's key.
+        // It answers the route's own "registered businesses only" list rather
+        // than an envelope, which its string[] contract cannot carry.
+        $storeId = $this->quoteStoreId();
+        if (!$this->configRepository->isActive($storeId)) {
+            return [];
+        }
+
+        return $this->supportedCompanyTypes->getForCountry($countryCode, $storeId);
     }
 
     /**
@@ -83,6 +110,8 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
+        $this->assertOwnCheckoutCart($cartId);
+
         $storeId = $this->quoteStoreId();
         $delegationToken = $this->getDelegationToken($storeId);
         $autofillToken = $this->getAutofillToken($storeId);
@@ -90,9 +119,54 @@ class SoleTrader implements SoleTraderInterface
         return [['delegation_token' => $delegationToken, 'autofill_token' => $autofillToken]];
     }
 
+    /**
+     * Tokens are a credential for one buyer's signup, so they are minted only
+     * for the session's own active quote, with items, on a store where this
+     * method is enabled, and only when the caller names that quote: by its
+     * masked id (a guest on the standard checkout) or its own id (a customer,
+     * or any buyer on checkouts that send it). Anything else is refused
+     * before Two is called (TWO-27057).
+     *
+     * @throws WebapiException
+     */
+    private function assertOwnCheckoutCart(string $cartId): void
+    {
+        try {
+            $quote = $this->checkoutSession->getQuote();
+            $quoteId = (int)$quote->getId();
+            $allowed = $quoteId > 0
+                && (bool)$quote->getIsActive()
+                && (int)$quote->getItemsCount() > 0
+                && $this->configRepository->isActive($this->quoteStoreId())
+                && $this->namesQuote($cartId, $quoteId);
+        } catch (\Throwable $e) {
+            $allowed = false;
+        }
+        if (!$allowed) {
+            throw new WebapiException(
+                __('Sole trader sign-up is not available for this cart.'),
+                0,
+                WebapiException::HTTP_FORBIDDEN
+            );
+        }
+    }
+
+    private function namesQuote(string $cartId, int $quoteId): bool
+    {
+        if ($cartId === '') {
+            return false;
+        }
+        if (hash_equals((string)$quoteId, $cartId)) {
+            return true;
+        }
+        $maskedId = (string)$this->quoteIdToMaskedQuoteId->execute($quoteId);
+
+        return $maskedId !== '' && hash_equals($maskedId, $cartId);
+    }
+
     private function getDelegationToken(?int $storeId): string
     {
-        $delegateResponse = $this->adapter->execute(
+        $delegateResponse = $this->adapter->withIdempotencyKey($this->tokenKey('delegation_token'))->execute(
             self::DELEGATION_TOKEN_ENDPOINT,
             ['create_proposal' => true, 'read_current_business' => true],
             'POST',
@@ -107,7 +181,7 @@ class SoleTrader implements SoleTraderInterface
 
     private function getAutofillToken(?int $storeId)
     {
-        $autofillResponse = $this->adapter->execute(
+        $autofillResponse = $this->adapter->withIdempotencyKey($this->tokenKey('autofill_token'))->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
             ['read_current_buyer' => true, 'write_current_buyer' => true],
             'POST',
@@ -125,6 +199,26 @@ class SoleTrader implements SoleTraderInterface
      * /rest/V1/... with no store code, so the request resolves to the default
      * store. Null falls the call back to the default scope.
      */
+    /**
+     * A token request is named by the buyer's quote and session (TWO-26658).
+     * A token is a credential for that buyer, so without both there is no
+     * key at all rather than one another buyer could share.
+     */
+    private function tokenKey(string $operation): ?string
+    {
+        try {
+            $quoteId = (string)$this->checkoutSession->getQuote()->getId();
+        } catch (\Throwable $e) {
+            $quoteId = '';
+        }
+        $sessionId = (string)$this->checkoutSession->getSessionId();
+        if ($quoteId === '' || $sessionId === '') {
+            return null;
+        }
+
+        return IdempotencyKey::build($operation, $quoteId, IdempotencyKey::hash($sessionId));
+    }
+
     private function quoteStoreId(): ?int
     {
         try {

@@ -6,11 +6,19 @@ namespace Two\Gateway\Test\Unit\Service\Order;
 use Magento\Catalog\Model\Product;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
+use Two\Gateway\Api\OrderPostprocessingInterface as Hook;
+use Two\Gateway\Exception\ShopMatchRefusedException;
 use Two\Gateway\Service\Order\ComposeCapture;
+use Two\Gateway\Service\Order\PostprocessingTotals;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\PostprocessorFactory;
+use Two\OrderPostprocessingFixture\Plugin\Subscriber;
+
+require_once __DIR__ . '/../../../Integration/OrderPostprocessingFixture/Plugin/Subscriber.php';
 
 /**
  * TWO-26091: Magento invoices shipping once, on whichever invoice is created
@@ -24,6 +32,8 @@ use Two\Gateway\Service\Order\ComposeCapture;
  */
 class ComposeCaptureShippingPerInvoiceTest extends TestCase
 {
+    use PostprocessorFactory;
+
     private const ORDER_SHIPPING = [10.00, 2.50];
 
     public static function captureProvider(): array
@@ -86,6 +96,69 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $this->assertSame($payload['tax_amount'], $this->sum($subtotals, 'tax_amount'), "$description: subtotal tax");
     }
 
+    /**
+     * TWO-26276: execute() composes an invoice's shipping line without the
+     * fallback reconcile, so a mismatch reaches the hook. With no subscriber
+     * the default handler refuses it in today's merchant wording; with one,
+     * the capture is sent as composed.
+     *
+     * @dataProvider mismatchCases
+     */
+    public function testAFallbackMismatchOnTheInvoiceIsTheDefaultHandlersToRefuse(
+        bool $subscriber,
+        string $description
+    ): void {
+        Subscriber::$mode = null;
+        // 10.00 of shipping charged untaxed, against the fallback's 25%.
+        $invoice = $this->invoice([[100.00, 25.00, 25]], [10.00, 0.00]);
+        $payload = ['partial' => $this->composeCapture()->execute($invoice)];
+        $log = $this->createMock(LogRepository::class);
+        $hook = $this->hookChain($log, $subscriber
+            ? ['two_order_postprocessing_fixture' => new Subscriber(new PostprocessingTotals(), $this->shopMatchChecks($log))]
+            : []);
+        $context = ['trigger' => 'invoice', 'endpoint' => 'test', 'order' => $invoice->getOrder(), 'invoice' => $invoice];
+
+        try {
+            $sent = $this->buildPostprocessor($hook, null, $log)->process(Hook::REQUEST_CAPTURE, $payload, $context);
+            $this->assertTrue($subscriber, "$description: nothing was refused");
+            $this->assertSame($payload, $sent, $description);
+        } catch (ShopMatchRefusedException $e) {
+            $this->assertFalse($subscriber, "$description: refused despite a subscriber");
+            $this->assertStringStartsWith(
+                'Shipping tax on this order does not match the rate of the Tax Class for Shipping',
+                $e->getMessage(),
+                $description
+            );
+        }
+    }
+
+    /**
+     * TWO-26279: the capture's top-level discount_amount follows create and
+     * edit (TWO-26277), row for row: the invoice's discount as a positive
+     * amount, less its tax compensation, never below 0.
+     */
+    #[DataProviderExternal(ComposeOrderDiscountAmountTest::class, 'discountCases')]
+    public function testCaptureSendsTheInvoiceDiscountAsCreateSendsTheOrders(
+        array $fields,
+        string $expected,
+        string $description
+    ): void {
+        $invoice = $this->invoice([[100.00, 25.00, 25]], [0.00, 0.00]);
+        foreach ($fields as $key => $value) {
+            $invoice->setData($key, $value);
+        }
+
+        $this->assertSame($expected, $this->composeCapture()->execute($invoice)['discount_amount'], $description);
+    }
+
+    public static function mismatchCases(): array
+    {
+        return [
+            [false, 'no subscriber: refused in the merchant wording'],
+            [true, 'a subscriber: sent as composed'],
+        ];
+    }
+
     private function sum(array $rows, string $key): string
     {
         return number_format(array_sum(array_map('floatval', array_column($rows, $key))), 2, '.', '');
@@ -112,7 +185,7 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $grand = $invoiceShipping[0] + $invoiceShipping[1];
         $tax = $invoiceShipping[1];
         foreach ($lines as $i => [$net, $lineTax, $ratePercent]) {
-            $item = $this->item([
+            $data = [
                 'order_item_id' => $i + 1,
                 'name' => "Item $i",
                 'sku' => "SKU$i",
@@ -121,9 +194,14 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
                 'row_total' => $net,
                 'tax_amount' => $lineTax,
                 'tax_percent' => $ratePercent,
-            ]);
-            $order->itemsById[$i + 1] = $item;
-            $items[] = $item;
+            ];
+            // An invoice holds Invoice\Item lines, each pointing at its Order\Item (TWO-26278).
+            $order->itemsById[$i + 1] = new class ($data) extends Order\Item {
+                use ItemData;
+            };
+            $items[] = new class ($data) extends Invoice\Item {
+                use ItemData;
+            };
             $grand += $net + $lineTax;
             $tax += $lineTax;
         }
@@ -140,25 +218,6 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $invoice->setDiscountAmount(0.0);
 
         return $invoice;
-    }
-
-    private function item(array $data): Order\Item
-    {
-        return new class ($data) extends Order\Item {
-            /** @var array */
-            private $data;
-
-            public function __construct(array $data)
-            {
-                $this->data = $data;
-            }
-
-            public function __call($method, $args)
-            {
-                $key = strtolower(preg_replace('/(.)([A-Z])/', '$1_$2', substr($method, 3)));
-                return $this->data[$key] ?? null;
-            }
-        };
     }
 
     /**
@@ -199,5 +258,25 @@ class ComposeCaptureShippingPerInvoiceTest extends TestCase
         $service->configRepository = $config;
 
         return $service;
+    }
+}
+
+/**
+ * A sales item's magic getters over a fixed data array.
+ */
+trait ItemData
+{
+    /** @var array */
+    private $data;
+
+    public function __construct(array $data)
+    {
+        $this->data = $data;
+    }
+
+    public function __call($method, $args)
+    {
+        $key = strtolower(preg_replace('/(.)([A-Z])/', '$1_$2', substr($method, 3)));
+        return $this->data[$key] ?? null;
     }
 }

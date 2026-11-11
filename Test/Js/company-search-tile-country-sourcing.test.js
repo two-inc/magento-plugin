@@ -88,7 +88,10 @@ function load(options) {
         this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
-        this.forgetAdoptions = function () { panel.adoptionsForgotten = true; };
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
         this.forgetAutofilledBuyer = function () {};
     }
 

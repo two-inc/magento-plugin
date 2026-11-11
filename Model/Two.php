@@ -32,7 +32,9 @@ use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
+use Two\Gateway\Observer\PaymentCaptureInvoice;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -57,9 +59,22 @@ class Two extends AbstractMethod
 {
     public const CODE = 'two_payment';
 
+    /** Payment information key: Two's refunded total after the last refund (TWO-26658). */
+    public const REFUNDED_TOTAL = 'two_refunded_total';
+
+    /**
+     * Payment information key: Two accepted this order's cancel from an admin
+     * Void, so cancelling the Magento order sends nothing more (TWO-26301).
+     */
+    public const CANCELLED_AT_TWO = 'two_cancelled_at_two';
+
     public const STATUS_NEW = 'two_new';
     public const STATUS_FAILED = 'two_failed';
     public const STATUS_PENDING = 'pending_two_payment';
+
+    /** The currencies Two invoices in; a basket in any other is not offered Two (TWO-27108). */
+    public const SUPPORTED_CURRENCIES = ['NOK', 'GBP', 'SEK', 'USD', 'DKK', 'EUR'];
+
     /**
      * @var RequestInterface
      */
@@ -322,7 +337,7 @@ class Two extends AbstractMethod
         $additionalInformation = $payment->getAdditionalInformation();
         $this->assertOrganizationNumberPresent($additionalInformation);
         $this->urlCookie->delete();
-        $orderReference = (string)rand();
+        $orderReference = bin2hex(random_bytes(8));
 
         $payload = $this->compositeOrder->execute(
             $order,
@@ -331,7 +346,13 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute(
+        // The adapter logs a refusal with the API's reason (TWO-26259,
+        // TWO-26340); the quote identifies the order, which has no id yet.
+        // One key per checkout attempt: the reference is minted per attempt
+        // and stored on the order (TWO-26658).
+        $adapter = $this->apiAdapter->withLogSubject('quote ' . $order->getQuoteId())
+            ->withIdempotencyKey(IdempotencyKey::create((string)$order->getIncrementId(), $orderReference));
+        $response = $adapter->execute(
             '/v1/order',
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_ORDER_CREATE,
@@ -341,15 +362,21 @@ class Two extends AbstractMethod
             'POST',
             (int)$order->getStoreId()
         );
-        $error = $this->getErrorFromResponse($response);
+        $error = $this->getErrorFromResponse($response, true);
         if ($error) {
             throw new LocalizedException($error);
         }
 
         if ($response['status'] !== 'APPROVED') {
+            // The status and reason only: the response carries the buyer's
+            // details, which are logged only with debug logging on.
             $this->logRepository->addDebugLog(
                 sprintf('Order was not accepted by %s', $this->brandRegistry->getProductName()),
-                $response
+                [
+                    'quote_id' => $order->getQuoteId(),
+                    'status' => $response['status'] ?? null,
+                    'decline_reason' => $response['decline_reason'] ?? null,
+                ]
             );
             // Surface the minimum when the decline is attributable to it:
             // primarily by the API's machine-readable decline reason
@@ -437,7 +464,9 @@ class Two extends AbstractMethod
      *
      * Resolution order:
      *   1. `payment/<code>/title` from CCD (admin-saved override).
-     *   2. BrandRegistry::getProductName() (brand overlay fallback).
+     *   2. With a brand overlay active, BrandRegistry::getProductName();
+     *      on the unbranded plugin, the translated "Business invoice"
+     *      (TWO-27108).
      *
      * Optionally suffixed with the buyer's selected term in days
      * (e.g. "Partner Product - 60 days"). DataAssignObserver
@@ -454,9 +483,16 @@ class Two extends AbstractMethod
             $days = 0;
         }
         $configured = (string)$this->getConfigData('title');
-        $noun = $configured !== ''
-            ? __($configured)
-            : __($this->brandRegistry->getProductName());
+        // An empty title shows the translated default for the store view
+        // (TWO-27108): "Business invoice" on the unbranded plugin, as on the
+        // other plugins, and the product name when a brand overlay is active.
+        if ($configured !== '') {
+            $noun = __($configured);
+        } elseif ($this->brandRegistry->getCode() !== self::CODE) {
+            $noun = __($this->brandRegistry->getProductName());
+        } else {
+            $noun = __('Business invoice');
+        }
         if ($days > 0) {
             return sprintf('%s - %s', $noun, __('%1 days', $days));
         }
@@ -482,11 +518,23 @@ class Two extends AbstractMethod
     /**
      * Get error from response
      *
-     * @param $response
+     * With $atOrderCreate, any refusal at status 400 or above names the
+     * fields the buyer can fix ("Please enter a valid Phone number to pay on
+     * invoice."), chosen from
+     * the structured field path and never from the API's wording, unless the
+     * status is a server error (5xx), which is always generic; a
+     * validation failure naming no field we know shows the general error;
+     * else the same-company message, else a generic notice. A call that got
+     * no HTTP response shows the general error too. The API's own error message and trace id speak to
+     * the integration, not the buyer (TWO-26259), and the merchant finds them
+     * in the error log. Same order as the WooCommerce plugin.
+     *
+     * @param array $response
+     * @param bool $atOrderCreate whether the buyer sees this at place order
      *
      * @return Phrase|null
      */
-    public function getErrorFromResponse(array $response): ?Phrase
+    public function getErrorFromResponse(array $response, bool $atOrderCreate = false): ?Phrase
     {
         $tryAgainLater = __('Please try again later.');
         $generalError = __(
@@ -503,30 +551,40 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
-        $isClientError = isset($response['http_status']) && $response['http_status'] == 400;
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        $isClientError = $status === 400;
+        $sameCompany = $this->buyerSentence(__('Buyer and merchant may not be the same company'));
 
-        // Validation errors — user-facing, no trace ID
-        if ($isClientError && isset($response['error_json']) && is_array($response['error_json'])) {
-            $errs = [];
-            foreach ($response['error_json'] as $err) {
-                $fieldName = isset($err['loc'])
-                    ? $this->getFieldNameFromLoc(json_encode($err['loc']))
-                    : null;
-                $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+        $validation = $this->getValidationMessage($response);
 
-                if ($fieldName && $msg) {
-                    $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
-                } elseif ($fieldName) {
-                    $errs[] = __('%1 is not valid.', $fieldName);
-                } elseif ($msg) {
-                    $errs[] = $msg;
-                }
+        if ($atOrderCreate && $status !== null && $status >= 400) {
+            // A field the buyer can fix is named, in our own words; the
+            // validator's text never reaches the buyer, and the merchant
+            // finds it in the error log (TWO-26295).
+            // A server error is generic whatever it carries.
+            $fieldError = $status < 500 ? $this->getFieldErrorMessage($response) : null;
+            if ($fieldError !== null) {
+                return $fieldError;
             }
-            if (count($errs) > 0) {
-                // Wrap as a Phrase without re-running translation: each
-                // entry in $errs is already __()-translated.
-                return __('%1', join(' ', $errs));
+            if ($validation !== null && $status < 500) {
+                return $generalError;
             }
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return $sameCompany;
+            }
+            return __(
+                'Invoice purchase with %1 is not available for this order.',
+                $this->brandRegistry->getProductName()
+            );
+        }
+        if ($atOrderCreate && $status === null && isset($response['error_code'])) {
+            // No HTTP response at all: the transport error is not for the buyer.
+            return $generalError;
+        }
+
+        // Validation errors: user-facing, no trace ID
+        if ($isClientError && $validation !== null) {
+            return $validation;
         }
 
         if (isset($response['error_code'])) {
@@ -535,7 +593,7 @@ class Two extends AbstractMethod
 
             // User errors — no trace ID
             if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
-                $reason = __('The buyer and the seller are the same company.');
+                $reason = $sameCompany;
             }
             if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
                 return $reason instanceof Phrase ? $reason : __($reason);
@@ -553,7 +611,6 @@ class Two extends AbstractMethod
         // A non-2xx status with no error_code (a 405 or a gateway's HTML
         // error page) is still a failure. The adapter sets http_status on any
         // status other than 200/201/202 (TWO-26150).
-        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
         if ($status !== null && ($status < 200 || $status >= 300)) {
             $reason = $response['error_message'] ?? null;
             $message = __(
@@ -568,6 +625,189 @@ class Two extends AbstractMethod
     }
 
     /**
+     * What a BUYER is shown for a refused request outside order create
+     * (TWO-26295): the fields they can fix, the same-company message, or the
+     * general error. Never the API's own text. Null when the response is not
+     * a refusal.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    public function getBuyerErrorFromResponse(array $response): ?Phrase
+    {
+        if ($this->getErrorFromResponse($response) === null) {
+            return null;
+        }
+        $status = isset($response['http_status']) ? (int)$response['http_status'] : null;
+        // A server error is generic whatever it carries.
+        if ($status === null || $status < 500) {
+            $fieldError = $this->getFieldErrorMessage($response);
+            if ($fieldError !== null) {
+                return $fieldError;
+            }
+            if (($response['error_code'] ?? null) === 'SAME_BUYER_SELLER_ERROR') {
+                return $this->buyerSentence(__('Buyer and merchant may not be the same company'));
+            }
+        }
+        return __(
+            'Something went wrong with your request to %1. %2',
+            $this->brandRegistry->getProductName(),
+            __('Please try again later.')
+        );
+    }
+
+    /**
+     * "Please enter a valid <field> to pay on invoice." for each field in a
+     * response's error_json whose path we recognise, or null when it names
+     * none (TWO-26295; wording shared with the other plugins, TWO-27108).
+     *
+     * Chosen from the path, never the message, so nothing the API wrote
+     * reaches the buyer.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    public function getFieldErrorMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $sentences = [];
+        foreach ($response['error_json'] as $err) {
+            $sentence = is_array($err) && isset($err['loc']) && is_array($err['loc'])
+                ? ($this->getFieldErrorMessages()[$this->fieldPath($err['loc'])] ?? null)
+                : null;
+            if ($sentence !== null) {
+                $sentences[(string)$sentence] = true;
+            }
+        }
+        if ($sentences === []) {
+            return null;
+        }
+        // Each entry is already translated.
+        return __('%1', implode(' ', array_keys($sentences)));
+    }
+
+    /**
+     * Field path => the whole buyer-facing sentence, full stop included, for
+     * every field a buyer can fix. One sentence per field rather than a noun
+     * dropped into a template, so each locale can phrase it naturally; the
+     * wording is the other plugins' (TWO-27108). The path drops model-name
+     * segments a validator may insert (any segment starting with a capital
+     * letter), so the same field matches however the request was validated.
+     *
+     * @return array<string, Phrase>
+     */
+    public function getFieldErrorMessages(): array
+    {
+        $sentences = [
+            'buyer.representative.phone_number' => __('Please enter a valid Phone number to pay on invoice'),
+            'buyer.company.organization_number' => __('Please enter a valid Organization number to pay on invoice'),
+            'buyer.representative.first_name' => __('Please enter a valid First name to pay on invoice'),
+            'buyer.representative.last_name' => __('Please enter a valid Last name to pay on invoice'),
+            'buyer.representative.email' => __('Please enter a valid Email to pay on invoice'),
+            'billing_address.street_address' => __('Please enter a valid Address to pay on invoice'),
+            'billing_address.city' => __('Please enter a valid City to pay on invoice'),
+            'billing_address.country' => __('Please enter a valid Country to pay on invoice'),
+            'billing_address.postal_code' => __('Please enter a valid Postal code to pay on invoice'),
+        ];
+
+        return array_map([$this, 'buyerSentence'], $sentences);
+    }
+
+    /**
+     * Field path => the field's name, for a message that quotes the API's own
+     * reason after it ("Phone Number: ..."). Same paths as
+     * getFieldErrorMessages().
+     *
+     * @return array<string, Phrase>
+     */
+    public function getFieldErrorLabels(): array
+    {
+        return [
+            'buyer.representative.phone_number' => __('Phone Number'),
+            'buyer.company.organization_number' => __('Company Number'),
+            'buyer.representative.first_name' => __('First Name'),
+            'buyer.representative.last_name' => __('Last Name'),
+            'buyer.representative.email' => __('Email Address'),
+            'billing_address.street_address' => __('Street Address'),
+            'billing_address.city' => __('City'),
+            'billing_address.country' => __('Country'),
+            'billing_address.postal_code' => __('Zip/Postal Code'),
+        ];
+    }
+
+    /**
+     * Closes a buyer message with a full stop unless it has its own end mark:
+     * the shared wording has none, because one plugin shows each message as
+     * its own notice.
+     */
+    private function buyerSentence(Phrase $message): Phrase
+    {
+        $text = rtrim((string)$message);
+
+        return __('%1', preg_match('/[.!?]$/u', $text) ? $text : $text . '.');
+    }
+
+    /**
+     * @param array $loc a field path as the API reports it
+     * @return Phrase|null
+     */
+    private function fieldLabelForLoc(array $loc): ?Phrase
+    {
+        return $this->getFieldErrorLabels()[$this->fieldPath($loc)] ?? null;
+    }
+
+    /**
+     * @param array $loc a field path as the API reports it
+     * @return string the dotted path without model-name segments
+     */
+    private function fieldPath(array $loc): string
+    {
+        return implode('.', array_filter($loc, static function ($segment): bool {
+            return is_string($segment) && $segment !== '' && !preg_match('/^[A-Z]/', $segment);
+        }));
+    }
+
+    /**
+     * The buyer-facing field messages in a response's error_json, if any.
+     *
+     * @param array $response
+     * @return Phrase|null
+     */
+    private function getValidationMessage(array $response): ?Phrase
+    {
+        if (!isset($response['error_json']) || !is_array($response['error_json'])) {
+            return null;
+        }
+        $errs = [];
+        foreach ($response['error_json'] as $err) {
+            $fieldName = isset($err['loc'])
+                ? $this->getFieldNameFromLoc(json_encode($err['loc']))
+                : null;
+            $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+
+            if ($fieldName && $msg) {
+                $entry = (string)__('%1: %2.', $fieldName, rtrim($msg, '.'));
+                // A message already ending in ? or ! keeps its own mark,
+                // not the template's full stop.
+                $errs[] = preg_match('/[!?]$/', $msg) ? preg_replace('/\.$/', '', $entry) : $entry;
+            } elseif ($fieldName) {
+                $errs[] = $this->buyerSentence(__('Please enter a valid %1 to pay on invoice', $fieldName));
+            } elseif ($msg) {
+                $errs[] = preg_match('/[.!?]$/', $msg) ? $msg : $msg . '.';
+            }
+        }
+        $errs = array_values(array_unique(array_map('strval', $errs)));
+        if (count($errs) > 0) {
+            // Wrap as a Phrase without re-running translation: each
+            // entry in $errs is already __()-translated.
+            return __('%1', join(' ', $errs));
+        }
+        return null;
+    }
+
+    /**
      * Get human-readable field name from a pydantic error loc array.
      *
      * @param string $locStr JSON-encoded loc array, e.g. '["buyer","representative","phone_number"]'
@@ -575,22 +815,8 @@ class Two extends AbstractMethod
      */
     public function getFieldNameFromLoc(string $locStr): ?Phrase
     {
-        static $fieldNames = null;
-        if ($fieldNames === null) {
-            $fieldNames = [
-                '["buyer","representative","phone_number"]' => __('Phone Number'),
-                '["buyer","company","organization_number"]' => __('Company Number'),
-                '["buyer","representative","first_name"]' => __('First Name'),
-                '["buyer","representative","last_name"]' => __('Last Name'),
-                '["buyer","representative","email"]' => __('Email Address'),
-                '["billing_address","street_address"]' => __('Street Address'),
-                '["billing_address","city"]' => __('City'),
-                '["billing_address","country"]' => __('Country'),
-                '["billing_address","postal_code"]' => __('Zip/Postal Code'),
-            ];
-        }
-        $locStr = preg_replace('/\s+/', '', $locStr);
-        return $fieldNames[$locStr] ?? null;
+        $loc = json_decode($locStr, true);
+        return is_array($loc) ? $this->fieldLabelForLoc($loc) : null;
     }
 
     /**
@@ -607,23 +833,45 @@ class Two extends AbstractMethod
     }
 
     /**
+     * An admin Void: tells Two the order is cancelled.
+     *
      * @inheritDoc
      */
     public function void(InfoInterface $payment)
     {
-        return $this->cancel($payment);
+        return $this->cancelUpstream($payment);
     }
 
     /**
+     * Makes no call to Two (TWO-26298).
+     *
+     * Core reaches this only from Order::cancel(), which then dispatches
+     * `order_cancel_after`, and Observer\SalesOrderCancelAfter sends the
+     * cancel from there. Sending it here as well cancelled the Two order
+     * twice for every admin cancel. The observer is the one kept because it
+     * also runs when core treats the cancel as offline, and because it
+     * refuses the Magento cancel when Two does, keeping the two in step.
+     *
      * @inheritDoc
      */
     public function cancel(InfoInterface $payment)
+    {
+        return $this;
+    }
+
+    /**
+     * POST the Two order's cancel and record the outcome on the order.
+     *
+     * @param InfoInterface $payment
+     * @return $this
+     */
+    private function cancelUpstream(InfoInterface $payment)
     {
         /** @var Order $order */
         $order = $payment->getOrder();
         try {
             $twoOrderId = $order->getTwoOrderId();
-            $response = $this->apiAdapter->execute(
+            $response = $this->apiAdapter->withIdempotencyKey(IdempotencyKey::cancel((string)$twoOrderId))->execute(
                 '/v1/order/' . $order->getTwoOrderId() . '/cancel',
                 $this->orderPostprocessor->process(
                     Postprocessing::REQUEST_CANCEL,
@@ -644,6 +892,10 @@ class Two extends AbstractMethod
                 );
                 $order->addStatusToHistory($order->getStatus(), $comment->render());
             } else {
+                // Saved with the order, so the Cancel that usually follows a
+                // Void, in a later request, knows Two already holds the order
+                // as cancelled.
+                $payment->setAdditionalInformation(self::CANCELLED_AT_TWO, true);
                 $order->addStatusToHistory(
                     $order->getStatus(),
                     __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())
@@ -688,25 +940,31 @@ class Two extends AbstractMethod
 
             $payload = [];
             $createdInvoice = null;
+            $invoices = [];
             $isWholeOrderInvoiced = $this->isWholeOrderInvoiced($order);
             $isPartialOrder = !$isWholeOrderInvoiced;
             while (true) {
                 if ($isPartialOrder) {
+                    // Core captures before saving the invoice, so the collection holds only
+                    // earlier ones; the invoice itself comes from PaymentCaptureInvoice (TWO-26278).
                     $invoices = $order->getInvoiceCollection();
-                    $totalInvoices = count($invoices);
-                    $cnt = 1;
-                    $createdInvoice = null;
-                    foreach ($invoices as $invoice) {
-                        if ($cnt == $totalInvoices) {
-                            $createdInvoice = $invoice;
-                        }
-                        $cnt++;
+                    $createdInvoice = $payment->getData(PaymentCaptureInvoice::INVOICE);
+                    if (!$createdInvoice instanceof Order\Invoice) {
+                        throw new LocalizedException(
+                            __('Could not initiate capture with %1', $this->brandRegistry->getProductName())
+                        );
                     }
                     $payload = [
                         'partial' => $this->composeCapture->execute($createdInvoice),
                     ];
                 }
-                $response = $this->apiAdapter->execute(
+                $key = $isPartialOrder
+                    ? IdempotencyKey::fulfil(
+                        $twoOrderId,
+                        IdempotencyKey::recordRef('invoice', $createdInvoice, $invoices, $payload)
+                    )
+                    : IdempotencyKey::fulfil($twoOrderId);
+                $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                     '/v1/order/' . $twoOrderId . '/fulfillments',
                     $this->orderPostprocessor->process(
                         Postprocessing::REQUEST_CAPTURE,
@@ -731,6 +989,14 @@ class Two extends AbstractMethod
                     throw new LocalizedException($error);
                 }
                 break;
+            }
+
+            if ($isPartialOrder && isset($response['fulfilled_order']['id'])
+                && !IdempotencyKey::fulfilmentIsNew((string)$response['fulfilled_order']['id'], $invoices)
+            ) {
+                $this->failReplayed($order, $twoOrderId, 'fulfil', [
+                    'fulfilled_order_id' => $response['fulfilled_order']['id'],
+                ]);
             }
 
             if (!empty($response) && isset($response['fulfilled_order']['id'])) {
@@ -765,8 +1031,8 @@ class Two extends AbstractMethod
      */
     private function parseFulfillResponse(array $response, Order $order): void
     {
-        if (empty($response['fulfilled_order'] ||
-            empty($response['fulfilled_order']['id']))) {
+        if (empty($response['fulfilled_order']) ||
+            empty($response['fulfilled_order']['id'])) {
             return;
         }
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
@@ -830,9 +1096,16 @@ class Two extends AbstractMethod
             (float)$amount,
             $order
         );
-        $response = $this->apiAdapter->execute(
+        // Keyed on the credit memo, so a retry of this refund is deduplicated
+        // and every other refund is not (TWO-26658).
+        $memos = $order->getCreditmemosCollection() ?: [];
+        $key = IdempotencyKey::refund(
+            (string)$twoOrderId,
+            IdempotencyKey::recordRef('creditmemo', $payment->getCreditmemo(), $memos, $payload)
+        );
+        $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $this->orderPostprocessor->process(
+            $sent = $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_REFUND,
                 $payload,
                 [
@@ -865,6 +1138,8 @@ class Two extends AbstractMethod
             );
         }
 
+        $this->assertRefundApplied($order, $payment, $memos, (float)($sent['amount'] ?? 0), $response, $key);
+
         $comment = __(
             'Successfully refunded order with %1 for order ID: %2. Refund reference: %3',
             $this->brandRegistry->getProductName(),
@@ -877,6 +1152,71 @@ class Two extends AbstractMethod
             'amount' => $response['amount'],
         ]);
         return $this;
+    }
+
+    /**
+     * Two answers a refund with the order's refunded total. When that total
+     * did not move by what this refund sent, Two answered with an earlier
+     * refund stored under this key, and this one did not happen (TWO-26658).
+     * An order refunded before the total was recorded has nothing to compare
+     * on its first refund since.
+     *
+     * @param iterable<object> $memos
+     * @throws LocalizedException
+     */
+    private function assertRefundApplied(
+        Order $order,
+        InfoInterface $payment,
+        iterable $memos,
+        float $sent,
+        array $response,
+        string $key
+    ): void {
+        $stored = $payment->getAdditionalInformation(self::REFUNDED_TOTAL);
+        $before = $stored !== null && $stored !== ''
+            ? (float)$stored
+            : (IdempotencyKey::savedCount($memos) === 0 ? 0.0 : null);
+        $after = abs((float)$response['amount']);
+        if (IdempotencyKey::refundApplied($before, $after, $sent) === false) {
+            $this->failReplayed($order, (string)$order->getTwoOrderId(), 'refund', [
+                'idempotency_key' => $key,
+                'sent' => $sent,
+                'refunded_total_before' => $before,
+                'refunded_total_after' => $after,
+            ]);
+        }
+        $payment->setAdditionalInformation(self::REFUNDED_TOTAL, $after);
+    }
+
+    /**
+     * Two answered a refund or a partial fulfil with an earlier operation
+     * stored under the same Idempotency-Key, so this one did not happen:
+     * stop it being recorded as done, and say so on the order and in the
+     * error log (TWO-26658).
+     *
+     * @throws LocalizedException
+     */
+    private function failReplayed(Order $order, string $twoOrderId, string $operation, array $detail): void
+    {
+        $message = $operation === 'refund'
+            ? __(
+                '%1 returned an earlier refund for this key; this refund was not applied. '
+                . 'Please contact support with order ID %2.',
+                $this->brandRegistry->getProductName(),
+                $twoOrderId
+            )
+            : __(
+                '%1 returned an earlier fulfilment for this key; this fulfilment was not applied. '
+                . 'Please contact support with order ID %2.',
+                $this->brandRegistry->getProductName(),
+                $twoOrderId
+            );
+        $this->addOrderComment($order, $message);
+        $this->logRepository->addErrorLog(
+            sprintf('[idempotency-replay] %s', $message->render()),
+            $detail
+        );
+        throw new LocalizedException($message);
     }
 
     /**
@@ -926,8 +1266,8 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // The only upstream failure that may withhold the method (ABN-519), and
-        // only on a DEFINITIVE rejection (ABN-533): an outage falls through to
+        // The only upstream failure that may withhold the method, and
+        // only on a DEFINITIVE rejection: an outage falls through to
         // the cached merchant record, which is sufficient to keep serving the
         // buyer, rather than emptying checkout minutes into every incident.
         //
@@ -943,6 +1283,19 @@ class Two extends AbstractMethod
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: API key rejected', $this->_code),
                 ['status' => $status['status'], 'http_status' => $status['code']]
+            );
+            return false;
+        }
+        // TWO-27108: Two invoices only in these currencies, so a basket in any
+        // other is not offered Two. Without a concrete quote currency there is
+        // nothing to judge, and the method stays offered.
+        $currency = $quote instanceof \Magento\Quote\Model\Quote
+            ? strtoupper(trim((string)$quote->getQuoteCurrencyCode()))
+            : '';
+        if ($currency !== '' && !in_array($currency, self::SUPPORTED_CURRENCIES, true)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: basket currency not supported', $this->_code),
+                ['currency' => $currency]
             );
             return false;
         }
@@ -977,6 +1330,18 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // TWO-26309: order create refuses on an unreadable tax code map, so
+        // withhold Two here rather than after the buyer submits.
+        try {
+            $this->configRepository->getTaxCodeMap($storeId);
+        } catch (LocalizedException) {
+            // Debug, not error: the config repository already reported it once.
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: saved tax codes unreadable', $this->_code),
+                []
+            );
+            return false;
+        }
         // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
         // Core's admin gate cannot judge an empty country, so only the merchant
@@ -994,7 +1359,7 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // ABN-546: no later request is guaranteed to notice an unpriceable fee.
+        // No later request is guaranteed to notice an unpriceable fee.
         if (!$this->feeQuoteGate->isQuotable($quote, $storeId)) {
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),

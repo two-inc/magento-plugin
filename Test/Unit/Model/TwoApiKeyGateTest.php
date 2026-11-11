@@ -18,7 +18,7 @@ use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
  * The api-key verdict is the only upstream failure that may withhold the
  * payment method, and only when it is a DEFINITIVE rejection: Two said no,
  * or there is no key. Everything else falls through to the cached merchant
- * record (ABN-533).
+ * record.
  */
 class TwoApiKeyGateTest extends TestCase
 {
@@ -49,6 +49,8 @@ class TwoApiKeyGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->createMock(LogRepository::class),
+            // A readable tax code map: not this test's subject (TWO-26309).
+            'configRepository' => $this->createMock(\Two\Gateway\Api\Config\RepositoryInterface::class),
             // Not this test's subject: the fee quote concedes.
             'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),

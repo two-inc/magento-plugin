@@ -91,7 +91,7 @@ class Surcharge extends AbstractTotal
         // than assumed: its credit-memo tax collector hands the last memo the
         // order's whole remaining tax allowance, but gives an earlier one only
         // the tax its item and shipping rows carry, which no surcharge VAT
-        // reaches (ABN-560). Capped by the VAT still-refundable surcharge
+        // reaches. Capped by the VAT still-refundable surcharge
         // carries, because that allowance also covers other charges.
         $grantedTax = $this->grantedSurchargeTax(
             $creditmemo,

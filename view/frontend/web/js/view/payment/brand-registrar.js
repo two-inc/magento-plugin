@@ -14,12 +14,14 @@
  *
  * Push is deferred to `initialize` so each component instance gets
  * its own push (one entry per brand) rather than the file-level
- * single-push that two_payment.js does.
+ * single-push that two_payment.js does. The push goes through
+ * registerRenderer, which also creates the renderer when Luma's payment
+ * list has already been built without it (TWO-26297).
  */
-define([
-    'uiComponent',
-    'Magento_Checkout/js/model/payment/renderer-list'
-], function (Component, rendererList) {
+define(['uiComponent', 'Two_Gateway/js/model/register-renderer'], function (
+    Component,
+    registerRenderer
+) {
     'use strict';
 
     return Component.extend({
@@ -30,10 +32,10 @@ define([
         initialize: function () {
             this._super();
             if (this.brandCode) {
-                rendererList.push({
-                    type: this.brandCode,
-                    component: 'Two_Gateway/js/view/payment/method-renderer/gateway_method'
-                });
+                registerRenderer(
+                    this.brandCode,
+                    'Two_Gateway/js/view/payment/method-renderer/gateway_method'
+                );
             }
             return this;
         }

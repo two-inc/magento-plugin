@@ -52,7 +52,7 @@ class ApiKeyCheckTest extends TestCase
 
     /**
      * The API key is website-scoped, so the panel must verify the key of the scope its
-     * form is editing rather than the default scope's (ABN-530).
+     * form is editing rather than the default scope's.
      *
      * @dataProvider formScopes
      */
@@ -289,5 +289,39 @@ class ApiKeyCheckTest extends TestCase
 
         $this->assertSame('default', $block->getScope());
         $this->assertSame(0, $block->getScopeId());
+    }
+
+    /**
+     * TWO-27108: the stored key never renders back into the form; a saved key
+     * is announced in the note instead, and an empty field shows no note.
+     *
+     * @dataProvider keyInputs
+     */
+    public function testTheKeyInputRendersEmptyWithANoteWhenAKeyIsSaved(
+        ?string $stored,
+        string $comment,
+        string $expectedComment,
+        string $description
+    ): void {
+        $element = new \Magento\Framework\DataObject(['value' => $stored, 'comment' => $comment]);
+
+        $this->build()->prepareKeyInput($element);
+
+        $this->assertSame('', (string)$element->getValue(), $description);
+        $this->assertSame($expectedComment, (string)$element->getComment(), $description);
+    }
+
+    /**
+     * @return array<string, array{0: string|null, 1: string, 2: string, 3: string}>
+     */
+    public static function keyInputs(): array
+    {
+        $note = 'A key is saved. Leave this field empty to keep it.';
+        return [
+            'saved key' => ['sk_saved_key', 'Help text.', 'Help text. ' . $note, 'the key is blanked and the note added'],
+            'saved key, no help text' => ['sk_saved_key', '', $note, 'the note stands alone'],
+            'no key' => [null, 'Help text.', 'Help text.', 'nothing saved: no note'],
+            'empty key' => ['', 'Help text.', 'Help text.', 'an empty stored value is no key'],
+        ];
     }
 }

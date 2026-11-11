@@ -18,6 +18,7 @@ use Throwable;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -280,7 +281,9 @@ class UploadService
     private function requestSignedUploadUrl(string $twoInvoiceId, int $storeId): array
     {
         $endpoint = '/uploads/v1/invoice/' . rawurlencode($twoInvoiceId) . '/external_invoice/' . self::UPLOAD_INDEX;
-        $response = $this->apiAdapter->execute(
+        $response = $this->apiAdapter->withIdempotencyKey(
+            IdempotencyKey::build('invoice_upload', $twoInvoiceId, (string)self::UPLOAD_INDEX)
+        )->execute(
             $endpoint,
             ['content_type' => 'application/pdf'],
             'PUT',

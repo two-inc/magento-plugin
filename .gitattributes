@@ -24,6 +24,7 @@ CODEOWNERS              export-ignore
 README.md               export-ignore
 AGENTS.md               export-ignore
 CLAUDE.md               export-ignore
+docs/agents/            export-ignore
 
 # Tooling configs (dev-only — not consumed by the merchant runtime)
 bumpver.toml            export-ignore

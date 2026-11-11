@@ -12,7 +12,7 @@
  *    SET changed (re-applying an unchanged list rebuilds every Luma renderer
  *    and wipes in-progress payment forms);
  *  - only ever publishes a verdict the server reached on the SAME basket as the
- *    emit that asked for it (ABN-509);
+ *    emit that asked for it;
  *  - no fetch on the bootstrap total nor on no-op re-emits; keys on
  *    grand_total AND tax (net-basis gate);
  *  - a mid-flight change is parked and run on completion (trailing edge);

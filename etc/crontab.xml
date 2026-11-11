@@ -27,4 +27,14 @@
             <schedule>* * * * *</schedule>
         </job>
     </group>
+    <!-- Own group, run in its own process, so a slow Two API cannot hold up
+         the default group (TWO-26300). The schedule can be overridden at
+         crontab/two_gateway/jobs/two_gateway_check_pending_orders/schedule/cron_expr. -->
+    <group id="two_gateway">
+        <job name="two_gateway_check_pending_orders"
+             instance="Two\Gateway\Cron\CheckPendingOrders"
+             method="execute">
+            <schedule>*/15 * * * *</schedule>
+        </job>
+    </group>
 </config>

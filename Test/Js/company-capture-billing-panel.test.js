@@ -148,11 +148,12 @@ function makeDom() {
 
 /**
  * @param {object} [overrides] merged over the standard mocks
+ * @param {?string} [quoteId] what `quote.getQuoteId()` answers
  * @returns {object} `{ capture, dom, quote }` — the quote's two addresses share
  *          a cache key, so billing starts as shipping, matching the checked
  *          checkbox and the absent billing form below
  */
-function load(overrides) {
+function load(overrides, quoteId) {
     const dom = makeDom();
     // Absent until made visible — matches core rendering no billing form at
     // all under "same as shipping" (checked, the default).
@@ -163,7 +164,8 @@ function load(overrides) {
 
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
         shippingAddress: quoteAddress(),
-        billingAddress: quoteAddress()
+        billingAddress: quoteAddress(),
+        getQuoteId: function () { return quoteId || null; }
     });
 
     const capture = loadCompanyCapture(
@@ -331,17 +333,17 @@ describe('the resolved identity, end to end, follows the resolution rule live', 
         expect(capture.identity.companyId()).toBe('222');
     });
 
-    test('billing distinct but manual entry: the resolved identity falls back to shipping', () => {
+    test('billing distinct, then manual entry: billing\'s name resolves with no number, never shipping\'s (TWO-26775)', () => {
         const { capture, dom, quote } = load();
         billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
+        capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
 
         capture.billing.manualEntryMode();
 
-        expect(capture.identity.companyId()).toBe('111');
-        expect(capture.identity.companyName()).toBe('Shipping Co');
+        expect([capture.identity.companyName(), capture.identity.companyId()]).toEqual(['Billing Co', '']);
     });
 });
 
@@ -911,5 +913,130 @@ describe('a resolved-company change starts a check WITHOUT writing the shipping 
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
 
         expect(capture.shipping.identity().companyName()).toBe('Shipping Co');
+    });
+});
+
+describe('a manual entry survives a reload, and no quote address keeps its number (TWO-26775)', () => {
+    const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+    const MANUAL_ENTRY_KEY = 'two-company-manual-entry';
+
+    /** A saved address-book entry: the last Two order wrote its company and number onto it. */
+    function savedAddress() {
+        return quoteAddressValue({
+            company: 'Saved Co',
+            customAttributes: [
+                { attribute_code: 'company_id', value: '111' },
+                { attribute_code: 'company_name', value: 'Saved Co' }
+            ]
+        });
+    }
+
+    function companyIdOn(address) {
+        return address.customAttributes.find(function (item) { return item.attribute_code === 'company_id'; }).value;
+    }
+
+    afterEach(() => {
+        window.sessionStorage.clear();
+        delete window.checkoutConfig;
+    });
+
+    /** What this tab's storage holds for the checkout now loaded, the name by role. */
+    function storedEntries() {
+        return (JSON.parse(window.sessionStorage.getItem(MANUAL_ENTRY_KEY)) || {}).entries;
+    }
+
+    /**
+     * The checkout reloads onto the buyer's saved address.
+     *
+     * @param {?string} [quoteId]
+     * @returns {Array} shipping mode, name and id, the resolved id, and company_id on each quote address
+     */
+    function reloadOntoSavedAddress(quoteId) {
+        const { capture, dom, quote } = load(undefined, quoteId);
+        capture.shipping.start();
+        const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), {
+            jquery: dom.$,
+            'Two_Gateway/js/model/company-capture': capture
+        }));
+        renderer.getCode = function () { return 'two_payment'; };
+        renderer.isOrderIntentEnabled = false;
+
+        quote.shippingAddress(savedAddress());
+        quote.billingAddress(savedAddress());
+        renderer.updateShippingAddress(quote.shippingAddress());
+        renderer.updateBillingAddress(quote.billingAddress());
+
+        const shipping = capture.shipping.identity();
+        return [
+            shipping.captureMode(), shipping.companyName(), shipping.companyId(), capture.identity.companyId(),
+            companyIdOn(quote.shippingAddress()), companyIdOn(quote.billingAddress())
+        ];
+    }
+
+    test('entering manual records the name and blanks company_id on every quote address the panel speaks for', () => {
+        const { capture, quote } = load();
+        quote.shippingAddress(savedAddress());
+        quote.billingAddress(savedAddress());
+        capture.shipping.start();
+        capture.shipping.selectCompany({ text: 'Saved Co', companyId: '111', lookupId: '' });
+
+        capture.shipping.manualEntryMode();
+
+        expect([
+            storedEntries(),
+            companyIdOn(quote.shippingAddress()),
+            companyIdOn(quote.billingAddress())
+        ]).toEqual([{ shipping: 'Saved Co' }, '', '']);
+    });
+
+    test('leaving manual entry drops the record', () => {
+        const { capture } = load();
+        capture.shipping.start();
+        capture.shipping.manualEntryMode();
+
+        capture.shipping.registeredMode();
+
+        expect(storedEntries()).toEqual({});
+    });
+
+    test.each([
+        ['manual entry', function () {}],
+        ['a Sole trader click from manual entry, its popup still pending', function (panel) { panel.soleTraderMode(); }]
+    ])('after a reload from %s the saved address cannot bring the number back: manual, its name, no id anywhere', (description, then) => {
+        const { capture } = load();
+        capture.shipping.start();
+        capture.shipping.selectCompany({ text: 'Typed Co', companyId: '111', lookupId: '' });
+        capture.shipping.manualEntryMode();
+        then(capture.shipping);
+
+        expect(reloadOntoSavedAddress()).toEqual(['manual', 'Typed Co', '', '', '', '']);
+    });
+
+    test('a sole trader adopted over manual entry drops the record', () => {
+        const { capture } = load();
+        capture.shipping.start();
+        capture.shipping.manualEntryMode();
+        capture.shipping.soleTraderMode();
+
+        capture.shipping.adoptSoleTrader({ company_name: 'Sole Co', organization_number: '222' });
+
+        expect(storedEntries()).toEqual({});
+    });
+
+    // A placed order, a login and a logout each leave this quote or this customer behind.
+    test.each([
+        ['the same quote and customer', 'Q1', 7, ['manual', 'Typed Co', '', '', '', '']],
+        ['another quote, as after a placed order', 'Q2', 7, ['registered', 'Saved Co', '111', '111', '111', '111']],
+        ['another customer, as after a logout and a login', 'Q1', 8, ['registered', 'Saved Co', '111', '111', '111', '111']]
+    ])('a manual entry stamped for quote Q1 and customer 7, reloaded onto %s', (description, quoteId, customerId, expected) => {
+        window.checkoutConfig = { customerData: { id: 7 } };
+        const { capture } = load(undefined, 'Q1');
+        capture.shipping.start();
+        capture.shipping.selectCompany({ text: 'Typed Co', companyId: '', lookupId: '' });
+        capture.shipping.manualEntryMode();
+        window.checkoutConfig = { customerData: { id: customerId } };
+
+        expect([reloadOntoSavedAddress(quoteId), JSON.stringify(storedEntries())])
+            .toEqual([expected, JSON.stringify(expected[0] === 'manual' ? { shipping: 'Typed Co' } : {})]);
     });
 });

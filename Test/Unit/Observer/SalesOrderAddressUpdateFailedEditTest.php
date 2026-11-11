@@ -54,6 +54,7 @@ class SalesOrderAddressUpdateFailedEditTest extends TestCase
 
         // The adapter's shape for a non-2xx response whose body is not JSON.
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturn(['http_status' => $status]);
 
         $composeOrder = $this->getMockBuilder(ComposeOrder::class)
@@ -143,6 +144,13 @@ class FailedEditPaymentStub
     public function getAdditionalInformation(): array
     {
         return $this->additionalInformation;
+    }
+
+    /** Where an accepted edit records its Idempotency-Key (TWO-26658). */
+    public function setAdditionalInformation(string $key, $value): self
+    {
+        $this->additionalInformation[$key] = $value;
+        return $this;
     }
 
     public function getMethodInstance(): Two

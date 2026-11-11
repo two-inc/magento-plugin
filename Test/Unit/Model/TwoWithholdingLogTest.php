@@ -66,6 +66,8 @@ class TwoWithholdingLogTest extends TestCase
                 'a key Two rejected is distinguishable from an absent one'],
             ['surcharge_unresolvable', false, 'surcharge FX rate unavailable',
                 'an unresolvable surcharge rate is named at the render that withheld the method'],
+            ['tax_codes_unreadable', false, 'saved tax codes unreadable',
+                'a stored tax code map the form could not have written withholds Two (TWO-26309)'],
             ['country_refused', false, 'buyer country not supported',
                 'the country gate names itself'],
             ['below_minimum', false, null,
@@ -110,10 +112,18 @@ class TwoWithholdingLogTest extends TestCase
         $gate = $this->createMock(MinimumOrderGate::class);
         $gate->method('isSatisfied')->willReturn($knob !== 'below_minimum');
 
+        $config = $this->createMock(\Two\Gateway\Api\Config\RepositoryInterface::class);
+        if ($knob === 'tax_codes_unreadable') {
+            $config->method('getTaxCodeMap')->willThrowException(
+                new \Magento\Framework\Exception\LocalizedException(__('unreadable'))
+            );
+        }
+
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'stubAvailableInBase' => $knob !== 'core_refuses',
             'logRepository' => $logRepository,
+            'configRepository' => $config,
             // Not this test's subject: the fee quote concedes.
             'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'apiKeyStatus' => $apiKeyStatus,

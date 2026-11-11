@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * The surcharge grid asks the fees endpoint for nothing (ABN-542). Fee figures
+ * The surcharge grid asks the fees endpoint for nothing. Fee figures
  * are the term chips' surface (payment-terms-config.js); a second fetch beside
  * the editable inputs would render into cells the grid does not have.
  */

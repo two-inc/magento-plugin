@@ -22,7 +22,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * Save-time rules for the deprecated "Custom payment terms (days)": the stored value may be
  * removed but never replaced, a save that leaves it alone must not disturb it, and a value the
- * merchant record now offers as a standard term folds into that term's checkbox (ABN-522).
+ * merchant record now offers as a standard term folds into that term's checkbox.
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {
@@ -324,8 +324,7 @@ class PaymentTermsCustomDaysTest extends TestCase
 
     /**
      * The renderer offers the config table row as the keep option, so the guard has to judge the
-     * post against that row rather than getOldValue()'s cached resolution of the same path
-     * (ABN-531).
+     * post against that row rather than getOldValue()'s cached resolution of the same path.
      *
      * @param int[] $offered
      * @dataProvider rowVersusCacheProvider

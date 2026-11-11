@@ -18,6 +18,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Model\Config\EnvironmentMode;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
@@ -110,6 +111,8 @@ class HealthChecklist extends Field
 
         $sslDisabled = $this->configRepository->isSslVerificationDisabled($storeId);
         $mode = $this->configRepository->getMode($storeId);
+        $storedMode = $this->configRepository->getStoredMode($storeId);
+        $checkoutVisibility = $this->checkoutVisibilityRow($storeId, $status);
 
         return [
             [
@@ -119,8 +122,8 @@ class HealthChecklist extends Field
             ],
             [
                 'label' => (string)__('Environment'),
-                'ok' => true,
-                'value' => $mode !== '' ? strtoupper($mode) : (string)__('Not set'),
+                'ok' => EnvironmentMode::isHealthy($storedMode),
+                'value' => $this->environmentLabel($storedMode),
             ],
             [
                 'label' => (string)__('SSL verification'),
@@ -128,12 +131,13 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
-            $this->checkoutVisibilityRow($storeId, $status),
+            $checkoutVisibility,
+            $this->companySearchRow($storeId, $status, $checkoutVisibility['ok']),
         ];
     }
 
     /**
-     * Why the payment method is absent from the payment list (ABN-518). Only
+     * Why the payment method is absent from the payment list. Only
      * reasons decidable without a basket are judged; a basket-dependent one is
      * named as a constraint instead.
      *
@@ -142,7 +146,6 @@ class HealthChecklist extends Field
     private function checkoutVisibilityRow(?int $storeId, array $apiKeyStatus): array
     {
         $label = (string)__('Payment method at checkout');
-        $notShown = (string)__('Not shown at checkout');
         $reason = null;
 
         if (!$this->configRepository->isActive($storeId)) {
@@ -157,6 +160,15 @@ class HealthChecklist extends Field
                 $this->configRepository->getSurchargeType($storeId);
             } catch (LocalizedException) {
                 $reason = (string)__('the saved surcharge method is not recognised. Check Surcharge method.');
+            }
+        }
+        if ($reason === null) {
+            try {
+                $this->configRepository->getTaxCodeMap($storeId);
+            } catch (LocalizedException) {
+                $reason = (string)__(
+                    'the saved tax codes for 0% lines cannot be read. Use Clear saved tax codes under Order management > Tax, or save the table there.'
+                );
             }
         }
         if ($reason === null) {
@@ -179,10 +191,70 @@ class HealthChecklist extends Field
             );
         }
         if ($reason !== null) {
-            return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
+            return ['label' => $label, 'ok' => false, 'value' => $this->notShown($reason)];
         }
 
         return ['label' => $label, 'ok' => true, 'value' => $this->offeredValue($storeId)];
+    }
+
+    /**
+     * Whether the company-search control reaches checkout, and where
+     * (TWO-27224). The row reports the gate of the checkout config Luma mounts
+     * the control from: that config is emptied exactly when the method is
+     * disabled (TWO-27227) or the api-key verdict is a definitive failure.
+     * The Hyvä extension does not read it; it asks the same question of the
+     * same key through its own copy of the verification service, in its own
+     * cache slot, so the two agree apart from cache staleness (60 s for a
+     * failure, 300 s for a verified key), and its own admin row stands in on
+     * Hyvä until it moves onto this service.
+     *
+     * With Enable company search in address entry off, the control lives in the
+     * payment method, so it is shown only where the payment method row is ok.
+     * With it on, the control mounts in address entry from the config alone,
+     * whether or not the method is shown, unless the method is disabled.
+     *
+     * @return array{label: string, ok: bool, value: string}
+     */
+    private function companySearchRow(?int $storeId, array $apiKeyStatus, bool $methodShown): array
+    {
+        $label = (string)__('Company search');
+        if (!$this->configRepository->isActive($storeId)) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $this->notShown((string)__('the payment method is disabled. Check Enable payment method.')),
+            ];
+        }
+        if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
+            $reason = $apiKeyStatus['status'] === ApiKeyStatus::NOT_CONFIGURED
+                ? (string)__('no API key is saved. Check API key.')
+                : (string)__('the API key was rejected. Check API key and Environment.');
+
+            return ['label' => $label, 'ok' => false, 'value' => $this->notShown($reason)];
+        }
+        if ($this->configRepository->isCompanySearchEnabled($storeId)) {
+            return ['label' => $label, 'ok' => true, 'value' => (string)__('Shown in address entry')];
+        }
+        if (!$methodShown) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $this->notShown(
+                    (string)__('it moves into the payment method, which is not shown. See Payment method at checkout.')
+                ),
+            ];
+        }
+
+        return [
+            'label' => $label,
+            'ok' => true,
+            'value' => (string)__('Shown in the payment method (Enable company search in address entry is No)'),
+        ];
+    }
+
+    private function notShown(string $reason): string
+    {
+        return (string)__('Not shown at checkout') . ' — ' . $reason;
     }
 
     /** "Shown at checkout", plus the constraints that hide it for some baskets. */
@@ -355,6 +427,30 @@ class HealthChecklist extends Field
     }
 
     /**
+     * The Environment row's text (TWO-26604): the environment's name, or
+     * what to do about a value that needs action.
+     */
+    private function environmentLabel(string $storedMode): string
+    {
+        $mode = EnvironmentMode::recognise($storedMode);
+        if ($mode === null) {
+            return (string)__('Not recognised: Sandbox is in use. Select an environment and save.');
+        }
+        if ($mode === 'staging' && !EnvironmentMode::isInternalEnvironmentsEnabled()) {
+            return (string)__(
+                'Staging (%1 internal test environment). Select Sandbox or Production.',
+                $this->brandRegistry->getProductName()
+            );
+        }
+        $labels = [
+            'production' => __('Production'),
+            'sandbox' => __('Sandbox'),
+            'staging' => __('Staging'),
+        ];
+        return (string)$labels[$mode];
+    }
+
+    /**
      * The scope the config page is open at, so the row reports the same
      * store's verdict the checkout gate would.
      */
@@ -382,7 +478,7 @@ class HealthChecklist extends Field
      * refresh is running. A read that had to stand in for the cron, and one
      * that could not resolve a record at all, both leave a mark a scheduled
      * run clears — the record's own stamp cannot answer that, because a
-     * stand-in moves it (ABN-519).
+     * stand-in moves it.
      *
      * @return array{label: string, ok: bool, value: string}
      */

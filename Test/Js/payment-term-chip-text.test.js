@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554: what a payment-term chip says the term is, and what its accessible
+ * What a payment-term chip says the term is, and what its accessible
  * name states. An end-of-month term falls due that many days after the end of
  * the month, so a chip reading "30 days" under that setting states the wrong
  * due date; and an `aria-label` replaces the whole accessible name, so the

@@ -83,7 +83,7 @@ interface BrandRegistryInterface
      * Whether the brand's OWN wording is used for the "order intent NOT
      * approved" notice. `false` falls back to platform wording; it does not
      * silence the notice, because the sentence explains a disabled Place
-     * Order button and the buyer is always told why (ABN-563).
+     * Order button and the buyer is always told why.
      *
      * A declared brand.xml <intent_declined_notice_enabled> decides.
      * Absent that, it is `true` when either a non-blank
@@ -125,10 +125,10 @@ interface BrandRegistryInterface
      */
     public function getCheckoutSubtitle(): string;
 
-    /** Checkout "What is <product>?" link target from brand.xml <about_url>; '' renders no link (ABN-496). */
+    /** Checkout "What is <product>?" link target from brand.xml <about_url>; '' renders no link. */
     public function getAboutUrl(): string;
 
-    /** Fills the %1/%2 link args of <checkout_subtitle>; '' renders no tagline (ABN-496). */
+    /** Fills the %1/%2 link args of <checkout_subtitle>; '' renders no tagline. */
     public function getCheckoutSubtitleFaqUrl(): string;
 
     /**

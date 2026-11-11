@@ -12,6 +12,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -73,7 +74,7 @@ class OrderIntent implements OrderIntentInterface
         }
 
         $storeId = $this->quoteStoreId();
-        // ABN-533: only a definitive rejection refuses. An unreachable or
+        // Only a definitive rejection refuses. An unreachable or
         // erroring Two says nothing about the key, and this route is reachable
         // whenever the tile is offered, so refusing here would put a red
         // unavailability notice on a correctly configured checkout. Judged
@@ -84,7 +85,7 @@ class OrderIntent implements OrderIntentInterface
         }
         // The verdict's own merchant, else the never-expiring record's: the
         // verdict carries one only on a success, and an unresolvable record
-        // must not refuse an intent by itself (ABN-519). Neither resolving is
+        // must not refuse an intent by itself. Neither resolving is
         // the one state with no identity to send.
         $identity = $this->settingsProvider
             ->identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
@@ -112,7 +113,8 @@ class OrderIntent implements OrderIntentInterface
 
         try {
             $quote = $this->checkoutSession->getQuote();
-            $body = $this->composeIntent->execute($quote, $request['buyer']);
+            $order = $this->composeIntent->toOrder($quote);
+            $body = $this->composeIntent->execute($quote, $request['buyer'], $order);
             $body['merchant_id'] = $merchantId;
             // Absent means absent — upstream reads an absent key and an explicit
             // null apart.
@@ -120,13 +122,25 @@ class OrderIntent implements OrderIntentInterface
                 $body['merchant_short_name'] = $identity['short_name'];
             }
 
+            // No quote id, no key: one buyer's key must never be another's.
+            $quoteId = (string)$quote->getId();
+            $key = $quoteId !== ''
+                ? IdempotencyKey::build('order_intent', $quoteId, IdempotencyKey::hash($body))
+                : null;
+
             return $this->envelope(
-                $this->adapter->executeWithStatus(
+                $this->adapter->withIdempotencyKey($key)->executeWithStatus(
                     self::ENDPOINT,
                     $this->orderPostprocessor->process(
                         OrderPostprocessingInterface::REQUEST_ORDER_INTENT,
                         $body,
-                        ['trigger' => 'checkout', 'endpoint' => self::ENDPOINT, 'quote' => $quote]
+                        [
+                            'trigger' => 'checkout',
+                            'endpoint' => self::ENDPOINT,
+                            'quote' => $quote,
+                            // The order the lines were built from, for the shop-match checks (TWO-26276).
+                            'intent_order' => $order,
+                        ]
                     ),
                     'POST',
                     $storeId

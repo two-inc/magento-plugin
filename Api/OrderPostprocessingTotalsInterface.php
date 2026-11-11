@@ -26,8 +26,11 @@ interface OrderPostprocessingTotalsInterface
      * - `net_amount`, `tax_amount` and `gross_amount` (or a refund's
      *   `amount`, against line gross) each become the sum of that field over
      *   the lines, plus the residual the total carried over the lines in
-     *   `$before`: anything the shop declared outside its lines, such as a
-     *   gift card or store credit;
+     *   `$before`: anything the shop declared outside its lines, such as
+     *   rounding, or a refund's prepaid part;
+     * - on an order body that declares tenders (TWO-26309), `invoice_amount`
+     *   becomes net plus tax, `prepaid_amount` is kept, and `payable_amount`
+     *   and `gross_amount` become the invoice less it;
      * - `tax_subtotals`, when the key is present and not null, gets one bucket
      *   per distinct `tax_rate`: the lines at that rate, plus the residual the
      *   `$before` bucket at that rate carried over its lines.

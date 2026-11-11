@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-548. The admin's own copy of the checkout's resolution order, so the
+ * The admin's own copy of the checkout's resolution order, so the
  * surcharge grid can disable the row the server will price against and the
  * differential label can name it while the field reads Automatic. Any drift
  * from Repository::getDefaultPaymentTerm() shows here first.

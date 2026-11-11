@@ -169,7 +169,7 @@ class TermSelection implements TermSelectionInterface
      *
      * The totals collector prices on the session term, so the restore happens
      * before the repricing, and the session is left holding whatever term the
-     * last persisted save priced (ABN-550).
+     * last persisted save priced.
      *
      * @param \Magento\Quote\Model\Quote $quote
      * @param mixed $previousTerm

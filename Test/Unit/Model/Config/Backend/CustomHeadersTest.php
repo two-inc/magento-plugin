@@ -309,6 +309,8 @@ class CustomHeadersTest extends TestCase
             'accept',
             'accept-language',
             'x-api-key',
+            'idempotency-key',
+            'x-idempotency-key',
             'two-delegated-authority-token',
             // Proxy identity the rate limiter resolves callers through.
             'x-forwarded-for',

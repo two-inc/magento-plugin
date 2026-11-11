@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-550: the order is composed on the term the chips show as selected, so a
+ * The order is composed on the term the chips show as selected, so a
  * selection the server has not confirmed it priced the quote on can be charged
  * against a total the summary never showed. Placement is refused until the two
  * agree, and a /select-term the server did not take puts the chips back and
@@ -157,7 +157,7 @@ function shownSurcharge(ctx) {
     return segment ? segment.value : null;
 }
 
-describe('surcharge model confirmed-term reconciliation (ABN-550)', function () {
+describe('surcharge model confirmed-term reconciliation', function () {
     it.each([
         ['none', null, true, '', 'an untouched checkout is reconciled: the server rendered the summary'],
         ['pending', null, false, APPLYING, 'a chip click in flight says so — nothing has confirmed it'],
@@ -356,7 +356,7 @@ describe('surcharge model confirmed-term reconciliation (ABN-550)', function () 
     });
 });
 
-describe('surcharge model summary refresh (ABN-554)', function () {
+describe('surcharge model summary refresh', function () {
     it.each([
         ['settled', 1, 200, 'a confirmed term repaints the summary from the server'],
         ['failed', 0, null, 'a refused call reverts, and the summary already shows the priced term'],
@@ -476,7 +476,7 @@ function makeRendererContext(component) {
     return ctx;
 }
 
-describe('the chips say why the button is disabled (ABN-550)', function () {
+describe('the chips say why the button is disabled', function () {
     it.each([
         ['', true, 'a settled checkout says nothing and the button is live'],
         [APPLYING, false, 'a call in flight says so, since the disabled button cannot answer a click'],
@@ -501,7 +501,7 @@ describe('the chips say why the button is disabled (ABN-550)', function () {
     });
 });
 
-describe('gateway_method reconciliation submit gate (ABN-550)', function () {
+describe('gateway_method reconciliation submit gate', function () {
     it.each([
         ['', 1, [], true, 'a confirmed selection places the order and leaves the button enabled'],
         [

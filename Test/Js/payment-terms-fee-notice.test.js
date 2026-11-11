@@ -3,7 +3,7 @@
  * See COPYING.txt for license details.
  *
  * An empty fee span means "no fee for this term", so a fetch that could not
- * answer must say so rather than leave the fee area blank (ABN-512).
+ * answer must say so rather than leave the fee area blank.
  */
 
 'use strict';
@@ -19,7 +19,7 @@ function render() {
     document.body.innerHTML =
         '<input name="form_key" value="k"/>'
         // Keep-or-remove, as the field renders: the term comes from the server-emitted
-        // data-two-term, never from the raw value (ABN-522).
+        // data-two-term, never from the raw value.
         + '<select id="two_payment_payment_terms_payment_terms_duration_days">'
         + '<option value="45" data-two-term="45">45 days</option>'
         + '<option value="" data-two-term="0" selected="selected">Remove</option>'

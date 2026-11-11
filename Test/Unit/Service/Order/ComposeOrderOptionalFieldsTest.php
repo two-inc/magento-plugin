@@ -48,7 +48,6 @@ class ComposeOrderOptionalFieldsTest extends TestCase
                 'getAddress',
                 'getBuyer',
                 'getTaxSubtotals',
-                'getDiscountAmountItem',
                 'getFeeLines',
                 'getOtherChargesLineItem',
             ])
@@ -58,7 +57,6 @@ class ComposeOrderOptionalFieldsTest extends TestCase
         $composeOrder->method('getAddress')->willReturn([]);
         $composeOrder->method('getBuyer')->willReturn([]);
         $composeOrder->method('getTaxSubtotals')->willReturn([]);
-        $composeOrder->method('getDiscountAmountItem')->willReturn(0.0);
         // Line-item reconciliation has its own coverage; stubbed out so this
         // test is about which keys reach the payload, nothing else.
         $composeOrder->method('getFeeLines')->willReturn([]);
@@ -97,6 +95,57 @@ class ComposeOrderOptionalFieldsTest extends TestCase
         $order->setIncrementId('100000001');
 
         return $order;
+    }
+
+    /**
+     * The API decides the invoice type from the merchant account and ignores a
+     * client-sent value, so neither the create request nor the edit request
+     * (ABN-621) carries the key.
+     */
+    public function testCreateAndEditRequestsCarryNoInvoiceType(): void
+    {
+        $create = $this->makeComposeOrder('')->execute($this->makeOrder(), 'ref', []);
+        $edit = $this->makeComposeOrder('')->execute(
+            $this->makeOrder(),
+            'ref',
+            ['isEdit' => true, 'placedTerms' => ['type' => 'NET_TERMS', 'duration_days' => 30]]
+        );
+
+        $this->assertArrayNotHasKey('invoice_type', $create, 'create request');
+        $this->assertArrayNotHasKey('invoice_type', $edit, 'edit request');
+    }
+
+    /**
+     * Two's API does not define buyer, merchant_urls or order-level vendor_name
+     * on the edit request and ignores them (ABN-621), so only the create
+     * request carries them. A table, one key per row: the create body must
+     * still carry each one.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function createOnlyKeys(): array
+    {
+        return [
+            'buyer' => ['buyer', 'the buyer contact details'],
+            'merchant_urls' => ['merchant_urls', 'the merchant callback URLs'],
+            'vendor_name' => ['vendor_name', 'the configured vendor site name'],
+        ];
+    }
+
+    /**
+     * @dataProvider createOnlyKeys
+     */
+    public function testKeyIsSentOnCreateAndNotOnEdit(string $key, string $description): void
+    {
+        $create = $this->makeComposeOrder('acme-eu-store')->execute($this->makeOrder(), 'ref', []);
+        $edit = $this->makeComposeOrder('acme-eu-store')->execute(
+            $this->makeOrder(),
+            'ref',
+            ['isEdit' => true, 'placedTerms' => ['type' => 'NET_TERMS', 'duration_days' => 30]]
+        );
+
+        $this->assertArrayHasKey($key, $create, "create request still carries $description");
+        $this->assertArrayNotHasKey($key, $edit, "edit request no longer carries $description");
     }
 
     public function testBlankVendorSiteNameOmitsTheKeyEntirely(): void
