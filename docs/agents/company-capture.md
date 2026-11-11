@@ -54,12 +54,13 @@ on load or because the buyer cleared it, the query row stays up and a search
 answers "Select your country above to search for your company." without
 sending anything: the search model resolves an empty answer and words it
 through `noResultsMessage()`. Clearing the country aborts a search still in
-flight and keeps the captured company; a later notification with the select
-still empty (a totals reload, a re-render) aborts nothing, or it would drop a
-search typed since; re-selecting a country restores normal search. A page that
-loads with no country counts as already cleared, so its first empty
-notification aborts nothing either. The relay refuses an empty country with a
-400 before calling Two.
+flight, stops the spinner (an aborted search never settles to stop it, so the
+panel's `abortActiveRequest()` does) and keeps the captured company; a later
+notification with the select still empty (a totals reload, a re-render) aborts
+nothing, or it would drop a search typed since; re-selecting a country restores
+normal search. A page that loads with no country counts as already cleared, so
+its first empty notification aborts nothing either. The relay refuses an empty
+country with a 400 before calling Two.
 
 **The chip row is shown whenever it offers a mode the buyer is not already in**,
 not merely whenever it holds two chips. A lone chip for the current mode is no
