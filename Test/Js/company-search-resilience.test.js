@@ -755,7 +755,12 @@ describe('dropping below the minimum input length', () => {
         companySearch.SEARCH_DEBOUNCE_MS = 0;
 
         const CompanySearchPanel = loadCompanySearchPanel($, companySearch, GLOBALS);
-        panel = new CompanySearchPanel({ fieldSelector: '#company_name', config: BASE_CONFIG });
+        // A country, since none sends nothing at all (TWO-27235).
+        panel = new CompanySearchPanel({
+            fieldSelector: '#company_name',
+            config: BASE_CONFIG,
+            getCountryCode: function () { return 'gb'; }
+        });
         panel.bind();
         panel.open();
     });

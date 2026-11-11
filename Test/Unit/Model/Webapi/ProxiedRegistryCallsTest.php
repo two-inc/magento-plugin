@@ -751,6 +751,7 @@ class ProxiedRegistryCallsTest extends TestCase
     {
         return [
             'no country' => ['', 'acme', 'a missing country is refused'],
+            'blank country' => ['  ', 'acme', 'a whitespace-only country is refused (TWO-27235)'],
             'alpha-3 country' => ['nor', 'acme', 'the registry endpoints take ISO-2 only'],
             'single letter country' => ['n', 'acme', 'a truncated code is refused'],
             'non-alpha country' => ['N1', 'acme', 'a code with a digit is not a country'],

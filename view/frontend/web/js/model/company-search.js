@@ -184,8 +184,20 @@ define([
      * @returns {string} translated zero-results message
      */
     function noResultsMessage() {
+        if (lastSearchHadNoCountry) {
+            return $t('Select your country above to search for your company.');
+        }
         return $t('No matches found');
     }
+
+    /**
+     * Whether the search that resolved last had no country to run against
+     * (TWO-27235). Set at the moment each search resolves, and the panel reads
+     * `noResultsMessage()` in the reaction to that same resolution, so the
+     * empty answer is worded for the buyer's actual situation: a missing
+     * country, not a registry with no match.
+     */
+    let lastSearchHadNoCountry = false;
 
     /**
      * Attribute applyAddress() records its own write in, so a later revert can
@@ -1148,12 +1160,20 @@ define([
                 return Promise.resolve({ items: [], unavailable: true, aborted: false });
             }
             const country = options.getCountryCode()?.toUpperCase();
+            // No country, no registry to ask (TWO-27235): nothing leaves the
+            // browser, and the empty answer reads as the select-a-country
+            // sentence through noResultsMessage().
+            if (!country) {
+                lastSearchHadNoCountry = true;
+                return Promise.resolve({ items: [], unavailable: false, aborted: false });
+            }
             const cacheKey = `search|${country}|${options.term}`;
 
             // Before the park below: a cached answer costs no request, so
             // parking it would degrade the panel for nothing.
             const cached = cacheGet(cacheKey);
             if (cached) {
+                lastSearchHadNoCountry = false;
                 return Promise.resolve({
                     items: mapSearchResults(cached),
                     unavailable: false,
@@ -1191,6 +1211,7 @@ define([
                         return;
                     }
                     cacheSet(cacheKey, envelope.body);
+                    lastSearchHadNoCountry = false;
                     // A degraded 200 is a failure dressed as a success:
                     // near-empty results because the provider timed out.
                     resolve({
