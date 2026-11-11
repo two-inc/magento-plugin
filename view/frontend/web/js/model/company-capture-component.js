@@ -258,6 +258,9 @@
         // address yet, which is what still lets that genuine first resolution
         // through.
         this._lastCountry = this.countryCode();
+        // A page loaded with no country is already cleared: its first empty
+        // notification is a repeat, not a clear, and must not abort.
+        this._countryCleared = !this._lastCountry;
         const self = this;
         this._identity.subscribe(function () {
             self.renderChrome();

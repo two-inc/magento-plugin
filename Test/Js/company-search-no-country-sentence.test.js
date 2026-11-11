@@ -184,14 +184,16 @@ describe('the search row stays up for a missing country, and comes back on re-se
         }
     });
 
-    // Each step notifies the component of a country, starting from GB, and
-    // the row states how many searches on the wire the whole run aborts.
+    // Each step notifies the component of a country, starting from the one the
+    // page loads with, and the row states how many searches on the wire the
+    // whole run aborts.
     test.each([
-        [[''], 1, 'clearing the country aborts a search still on the wire for the old one'],
-        [['', ''], 1, 'a second empty notification aborts nothing'],
-        [['', 'gb', ''], 2, 'clearing again after re-selecting a country aborts again'],
-    ])('%j', async (steps, aborts, description) => {
-        const state = { country: 'gb' };
+        ['gb', [''], 1, 'clearing the country aborts a search still on the wire for the old one'],
+        ['gb', ['', ''], 1, 'a second empty notification aborts nothing'],
+        ['gb', ['', 'gb', ''], 2, 'clearing again after re-selecting a country aborts again'],
+        ['', [''], 0, 'an empty notification after loading with no country aborts nothing'],
+    ])('%j from %j', async (loaded, steps, aborts, description) => {
+        const state = { country: loaded };
         const { component, calls } = makeStartedComponent(state);
         component.start();
         await flush();
@@ -204,12 +206,17 @@ describe('the search row stays up for a missing country, and comes back on re-se
         expect({ aborts: calls.aborts, description }).toEqual({ aborts, description });
     });
 
-    test('a repeated empty-country notification leaves a typed search to answer with the sentence', async () => {
+    // The page loads with a country the buyer then clears, or with none at all,
+    // and an empty notification lands while a typed search waits.
+    test.each([
+        ['gb', 'a repeated empty-country notification leaves a typed search to answer with the sentence'],
+        ['', 'the first empty notification after loading with no country leaves a typed search to answer with the sentence'],
+    ])('loaded with %j', async (loaded, description) => {
         document.body.innerHTML = '<div class="field"><div class="control"><input id="company" /></div></div>';
         const requests = installAjaxRecorder();
         const companySearch = loadCompanySearch();
         companySearch.SEARCH_DEBOUNCE_MS = 20;
-        const state = { country: 'gb' };
+        const state = { country: loaded };
         const { component } = makeStartedComponent(state, {
             Panel: loadCompanySearchPanel($, companySearch, GLOBALS),
             search: companySearch
@@ -218,7 +225,7 @@ describe('the search row stays up for a missing country, and comes back on re-se
         await flush();
 
         state.country = '';
-        component.onCountryChanged('');
+        if (loaded) component.onCountryChanged('');
         component.panel().open();
         dispatchNative(document.querySelector('.two-company-dropdown__query'), 'input', 'acme');
         // The checkout re-notifies with the country still empty (a totals
@@ -226,9 +233,12 @@ describe('the search row stays up for a missing country, and comes back on re-se
         component.onCountryChanged('');
         await new Promise((resolve) => setTimeout(resolve, 40));
 
-        expect(requests).toHaveLength(0);
-        expect(document.querySelector('.two-company-dropdown__spinner')
-            .classList.contains('two-company-dropdown__spinner--active')).toBe(false);
-        expect(document.querySelector('.two-company-dropdown__message').textContent).toBe(SENTENCE);
+        expect({
+            requests: requests.length,
+            spinning: document.querySelector('.two-company-dropdown__spinner')
+                .classList.contains('two-company-dropdown__spinner--active'),
+            message: document.querySelector('.two-company-dropdown__message').textContent,
+            description
+        }).toEqual({ requests: 0, spinning: false, message: SENTENCE, description });
     });
 });
