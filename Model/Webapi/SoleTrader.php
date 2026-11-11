@@ -87,7 +87,16 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
-        return $this->supportedCompanyTypes->getForCountry($countryCode, $this->quoteStoreId());
+        // TWO-27227: a disabled method stands company search down, so this
+        // anonymous route makes no registry call under the merchant's key.
+        // It answers the route's own "registered businesses only" list rather
+        // than an envelope, which its string[] contract cannot carry.
+        $storeId = $this->quoteStoreId();
+        if (!$this->configRepository->isActive($storeId)) {
+            return [];
+        }
+
+        return $this->supportedCompanyTypes->getForCountry($countryCode, $storeId);
     }
 
     /**

@@ -69,6 +69,9 @@ or a notice, or unattributed lookups.
 before the key is judged, so the control does not mount even in address entry,
 and every `CompanyLookup` route refuses through the envelope
 (`PROXY_REFUSED`, 403) before Two is called, judged for the quote's store.
+`SoleTrader::getSupportedCompanyTypes()` answers an empty list on the same
+check without calling Two: its `string[]` contract cannot carry the envelope,
+and empty is that route's own "registered businesses only" answer.
 This is a setting, not the verdict, so it is not logged. Re-enabling the method
 restores both.
 

@@ -73,6 +73,54 @@ class SoleTraderCartBindingTest extends TestCase
         }
     }
 
+    /**
+     * TWO-27227: while the method is disabled the anonymous company-types
+     * route answers "registered businesses only" without calling the
+     * registry; re-enabling it on the same instance relays again.
+     *
+     * @return array<string, array{0: bool, 1: string}>
+     */
+    public static function methodStates(): array
+    {
+        return [
+            'enabled' => [true, 'an enabled method looks the country up'],
+            'disabled' => [false, 'a disabled method makes no registry call'],
+        ];
+    }
+
+    #[DataProvider('methodStates')]
+    public function testCompanyTypesStandDownWhileTheMethodIsDisabled(bool $active, string $description): void
+    {
+        $method = new \stdClass();
+        $method->active = $active;
+        $quote = $this->createMock(Quote::class);
+        $quote->method('getStoreId')->willReturn(3);
+        $session = new CheckoutSession();
+        $session->setData('quote', $quote);
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('isActive')->with(3)->willReturnCallback(static fn() => $method->active);
+        $lookups = 0;
+        $types = $this->createMock(SupportedCompanyTypes::class);
+        $types->method('getForCountry')->willReturnCallback(function () use (&$lookups) {
+            $lookups++;
+            return ['SOLE_TRADER'];
+        });
+        $soleTrader = new SoleTrader(
+            $this->createMock(Adapter::class),
+            $types,
+            $this->createMock(RateLimiter::class),
+            $session,
+            $config,
+            $this->createMock(QuoteIdToMaskedQuoteIdInterface::class)
+        );
+
+        $this->assertSame($active ? ['SOLE_TRADER'] : [], $soleTrader->getSupportedCompanyTypes('NO'), $description);
+        $this->assertSame($active ? 1 : 0, $lookups, $description);
+
+        $method->active = true;
+        $this->assertSame(['SOLE_TRADER'], $soleTrader->getSupportedCompanyTypes('NO'), $description . ' (re-enabled)');
+    }
+
     private function soleTrader(Adapter $adapter, array $cart): SoleTrader
     {
         $quote = $this->createMock(Quote::class);
