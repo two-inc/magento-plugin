@@ -54,7 +54,9 @@ on load or because the buyer cleared it, the query row stays up and a search
 answers "Select your country above to search for your company." without
 sending anything: the search model resolves an empty answer and words it
 through `noResultsMessage()`. Clearing the country aborts a search still in
-flight and keeps the captured company; a later notification with the select
+flight, stops the spinner (an aborted search never settles to stop it, so the
+panel's `abortActiveRequest()` does) and keeps the captured company; a later
+notification with the select
 still empty (a totals reload, a re-render) aborts nothing, or it would drop a
 search typed since; re-selecting a country restores normal search. A page that
 loads with no country counts as already cleared, so its first empty

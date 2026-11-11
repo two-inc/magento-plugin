@@ -241,4 +241,40 @@ describe('the search row stays up for a missing country, and comes back on re-se
             description
         }).toEqual({ requests: 0, spinning: false, message: SENTENCE, description });
     });
+
+    test('clearing the country with a search on the wire stops the spinner, and the next search answers with the sentence', async () => {
+        document.body.innerHTML = '<div class="field"><div class="control"><input id="company" /></div></div>';
+        const requests = installAjaxRecorder();
+        const companySearch = loadCompanySearch();
+        companySearch.SEARCH_DEBOUNCE_MS = 20;
+        const state = { country: 'gb' };
+        const { component } = makeStartedComponent(state, {
+            Panel: loadCompanySearchPanel($, companySearch, GLOBALS),
+            search: companySearch
+        });
+        component.start();
+        await flush();
+        const spinning = () => document.querySelector('.two-company-dropdown__spinner')
+            .classList.contains('two-company-dropdown__spinner--active');
+        const query = () => document.querySelector('.two-company-dropdown__query');
+
+        component.panel().open();
+        dispatchNative(query(), 'input', 'acme');
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        expect({ requests: requests.length, spinning: spinning() }).toEqual({ requests: 1, spinning: true });
+
+        // The clear arrives with the panel still open, as a re-render's does.
+        state.country = '';
+        component.onCountryChanged('');
+        await flush();
+        expect({ open: component.panel().isOpen(), spinning: spinning() }).toEqual({ open: true, spinning: false });
+
+        dispatchNative(query(), 'input', 'acme ltd');
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        expect({
+            requests: requests.length,
+            spinning: spinning(),
+            message: document.querySelector('.two-company-dropdown__message').textContent
+        }).toEqual({ requests: 1, spinning: false, message: SENTENCE });
+    });
 });
