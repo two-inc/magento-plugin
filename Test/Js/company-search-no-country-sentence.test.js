@@ -192,7 +192,7 @@ describe('the search row stays up for a missing country, and comes back on re-se
         ['gb', ['', ''], 1, 'a second empty notification aborts nothing'],
         ['gb', ['', 'gb', ''], 2, 'clearing again after re-selecting a country aborts again'],
         ['', [''], 0, 'an empty notification after loading with no country aborts nothing'],
-    ])('%j from %j', async (loaded, steps, aborts, description) => {
+    ])('loaded %j, steps %j', async (loaded, steps, aborts, description) => {
         const state = { country: loaded };
         const { component, calls } = makeStartedComponent(state);
         component.start();
