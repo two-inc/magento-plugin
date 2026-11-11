@@ -203,6 +203,15 @@ class ConfigProvider implements ConfigProviderInterface
         // render that is the quote's store, which is the id
         // Two::isAvailable() resolves from the quote and passes explicitly —
         // so both surfaces judge the same store's key and agree.
+        //
+        // A disabled method withholds it too (TWO-27227): the tile is not
+        // offered anyway, and with Enable company search in address entry on
+        // the control would otherwise still mount and query the registry for
+        // a method the merchant has switched off. Not logged: it is a setting,
+        // not a fault.
+        if (!$this->configRepository->isActive()) {
+            return [];
+        }
         if ($this->apiKeyStatus->isDefinitiveFailure()) {
             // Once per request: getConfig() is evaluated on every cart,
             // checkout and payment-information render.

@@ -64,6 +64,17 @@ refusal there is a red unavailability notice on a working checkout; and
 `isDefinitiveFailure()` and an outage puts the method on offer with no config,
 or a notice, or unattributed lookups.
 
+**A disabled method stands company search down** (TWO-27227).
+`ConfigProvider::getConfig()` is emptied while Enable payment method is off,
+before the key is judged, so the control does not mount even in address entry,
+and every `CompanyLookup` route refuses through the envelope
+(`PROXY_REFUSED`, 403) before Two is called, judged for the quote's store.
+`SoleTrader::getSupportedCompanyTypes()` answers an empty list on the same
+check without calling Two: its `string[]` contract cannot carry the envelope,
+and empty is that route's own "registered businesses only" answer.
+This is a setting, not the verdict, so it is not logged. Re-enabling the method
+restores both.
+
 **Merchant IDENTITY on those surfaces falls back to the record.**
 `ApiKeyStatus::getStatus()['merchant']` is populated only on a success, so a
 fall-through reads `SettingsProvider::getMerchantIdentity()` — the

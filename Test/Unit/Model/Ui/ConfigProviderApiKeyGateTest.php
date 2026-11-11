@@ -35,6 +35,9 @@ class ConfigProviderApiKeyGateTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
 
+    /** Whether the payment method is enabled for the store; a case may switch it mid-test. */
+    private bool $methodActive = true;
+
     /**
      * @param array<string,mixed>|null $merchantRecord what the never-expiring record holds
      */
@@ -48,6 +51,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
         // getConfig() reaches both through buildBrandQueryString().
         $configRepository = $this->createMock(ConfigRepositoryImpl::class);
         $configRepository->method('getApiKey')->willReturn('test-api-key');
+        $configRepository->method('isActive')->willReturnCallback(fn() => $this->methodActive);
         $configRepository->method('getBrand')->willReturn('');
         $configRepository->method('getBrandVersion')->willReturn('');
         $configRepository->method('getCheckoutPageUrl')->willReturn('https://checkout.example');
@@ -199,6 +203,58 @@ class ConfigProviderApiKeyGateTest extends TestCase
                 'a non-2xx that is not a 401/403 is not a rejection'],
             'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null, true,
                 'an unreadable answer is about the service, not the key'],
+        ];
+    }
+
+    /**
+     * TWO-27227: a disabled method stands company search down. The subtree is
+     * withheld whatever the key verdict, nothing is logged for a setting, and
+     * re-enabling the method emits it again on the same provider.
+     *
+     * @dataProvider methodStateCases
+     */
+    public function testADisabledMethodWithholdsTheSubtreeWhateverTheVerdict(
+        bool $active,
+        string $status,
+        ?int $code,
+        bool $emitted,
+        string $description
+    ): void {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        // Only the key withholding logs: once a rejected key is judged, which
+        // for a disabled method is not until it is re-enabled.
+        $this->logRepository->expects($status === ApiKeyStatus::OK ? $this->never() : $this->once())
+            ->method('addDebugLog');
+        $this->methodActive = $active;
+        $merchant = $status === ApiKeyStatus::OK ? ['id' => 'abc-123'] : null;
+        $provider = $this->build($this->statusService($status, $code, $merchant));
+
+        $config = $provider->getConfig();
+        $this->assertSame($emitted ? 'two_payment' : null, self::resolveActiveTwoBrandCode($config), $description);
+        $this->assertSame($emitted, isset($config['payment']['two_payment']['isCompanySearchEnabled']), $description);
+
+        $this->methodActive = true;
+        $this->assertSame(
+            $status === ApiKeyStatus::OK ? 'two_payment' : null,
+            self::resolveActiveTwoBrandCode($provider->getConfig()),
+            $description . ' (re-enabled)'
+        );
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: string, 2: int|null, 3: bool, 4: string}>
+     */
+    public static function methodStateCases(): array
+    {
+        return [
+            'enabled, key ok' => [true, ApiKeyStatus::OK, 200, true,
+                'an enabled method with a verified key mounts company search'],
+            'enabled, key rejected' => [true, ApiKeyStatus::INVALID_KEY, 401, false,
+                'a rejected key withholds it, as before'],
+            'disabled, key ok' => [false, ApiKeyStatus::OK, 200, false,
+                'a disabled method withholds it even with a verified key'],
+            'disabled, key rejected' => [false, ApiKeyStatus::INVALID_KEY, 401, false,
+                'a disabled method with a rejected key withholds it'],
         ];
     }
 

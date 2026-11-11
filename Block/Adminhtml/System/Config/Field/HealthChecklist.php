@@ -200,23 +200,31 @@ class HealthChecklist extends Field
     /**
      * Whether the company-search control reaches checkout, and where
      * (TWO-27224). The row reports the gate of the checkout config Luma mounts
-     * the control from: that config is emptied exactly when the api-key
-     * verdict is a definitive failure. The Hyvä extension does not read it; it
-     * asks the same question of the same key through its own copy of the
-     * verification service, in its own cache slot, so the two agree apart from
-     * cache staleness (60 s for a failure, 300 s for a verified key), and its
-     * own admin row stands in on Hyvä until it moves onto this service.
+     * the control from: that config is emptied exactly when the method is
+     * disabled (TWO-27227) or the api-key verdict is a definitive failure.
+     * The Hyvä extension does not read it; it asks the same question of the
+     * same key through its own copy of the verification service, in its own
+     * cache slot, so the two agree apart from cache staleness (60 s for a
+     * failure, 300 s for a verified key), and its own admin row stands in on
+     * Hyvä until it moves onto this service.
      *
      * With Enable company search in address entry off, the control lives in the
      * payment method, so it is shown only where the payment method row is ok.
      * With it on, the control mounts in address entry from the config alone,
-     * whether or not the method is shown.
+     * whether or not the method is shown, unless the method is disabled.
      *
      * @return array{label: string, ok: bool, value: string}
      */
     private function companySearchRow(?int $storeId, array $apiKeyStatus, bool $methodShown): array
     {
         $label = (string)__('Company search');
+        if (!$this->configRepository->isActive($storeId)) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $this->notShown((string)__('the payment method is disabled. Check Enable payment method.')),
+            ];
+        }
         if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
             $reason = $apiKeyStatus['status'] === ApiKeyStatus::NOT_CONFIGURED
                 ? (string)__('no API key is saved. Check API key.')
