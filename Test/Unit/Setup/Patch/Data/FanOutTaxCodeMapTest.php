@@ -50,7 +50,7 @@ class FanOutTaxCodeMapTest extends TestCase
             'row 18' => [[[self::PATH, 'default', 0, '{"5":"X"}']], [[self::PATH, $fanned, 'default', 0]], 'upgrade fans the old code out to all of the class\'s rows'],
             'class without rates' => [[[self::PATH, 'default', 0, '{"0":"Y"}']], [[self::PATH, '{"0|exempt":"Y","0|none":"Y"}', 'default', 0]], 'a class whose rules use no 0% rate gets its exempt and no-rule rows'],
             'new rows kept' => [[[self::PATH, 'default', 0, '{"5":"X","5|none":"Z"}']], [[self::PATH, '{"5|exempt":"X","5|none":"Z","5|rate:ES-CANARIAS-0":"X","5|rate:US-0":"X"}', 'default', 0]], 'a row already in the new shape keeps its code'],
-            'scope and brand' => [[['payment/two_abn_payment/tax_code_map', 'stores', 3, '{"0":"Y"}']], [['payment/two_abn_payment/tax_code_map', '{"0|exempt":"Y","0|none":"Y"}', 'stores', 3]], 'every brand and scope is rewritten in place'],
+            'scope and brand' => [[['payment/two_brand_payment/tax_code_map', 'stores', 3, '{"0":"Y"}']], [['payment/two_brand_payment/tax_code_map', '{"0|exempt":"Y","0|none":"Y"}', 'stores', 3]], 'every brand and scope is rewritten in place'],
             'rerun' => [[[self::PATH, 'default', 0, $fanned]], [], 'a second run writes nothing'],
             'empty and junk' => [[[self::PATH, 'default', 0, ''], [self::PATH, 'websites', 1, 'not json']], [], 'nothing usable stored, nothing written'],
             'lookalike path' => [[['payment/two_payment/tax_code_mapX', 'default', 0, '{"5":"X"}']], [], 'a path the LIKE wildcard matches by accident is left alone'],

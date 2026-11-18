@@ -138,13 +138,13 @@ class RenameSkipConfirmTokenCheckTest extends TestCase
     {
         $patch = $this->buildPatch([
             self::row('default', 0, self::OLD_PATH, '1'),
-            self::row('default', 0, 'payment/two_abn_payment/skip_confirm_withdrawn_check', '1'),
+            self::row('default', 0, 'payment/two_brand_payment/skip_confirm_withdrawn_check', '1'),
         ]);
 
         $patch->apply();
 
         $this->assertSame(
-            [self::NEW_PATH, 'payment/two_abn_payment/skip_confirm_token_check'],
+            [self::NEW_PATH, 'payment/two_brand_payment/skip_confirm_token_check'],
             array_column($this->saves, 0)
         );
     }

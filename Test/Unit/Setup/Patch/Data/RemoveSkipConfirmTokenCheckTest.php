@@ -91,13 +91,13 @@ class RemoveSkipConfirmTokenCheckTest extends TestCase
     {
         $patch = $this->buildPatch([
             self::row('default', 0, self::PATH),
-            self::row('default', 0, 'payment/two_abn_payment/skip_confirm_token_check'),
+            self::row('default', 0, 'payment/two_brand_payment/skip_confirm_token_check'),
         ]);
 
         $patch->apply();
 
         $this->assertSame(
-            [self::PATH, 'payment/two_abn_payment/skip_confirm_token_check'],
+            [self::PATH, 'payment/two_brand_payment/skip_confirm_token_check'],
             array_column($this->deletes, 0)
         );
     }
