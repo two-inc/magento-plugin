@@ -45,8 +45,13 @@ jobs:
     # nothing pushes a commit to `main` any more, and a guard on the
     # commit subject would suppress a legitimate release whose tip
     # happens to be the version commit that came in from `staging`.
+    #
+    # CI must also have run for a push. The `branches:` filter matches
+    # head_branch by name, so a pull request from a fork whose branch is
+    # called `main` passes it; such a run must not mint the App token.
     if: |
-      github.event.workflow_run.conclusion == 'success'
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     env:
       # The branch CI ran for. Always `main` now (see the trigger
       # above); kept because the log lines and skip warnings read it.
