@@ -15,7 +15,10 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Webapi\CompanyLookup;
 use Two\Gateway\Model\Webapi\OrderIntent;
+use Two\Gateway\Service\Address\IsoRegionResolver;
+use Two\Gateway\Service\Address\RegionDirectory;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -47,12 +50,16 @@ class ProxiedRegistryCallsTest extends TestCase
     /** @var ConfigRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $configRepository;
 
+    /** Whether the payment method is enabled for the store; a case may switch it mid-test. */
+    private bool $methodActive = true;
+
     protected function setUp(): void
     {
         $this->stageUpstream(200, '{"items":[]}');
 
         $this->configRepository = $this->createMock(ConfigRepository::class);
         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
+        $this->configRepository->method('isActive')->willReturnCallback(fn() => $this->methodActive);
         // Mirrors Model\Config\Repository::addVersionDataInURL(): the client
         // identity rides on every outbound URL, which is how the proxied calls
         // keep reporting it now the browser no longer builds the query itself.
@@ -104,7 +111,8 @@ class ProxiedRegistryCallsTest extends TestCase
             $brand,
             $curlFactory,
             $this->createMock(LogRepository::class),
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->createMock(LoggerInterface::class)
         );
     }
 
@@ -155,13 +163,21 @@ class ProxiedRegistryCallsTest extends TestCase
         return $postprocessor;
     }
 
+    /**
+     * @param array<string, array<int, string>> $storeRegions country => region id => code
+     */
     private function companyLookup(
         string $status = ApiKeyStatus::OK,
         ?int $storeId = null,
-        ?array $merchantRecord = []
+        ?array $merchantRecord = [],
+        array $storeRegions = []
     ): CompanyLookup {
         $recordProvider = $this->createMock(RecordProvider::class);
         $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
+        $regionDirectory = $this->createMock(RegionDirectory::class);
+        $regionDirectory->method('forCountry')->willReturnCallback(
+            static fn(string $country) => $storeRegions[$country] ?? []
+        );
 
         return new CompanyLookup(
             $this->adapter(),
@@ -169,7 +185,9 @@ class ProxiedRegistryCallsTest extends TestCase
             new SettingsProvider($recordProvider),
             $this->rateLimiter(),
             $this->logRepository(),
-            $this->checkoutSession($storeId)
+            $this->checkoutSession($storeId),
+            new IsoRegionResolver($regionDirectory),
+            $this->configRepository
         );
     }
 
@@ -379,6 +397,61 @@ class ProxiedRegistryCallsTest extends TestCase
         return $this->orderIntent($keyStatus)->place('{"buyer":{}}');
     }
 
+    /**
+     * TWO-27227: a disabled method stands company search down. Every relay
+     * route refuses through the envelope before Two is called, whatever the
+     * key verdict, and serves again once the method is re-enabled.
+     *
+     * @dataProvider standDownCases
+     */
+    public function testEveryCompanyRelayRouteStandsDownWhileTheMethodIsDisabled(
+        string $route,
+        bool $active,
+        string $keyStatus,
+        bool $relayed,
+        string $description
+    ): void {
+        $this->methodActive = $active;
+        $lookup = $this->companyLookup($keyStatus);
+        $call = static fn() => match ($route) {
+            'search' => $lookup->search('no', 'acme'),
+            'get' => $lookup->get('lookup-1'),
+            'supported countries' => $lookup->supportedCountries(),
+        };
+
+        $decoded = json_decode($call(), true);
+        $this->assertSame($relayed, $this->requestedUrl !== '', $description);
+        $this->assertSame($relayed ? null : 'PROXY_REFUSED', $decoded['body']['error_code'] ?? null, $description);
+        $this->assertSame($relayed ? 200 : 403, $decoded['status'], $description);
+
+        // Re-enabling restores the route on the same instance.
+        $this->methodActive = true;
+        $this->requestedUrl = '';
+        $decoded = json_decode($call(), true);
+        $this->assertNotSame('', $this->requestedUrl, $description . ' (re-enabled)');
+        $this->assertSame(200, $decoded['status'], $description . ' (re-enabled)');
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: string, 3: bool, 4: string}>
+     */
+    public static function standDownCases(): array
+    {
+        $cases = [];
+        foreach (['search', 'get', 'supported countries'] as $route) {
+            $cases[$route . ', enabled, key ok'] = [$route, true, ApiKeyStatus::OK, true,
+                $route . ': an enabled method with a verified key relays'];
+            $cases[$route . ', enabled, key rejected'] = [$route, true, ApiKeyStatus::INVALID_KEY, true,
+                $route . ': a rejected key alone still relays, unattributed'];
+            $cases[$route . ', disabled, key ok'] = [$route, false, ApiKeyStatus::OK, false,
+                $route . ': a disabled method refuses even with a verified key'];
+            $cases[$route . ', disabled, key rejected'] = [$route, false, ApiKeyStatus::INVALID_KEY, false,
+                $route . ': a disabled method refuses with a rejected key'];
+        }
+
+        return $cases;
+    }
+
     public function testSearchAsksTheRegistryForTheServerSideLimitNotACallerSuppliedOne(): void
     {
         $this->companyLookup()->search('no', 'acme ltd');
@@ -388,6 +461,46 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertSame('acme ltd', $query['q']);
         $this->assertSame('50', $query['limit']);
         $this->assertSame('0', $query['offset']);
+    }
+
+    public function testCompanyDetailAddsTheStoreRegionBesideTheIsoCodeItRelays(): void
+    {
+        // TWO-26263: the region is relayed as answered; a resolved one gains the
+        // store's own id and code beside it, an unresolved one gains nothing.
+        $this->stageUpstream(200, (string)json_encode(['name' => 'Example SL', 'addresses' => [
+            ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES'],
+            ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+            // TWO-26266: a bare code resolves too.
+            ['city' => 'ROMA', 'region' => 'RM', 'country' => 'IT'],
+        ]]));
+
+        $relayed = json_decode($this->companyLookup(ApiKeyStatus::OK, null, [], [
+            'ES' => [161 => 'Madrid'],
+            'IT' => [500 => 'RM'],
+        ])->get('lookup-1'), true);
+
+        $this->assertSame([
+            ['city' => 'MADRID', 'region' => 'ES-M', 'country' => 'ES', 'region_id' => 161, 'region_code' => 'Madrid'],
+            ['city' => 'ROMA', 'region' => 'IT-ZZ', 'country' => 'IT'],
+            ['city' => 'ROMA', 'region' => 'RM', 'country' => 'IT', 'region_id' => 500, 'region_code' => 'RM'],
+        ], $relayed['body']['addresses']);
+    }
+
+    public function testCompanyDetailFitsThePostcodeAndRelaysThePhone(): void
+    {
+        // TWO-27158: the postcode is written as its country writes it (the
+        // address's own country, else the company's); the phone passes through.
+        $this->stageUpstream(200, (string)json_encode(['name' => 'Example BV', 'country' => 'NL', 'addresses' => [
+            ['postal_code' => '1234AB', 'phone_number' => '+31201234567'],
+            ['postal_code' => '00950', 'country' => 'PL'],
+        ]]));
+
+        $relayed = json_decode($this->companyLookup()->get('lookup-1'), true);
+
+        $this->assertSame([
+            ['postal_code' => '1234 AB', 'phone_number' => '+31201234567'],
+            ['postal_code' => '00-950', 'country' => 'PL'],
+        ], $relayed['body']['addresses']);
     }
 
     public function testCompanyDetailEncodesTheLookupIdIntoThePath(): void
@@ -512,7 +625,7 @@ class ProxiedRegistryCallsTest extends TestCase
     }
 
     /**
-     * ABN-533. This route is reachable whenever the tile is offered, so only a
+     * This route is reachable whenever the tile is offered, so only a
      * definitive rejection may refuse an intent — a transient failure relays
      * the never-expiring record's identity instead, and refusing would put a
      * red unavailability notice on a correctly configured checkout.
@@ -638,6 +751,7 @@ class ProxiedRegistryCallsTest extends TestCase
     {
         return [
             'no country' => ['', 'acme', 'a missing country is refused'],
+            'blank country' => ['  ', 'acme', 'a whitespace-only country is refused (TWO-27235)'],
             'alpha-3 country' => ['nor', 'acme', 'the registry endpoints take ISO-2 only'],
             'single letter country' => ['n', 'acme', 'a truncated code is refused'],
             'non-alpha country' => ['N1', 'acme', 'a code with a digit is not a country'],
@@ -696,7 +810,7 @@ class ProxiedRegistryCallsTest extends TestCase
 
     /**
      * A registry lookup is never failed over the verdict — the buyer may be
-     * mid-typing. ABN-533: a transient failure keeps the merchant attribution
+     * mid-typing. A transient failure keeps the merchant attribution
      * too, off the never-expiring record, so lookups stay merchant-scoped for
      * the duration of an outage instead of going out unscoped.
      *

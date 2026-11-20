@@ -11,7 +11,7 @@ namespace Two\Gateway\Model\Config;
 /**
  * The one normalisation of a stored custom payment term. Every consumer resolves a value through
  * it — the admin field's gate, its renderer, the backend models, the config repository, the
- * surcharge grid, and the admin scripts via the rendered data-two-term (ABN-522).
+ * surcharge grid, and the admin scripts via the rendered data-two-term.
  */
 class StoredTerm
 {

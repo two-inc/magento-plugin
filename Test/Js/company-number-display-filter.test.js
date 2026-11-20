@@ -162,7 +162,7 @@ describe('(b) the search-results rows never render a TWO: number', () => {
         expect(mapped[0].companyId).toBe('923609016');
     });
 
-    describe('the row label falls back when the hit carries no highlight (ABN-554)', () => {
+    describe('the row label falls back when the hit carries no highlight', () => {
         test.each([
             ['<b>Acme</b> Widgets Ltd', 'Acme Widgets Ltd', '<b>Acme</b> Widgets Ltd (923609016)', 'a highlight is used as-is'],
             [undefined, 'Acme Widgets Ltd', 'Acme Widgets Ltd (923609016)', 'no highlight falls back to the name'],

@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Phrase;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
@@ -17,7 +18,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * TWO-25386, and ABN-518 for the checkout-visibility row.
+ * TWO-25386, plus the checkout-visibility row.
  */
 class HealthChecklistTest extends TestCase
 {
@@ -77,6 +78,7 @@ class HealthChecklistTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
+        $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
         $store = $this->createMock(\Magento\Store\Model\Store::class);
         $store->method('getBaseCurrencyCode')->willReturn('GBP');
@@ -241,8 +243,6 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518.
-     *
      * @dataProvider checkoutVisibilityStates
      */
     public function testTheCheckoutVisibilityRowNamesTheActiveReason(
@@ -289,6 +289,43 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
+     * TWO-26153: an unreadable tax code map withholds the method (TWO-26309), and the row says where to clear it.
+     *
+     * @dataProvider taxCodeMaps
+     */
+    public function testTheCheckoutVisibilityRowNamesAnUnreadableTaxCodeMap(bool $readable, bool $expectedOk, string $expectedFragment): void
+    {
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        if ($readable) {
+            $this->configRepository->method('getTaxCodeMap')->willReturn([]);
+        } else {
+            $this->configRepository->method('getTaxCodeMap')
+                ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unreadable')));
+        }
+        $this->supportedCountriesProvider->method('getState')->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+        $this->scopeConfig->method('getValue')->willReturn('');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertSame($expectedOk, $row['ok']);
+        $this->assertStringContainsString($expectedFragment, $row['value']);
+    }
+
+    public static function taxCodeMaps(): array
+    {
+        return [
+            'readable' => [true, true, 'Shown at checkout'],
+            'unreadable' => [false, false, 'Use Clear saved tax codes under Order management > Tax'],
+        ];
+    }
+
+    /**
      * @return array<string, array{0: bool, 1: string, 2: string|null, 3: string,
      *     4: array<string,mixed>|null, 5: array<string,mixed>|null, 6: bool, 7: bool, 8: string, 9: string}>
      */
@@ -318,7 +355,7 @@ class HealthChecklistTest extends TestCase
             'key unverifiable, service down' => [
                 true, ApiKeyStatus::SERVICE_ERROR, 'none', $unrestricted, null, null, false, true,
                 'Shown at checkout',
-                'ABN-533: a transient verdict falls through to the cached record and withholds nothing',
+                'a transient verdict falls through to the cached record and withholds nothing',
             ],
             'key unverifiable, unreachable' => [
                 true, ApiKeyStatus::UNREACHABLE, 'none', $unrestricted, null, null, false, true,
@@ -394,7 +431,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * ABN-518: the row has to judge the same store the checkout gate would,
+     * The row has to judge the same store the checkout gate would,
      * not the default scope, on a website- or store-view-scoped page.
      *
      * @dataProvider scopeParams
@@ -453,11 +490,18 @@ class HealthChecklistTest extends TestCase
             $this->scopeConfig,
             $request
         );
-        $this->configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)
+        // Read twice, once for each row it decides (TWO-27227).
+        $this->configRepository->expects($this->exactly(2))->method('isActive')->with($expectedStoreId)
             ->willReturn(false);
         $this->configRepository->expects($this->once())->method('getMode')->with($expectedStoreId)
             ->willReturn('sandbox');
         $this->configRepository->expects($this->once())->method('isSslVerificationDisabled')
+            ->with($expectedStoreId)->willReturn(false);
+        // The disabled method decides the Company search row before its
+        // setting or the key gate is read; any read still judges this scope.
+        $this->configRepository->method('isCompanySearchEnabled')
+            ->with($expectedStoreId)->willReturn(false);
+        $this->apiKeyStatus->method('isDefinitiveFailure')
             ->with($expectedStoreId)->willReturn(false);
         // Every verdict read on the panel judges the page's scope.
         $scopesAsked = [];
@@ -467,11 +511,14 @@ class HealthChecklistTest extends TestCase
                 return ['status' => ApiKeyStatus::OK];
             });
 
-        $row = $this->block->getChecklistRows()[4];
+        $rows = $this->block->getChecklistRows();
+        $row = $rows[4];
 
         // The scope assertion is `isActive()`'s own `with($expectedStoreId)`;
         // this proves the read reached the row rather than being swallowed.
         $this->assertStringContainsString('Check Enable payment method', $row['value'], $description);
+        // And that the store's disabled method reached the Company search row.
+        $this->assertStringContainsString('Check Enable payment method', $rows[5]['value'], $description);
         // Every verdict read on the panel judges the page's scope, not just the row's.
         $this->assertSame([$expectedStoreId], array_values(array_unique($scopesAsked, SORT_REGULAR)), $description);
     }
@@ -661,18 +708,55 @@ class HealthChecklistTest extends TestCase
     {
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
         $this->configRepository->method('getMode')->willReturn('production');
+        $this->configRepository->method('getStoredMode')->willReturn('production');
         $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
 
         $rows = $this->block->getChecklistRows();
 
         $this->assertTrue($rows[0]['ok']);
-        $this->assertSame('PRODUCTION', $rows[1]['value']);
+        $this->assertSame('Production', $rows[1]['value']);
+        $this->assertTrue($rows[1]['ok']);
         $this->assertTrue($rows[2]['ok']);
         $this->assertFalse($this->block->isProductionWithSslDisabled());
     }
 
     /**
-     * ABN-533 narrowed which categories withhold the payment method from the
+     * The Environment row names the environment, or says what to do about it
+     * (TWO-26604).
+     *
+     * @dataProvider environmentRowStates
+     */
+    public function testTheEnvironmentRow(string $stored, ?string $flag, string $expected, bool $expectedOk, string $description): void
+    {
+        putenv($flag === null ? 'TWO_INTERNAL_ENVIRONMENTS' : 'TWO_INTERNAL_ENVIRONMENTS=' . $flag);
+        try {
+            $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+            $this->configRepository->method('getStoredMode')->willReturn($stored);
+
+            $row = $this->block->getChecklistRows()[1];
+
+            $this->assertSame($expected, $row['value'], $description);
+            $this->assertSame($expectedOk, $row['ok'], $description);
+        } finally {
+            putenv('TWO_INTERNAL_ENVIRONMENTS');
+        }
+    }
+
+    public static function environmentRowStates(): array
+    {
+        $unrecognised = 'Not recognised: Sandbox is in use. Select an environment and save.';
+        return [
+            ['production', null, 'Production', true, 'production is named'],
+            ['sandbox', null, 'Sandbox', true, 'sandbox is named'],
+            ['staging', '1', 'Staging', true, 'staging on Two infra is named'],
+            ['staging', null, 'Staging (Acme Pay internal test environment). Select Sandbox or Production.', false, 'staging off Two infra says what to do, naming the brand'],
+            ['garbage', null, $unrecognised, false, 'an unknown value says sandbox is in use'],
+            ['', null, $unrecognised, false, 'an empty value says sandbox is in use'],
+        ];
+    }
+
+    /**
+     * A later change narrowed which categories withhold the payment method from the
      * BUYER. The admin's own verdict is unchanged: anything short of a
      * verified key still reads "Not verified" here.
      *
@@ -708,6 +792,80 @@ class HealthChecklistTest extends TestCase
             'other error' => [ApiKeyStatus::ERROR, false, 'no confirmation, not ok'],
             'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, false, 'no confirmation, not ok'],
             'not configured' => [ApiKeyStatus::NOT_CONFIGURED, false, 'nothing to verify'],
+        ];
+    }
+
+    /**
+     * TWO-27224: the company-search row stands down on the same questions that
+     * empty the checkout config (a disabled method, TWO-27227, or a rejected
+     * key), and otherwise says where the control sits.
+     *
+     * @dataProvider companySearchStates
+     */
+    public function testTheCompanySearchRowFollowsTheCheckoutConfigGate(
+        string $apiKeyStatus,
+        bool $definitive,
+        bool $inAddressEntry,
+        string $methodState,
+        bool $expectedOk,
+        string $expectedFragment,
+        string $description
+    ): void {
+        // 'hidden' is an enabled method the payment method row withholds for
+        // another reason (an unreadable surcharge setting); the row reuses
+        // that verdict whatever its reason.
+        $this->configRepository->method('isActive')->willReturn($methodState !== 'disabled');
+        if ($methodState === 'hidden') {
+            $this->configRepository->method('getSurchargeType')
+                ->willThrowException(new LocalizedException(new Phrase('unreadable')));
+        }
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $apiKeyStatus]);
+        $this->apiKeyStatus->method('isDefinitiveFailure')
+            ->with(null)
+            ->willReturn($definitive);
+        $this->configRepository->method('isCompanySearchEnabled')->with(null)->willReturn($inAddressEntry);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+
+        $rows = $this->block->getChecklistRows();
+        $row = $rows[5];
+
+        // Precondition: the payment method row says what the case claims.
+        $this->assertSame($methodState === 'enabled' && !$definitive, $rows[4]['ok'], $description);
+        $this->assertSame('Company search', $row['label'], $description);
+        $this->assertSame($expectedOk, $row['ok'], $description);
+        $this->assertStringStartsWith($expectedOk ? 'Shown' : 'Not shown at checkout', $row['value'], $description);
+        $this->assertStringContainsString($expectedFragment, $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: bool, 3: string, 4: bool, 5: string, 6: string}>
+     */
+    public static function companySearchStates(): array
+    {
+        return [
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, 'enabled', false,
+                'the API key was rejected. Check API key and Environment.', 'a rejected key withholds the control'],
+            'no key, relocated to the tile' => [ApiKeyStatus::NOT_CONFIGURED, true, false, 'enabled', false,
+                'no API key is saved. Check API key.', 'the tile it would move into is withheld too'],
+            'outage' => [ApiKeyStatus::UNREACHABLE, false, true, 'enabled', true,
+                'Shown in address entry', 'an outage falls through, as the checkout gate does'],
+            'verified, in address entry' => [ApiKeyStatus::OK, false, true, 'enabled', true,
+                'Shown in address entry', 'the setting on keeps it in address entry'],
+            'verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, 'enabled', true,
+                'Shown in the payment method', 'the setting off moves it into the payment method'],
+            'relocated to the tile, method not shown' => [ApiKeyStatus::OK, false, false, 'hidden', false,
+                'See Payment method at checkout.', 'the tile it moves into is not on the page'],
+            'in address entry, method not shown' => [ApiKeyStatus::OK, false, true, 'hidden', true,
+                'Shown in address entry', 'the config still mounts it in address entry'],
+            'disabled, verified, in address entry' => [ApiKeyStatus::OK, false, true, 'disabled', false,
+                'the payment method is disabled. Check Enable payment method.',
+                'a disabled method stands the control down even in address entry'],
+            'disabled, verified, relocated to the tile' => [ApiKeyStatus::OK, false, false, 'disabled', false,
+                'the payment method is disabled. Check Enable payment method.',
+                'a disabled method stands the control down in the tile too'],
+            'disabled, rejected key' => [ApiKeyStatus::INVALID_KEY, true, true, 'disabled', false,
+                'the payment method is disabled. Check Enable payment method.',
+                'the disabled method is named first, as on the payment method row'],
         ];
     }
 

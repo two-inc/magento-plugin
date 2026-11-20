@@ -27,13 +27,16 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  * Two-family brand by scanning `window.checkoutConfig.payment` for a
  * subtree carrying a truthy `redirectUrlCookieCode`, and both mount only
  * when that resolves. It must therefore withhold on exactly the verdicts
- * Two::isAvailable() withholds on (ABN-533) — a rejected key and no key —
+ * Two::isAvailable() withholds on (a rejected key and no key),
  * or an outage leaves the method offered with no config to render it.
  */
 class ConfigProviderApiKeyGateTest extends TestCase
 {
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
+
+    /** Whether the payment method is enabled for the store; a case may switch it mid-test. */
+    private bool $methodActive = true;
 
     /**
      * @param array<string,mixed>|null $merchantRecord what the never-expiring record holds
@@ -48,6 +51,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
         // getConfig() reaches both through buildBrandQueryString().
         $configRepository = $this->createMock(ConfigRepositoryImpl::class);
         $configRepository->method('getApiKey')->willReturn('test-api-key');
+        $configRepository->method('isActive')->willReturnCallback(fn() => $this->methodActive);
         $configRepository->method('getBrand')->willReturn('');
         $configRepository->method('getBrandVersion')->willReturn('');
         $configRepository->method('getCheckoutPageUrl')->willReturn('https://checkout.example');
@@ -203,6 +207,58 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
+     * TWO-27227: a disabled method stands company search down. The subtree is
+     * withheld whatever the key verdict, nothing is logged for a setting, and
+     * re-enabling the method emits it again on the same provider.
+     *
+     * @dataProvider methodStateCases
+     */
+    public function testADisabledMethodWithholdsTheSubtreeWhateverTheVerdict(
+        bool $active,
+        string $status,
+        ?int $code,
+        bool $emitted,
+        string $description
+    ): void {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        // Only the key withholding logs: once a rejected key is judged, which
+        // for a disabled method is not until it is re-enabled.
+        $this->logRepository->expects($status === ApiKeyStatus::OK ? $this->never() : $this->once())
+            ->method('addDebugLog');
+        $this->methodActive = $active;
+        $merchant = $status === ApiKeyStatus::OK ? ['id' => 'abc-123'] : null;
+        $provider = $this->build($this->statusService($status, $code, $merchant));
+
+        $config = $provider->getConfig();
+        $this->assertSame($emitted ? 'two_payment' : null, self::resolveActiveTwoBrandCode($config), $description);
+        $this->assertSame($emitted, isset($config['payment']['two_payment']['isCompanySearchEnabled']), $description);
+
+        $this->methodActive = true;
+        $this->assertSame(
+            $status === ApiKeyStatus::OK ? 'two_payment' : null,
+            self::resolveActiveTwoBrandCode($provider->getConfig()),
+            $description . ' (re-enabled)'
+        );
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: string, 2: int|null, 3: bool, 4: string}>
+     */
+    public static function methodStateCases(): array
+    {
+        return [
+            'enabled, key ok' => [true, ApiKeyStatus::OK, 200, true,
+                'an enabled method with a verified key mounts company search'],
+            'enabled, key rejected' => [true, ApiKeyStatus::INVALID_KEY, 401, false,
+                'a rejected key withholds it, as before'],
+            'disabled, key ok' => [false, ApiKeyStatus::OK, 200, false,
+                'a disabled method withholds it even with a verified key'],
+            'disabled, key rejected' => [false, ApiKeyStatus::INVALID_KEY, 401, false,
+                'a disabled method with a rejected key withholds it'],
+        ];
+    }
+
+    /**
      * The verdict carries no merchant on a fall-through, so the identity the
      * browser is handed comes from the never-expiring record instead. With
      * neither it is null, and the api-client params omit the short name
@@ -284,7 +340,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * ABN-518: the category and HTTP status, never a response body.
+     * The category and HTTP status, never a response body.
      *
      * @dataProvider definitiveFailureCategories
      */
@@ -304,7 +360,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * Only these two withhold the subtree (ABN-533), so only these two have a
+     * Only these two withhold the subtree, so only these two have a
      * withholding to record.
      *
      * @return array<string, array{0: string, 1: int|null}>
@@ -319,7 +375,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
 
     /**
      * A transient verdict leaves the subtree in place, so there is nothing to
-     * record about it here (ABN-533).
+     * record about it here.
      *
      * @dataProvider transientVerdicts
      */

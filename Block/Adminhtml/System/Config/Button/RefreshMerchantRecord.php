@@ -42,6 +42,14 @@ class RefreshMerchantRecord extends Field
         return $form ? (int)$form->getScopeId() : 0;
     }
 
+    /** Whether this page is the reload a successful refresh lands on (TWO-26153). */
+    public function isRefreshed(): bool
+    {
+        $request = $this->getRequest();
+
+        return $request !== null && (string)$request->getParam('two_refreshed', '') !== '';
+    }
+
     /**
      * @inheritDoc
      */

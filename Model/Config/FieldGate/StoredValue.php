@@ -12,8 +12,7 @@ use Two\Gateway\Model\Config\StoredTerm;
 
 /**
  * Configured when a value worth showing is stored — gates a deprecated field kept only for the
- * merchants who already carry one. A zero reads as blank; junk does not, so it stays correctable
- * (ABN-522).
+ * merchants who already carry one. A zero reads as blank; junk does not, so it stays correctable.
  */
 class StoredValue implements ConfiguredPredicateInterface
 {

@@ -105,7 +105,8 @@ describe('the searching state reaches visible spinner markup', () => {
         companySearch.SEARCH_DEBOUNCE_MS = 0;
 
         const CompanySearchPanel = loadCompanySearchPanel($, companySearch, GLOBALS);
-        panel = new CompanySearchPanel({ fieldSelector: FIELD_SELECTOR, config: BASE_CONFIG });
+        // A country, since none sends nothing at all (TWO-27235).
+        panel = new CompanySearchPanel({ fieldSelector: FIELD_SELECTOR, config: BASE_CONFIG, getCountryCode: () => 'gb' });
         panel.bind();
         panel.open();
         $query = $('.two-company-dropdown__query');

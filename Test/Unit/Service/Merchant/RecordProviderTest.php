@@ -77,7 +77,7 @@ class RecordProviderTest extends TestCase
 
     /**
      * A website or default scope id is not a store id, so it must not travel to the
-     * adapter as one; the key the scope resolves still does (ABN-530).
+     * adapter as one; the key the scope resolves still does.
      *
      * @dataProvider adapterScopeProvider
      */

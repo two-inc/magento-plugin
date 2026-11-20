@@ -15,6 +15,7 @@ use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
@@ -27,6 +28,9 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class SalesOrderAddressUpdate implements ObserverInterface
 {
+    /** Payment information key: the Idempotency-Key of the last edit Two accepted (TWO-26658). */
+    public const LAST_EDIT_KEY = 'two_last_edit_idempotency_key';
+
     /** The order states and statuses in which the API accepts an edit; it refuses any other. */
     private const EDITABLE_STATES = ['UNVERIFIED', 'VERIFIED', 'CONFIRMED'];
     private const EDITABLE_STATUSES = ['APPROVED', 'REJECTED', 'DECLINED'];
@@ -113,63 +117,37 @@ class SalesOrderAddressUpdate implements ObserverInterface
             && $order->getTwoOrderId()
         ) {
             try {
-                $refusal = $this->editRefusal($order);
+                $twoOrder = $this->readTwoOrder($order);
+                $refusal = $this->editRefusal($twoOrder);
                 if ($refusal !== null) {
+                    // TWO-26309: built so the postprocessing hook still runs on it; a hook
+                    // failure is already logged and changes nothing here.
+                    try {
+                        $this->orderPostprocessor->process(
+                            Postprocessing::REQUEST_ORDER_UPDATE,
+                            $this->composeEdit($order),
+                            ['trigger' => 'admin_edit', 'endpoint' => '/v1/order/{id}', 'order' => $order, 'two_order' => $twoOrder]
+                        );
+                    } catch (Exception $e) {
+                        // The refusal below is the merchant's answer either way.
+                    }
                     // The API would refuse this edit, so say why plainly instead of sending it.
                     $order->addStatusToHistory($order->getStatus(), $refusal);
                     $this->messageManager->addNoticeMessage($refusal);
                     $order->save();
                     return $this;
                 }
-                $additionalInformation = $order->getPayment()->getAdditionalInformation();
-                // Orders placed before terms were stored have none; the edit then omits terms so Two keeps the agreed ones.
-                $placedTerms = is_array($additionalInformation['terms'] ?? null) ? $additionalInformation['terms'] : null;
-                if ($placedTerms !== null && (int)($placedTerms['duration_days'] ?? 0) <= 0) {
-                    throw new LocalizedException(
-                        __('Order edit was not sent: the order\'s stored payment term is not usable.')
-                    );
-                }
-                // Department and Project are optional at checkout, and the
-                // stored payload now leaves the keys out entirely when the
-                // buyer skipped them (TWO-25386) — so they must be coalesced
-                // here. Re-composing with '' is correct: the composer applies
-                // the same omit rule again on the way back out.
-                $payload = $this->compositeOrder->execute(
-                    $order,
-                    $order->getTwoOrderReference(),
-                    [
-                        'companyName' => $additionalInformation['buyer']['company']['company_name'],
-                        'telephone' => $additionalInformation['buyer']['representative']['phone_number'],
-                        'companyId' => $additionalInformation['buyer']['company']['organization_number'],
-                        'department' => $additionalInformation['buyer_department'] ?? '',
-                        'project' => $additionalInformation['buyer_project'] ?? '',
-                        'isEdit' => true,
-                        'placedTerms' => $placedTerms,
-                    ]
-                );
-                // TWO-25386: merchant_reference, merchant_additional_info and
-                // shipping_details are deliberately never part of this
-                // request.
-                //
-                // Nothing in this plugin ever puts them into the payment's
-                // additional_information, so there is no local value to send:
-                // every write to additional_information either copies the
-                // create-order payload (which does not carry these keys) or
-                // sets the completion marker, and the checkout data-assign
-                // path is limited to its own fixed key list.
-                //
-                // Why sending them anyway is harmful — the edit-merge
-                // semantics of this request — is recorded on TWO-25386. The
-                // decision here is to leave all three out unconditionally.
-                // Note that shipping_details is delivery/tracking metadata,
-                // not the buyer's shipping address: shipping_address is a
-                // different field and is composed as usual, above.
-                $response = $this->apiAdapter->execute(
+                $payload = $this->composeEdit($order);
+                // Chained on the last accepted edit's key, so a retry of this
+                // edit repeats its key and every other edit gets its own
+                // (TWO-26658).
+                $key = IdempotencyKey::edit((string)$order->getTwoOrderId(), $this->lastEditKey($order), $payload);
+                $response = $this->apiAdapter->withIdempotencyKey($key)->execute(
                     '/v1/order/' . $order->getTwoOrderId(),
                     $this->orderPostprocessor->process(
                         Postprocessing::REQUEST_ORDER_UPDATE,
                         $payload,
-                        ['trigger' => 'admin_edit', 'endpoint' => '/v1/order/{id}', 'order' => $order]
+                        ['trigger' => 'admin_edit', 'endpoint' => '/v1/order/{id}', 'order' => $order, 'two_order' => $twoOrder]
                     ),
                     'PUT',
                     (int)$order->getStoreId()
@@ -182,6 +160,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     );
                     $this->messageManager->addWarningMessage((string)$error);
                 } else {
+                    $order->getPayment()->setAdditionalInformation(self::LAST_EDIT_KEY, $key);
                     $comment = __('Order edit request was accepted by %1', $this->brandRegistry->getProductName());
                     $order->addStatusToHistory($order->getStatus(), $comment->render());
                 }
@@ -200,6 +179,75 @@ class SalesOrderAddressUpdate implements ObserverInterface
     }
 
     /**
+     * The key of the last edit Two accepted, or the order create's key
+     * before the first, which the order's increment id and stored attempt
+     * reference rebuild.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     */
+    private function lastEditKey($order): string
+    {
+        $stored = $order->getPayment()->getAdditionalInformation()[self::LAST_EDIT_KEY] ?? null;
+        return is_string($stored) && $stored !== ''
+            ? $stored
+            : IdempotencyKey::create((string)$order->getIncrementId(), (string)$order->getTwoOrderReference());
+    }
+
+    /**
+     * The edit body as composed, before the postprocessing hook.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return array
+     * @throws Exception
+     */
+    private function composeEdit($order): array
+    {
+        $additionalInformation = $order->getPayment()->getAdditionalInformation();
+        // Orders placed before terms were stored have none; the edit then omits terms so Two keeps the agreed ones.
+        $placedTerms = is_array($additionalInformation['terms'] ?? null) ? $additionalInformation['terms'] : null;
+        if ($placedTerms !== null && (int)($placedTerms['duration_days'] ?? 0) <= 0) {
+            throw new LocalizedException(
+                __('Order edit was not sent: the order\'s stored payment term is not usable.')
+            );
+        }
+        // Department and Project are optional at checkout, and the
+        // stored payload now leaves the keys out entirely when the
+        // buyer skipped them (TWO-25386) — so they must be coalesced
+        // here. Re-composing with '' is correct: the composer applies
+        // the same omit rule again on the way back out.
+        // TWO-25386: merchant_reference, merchant_additional_info and
+        // shipping_details are deliberately never part of this
+        // request.
+        //
+        // Nothing in this plugin ever puts them into the payment's
+        // additional_information, so there is no local value to send:
+        // every write to additional_information either copies the
+        // create-order payload (which does not carry these keys) or
+        // sets the completion marker, and the checkout data-assign
+        // path is limited to its own fixed key list.
+        //
+        // Why sending them anyway is harmful — the edit-merge
+        // semantics of this request — is recorded on TWO-25386. The
+        // decision here is to leave all three out unconditionally.
+        // Note that shipping_details is delivery/tracking metadata,
+        // not the buyer's shipping address: shipping_address is a
+        // different field and is composed as usual, below.
+        return $this->compositeOrder->execute(
+            $order,
+            $order->getTwoOrderReference(),
+            [
+                'companyName' => $additionalInformation['buyer']['company']['company_name'],
+                'telephone' => $additionalInformation['buyer']['representative']['phone_number'],
+                'companyId' => $additionalInformation['buyer']['company']['organization_number'],
+                'department' => $additionalInformation['buyer_department'] ?? '',
+                'project' => $additionalInformation['buyer_project'] ?? '',
+                'isEdit' => true,
+                'placedTerms' => $placedTerms,
+            ]
+        );
+    }
+
+    /**
      * Why the API would refuse an edit to this order, or null when it would accept one.
      *
      * Reads the order's live state and status and applies the same rule as
@@ -211,25 +259,12 @@ class SalesOrderAddressUpdate implements ObserverInterface
      * A failed lookup returns null, so the edit is sent and any refusal is
      * reported as before.
      *
-     * @param \Magento\Sales\Model\Order $order
+     * @param array|null $response Two's order, from readTwoOrder()
      * @return string|null
      */
-    private function editRefusal($order): ?string
+    private function editRefusal(?array $response): ?string
     {
-        try {
-            $response = $this->apiAdapter->execute(
-                '/v1/order/' . $order->getTwoOrderId(),
-                [],
-                'GET',
-                (int)$order->getStoreId(),
-                null,
-                null,
-                self::LOOKUP_TIMEOUT_SECONDS
-            );
-        } catch (Exception $e) {
-            return null;
-        }
-        if ($order->getPayment()->getMethodInstance()->getErrorFromResponse($response)) {
+        if ($response === null) {
             return null;
         }
         $state = $response['state'] ?? null;
@@ -252,5 +287,35 @@ class SalesOrderAddressUpdate implements ObserverInterface
             $productName,
             $refusedState ? $state : $status
         )->render();
+    }
+
+    /**
+     * Two's order as GET /v1/order/{id} returns it, or null when the lookup
+     * fails or answers with an error, so the edit is sent and any refusal is
+     * reported as before.
+     *
+     * @param \Magento\Sales\Model\Order $order
+     * @return array|null
+     */
+    private function readTwoOrder($order): ?array
+    {
+        try {
+            $response = $this->apiAdapter->execute(
+                '/v1/order/' . $order->getTwoOrderId(),
+                [],
+                'GET',
+                (int)$order->getStoreId(),
+                null,
+                null,
+                self::LOOKUP_TIMEOUT_SECONDS
+            );
+        } catch (Exception $e) {
+            return null;
+        }
+        if ($order->getPayment()->getMethodInstance()->getErrorFromResponse($response)) {
+            return null;
+        }
+
+        return is_array($response) ? $response : null;
     }
 }

@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-548. The default-term select carries an Automatic option, so a selection
+ * The default-term select carries an Automatic option, so a selection
  * dropped by a term being unticked lands there and the checkout resolves the
  * term. The select posts on save, so synthesising a day count here would pin
  * the stored default to whatever the browser happened to show.

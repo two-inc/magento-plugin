@@ -15,7 +15,7 @@ use Magento\Store\Model\StoreManagerInterface;
  * The scope an admin config form is editing, as the (id, scope type) pair the config
  * repository reads with. The API key is website-scoped, so a website read through one of
  * its stores answers for whichever child was picked, and flattened to a store id answers
- * for the default scope's merchant (ABN-530).
+ * for the default scope's merchant.
  */
 class AdminScope
 {

@@ -16,6 +16,7 @@ use Magento\Framework\Controller\ResultInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Service\Api\TaxCodes;
 use Two\Gateway\Service\Merchant\RecordRefresher;
 
 /**
@@ -48,16 +49,23 @@ class RefreshMerchantRecord extends Action implements HttpPostActionInterface
      */
     private $brandRegistry;
 
+    /**
+     * @var TaxCodes
+     */
+    private $taxCodes;
+
     public function __construct(
         Action\Context $context,
         JsonFactory $resultJsonFactory,
         RecordRefresher $recordRefresher,
-        BrandRegistryInterface $brandRegistry
+        BrandRegistryInterface $brandRegistry,
+        TaxCodes $taxCodes
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
         $this->recordRefresher = $recordRefresher;
         $this->brandRegistry = $brandRegistry;
+        $this->taxCodes = $taxCodes;
     }
 
     /**
@@ -76,6 +84,8 @@ class RefreshMerchantRecord extends Action implements HttpPostActionInterface
             return $this->failure($e->getMessage());
         }
 
+        // TWO-26153: the tax code section asks for its code lists afresh on the reload that follows.
+        $this->taxCodes->expire();
         $outcome = $this->recordRefresher->refreshWithin($identities, self::BUDGET_SECONDS);
         $refreshed = array_values(array_filter($outcome['records']));
         $total = count($identities);

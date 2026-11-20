@@ -153,7 +153,7 @@ class SurchargeGrid extends Field
 
     /**
      * The term differential mode prices against, resolved the way the checkout
-     * resolves it (ABN-548) — a stored day count is only the first of four
+     * resolves it: a stored day count is only the first of four
      * steps, so reading it alone badges no row on the store views that leave
      * the choice to the resolver. 0 when no term is offered.
      */
@@ -439,7 +439,7 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Scope being edited, as the config repository reads it (ABN-530).
+     * Scope being edited, as the config repository reads it.
      *
      * @return array{int|null, string}
      */

@@ -25,8 +25,10 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\OrderPostprocessingInterface as Postprocessing;
+use Two\Gateway\Exception\TwoRefusalException;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\IdempotencyKey;
 use Two\Gateway\Service\Order\OrderPostprocessor;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -36,6 +38,15 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  */
 class OrderService
 {
+    /**
+     * Order data flag: the order is being cancelled because Two already has
+     * cancelled it, so no cancel is sent to Two (TWO-26300).
+     */
+    public const SKIP_CANCEL_SYNC = 'two_skip_cancel_sync';
+
+    /** sales_order column: when the order was last checked with Two (UTC). */
+    public const PENDING_CHECKED_AT = 'two_pending_checked_at';
+
     /**
      * @var Adapter
      */
@@ -203,6 +214,34 @@ class OrderService
     }
 
     /**
+     * Whether the order still awaits the buyer's verification: the state and
+     * status set when it was placed. A buyer return link acts only on such an
+     * order, so replaying one cannot fail or reprocess an order that has
+     * since moved on, for example been invoiced or shipped (TWO-27057).
+     *
+     * @param Order $order
+     * @return bool
+     */
+    public function isAwaitingVerification(Order $order): bool
+    {
+        return $order->getState() === Order::STATE_PENDING_PAYMENT
+            && $order->getStatus() === Two::STATUS_PENDING;
+    }
+
+    /**
+     * Whether the order has been confirmed: only the confirm return moves an
+     * order on to processing, so a later confirm return for it is a repeat
+     * (TWO-27057).
+     *
+     * @param Order $order
+     * @return bool
+     */
+    public function isConfirmed(Order $order): bool
+    {
+        return in_array($order->getState(), [Order::STATE_PROCESSING, Order::STATE_COMPLETE], true);
+    }
+
+    /**
      * Get order reference from param
      *
      * @return string|null
@@ -228,10 +267,7 @@ class OrderService
             'GET',
             (int)$order->getStoreId()
         );
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-        if ($error) {
-            throw new LocalizedException($error);
-        }
+        $this->throwIfRefused($order, $response);
 
         return $response;
     }
@@ -251,8 +287,10 @@ class OrderService
         // here, because a cancel can race a confirm still in flight
         // (TWO-26150). Each attempt is its own request and fires the hook.
         $result = ['status' => 0, 'body' => []];
+        // Both attempts are one operation, so they share a key (TWO-26658).
+        $adapter = $this->apiAdapter->withIdempotencyKey(IdempotencyKey::confirm((string)$order->getTwoOrderId()));
         for ($attempt = 1; $attempt <= 2; $attempt++) {
-            $result = $this->apiAdapter->executeWithStatus(
+            $result = $adapter->executeWithStatus(
                 "/v1/order/" . $order->getTwoOrderId() . "/confirm",
                 $this->orderPostprocessor->process(
                     Postprocessing::REQUEST_ORDER_CONFIRM,
@@ -279,10 +317,7 @@ class OrderService
             );
         }
 
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($result['body']);
-        if ($error) {
-            throw new LocalizedException($error);
-        }
+        $this->throwIfRefused($order, $result['body']);
 
         return $result['body'];
     }
@@ -306,7 +341,9 @@ class OrderService
      */
     public function cancelTwoOrder(Order $order, string $trigger = 'cancel'): bool
     {
-        $response = $this->apiAdapter->execute(
+        $response = $this->apiAdapter->withIdempotencyKey(
+            IdempotencyKey::cancel((string)$order->getTwoOrderId())
+        )->execute(
             '/v1/order/' . $order->getTwoOrderId() . '/cancel',
             $this->orderPostprocessor->process(
                 Postprocessing::REQUEST_CANCEL,
@@ -317,13 +354,115 @@ class OrderService
             (int)$order->getStoreId()
         );
         if ($response) {
-            $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-            if ($error) {
-                throw new LocalizedException($error);
-            }
+            $this->throwIfRefused($order, $response);
         }
 
         return true;
+    }
+
+    /**
+     * Wind up a buyer's failed return to the shop (confirm, cancel or failed
+     * verification): restore the cart, fail the order with the full account
+     * for the merchant, and answer what the buyer may be shown (TWO-26295).
+     *
+     * Neither clean-up step may keep the buyer from that answer, so each is
+     * guarded and logged.
+     *
+     * @param Order|null $order the order, when it was found
+     * @param \Throwable $exception what ended the return
+     * @return string the message for the buyer
+     */
+    public function failBuyerReturn(?Order $order, \Throwable $exception): string
+    {
+        try {
+            $this->restoreQuote();
+        } catch (\Throwable $e) {
+            $this->logBuyerReturnFailure('restore-quote', $e);
+        }
+        if ($order !== null) {
+            try {
+                $this->failOrder($order, $exception->getMessage());
+            } catch (\Throwable $e) {
+                $this->logBuyerReturnFailure('fail-order', $e);
+            }
+        }
+
+        return $this->buyerMessageFor($exception);
+    }
+
+    /**
+     * Wind up a buyer's cancel that Two did not carry out. The order is left
+     * as it is, because cancelling it here would leave the shop and Two
+     * disagreeing, and the cart is not restored, because the order still
+     * stands. The merchant gets the full account as an order comment
+     * (TWO-27057).
+     *
+     * @param Order $order
+     * @param \Throwable $exception why the cancel did not go through
+     * @return string the message for the buyer
+     */
+    public function keepRefusedCancel(Order $order, \Throwable $exception): string
+    {
+        try {
+            $this->addOrderComment($order, $exception->getMessage());
+            $this->orderRepository->save($order);
+        } catch (\Throwable $e) {
+            $this->logBuyerReturnFailure('refused-cancel', $e);
+        }
+
+        return $this->buyerMessageFor($exception);
+    }
+
+    /**
+     * What a buyer is shown for an exception: a refusal's buyer message, this
+     * module's own translated sentence, or the general message for anything
+     * else (a database error, a bug), whose text is logged and never shown.
+     *
+     * @param \Throwable $exception
+     * @return string
+     */
+    public function buyerMessageFor(\Throwable $exception): string
+    {
+        if ($exception instanceof TwoRefusalException) {
+            return $exception->getBuyerMessage()->render();
+        }
+        if ($exception instanceof LocalizedException) {
+            return $exception->getMessage();
+        }
+        $this->logBuyerReturnFailure('unexpected', $exception);
+
+        return __(
+            'Something went wrong with your request to %1. %2',
+            $this->brandRegistry->getProductName(),
+            __('Please try again later.')
+        )->render();
+    }
+
+    private function logBuyerReturnFailure(string $stage, \Throwable $exception): void
+    {
+        $this->logRepository->addErrorLog(
+            'buyer-return-failed',
+            ['stage' => $stage, 'exception' => get_class($exception), 'message' => $exception->getMessage()]
+        );
+    }
+
+    /**
+     * Refuse when Two did. The exception's message is the full account, for
+     * the merchant; its buyer message never carries the API's own text
+     * (TWO-26295).
+     *
+     * @param Order $order
+     * @param array $response
+     * @return void
+     * @throws TwoRefusalException
+     */
+    private function throwIfRefused(Order $order, array $response): void
+    {
+        $method = $order->getPayment()->getMethodInstance();
+        $error = $method->getErrorFromResponse($response);
+        if ($error) {
+            throw new TwoRefusalException($error, $method->getBuyerErrorFromResponse($response) ?? $error);
+        }
     }
 
     /**
@@ -351,6 +490,48 @@ class OrderService
         $order->setState(Order::STATE_CANCELED);
         $this->addOrderComment($order, $reason);
         $order->getPayment()->save();
+        $this->orderRepository->save($order);
+        return $this;
+    }
+
+    /**
+     * Load the order afresh from the database, so a caller holding the
+     * order's lock acts on what another request may just have saved, not on
+     * the copy it loaded before waiting (TWO-26300).
+     *
+     * @param Order $order
+     * @return Order
+     */
+    public function reloadOrder(Order $order): Order
+    {
+        $fresh = $this->orderFactory->create();
+        $this->orderResource->load($fresh, $order->getId());
+        if (!$fresh->getId()) {
+            throw new LocalizedException(
+                __('Unable to find the requested %1 order', $this->brandRegistry->getProductName())
+            );
+        }
+        return $fresh;
+    }
+
+    /**
+     * Cancel the order in Magento only, because Two has already cancelled or
+     * declined it: the flag keeps SalesOrderCancelAfter from sending a cancel
+     * back to Two (TWO-26300).
+     *
+     * @param Order $order
+     * @param string|\Magento\Framework\Phrase $comment why, for the merchant
+     * @return $this
+     * @throws LocalizedException when Magento will not cancel the order
+     */
+    public function cancelLocally(Order $order, $comment)
+    {
+        $order->setData(self::SKIP_CANCEL_SYNC, true);
+        $order->cancel();
+        if ($order->getState() !== Order::STATE_CANCELED) {
+            throw new LocalizedException(__('Magento did not allow the order to be cancelled.'));
+        }
+        $this->addOrderComment($order, $comment);
         $this->orderRepository->save($order);
         return $this;
     }

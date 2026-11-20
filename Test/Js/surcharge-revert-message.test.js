@@ -5,8 +5,7 @@
  * A payment term the server would not apply snaps the chips back to the term
  * the quote is priced on, and is said in the tile's own live region rather
  * than the page-level banner — even when re-rendering a chip throws while the
- * revert is being notified. Placement waits for the buyer either way
- * (ABN-550).
+ * revert is being notified. Placement waits for the buyer either way.
  */
 
 'use strict';

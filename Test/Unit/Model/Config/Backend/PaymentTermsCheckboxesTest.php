@@ -17,7 +17,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  * Tests PaymentTermsCheckboxes::beforeSave(): the offered-set guard, the mandatory-selection
  * guard that a legacy custom term satisfies on its own, and the fold-in that moves a deprecated
  * custom value onto the checkbox of the offered term it names, which the sibling clears in the
- * same save (TWO-25498, ABN-522).
+ * same save (TWO-25498).
  *
  * The fold-in must be reachable for a custom value matching an offered term that is NOT
  * currently ticked, since the available-terms set carries no tick state. An unresolvable

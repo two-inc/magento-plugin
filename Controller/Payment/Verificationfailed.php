@@ -10,6 +10,7 @@ namespace Two\Gateway\Controller\Payment;
 use Exception;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
+use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Service\Payment\OrderService;
 use Two\Gateway\Api\BrandRegistryInterface;
@@ -59,18 +60,40 @@ class Verificationfailed extends Action
         $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
-            $message = __(
-                'Your invoice purchase with %1 failed verification. The cart will be restored.',
-                $this->brandRegistry->getProductName()
-            );
-            throw new LocalizedException($message);
         } catch (Exception $exception) {
-            $this->orderService->restoreQuote();
-            if ($order !== null) {
-                $this->orderService->failOrder($order, $exception->getMessage());
-            }
-            $this->messageManager->addErrorMessage($exception->getMessage());
-            return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
+            // The buyer sees only a message meant for them (TWO-26295).
+            $this->messageManager->addErrorMessage($this->orderService->failBuyerReturn($order, $exception));
+            return $this->toCart();
         }
+        // A replayed link changes nothing on an order that has moved on (TWO-27057).
+        if (!$this->orderService->isAwaitingVerification($order)) {
+            return $this->toCart();
+        }
+        // The order is failed only once Two has cancelled it, as on the
+        // cancel link: Two did not cancel, so neither does the shop (TWO-27057).
+        try {
+            $this->orderService->cancelTwoOrder($order, 'buyer_cancel');
+        } catch (Exception $exception) {
+            $this->messageManager->addErrorMessage($this->orderService->keepRefusedCancel($order, $exception));
+            return $this->toCart();
+        }
+        $message = __(
+            'Your invoice purchase with %1 failed verification. The cart will be restored.',
+            $this->brandRegistry->getProductName()
+        );
+        // The order comment keeps the full account for the merchant; the
+        // buyer sees only a message meant for them (TWO-26295).
+        $this->messageManager->addErrorMessage(
+            $this->orderService->failBuyerReturn($order, new LocalizedException($message))
+        );
+        return $this->toCart();
+    }
+
+    /**
+     * @return ResponseInterface
+     */
+    private function toCart()
+    {
+        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
     }
 }

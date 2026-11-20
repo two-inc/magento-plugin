@@ -153,7 +153,11 @@ function SoleTraderStub() {
     this.prefetchBuyer = function () { return Promise.resolve(null); };
     this.focusSignupPopup = function () { return false; };
     this.launchSignup = function () { return null; };
-    this.forgetAdoptions = function () {};
+    this.closeSignupPopup = function () { return false; };
+    this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+    this.isPopupOpen = function () { return false; };
+    this.showSignupPanel = function () {};
+    this.launcherToRefocus = function () { return null; };
     this.forgetAutofilledBuyer = function () {};
 }
 

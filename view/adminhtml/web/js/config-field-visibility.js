@@ -8,7 +8,7 @@ define(['jquery'], function ($) {
 
     /**
      * Show or hide an admin config row and scope validation with it: Magento's
-     * admin validator does not ignore `:hidden` (ABN-558). Never sets
+     * admin validator does not ignore `:hidden`. Never sets
      * `disabled` — these rows must still post or hidden values are wiped.
      */
     return function ($row, relevant) {

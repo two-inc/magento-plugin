@@ -2,12 +2,12 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-548. Differential mode disables the row it prices against. With the
+ * Differential mode disables the row it prices against. With the
  * default-term field on Automatic the select carries no day count, so the row is
  * the one the checkout resolves — reading the select alone left the buyer's
  * baseline term editable and its fee posted.
  *
- * ABN-554. That row goes on SHOWING its stored amounts: the cells are disabled,
+ * That row goes on SHOWING its stored amounts: the cells are disabled,
  * so they never post, and blanking them to 0 only hid the live config from the
  * merchant.
  */

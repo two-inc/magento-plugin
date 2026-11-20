@@ -88,7 +88,11 @@ function load(options) {
         this.focusSignupPopup = function () { return !!opts.popupAlreadyOpen; };
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
     };
 

@@ -79,6 +79,9 @@ function companySearchMock() {
  *        one
  * @returns {object} `{ component, identity }`
  */
+/** Every closeSignupPopup() call the stub flow saw, reset per test. */
+let popupCloses = [];
+
 function loadCapture(options) {
     const settings = options || {};
     const SoleTraderStub = function () {
@@ -86,7 +89,11 @@ function loadCapture(options) {
         this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function (options) { popupCloses.push(options || {}); return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
     };
     const companySearch = companySearchMock();
@@ -116,6 +123,7 @@ function manualChip() {
 }
 
 beforeEach(() => {
+    popupCloses = [];
     document.body.innerHTML =
         '<form id="two_gateway_form"><div class="field"><div class="control">' +
         '<input id="company_name" name="company_name" />' +
@@ -224,15 +232,15 @@ describe('entering manual entry', () => {
 
     test('the field becomes a plain, typeable, focused text input', () => {
         const capture = loadCapture();
+        dispatchNative($('#company_name')[0], 'mousedown');
 
-        capture.component.manualEntryMode();
+        $(MANUAL_CHIP).trigger('click');
 
         const field = document.querySelector('#company_name');
         expect(capture.identity.captureMode()).toBe('manual');
         expect(field.type).toBe('text');
         expect(field.readOnly).toBe(false);
         expect(field.disabled).toBe(false);
-        expect(field.value).toBe('');
         expect(document.activeElement).toBe(field);
     });
 
@@ -266,6 +274,31 @@ describe('entering manual entry', () => {
         // back would paint results into a control the buyer has left.
         expect(calls.filter((call) => call === 'abort' || call === 'release'))
             .toEqual(['abort', 'release']);
+    });
+
+    test.each([
+        ['Example Trading Ltd', '12345678', 'a registered pick keeps its name on screen and drops its number'],
+        ['Hand Typed AS', '', 'a name with no number is kept as it is'],
+        ['', '', 'nothing captured leaves an empty field']
+    ])('Enter manually after %p/%p shows the name and holds no number (%s)', (name, id, why) => {
+        const capture = loadCapture();
+        capture.identity.write({ companyName: name, companyId: id }, { authoritative: true });
+        dispatchNative($('#company_name')[0], 'mousedown');
+
+        $(MANUAL_CHIP).trigger('click');
+
+        expect([why, document.querySelector('#company_name').value, capture.identity.companyName(),
+            capture.identity.companyId(), capture.identity.companyIdSource()])
+            .toEqual([why, name, name, '', '']);
+    });
+
+    test('Enter manually closes the signup popup by rule, before the field takes focus (TWO-26775)', () => {
+        loadCapture();
+        dispatchNative($('#company_name')[0], 'mousedown');
+
+        $(MANUAL_CHIP).trigger('click');
+
+        expect(popupCloses).toEqual([{ byRule: true }]);
     });
 
     test('the registry number is abandoned but the name survives the transition', () => {

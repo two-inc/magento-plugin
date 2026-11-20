@@ -32,7 +32,11 @@ class ApiKeyStatusTest extends TestCase
     {
         $this->apiAdapter = $this->createMock(Adapter::class);
         $this->cache = $this->createMock(CacheInterface::class);
+        $this->flags = new MemoryFlags();
     }
+
+    /** @var MemoryFlags */
+    private $flags;
 
     private function build(string $apiKey = self::KEY, string $mode = 'production'): ApiKeyStatus
     {
@@ -45,7 +49,8 @@ class ApiKeyStatusTest extends TestCase
             $configRepository,
             $this->cache,
             new Json(),
-            $this->createMock(LogRepository::class)
+            $this->createMock(LogRepository::class),
+            $this->flags
         );
     }
 
@@ -516,5 +521,115 @@ class ApiKeyStatusTest extends TestCase
                 'the admin re-check shares the verification call, so it shares its budget',
             ],
         ];
+    }
+
+    /**
+     * TWO-27108: only ok and a rejection are remembered as the key's last
+     * definitive answer; an outage or a 5xx says nothing about the key.
+     *
+     * @dataProvider definitiveAnswers
+     */
+    public function testOnlyADefinitiveAnswerIsRemembered(array $response, ?string $remembered, string $description): void
+    {
+        $this->apiAdapter->method('execute')->willReturn($response);
+
+        $status = $this->build();
+        $status->refresh();
+
+        $this->assertSame($remembered, $status->lastDefinitiveStatus(self::KEY, 'production'), $description);
+    }
+
+    /**
+     * @return array<string, array{0: array, 1: string|null, 2: string}>
+     */
+    public static function definitiveAnswers(): array
+    {
+        return [
+            'ok' => [['id' => 'merchant-1'], ApiKeyStatus::OK, 'a verified key is known good'],
+            'rejected' => [['http_status' => 401], ApiKeyStatus::INVALID_KEY, 'a rejection is definitive'],
+            'service error' => [['http_status' => 503], null, 'a 5xx says nothing about the key'],
+            'unreachable' => [['error_code' => 'transport'], null, 'no answer says nothing about the key'],
+            'malformed' => [[], null, 'a reply with no merchant says nothing about the key'],
+        ];
+    }
+
+    public function testAnOutageKeepsTheLastDefinitiveAnswer(): void
+    {
+        $this->apiAdapter->method('execute')->willReturnOnConsecutiveCalls(['id' => 'merchant-1'], ['http_status' => 503]);
+        $status = $this->build();
+
+        $status->refresh();
+        $status->refresh();
+
+        $this->assertSame(ApiKeyStatus::OK, $status->lastDefinitiveStatus(self::KEY, 'production'));
+    }
+
+    public function testAnUnchangedAnswerIsWrittenOnce(): void
+    {
+        $this->apiAdapter->method('execute')->willReturn(['id' => 'merchant-1']);
+        $status = $this->build();
+
+        $status->refresh();
+        $status->refresh();
+
+        $this->assertSame(1, $this->flags->writes, 'the checkout path re-verifies often and must not write each time');
+    }
+
+    /**
+     * A legacy stored spelling of an environment resolves to the same
+     * environment the key is sent to, so it finds the same slot (TWO-27108).
+     *
+     * @dataProvider environmentSpellings
+     */
+    public function testTheSlotIsKeyedOnTheEnvironmentAValueResolvesTo(string $recorded, string $read, bool $same, string $description): void
+    {
+        $status = $this->build();
+        $status->recordDefinitive(self::KEY, $recorded, ApiKeyStatus::OK);
+
+        $this->assertSame($same ? ApiKeyStatus::OK : null, $status->lastDefinitiveStatus(self::KEY, $read), $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: bool, 3: string}>
+     */
+    public static function environmentSpellings(): array
+    {
+        return [
+            'legacy prod' => ['prod', 'production', true, 'the legacy spelling is production'],
+            'case and spaces' => [' Production ', 'production', true, 'a stored value with case or spaces resolves the same'],
+            'unrecognised' => ['live', 'sandbox', true, 'an unrecognised value resolves to sandbox, as getMode() does'],
+            'other environment' => ['production', 'sandbox', false, 'a verdict in one environment says nothing about the other'],
+        ];
+    }
+
+    public function testAnotherKeyHasNoDefinitiveAnswer(): void
+    {
+        $status = $this->build();
+        $status->recordDefinitive(self::KEY, 'production', ApiKeyStatus::OK);
+
+        $this->assertNull($status->lastDefinitiveStatus('another-key', 'production'));
+        $this->assertNull($status->lastDefinitiveStatus('', 'production'));
+    }
+}
+
+/** The flag table, in memory, counting writes. */
+class MemoryFlags extends \Magento\Framework\FlagManager
+{
+    /** @var array<string, mixed> */
+    public $flags = [];
+
+    /** @var int */
+    public $writes = 0;
+
+    public function getFlagData($code)
+    {
+        return $this->flags[$code] ?? null;
+    }
+
+    public function saveFlag($code, $value)
+    {
+        $this->flags[$code] = $value;
+        $this->writes++;
+        return true;
     }
 }

@@ -67,6 +67,8 @@ class ConfigProviderCustomHeaderExposureTest extends TestCase
         $provider = $reflection->newInstanceWithoutConstructor();
 
         $configRepository = $this->createMock(ConfigRepositoryImpl::class);
+        // An enabled method: a disabled one withholds the whole config (TWO-27227).
+        $configRepository->method('isActive')->willReturn(true);
         $configRepository->method('getApiKey')->willReturn('test-api-key');
         $configRepository->method('getBrand')->willReturn('');
         $configRepository->method('getBrandVersion')->willReturn('');

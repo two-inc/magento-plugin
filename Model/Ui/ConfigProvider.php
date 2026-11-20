@@ -194,7 +194,7 @@ class ConfigProvider implements ConfigProviderInterface
         // the active brand by scanning `window.checkoutConfig.payment` for a
         // subtree carrying a truthy `redirectUrlCookieCode`, and both mount
         // only when that resolves. So it must ask exactly the question
-        // Two::isAvailable() asks — a rejected key, or no key (ABN-533) — or
+        // Two::isAvailable() asks (a rejected key, or no key), or
         // an outage leaves the method offered with no config to render it.
         //
         // No store id is passed, matching every other configRepository read
@@ -203,6 +203,15 @@ class ConfigProvider implements ConfigProviderInterface
         // render that is the quote's store, which is the id
         // Two::isAvailable() resolves from the quote and passes explicitly —
         // so both surfaces judge the same store's key and agree.
+        //
+        // A disabled method withholds it too (TWO-27227): the tile is not
+        // offered anyway, and with Enable company search in address entry on
+        // the control would otherwise still mount and query the registry for
+        // a method the merchant has switched off. Not logged: it is a setting,
+        // not a fault.
+        if (!$this->configRepository->isActive()) {
+            return [];
+        }
         if ($this->apiKeyStatus->isDefinitiveFailure()) {
             // Once per request: getConfig() is evaluated on every cart,
             // checkout and payment-information render.
@@ -268,10 +277,9 @@ class ConfigProvider implements ConfigProviderInterface
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'availableBuyerTerms' => $this->configRepository->getAllBuyerTerms(),
                     // The chip text has to name the term type: an end-of-month
-                    // term falls due that many days after the end of the month
-                    // (ABN-554).
+                    // term falls due that many days after the end of the month.
                     'isEndOfMonthTerms' => $this->configRepository->getPaymentTermsType() === PaymentTermsType::END_OF_MONTH,
-                    // 0, not a day count, when no term is offered (ABN-544).
+                    // 0, not a day count, when no term is offered.
                     'defaultPaymentTerm' => $defaultPaymentTerm,
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $defaultPaymentTerm,
@@ -319,6 +327,12 @@ class ConfigProvider implements ConfigProviderInterface
                         $this->brandRegistry->getProductName(),
                         $tryAgainLater
                     ),
+                    // TWO-26295: a refused intent that names a field the buyer
+                    // can fix says which, in our own words, chosen by the
+                    // field path. One map, shared with order create.
+                    'orderIntentFieldErrors' => [
+                        'messages' => array_map('strval', $this->two->getFieldErrorMessages()),
+                    ],
                     // TWO-25326: the Two method stays selectable with a
                     // manual (name-only, no organisation number) capture —
                     // it is blocked at submit instead, matching the WC/PS/
@@ -331,15 +345,14 @@ class ConfigProvider implements ConfigProviderInterface
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
                     // TWO-25503: shown when the term selected at render time is
                     // no longer among the terms the server offers at submit —
-                    // see the renderer's isSelectedTermStillAvailable().
-                    'termUnavailableMessage' => __(
-                        'The payment terms you selected are no longer available. Please select your payment terms again.'
-                    ),
+                    // see the renderer's isSelectedTermStillAvailable(). The
+                    // server's own refusal sentence, so the buyer reads the
+                    // same words whichever side catches it (TWO-27214).
+                    'termUnavailableMessage' => __('Selected payment term is not available.'),
                     // Bound `html:` by the renderer, and every part of it -
                     // the sentence, the link text - is an admin-editable
                     // translation. The escaper keeps the one anchor this
-                    // sentence is built around and drops everything else
-                    // (ABN-554).
+                    // sentence is built around and drops everything else.
                     'paymentTermsMessage' => $this->htmlEscaper->escape(__(
                         'I accept the %1 and authorize %2 to process my data automatically.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
@@ -433,8 +446,7 @@ class ConfigProvider implements ConfigProviderInterface
      * the approved one (TWO-25326).
      *
      * `null` here is NOT silence: gateway_method.js substitutes platform
-     * wording, because this sentence explains a disabled Place Order button
-     * (ABN-563).
+     * wording, because this sentence explains a disabled Place Order button.
      *
      * This is the "not approved" business outcome only (a clean response
      * with `approved: false`) — a technical/HTTP failure is a different

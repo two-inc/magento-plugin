@@ -44,7 +44,7 @@ use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
  * backend_model is wired, and an overlay install renders ONLY the synthesized
  * form (Plugin\Config\Structure\HidePaymentSection hides the static Two
  * sections), so both etc/adminhtml/system.xml and
- * etc/adminhtml/brand_form_template.xml must carry it — ABN-497 was this
+ * etc/adminhtml/brand_form_template.xml must carry it. A past defect was this
  * wiring missing from the template.
  *
  * Nothing here runs on config page load — this is the save path only, and it
@@ -93,7 +93,7 @@ abstract class AbstractSurchargeTreatmentGuard extends Value
      * Reject a save that would leave a stored never-taxed treatment in place:
      * a blank submission used to overwrite it with an empty string, silently
      * changing how the surcharge is taxed and erasing the state the field's
-     * warning renderer reads (ABN-497). Not gated on the surcharge being
+     * warning renderer reads. Not gated on the surcharge being
      * enabled, because the submitted-value refusal it completes is not either.
      *
      * Only a save the treatment field is PART of can be refused. A save

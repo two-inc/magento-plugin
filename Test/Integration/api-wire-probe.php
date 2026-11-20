@@ -7,8 +7,10 @@
  * order-edit observer and the self-invoice upload's first request through
  * the real Adapter and Magento's real Curl client to a local HTTP server
  * (wire-echo-server.php), and checks what arrived on the wire. That server
- * refuses anything but PUT on both routes, as the API does. Usage, from the
- * Magento root:
+ * refuses anything but PUT on both routes, as the API does. The edited
+ * order carries a coupon, and a coupon order is also created through the
+ * payment method's authorize(), so the order-level discount is checked on
+ * both requests (TWO-26277). Usage, from the Magento root:
  *   php <plugin>/Test/Integration/api-wire-probe.php
  */
 declare(strict_types=1);
@@ -16,12 +18,15 @@ declare(strict_types=1);
 use Magento\Framework\App\Bootstrap;
 use Magento\Framework\App\State;
 use Magento\Framework\Event;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\Event\Observer;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
+use Two\Gateway\Model\Two;
 use Two\Gateway\Observer\SalesOrderAddressUpdate;
 use Two\Gateway\Service\Invoice\UploadService;
 use Two\Gateway\Service\Order\ComposeIntent;
+use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Test\Integration\ProbeFixtures;
 
 require getcwd() . '/app/bootstrap.php';
@@ -62,6 +67,27 @@ $received = static function () use ($log): array {
     @unlink($log);
     return array_map(static fn (string $l): array => json_decode($l, true), $lines);
 };
+// TWO-26277: Magento stores the order's discount negative; it is sent positive,
+// net of its tax compensation, and so totals the line discounts.
+$discountSent = static function (array $sent, Order $order, string $description) use ($check): void {
+    $expected = number_format(
+        -(float)$order->getDiscountAmount() - (float)$order->getDiscountTaxCompensationAmount(),
+        2,
+        '.',
+        ''
+    );
+    $lines = number_format(array_sum(array_map(
+        static fn (array $line): float => (float)($line['discount_amount'] ?? 0),
+        $sent['line_items'] ?? []
+    )), 2, '.', '');
+    $check((float)$expected > 0, "$description carried a cart-rule discount ($expected)");
+    $check(
+        ($sent['discount_amount'] ?? null) === $expected,
+        "$description sent discount_amount positive, net of tax compensation ("
+        . var_export($sent['discount_amount'] ?? null, true) . " vs $expected)"
+    );
+    $check($expected === $lines, "$description sent a discount_amount totalling its lines' discounts ($lines)");
+};
 
 $objectManager = Bootstrap::create(BP, $_SERVER)->getObjectManager();
 $objectManager->get(State::class)->setAreaCode('adminhtml');
@@ -75,7 +101,8 @@ if ($env !== 'developer') {
 // ── 1. Admin order edit ─────────────────────────────────────────────
 $fixtures = new ProbeFixtures($objectManager);
 $fixtures->configure(ProbeFixtures::EXCLUSIVE);
-$order = $objectManager->get(ComposeIntent::class)->toOrder($fixtures->quote([['probe-standard', 1]], false));
+$order = $objectManager->get(ComposeIntent::class)
+    ->toOrder($fixtures->quote([['probe-standard', 1]], false, ProbeFixtures::COUPON));
 $order->setTwoOrderId('probe-order-id');
 $order->setTwoOrderReference('probe-reference');
 $order->setPayment($objectManager->create(\Magento\Sales\Model\Order\Payment::class));
@@ -150,6 +177,7 @@ foreach ($edits as [$twoOrderId, $editSent, $recorded, $description]) {
             is_array($sent) && !empty($sent['line_items']) && isset($sent['gross_amount']),
             "$description carried the composed order"
         );
+        $discountSent(is_array($sent) ? $sent : [], $order, $description);
     }
     // The history collection reads newest first, so take the newest by id.
     $comments = [];
@@ -185,6 +213,67 @@ $check(
     ($result['success'] ?? false) === true && ($result['reference'] ?? null) === 'probe-reference',
     'the upload request returned the signed target (' . json_encode($result) . ')'
 );
+
+// ── 3. Order create with a coupon, through the payment method ───────
+// TWO-26277: every order with a cart-rule discount was refused here, before
+// the request was sent. The key is a placeholder for the local server.
+$fixtures->configure([
+    'payment/two_payment/active' => 1,
+    'payment/two_payment/mode' => 'sandbox',
+    'payment/two_payment/api_key' => $objectManager->get(EncryptorInterface::class)->encrypt('probe-placeholder-key'),
+    'payment/two_payment/payment_terms' => '30',
+    'payment/two_payment/default_payment_term' => 30,
+]);
+// [coupon, tax config, description]
+$creates = [
+    [ProbeFixtures::COUPON, ProbeFixtures::EXCLUSIVE, 'a coupon order at tax-exclusive prices'],
+    [ProbeFixtures::COUPON, ProbeFixtures::INCLUSIVE, 'a coupon order at tax-inclusive prices'],
+    [ProbeFixtures::SHIPPING_COUPON, ProbeFixtures::EXCLUSIVE, 'a shipping-discount coupon order at tax-exclusive prices'],
+    [ProbeFixtures::SHIPPING_COUPON, ProbeFixtures::INCLUSIVE, 'a shipping-discount coupon order at tax-inclusive prices'],
+];
+foreach ($creates as [$coupon, $taxConfig, $description]) {
+    $fixtures->configure($taxConfig);
+    $created = $objectManager->get(ComposeIntent::class)
+        ->toOrder($fixtures->quote([['probe-standard', 2]], false, $coupon));
+    $payment = $objectManager->create(\Magento\Sales\Model\Order\Payment::class);
+    $created->setPayment($payment);
+    $payment->setMethod('two_payment')->setAdditionalInformation([
+        'companyName' => 'Probe Buyer',
+        'companyId' => '123456789',
+        'telephone' => '+31201234567',
+        'selectedTerm' => 30,
+    ]);
+    // The redirect cookie is browser state; a CLI run that has printed cannot send headers.
+    $method = $objectManager->create(Two::class, ['urlCookie' => new class extends UrlCookie {
+        public function __construct()
+        {
+        }
+
+        public function set(string $value, int $duration = 86400): void
+        {
+        }
+
+        public function delete(): void
+        {
+        }
+    }]);
+    $payment->setMethodInstance($method);
+    $method->setInfoInstance($payment);
+    $refusal = null;
+    try {
+        $method->authorize($payment, $created->getGrandTotal());
+    } catch (\Throwable $e) {
+        $refusal = get_class($e) . ': ' . $e->getMessage();
+    }
+    $check($refusal === null, "$description was authorized" . ($refusal === null ? '' : " ($refusal)"));
+    $posted = array_values(array_filter(
+        $received(),
+        static fn (array $c): bool => $c['method'] === 'POST' && $c['path'] === '/v1/order'
+    ));
+    $check(count($posted) === 1, "$description sent one create request (" . count($posted) . ')');
+    $discountSent(json_decode($posted[0]['body'] ?? '[]', true) ?: [], $created, $description);
+}
+$fixtures->configure(ProbeFixtures::EXCLUSIVE);
 
 if ($failures) {
     echo count($failures) . ' API wire probe check(s) failed' . PHP_EOL;

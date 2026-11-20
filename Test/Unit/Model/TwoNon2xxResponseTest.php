@@ -13,6 +13,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Psr\Log\LoggerInterface;
 
 /**
  * TWO-26150: a non-2xx response with no error fields in its body (a 405, or
@@ -98,7 +99,8 @@ class TwoNon2xxResponseTest extends TestCase
             $this->brandRegistry(),
             $curlFactory,
             $this->createMock(LogRepository::class),
-            new NullApiTranslator()
+            new NullApiTranslator(),
+            $this->createMock(LoggerInterface::class)
         );
     }
 

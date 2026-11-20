@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Magento builds the storefront's JS dictionary by scanning for literal `$t()`
  * calls, so a phrase the picker only ever asks its host for by name renders in
- * English with no error and no log line (ABN-555).
+ * English with no error and no log line.
  */
 class SharedCapturePhraseHarvestTest extends TestCase
 {
@@ -30,6 +30,33 @@ class SharedCapturePhraseHarvestTest extends TestCase
     /** Guards the extraction below against silently matching nothing. */
     private const KNOWN_SEAM_PHRASE_COUNT = 9;
 
+    /**
+     * Seam phrases the host answers in other words: the shared panel keeps its
+     * original wording and every host shows the standard sentence (TWO-27214).
+     * Every other seam phrase is answered with its own literal.
+     */
+    private const HOST_WORDING = [
+        'Company search is unavailable right now. Please try again shortly.'
+            => 'Company search is temporarily unavailable. Please try again.',
+    ];
+
+    public function testTheHostAnswersEachRewordedPhraseWithItsOwnWording(): void
+    {
+        $host = $this->source(self::HOST_MODULE);
+        foreach (self::HOST_WORDING as $seam => $shown) {
+            $pattern = sprintf(
+                "/'%s'\s*:\s*\\\$t\(\s*'%s'\s*\)/",
+                preg_quote($seam, '/'),
+                preg_quote($shown, '/')
+            );
+            $this->assertMatchesRegularExpression(
+                $pattern,
+                $host,
+                sprintf('The host should answer "%s" with $t(\'%s\').', $seam, $shown)
+            );
+        }
+    }
+
     public function testTheHostAnswersTheSeamFromThatDictionary(): void
     {
         $this->assertStringContainsString(
@@ -44,7 +71,7 @@ class SharedCapturePhraseHarvestTest extends TestCase
     {
         $harvestable = $this->literals($this->source(self::HOST_MODULE), '\$t');
 
-        $unharvestable = array_values(array_diff($this->seamPhrases(), $harvestable));
+        $unharvestable = array_values(array_diff($this->shownPhrases(), $harvestable));
 
         $this->assertSame(
             [],
@@ -80,7 +107,7 @@ class SharedCapturePhraseHarvestTest extends TestCase
         $rows = $this->catalogue($locale);
 
         $missing = [];
-        foreach ($this->seamPhrases() as $phrase) {
+        foreach ($this->shownPhrases() as $phrase) {
             if (!isset($rows[$phrase]) || trim($rows[$phrase]) === '') {
                 $missing[] = $phrase;
             }
@@ -97,6 +124,17 @@ class SharedCapturePhraseHarvestTest extends TestCase
                 implode("\n  ", $missing)
             )
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function shownPhrases(): array
+    {
+        return array_values(array_unique(array_map(
+            static fn (string $phrase): string => self::HOST_WORDING[$phrase] ?? $phrase,
+            $this->seamPhrases()
+        )));
     }
 
     /**

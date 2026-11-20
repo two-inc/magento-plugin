@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-522. The deprecated custom-term row hides only where the save will fold the value away:
+ * The deprecated custom-term row hides only where the save will fold the value away:
  * the server-emitted marker plus the live inherit state of the Payment terms sibling. The term the
  * row contributes comes from the server-emitted data-two-term, never from the raw value.
  *

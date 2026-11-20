@@ -15,11 +15,11 @@
         <payment>
             <two_payment>
                 <active>1</active>
-                <version>4.0.0</version>
-                <title>Two - Buy Now Pay Later on Invoice Terms</title>
+                <version>4.1.0</version>
+                <!-- TWO-27108: no English title stored; empty shows the translated default. -->
+                <title/>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
-                <invoice_type>FUNDED_INVOICE</invoice_type>
                 <merchant_minimum_order_basis>gross</merchant_minimum_order_basis>
                 <finalize_purchase>1</finalize_purchase>
                 <enable_order_intent>1</enable_order_intent>
@@ -73,6 +73,9 @@
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
                 <model>Two\Gateway\Model\Two</model>
+                <!-- TWO-26300: hidden, no admin field. Minutes an order waits
+                     for the buyer before the scheduled check looks at it. -->
+                <pending_check_after_minutes>30</pending_check_after_minutes>
             </two_payment>
         </payment>
         <!--

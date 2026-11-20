@@ -24,6 +24,10 @@ use Magento\Framework\Filesystem\Driver\File;
  */
 class Debug extends Action
 {
+    /**
+     * The same resource as this module's configuration controllers (TWO-27057).
+     */
+    public const ADMIN_RESOURCE = 'Magento_Sales::config_sales';
 
     /**
      * Debug log file path pattern

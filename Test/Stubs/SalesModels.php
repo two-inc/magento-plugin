@@ -91,6 +91,10 @@ use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 if (!class_exists(Invoice::class, false)) {
     class Invoice extends AbstractSalesModelStub
     {
+        public const CAPTURE_ONLINE = 'online';
+        public const CAPTURE_OFFLINE = 'offline';
+        public const NOT_CAPTURE = 'not_capture';
+
         private $order;
 
         public function setOrder($order): self
@@ -109,6 +113,10 @@ if (!class_exists(Invoice::class, false)) {
 if (!class_exists(Creditmemo::class, false)) {
     class Creditmemo extends AbstractSalesModelStub
     {
+        public const STATE_OPEN = 1;
+        public const STATE_REFUNDED = 2;
+        public const STATE_CANCELED = 3;
+
         private $order;
 
         /**
@@ -150,6 +158,27 @@ if (!class_exists(Payment::class, false)) {
         {
             return $this->order;
         }
+
+        /**
+         * Keyed like core's Payment\Info: one key, or the whole array with none.
+         */
+        public function setAdditionalInformation($key, $value = null): self
+        {
+            $info = (array)($this->_data['additional_information'] ?? []);
+            if (is_array($key)) {
+                $info = $key;
+            } else {
+                $info[$key] = $value;
+            }
+            $this->_data['additional_information'] = $info;
+            return $this;
+        }
+
+        public function getAdditionalInformation($key = null)
+        {
+            $info = (array)($this->_data['additional_information'] ?? []);
+            return $key === null ? $info : ($info[$key] ?? null);
+        }
     }
 }
 
@@ -160,6 +189,11 @@ use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 if (!class_exists(Order::class, false)) {
     class Order extends AbstractSalesModelStub
     {
+        public const STATE_PENDING_PAYMENT = 'pending_payment';
+        public const STATE_PROCESSING = 'processing';
+        public const STATE_COMPLETE = 'complete';
+        public const STATE_CANCELED = 'canceled';
+
         /** @var iterable|false */
         private $creditmemos = false;
 

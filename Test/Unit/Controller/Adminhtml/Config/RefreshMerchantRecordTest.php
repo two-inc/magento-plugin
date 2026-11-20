@@ -11,6 +11,7 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Controller\Adminhtml\Config\RefreshMerchantRecord;
+use Two\Gateway\Service\Api\TaxCodes;
 use Two\Gateway\Service\Merchant\RecordRefresher;
 
 /**
@@ -24,8 +25,12 @@ class RefreshMerchantRecordTest extends TestCase
     /** @var string */
     private $provider = 'Two';
 
+    /** @var TaxCodes&\PHPUnit\Framework\MockObject\MockObject */
+    private $taxCodes;
+
     protected function setUp(): void
     {
+        $this->taxCodes = $this->createMock(TaxCodes::class);
         $this->recordRefresher = $this->createMock(RecordRefresher::class);
     }
 
@@ -51,7 +56,8 @@ class RefreshMerchantRecordTest extends TestCase
             $context,
             new JsonFactory(),
             $this->recordRefresher,
-            $brandRegistry
+            $brandRegistry,
+            $this->taxCodes
         );
 
         return (array)$controller->execute()->getData();
@@ -70,6 +76,17 @@ class RefreshMerchantRecordTest extends TestCase
         ));
         $this->recordRefresher->method('refreshWithin')
             ->willReturn(['records' => $records, 'skipped' => $identities - count($records)]);
+    }
+
+    /**
+     * TWO-26153: a refresh expires the tax code lists, refreshed or not, so the reload asks again.
+     */
+    public function testARefreshExpiresTheTaxCodeLists(): void
+    {
+        $this->governsAndRefreshes(1, [null]);
+        $this->taxCodes->expects($this->once())->method('expire');
+
+        $this->invoke();
     }
 
     /**

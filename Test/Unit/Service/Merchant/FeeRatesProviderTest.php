@@ -14,7 +14,7 @@ use Two\Gateway\Service\Merchant\FeeRatesProvider;
 /**
  * The admin fee column used to blank on any upstream failure, which reads as
  * "this term has no fee". The last retrieved set is kept instead, and the
- * caller is told whether what it got is current (ABN-512).
+ * caller is told whether what it got is current.
  */
 class FeeRatesProviderTest extends TestCase
 {
@@ -29,6 +29,7 @@ class FeeRatesProviderTest extends TestCase
     protected function setUp(): void
     {
         $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
     }
 
     /**
@@ -290,6 +291,7 @@ class FeeRatesProviderTest extends TestCase
             }
         );
         $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('withIdempotencyKey')->willReturnSelf();
         $this->apiAdapter->expects($this->exactly(1))->method('execute')->willReturn(self::RATES);
         $provider = $this->build($cooling);
 

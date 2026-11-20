@@ -18,8 +18,7 @@ use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 /**
  * A merchant-record fetch that fails says nothing about whether the API key
  * works, so it must not take the payment method off the storefront. The
- * api-key verification verdict is the only upstream failure that withholds
- * (ABN-519).
+ * api-key verification verdict is the only upstream failure that withholds.
  */
 class TwoMerchantRecordFailureTest extends TestCase
 {
@@ -59,6 +58,8 @@ class TwoMerchantRecordFailureTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->createMock(LogRepository::class),
+            // A readable tax code map: not this test's subject (TWO-26309).
+            'configRepository' => $this->createMock(\Two\Gateway\Api\Config\RepositoryInterface::class),
             // Not this test's subject: the fee quote concedes.
             'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => new MinimumOrderProvider($recordProvider),

@@ -14,7 +14,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * The payment term a checkout would be charged for.
  *
  * Single-sourced so the availability gate can never judge a term the totals
- * collector would not price (ABN-546).
+ * collector would not price.
  */
 class ChargedTermResolver
 {

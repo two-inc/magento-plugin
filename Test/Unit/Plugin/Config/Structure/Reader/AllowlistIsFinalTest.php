@@ -96,12 +96,12 @@ class AllowlistIsFinalTest extends TestCase
         $out = $this->render(
             ['checkout_fields/display/product_button_enabled'],
             ['children' => ['display' => ['children' => ['product_button_enabled' => [
-                'label' => 'Koop met ABN AMRO',
+                'label' => 'Koop met Acmebank',
             ]]]]]
         );
 
         $field = $out['children']['display']['children']['product_button_enabled'];
-        $this->assertSame('Koop met ABN AMRO', $field['label']);
+        $this->assertSame('Koop met Acmebank', $field['label']);
         $this->assertSame('1', $field['showInDefault']);
     }
 }

@@ -49,6 +49,7 @@ const ADDRESS_FORM_SELECTOR = '#shipping-new-address-form';
  */
 function makeSpyJQuery(recorder, present) {
     const matching = present || [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR];
+    const nodes = {};
     function $(selector) {
         const obj = {
             length: matching.indexOf(selector) === -1 ? 0 : 1,
@@ -105,7 +106,13 @@ function makeSpyJQuery(recorder, present) {
             toggleClass: function () { return obj; },
             hide: function () { return obj; },
             show: function () { return obj; },
-            get: function () { return { style: {} }; },
+            // One node per selector, as a page has: the lookup's in-flight
+            // guard is keyed on the form's node, and a fresh object per call
+            // gave every lookup a guard of its own (TWO-27168).
+            get: function () {
+                if (!nodes[selector]) nodes[selector] = { style: {} };
+                return nodes[selector];
+            },
             on: function () { return obj; }
         };
         return obj;
@@ -114,10 +121,12 @@ function makeSpyJQuery(recorder, present) {
     $.ajax = function (opts) {
         recorder.ajax.push(opts);
         const settlers = [];
+        const failers = [];
         recorder.doneByCall.push(settlers);
+        recorder.failByCall.push(failers);
         const jqxhr = {
             done: function (cb) { settlers.push(cb); return jqxhr; },
-            fail: function () { return jqxhr; },
+            fail: function (cb) { failers.push(cb); return jqxhr; },
             always: function () { return jqxhr; },
             abort: function () {}
         };
@@ -143,6 +152,7 @@ function makeRecorder() {
     return {
         ajax: [],
         doneByCall: [],
+        failByCall: [],
         written: [],
         triggered: [],
         values: {},
@@ -296,6 +306,27 @@ describe('company-search shared module', () => {
         );
     });
 
+    test('lookupCompanyAddress also writes the registry phone into the same form (TWO-27158)', () => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, 'input[name="telephone"]']);
+        const companySearch = loadCompanySearch($);
+
+        companySearch.lookupCompanyAddress(
+            BASE_CONFIG,
+            { lookupId: 'lookup-abc-123' },
+            $(ADDRESS_FORM_SELECTOR),
+            makeIdentity()
+        );
+        settleLatest(recorder, {
+            addresses: [
+                { city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1', phone_number: '+31201234567' }
+            ]
+        });
+
+        expect(recorder.written).toEqual(expect.arrayContaining([['input[name="telephone"]', '+31201234567']]));
+        expect(recorder.attrs['input[name="telephone"]']).toEqual({ 'data-two-autofilled-value': '+31201234567' });
+    });
+
     test.each([
         [{ isAddressSearchEnabled: false }, { lookupId: 'lookup-abc-123' }, 'address search is off'],
         [{}, {}, 'the picked result carries no lookupId']
@@ -314,6 +345,191 @@ describe('company-search shared module', () => {
         expect(result).toBeNull();
         expect(recorder.ajax).toHaveLength(0);
         expect(recorder.written).toHaveLength(0);
+    });
+});
+
+describe('a re-pick that fills nothing still retracts the previous pick\'s registry phone (TWO-27158)', () => {
+    const PHONE = 'input[name="telephone"]';
+    const REGISTRY_PHONE = '+31201234567';
+
+    function failLatest(recorder, status, textStatus) {
+        recorder.failByCall[recorder.failByCall.length - 1].forEach(function (cb) { cb({ status: status }, textStatus); });
+    }
+
+    /** Company A's pick, its phone left in the field as the write put it. */
+    function pickWithPhone() {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, PHONE]);
+        const companySearch = loadCompanySearch($);
+        const root = $(ADDRESS_FORM_SELECTOR);
+        const identity = makeIdentity();
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        settleLatest(recorder, { addresses: [{ city: 'Amsterdam', phone_number: REGISTRY_PHONE }] });
+        recorder.values[PHONE] = REGISTRY_PHONE;
+        recorder.written.length = 0;
+        return { recorder, companySearch, root, identity };
+    }
+
+    function phoneWrites(recorder) {
+        return recorder.written.filter(function (w) { return w[0] === PHONE; });
+    }
+
+    test.each([
+        ['the lookup answers no address', (r) => settleLatest(r, { addresses: [] })],
+        ['the lookup answers a refusal', (r) => r.doneByCall[r.doneByCall.length - 1].forEach((cb) => cb(proxyEnvelope(null, { ok: false, status: 404 })))],
+        ['the lookup fails', (r) => failLatest(r, 500, 'error')],
+        ['the lookup is rate limited', (r) => failLatest(r, 429, 'error')]
+    ])('%s', (description, answer) => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
+        answer(recorder);
+
+        expect({ description, writes: phoneWrites(recorder) }).toEqual({ description, writes: [[PHONE, '']] });
+    });
+
+    test('the registry is suspended', () => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
+        failLatest(recorder, 429, 'error');
+        // A phone this panel wrote again, then a pick the suspension refuses outright.
+        companySearch.applyRegistryTelephone(REGISTRY_PHONE, root, identity);
+        recorder.written.length = 0;
+
+        expect(companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-ghi-789' }, root, identity)).toBeNull();
+
+        expect(phoneWrites(recorder)).toEqual([[PHONE, '']]);
+    });
+
+    test('a phone the buyer edited after the pick survives a re-pick that fills nothing', () => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+        recorder.values[PHONE] = '+31209999999';
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
+        settleLatest(recorder, { addresses: [] });
+
+        expect(phoneWrites(recorder)).toEqual([]);
+    });
+
+    test.each([
+        ['the registry phone still in the field is cleared', { lookupId: '' }, REGISTRY_PHONE, [[PHONE, '']]],
+        ['a company with no lookupId key clears it too', {}, REGISTRY_PHONE, [[PHONE, '']]],
+        ['a phone the buyer typed over it is left alone', { lookupId: '' }, '+31209999999', []]
+    ])('a re-pick with no lookup id: %s (TWO-27214)', (description, company, fieldValue, expected) => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+        recorder.values[PHONE] = fieldValue;
+
+        expect(companySearch.lookupCompanyAddress(BASE_CONFIG, company, root, identity)).toBeNull();
+
+        expect(tagged(description, phoneWrites(recorder))).toEqual(tagged(description, expected));
+    });
+
+    test('a superseded lookup failing leaves the phone to the pick that replaced it', () => {
+        const { recorder, companySearch, root, identity } = pickWithPhone();
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, root, identity);
+        const superseded = recorder.failByCall[recorder.failByCall.length - 1];
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-ghi-789' }, root, identity);
+
+        superseded.forEach(function (cb) { cb({ status: 0 }, 'abort'); });
+
+        expect(phoneWrites(recorder)).toEqual([]);
+    });
+});
+
+describe('a sole trader verified while a pick\'s lookup is in flight is not overwritten by its reply (TWO-27168)', () => {
+    const PHONE = 'input[name="telephone"]';
+
+    const soleTraderAddress = (companySearch, root, identity) => companySearch.applyAddress(
+        { city: 'Ashford', postal_code: 'TN23 1AA', street_address: 'Mill Lane' },
+        root,
+        identity,
+        { buyerRules: true }
+    );
+    const soleTraderPhone = (companySearch, root, identity) => companySearch.applyTelephone('+447700900000', root, identity);
+    const addressArrives = (recorder) => settleLatest(recorder, {
+        addresses: [{ city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1', phone_number: '+31201234567' }]
+    });
+    const noAddressArrives = (recorder) => settleLatest(recorder, { addresses: [] });
+    const lookupFails = (recorder) => recorder.failByCall[recorder.failByCall.length - 1]
+        .forEach(function (cb) { cb({ status: 500 }, 'error'); });
+
+    test.each([
+        ['the sole trader\'s address, then company A\'s address and phone arrive', soleTraderAddress, addressArrives],
+        ['the sole trader\'s phone, then company A\'s address and phone arrive', soleTraderPhone, addressArrives],
+        ['the sole trader\'s address, then company A has no address', soleTraderAddress, noAddressArrives],
+        ['the sole trader\'s phone, then company A\'s lookup fails', soleTraderPhone, lookupFails]
+    ])('%s', (description, verify, answer) => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, PHONE]);
+        const companySearch = loadCompanySearch($);
+        const root = $(ADDRESS_FORM_SELECTOR);
+        const identity = makeIdentity();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        verify(companySearch, root, identity);
+        recorder.values[PHONE] = recorder.attrs[PHONE] ? recorder.attrs[PHONE]['data-two-autofilled-value'] : '';
+        recorder.written.length = 0;
+        answer(recorder);
+
+        expect(tagged(description, { written: recorder.written, notice: identity.addressNotice() }))
+            .toEqual(tagged(description, { written: [], notice: '' }));
+    });
+});
+
+describe('a pick that makes no lookup still retires the previous pick\'s notice and lookup (TWO-27214)', () => {
+    const PHONE = 'input[name="telephone"]';
+    const NOTICE = 'We could not fetch this company\'s address. Please enter it below.';
+
+    const noLookupId = (companySearch, root, identity) =>
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: '' }, root, identity);
+    const searchOff = (companySearch, root, identity) => companySearch.lookupCompanyAddress(
+        Object.assign({}, BASE_CONFIG, { isAddressSearchEnabled: false }),
+        { lookupId: 'lookup-def-456' },
+        root,
+        identity
+    );
+    const addressArrives = (recorder) => settleLatest(recorder, {
+        addresses: [{ city: 'Amsterdam', postal_code: '1234 AB', street_address: 'Voorbeeldstraat 1', phone_number: '+31201234567' }]
+    });
+    const noAddressArrives = (recorder) => settleLatest(recorder, { addresses: [] });
+    const lookupFails = (recorder) => recorder.failByCall[recorder.failByCall.length - 1]
+        .forEach(function (cb) { cb({ status: 500 }, 'error'); });
+
+    function setUp() {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR, PHONE]);
+        return { recorder, companySearch: loadCompanySearch($), root: $(ADDRESS_FORM_SELECTOR), identity: makeIdentity() };
+    }
+
+    test.each([
+        ['a pick with no lookup id', noLookupId],
+        ['a pick while address search is off', searchOff]
+    ])('%s withdraws the notice an earlier failed lookup put up', (description, nextPick) => {
+        const { recorder, companySearch, root, identity } = setUp();
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        lookupFails(recorder);
+        expect(identity.addressNotice()).toBe(NOTICE);
+
+        nextPick(companySearch, root, identity);
+
+        expect(tagged(description, identity.addressNotice())).toEqual(tagged(description, ''));
+    });
+
+    test.each([
+        ['a pick with no lookup id, then company A\'s address and phone arrive', noLookupId, addressArrives],
+        ['a pick with no lookup id, then company A has no address', noLookupId, noAddressArrives],
+        ['a pick with no lookup id, then company A\'s lookup fails', noLookupId, lookupFails],
+        ['a pick while address search is off, then company A\'s address and phone arrive', searchOff, addressArrives],
+        ['a pick while address search is off, then company A\'s lookup fails', searchOff, lookupFails]
+    ])('%s', (description, nextPick, answer) => {
+        const { recorder, companySearch, root, identity } = setUp();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, root, identity);
+        nextPick(companySearch, root, identity);
+        answer(recorder);
+
+        expect(tagged(description, { written: recorder.written, notice: identity.addressNotice() }))
+            .toEqual(tagged(description, { written: [], notice: '' }));
     });
 });
 
@@ -355,7 +571,11 @@ function loadMountedComponent(configOverride, present) {
         this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
     }
 

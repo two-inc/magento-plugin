@@ -27,6 +27,7 @@
         <column xsi:type="varchar" name="two_shipping_tax_rate_source" nullable="true" length="16" comment="Shipping tax rate at placement: declared/none, NULL before this was recorded"/>
         <column xsi:type="decimal" name="two_shipping_tax_rate" scale="6" precision="12" nullable="true" comment="Shipping tax rate at placement (percent): declared, or the fallback rate for none"/>
         <column xsi:type="text" name="two_tax_codes" nullable="true" comment="Tax code per 0% line at placement (JSON), NULL before this was recorded"/>
+        <column xsi:type="timestamp" name="two_pending_checked_at" nullable="true" comment="When the order, still waiting for the buyer, was last checked with Two (UTC)"/>
     </table>
     <table name="quote">
         <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (quote currency, net)"/>

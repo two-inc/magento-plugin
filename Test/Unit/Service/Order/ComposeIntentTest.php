@@ -86,6 +86,24 @@ class ComposeIntentTest extends TestCase
         $this->assertCount(2, $composed['line_items']);
     }
 
+    /**
+     * The intent request is the create request's lines plus the buyer; the API
+     * derives the invoice type and ships by the line quantity, so neither
+     * invoice_type nor a per-line qty_to_ship goes out (ABN-621). The shipping
+     * line has its own builder, so both line kinds are checked.
+     */
+    public function testTheBodyCarriesNoInvoiceTypeOrLineQtyToShip(): void
+    {
+        $composed = $this->composeIntent()->execute($this->quote(), self::BROWSER_BODY['buyer']);
+
+        $this->assertArrayNotHasKey('invoice_type', $composed);
+        $this->assertSame(['PHYSICAL', 'SHIPPING_FEE'], array_column($composed['line_items'], 'type'));
+        foreach ($composed['line_items'] as $line) {
+            $this->assertArrayNotHasKey('qty_to_ship', $line, $line['type'] . ' line');
+            $this->assertArrayHasKey('order_item_id', $line, $line['type'] . ' line keeps its id');
+        }
+    }
+
     private function composeIntent(): ComposeIntent
     {
         $composeOrder = $this->getMockBuilder(ComposeOrder::class)

@@ -64,7 +64,7 @@ class PaymentTermsCheckboxes extends Value
         // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
         $custom = StoredTerm::days($this->getFieldsetDataValue('payment_terms_duration_days'));
 
-        // An unresolvable offered set matches nothing, so an outage cannot move a value (ABN-522).
+        // An unresolvable offered set matches nothing, so an outage cannot move a value.
         $offered = $this->offeredTerms->offered($scopeId, $scope);
         if ($custom !== null
             && $offered !== []
@@ -87,7 +87,7 @@ class PaymentTermsCheckboxes extends Value
     }
 
     /**
-     * Scope being edited, as the config repository reads it (ABN-530).
+     * Scope being edited, as the config repository reads it.
      *
      * @return array{int|null, string}
      */

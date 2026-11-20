@@ -275,7 +275,7 @@ define([
                 var disabled = differential && term === defaultDays;
 
                 $row.attr('data-differential-disabled', disabled ? '1' : '0');
-                // ABN-554: a disabled cell never posts, so zeroing it hid the live config and changed nothing else.
+                // A disabled cell never posts, so zeroing it hid the live config and changed nothing else.
                 $row.find('.surcharge-grid__input').each(function () {
                     var $input = $(this);
                     if (!$input.data('inherit-disabled')) {

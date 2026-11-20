@@ -32,7 +32,7 @@ use Two\Gateway\Service\Merchant\FeeRatesProvider;
  * merchant the figures are not current. With nothing cached at all the
  * response carries no fees and names why — 'upstream' for a service that could
  * not answer, 'not_configured' for a scope with no API key saved — and the
- * screen says that instead of leaving the fee area blank (ABN-512).
+ * screen says that instead of leaving the fee area blank.
  */
 class Fees extends Action
 {
@@ -147,7 +147,7 @@ class Fees extends Action
 
     /**
      * Scope + scopeId POSTed by the grid JS, so the fee call uses the merchant
-     * credentials of the scope being configured (ABN-530).
+     * credentials of the scope being configured.
      *
      * @return array{int|null, string}
      */

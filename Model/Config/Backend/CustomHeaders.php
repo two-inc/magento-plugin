@@ -44,6 +44,8 @@ class CustomHeaders extends Value
         'accept',
         'accept-language',
         'x-api-key',
+        'idempotency-key',
+        'x-idempotency-key',
         'two-delegated-authority-token',
         'x-forwarded-for',
         'x-real-ip',

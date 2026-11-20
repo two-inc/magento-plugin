@@ -647,7 +647,7 @@ describe('what the panel paints for each outcome', () => {
         expect(row.textContent).toBe('Example Trading Ltd');
     });
 
-    // ABN-554. A row's label is registry-sourced markup, so it is rebuilt as
+    // A row's label is registry-sourced markup, so it is rebuilt as
     // nodes: the API's own `<mark><b>` pair becomes elements, everything else
     // stays text.
     test.each([
@@ -755,7 +755,12 @@ describe('dropping below the minimum input length', () => {
         companySearch.SEARCH_DEBOUNCE_MS = 0;
 
         const CompanySearchPanel = loadCompanySearchPanel($, companySearch, GLOBALS);
-        panel = new CompanySearchPanel({ fieldSelector: '#company_name', config: BASE_CONFIG });
+        // A country, since none sends nothing at all (TWO-27235).
+        panel = new CompanySearchPanel({
+            fieldSelector: '#company_name',
+            config: BASE_CONFIG,
+            getCountryCode: function () { return 'gb'; }
+        });
         panel.bind();
         panel.open();
     });
@@ -813,7 +818,11 @@ function mount() {
         this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
-        this.forgetAdoptions = function () {};
+        this.closeSignupPopup = function () { return false; };
+        this.matchingSoleTrader = function () { return this.autofilledSoleTrader ? this.autofilledSoleTrader() : null; };
+        this.isPopupOpen = function () { return false; };
+        this.showSignupPanel = function () {};
+        this.launcherToRefocus = function () { return null; };
         this.forgetAutofilledBuyer = function () {};
     };
 

@@ -21,7 +21,7 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
- * ABN-546: the fee-quote verdict reaches isAvailable(), and a withhold is
+ * The fee-quote verdict reaches isAvailable(), and a withhold is
  * silent apart from one debug line. FeeQuoteGateTest owns the verdict itself.
  */
 class TwoFeeQuoteGateTest extends TestCase
@@ -95,6 +95,8 @@ class TwoFeeQuoteGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->logRepository,
+            // A readable tax code map: not this test's subject (TWO-26309).
+            'configRepository' => $this->createMock(\Two\Gateway\Api\Config\RepositoryInterface::class),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'minimumOrderGate' => $minimumOrderGate,
             'merchantMinimumResolver' => $this->createMock(MerchantMinimumResolver::class),

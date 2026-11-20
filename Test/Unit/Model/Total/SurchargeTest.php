@@ -213,7 +213,7 @@ class SurchargeTest extends TestCase
 
     /**
      * Given a merchant offering no term, When the collector runs with nothing
-     * selected in session, Then no fee is priced (ABN-544).
+     * selected in session, Then no fee is priced.
      */
     public function testNoOfferedTermPricesNoSurcharge(): void
     {

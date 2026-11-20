@@ -8,8 +8,11 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
+use Two\Gateway\Service\Address\IsoRegionResolver;
+use Two\Gateway\Service\Address\PostcodeFormat;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -45,7 +48,9 @@ class CompanyLookup implements CompanyLookupInterface
         private readonly SettingsProvider $settingsProvider,
         private readonly RateLimiter $rateLimiter,
         private readonly LogRepository $logRepository,
-        private readonly CheckoutSession $checkoutSession
+        private readonly CheckoutSession $checkoutSession,
+        private readonly IsoRegionResolver $regionResolver,
+        private readonly ConfigRepository $configRepository
     ) {
     }
 
@@ -59,6 +64,10 @@ class CompanyLookup implements CompanyLookupInterface
             self::SEARCH_LIMIT_PER_MINUTE,
             self::WINDOW_SECONDS
         );
+        $refused = $this->refusedWhileDisabled();
+        if ($refused !== null) {
+            return $refused;
+        }
 
         $country = strtoupper(trim($country));
         $query = trim($query);
@@ -92,6 +101,10 @@ class CompanyLookup implements CompanyLookupInterface
             self::DETAIL_LIMIT_PER_MINUTE,
             self::WINDOW_SECONDS
         );
+        $refused = $this->refusedWhileDisabled();
+        if ($refused !== null) {
+            return $refused;
+        }
 
         if (mb_strlen($lookupId) > self::MAX_LOOKUP_ID_LENGTH) {
             return $this->refusal(400, (string)__('Invalid company lookup request.'));
@@ -103,7 +116,36 @@ class CompanyLookup implements CompanyLookupInterface
             $endpoint .= '?' . http_build_query($merchant);
         }
 
-        return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId()));
+        return $this->envelope($this->withStoreRegions(
+            $this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId())
+        ));
+    }
+
+    /**
+     * TWO-26263, TWO-26266: each address whose region (an ISO 3166-2 code, a bare
+     * store code or a region name) resolves to one of the store's own regions
+     * gains `region_id` and `region_code`, so a checkout can select it.
+     * `region` itself is relayed as answered.
+     *
+     * TWO-27158: each `postal_code` is fitted to its country's written format
+     * (PostcodeFormat), against the address's own country, else the company's.
+     *
+     * @param array{status: int, body: mixed} $result from Adapter::executeWithStatus()
+     * @return array{status: int, body: mixed}
+     */
+    private function withStoreRegions(array $result): array
+    {
+        $status = (int)($result['status'] ?? 0);
+        $addresses = $result['body']['addresses'] ?? null;
+        if ($status >= 200 && $status < 300 && is_array($addresses)) {
+            $country = is_string($result['body']['country'] ?? null) ? $result['body']['country'] : '';
+            $result['body']['addresses'] = array_map(
+                fn ($address) => $this->regionResolver->enrich(PostcodeFormat::fitAddress($address, $country)),
+                $addresses
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -116,6 +158,10 @@ class CompanyLookup implements CompanyLookupInterface
             self::SUPPORTED_COUNTRIES_LIMIT_PER_MINUTE,
             self::WINDOW_SECONDS
         );
+        $refused = $this->refusedWhileDisabled();
+        if ($refused !== null) {
+            return $refused;
+        }
 
         return $this->envelope($this->adapter->executeWithStatus(
             self::SUPPORTED_COUNTRIES_ENDPOINT,
@@ -126,11 +172,24 @@ class CompanyLookup implements CompanyLookupInterface
     }
 
     /**
+     * TWO-27227: a disabled method stands company search down, so the relay
+     * refuses before Two is called, judged for the same store whose key it
+     * would call with. The checkout config is withheld in the same state, so
+     * no checkout control is mounted to send these.
+     */
+    private function refusedWhileDisabled(): ?string
+    {
+        return $this->configRepository->isActive($this->quoteStoreId())
+            ? null
+            : $this->refusal(403, (string)__('Company search is not available.'));
+    }
+
+    /**
      * Server-resolved only — a browser-supplied merchant is what this proxy
      * exists to stop. Omitted rather than failing a lookup the buyer is
      * mid-typing.
      *
-     * ABN-533: the verdict carries a merchant only on a success, so a
+     * The verdict carries a merchant only on a success, so a
      * fall-through takes the short name off the never-expiring record instead
      * of dropping to unscoped lookups for the duration of an outage.
      *

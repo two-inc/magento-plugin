@@ -54,6 +54,8 @@ function makeEnv(mintOutcomes) {
 
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
         billingAddress: quoteAddress({ countryId: 'GB' }),
+        // The buyer the held answer names, so the chip adopts it without a popup (TWO-26775).
+        guestEmail: 'trader@example.com',
         getQuoteId: function () { return 'cart-1'; },
         isVirtual: function () { return false; }
     });

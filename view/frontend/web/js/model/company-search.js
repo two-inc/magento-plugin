@@ -112,6 +112,25 @@ define([
     }
 
     /**
+     * Supersede the panel's company lookup still in flight, so its reply
+     * writes nothing: a newer pick starts its own, and a sole trader's
+     * verified address or phone must not be overwritten by a company picked
+     * before it (TWO-27168).
+     *
+     * @param {object} root jQuery-wrapped form the lookup was scoped to
+     * @returns {{generation: number, pending: ?object}} the panel's state
+     */
+    function supersedeAddressLookup(root) {
+        const state = addressLookupState(root);
+        state.generation += 1;
+        if (state.pending) {
+            state.pending.abort();
+            state.pending = null;
+        }
+        return state;
+    }
+
+    /**
      * What applyAddress() last wrote for ONE panel, field name → value.
      *
      * The DOM markers are the primary record and this is their survivor: a
@@ -165,8 +184,20 @@ define([
      * @returns {string} translated zero-results message
      */
     function noResultsMessage() {
+        if (lastSearchHadNoCountry) {
+            return $t('Select your country above to search for your company.');
+        }
         return $t('No matches found');
     }
+
+    /**
+     * Whether the search that resolved last had no country to run against
+     * (TWO-27235). Set at the moment each search resolves, and the panel reads
+     * `noResultsMessage()` in the reaction to that same resolution, so the
+     * empty answer is worded for the buyer's actual situation: a missing
+     * country, not a registry with no match.
+     */
+    let lastSearchHadNoCountry = false;
 
     /**
      * Attribute applyAddress() records its own write in, so a later revert can
@@ -382,8 +413,40 @@ define([
         { name: 'region_id', selector: 'select[name="region_id"]' }
     ];
 
-    /** @see applyTelephone — the one field written outside AUTOFILLED_FIELDS. */
+    /**
+     * @see applyTelephone and applyRegistryTelephone, the two writers of the
+     * one field kept outside AUTOFILLED_FIELDS.
+     */
     const TELEPHONE_FIELD_SELECTOR = 'input[name="telephone"]';
+
+    /**
+     * The registry phone applyRegistryTelephone() last wrote for ONE panel,
+     * keyed on the panel's identity as addressWriteRecords is, and kept apart
+     * from it: applyAddress() replaces that record wholesale on every write,
+     * including a sole trader's, and the phone has to outlive the address
+     * write that precedes it (TWO-27158). Apart from the DOM marker too, which
+     * a sole trader's verified phone shares, so a country switch can retract
+     * the registry's number and leave the buyer's own.
+     */
+    const registryPhoneWrites = new WeakMap();
+
+    /**
+     * Clear the registry phone this panel wrote, where the field still holds
+     * it, and forget the recording.
+     *
+     * @param {object} $root the panel's own form
+     * @param {object} identity the panel's own identity
+     * @returns {boolean} whether the field was cleared
+     */
+    function retractRegistryTelephone($root, identity) {
+        const written = registryPhoneWrites.get(identity);
+        registryPhoneWrites.delete(identity);
+        if (typeof written === 'undefined') return false;
+        const $field = scopedFind($root, TELEPHONE_FIELD_SELECTOR);
+        if (!$field.length || trimmedString($field.val()) !== written) return false;
+        $field.val('').removeAttr(AUTOFILL_MARKER_ATTR).trigger('change');
+        return true;
+    }
 
     /**
      * A value off an address payload, trimmed, with null/undefined coalesced to
@@ -586,6 +649,21 @@ define([
     }
 
     /**
+     * Does the region `<select>` carry an option with this exact value?
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string} value a region id
+     * @returns {boolean}
+     */
+    function hasRegionOption(select, value) {
+        const options = (select && select.options) || [];
+        for (let i = 0; i < options.length; i++) {
+            if (options[i].value === value) return true;
+        }
+        return false;
+    }
+
+    /**
      * Write an address payload into one form via the shared field-routing
      * engine (resolveAddressValues()/resolveRegion(), both below).
      *
@@ -604,9 +682,12 @@ define([
      *        to; document-wide when null
      * @param {object} identity the calling panel's own identity, keying the
      *        recording
+     * @param {object} [options] `{ buyerRules: true }` for a sole trader's
+     *        autofill record; see keepBuyerWritableValues()
      */
-    function writeAddressInto(self, address, $root, identity) {
+    function writeAddressInto(self, address, $root, identity, options) {
         const values = self.resolveAddressValues(address, $root);
+        if (options && options.buyerRules) keepBuyerWritableValues(values, $root);
         const names = Object.keys(values);
         // What the marker attribute records for each written field — the
         // value ITSELF for an `<input>`, but the selected option's DISPLAYED
@@ -642,6 +723,33 @@ define([
         );
         names.forEach(function (name) {
             scopedFind($root, fieldSelector(name)).trigger('change');
+        });
+    }
+
+    /**
+     * PrestaShop's rules for a sole trader's autofill record (TWO-26775), applied
+     * to the resolved values in place:
+     *  - a blank writes nothing; the field is then left to the retraction, which
+     *    clears it only where it still holds what this module wrote;
+     *  - the region is written only into a region field that is empty or still
+     *    holds this module's own write.
+     *
+     * @param {object} values field name -> value, from resolveAddressValues()
+     * @param {object} $root the form to scope to
+     */
+    function keepBuyerWritableValues(values, $root) {
+        Object.keys(values).forEach(function (name) {
+            if (values[name] === '') {
+                delete values[name];
+                return;
+            }
+            if (name !== 'region' && name !== 'region_id') return;
+            const node = firstElement(scopedFind($root, fieldSelector(name)));
+            if (!node) return;
+            // As retractStaleFields() reads it: a select by its option's text.
+            const current = name === 'region_id' ? selectedOptionText(node) : String(node.value || '');
+            const filled = name === 'region_id' ? !!node.value : !!current.trim();
+            if (filled && node.getAttribute(AUTOFILL_MARKER_ATTR) !== current) delete values[name];
         });
     }
 
@@ -837,6 +945,19 @@ define([
     }
 
     /**
+     * Is `region` an ISO 3166-2 subdivision code of `country` ("ES-M" for
+     * "es")? A code for some other country is not, and stays free text.
+     *
+     * @param {string} region trimmed region text
+     * @param {string} country the form's own country code, any case
+     * @returns {boolean}
+     */
+    function isOwnSubdivisionCode(region, country) {
+        const match = /^([A-Z]{2})-[A-Z0-9]{1,3}$/i.exec(region);
+        return !!match && !!country && match[1].toLowerCase() === country.toLowerCase();
+    }
+
+    /**
      * Does this response mean "the search backend could not answer
      * properly"? The API answers HTTP 200 with near-empty results when its
      * upstream provider timed out, and flags that with `degraded: true`.
@@ -897,6 +1018,7 @@ define([
             handle.$field.trigger('change');
             cleared.push(field.name);
         });
+        if (retractRegistryTelephone($root, identity)) cleared.push('telephone');
         return cleared;
     }
 
@@ -1038,12 +1160,20 @@ define([
                 return Promise.resolve({ items: [], unavailable: true, aborted: false });
             }
             const country = options.getCountryCode()?.toUpperCase();
+            // No country, no registry to ask (TWO-27235): nothing leaves the
+            // browser, and the empty answer reads as the select-a-country
+            // sentence through noResultsMessage().
+            if (!country) {
+                lastSearchHadNoCountry = true;
+                return Promise.resolve({ items: [], unavailable: false, aborted: false });
+            }
             const cacheKey = `search|${country}|${options.term}`;
 
             // Before the park below: a cached answer costs no request, so
             // parking it would degrade the panel for nothing.
             const cached = cacheGet(cacheKey);
             if (cached) {
+                lastSearchHadNoCountry = false;
                 return Promise.resolve({
                     items: mapSearchResults(cached),
                     unavailable: false,
@@ -1081,6 +1211,7 @@ define([
                         return;
                     }
                     cacheSet(cacheKey, envelope.body);
+                    lastSearchHadNoCountry = false;
                     // A degraded 200 is a failure dressed as a success:
                     // near-empty results because the provider timed out.
                     resolve({
@@ -1135,9 +1266,23 @@ define([
          * @returns {object|null} the jqXHR, or null when gated off / no id
          */
         lookupCompanyAddress: function (config, selectedCompany, root, identity) {
+            const hasForm = !!(root && root.length);
+            // Every pick retires the previous one's lookup and takes its notice
+            // down before deciding whether to look anything up, so a pick that
+            // makes no lookup (no lookup id, address search off) neither leaves
+            // the last company's notice standing nor lets that company's late
+            // reply write or announce under the new one (TWO-27214).
+            if (hasForm) supersedeAddressLookup(root);
+            if (identity) withdrawAddressUnavailable(identity);
+
             if (!config.isAddressSearchEnabled) return null;
-            if (!selectedCompany || !selectedCompany.lookupId) return null;
-            if (!root || !root.length || !identity) {
+            if (!selectedCompany || !selectedCompany.lookupId) {
+                // A re-pick that fills nothing still replaces the company, so
+                // the previous pick's registry phone goes with it (TWO-27214).
+                if (hasForm && identity) retractRegistryTelephone(root, identity);
+                return null;
+            }
+            if (!hasForm || !identity) {
                 // A picked company that fills nothing in, with nothing said,
                 // reads as the picker having done nothing.
                 if (identity) announceAddressUndeliverable(identity);
@@ -1148,18 +1293,18 @@ define([
             const notify = identity;
             const scope = identity;
             const lookupState = addressLookupState(root);
-            const generation = ++lookupState.generation;
-            if (lookupState.pending) {
-                lookupState.pending.abort();
-                lookupState.pending = null;
-            }
+            const generation = lookupState.generation;
 
-            // Withdrawn as this pick STARTS, so no notice outlives the
-            // company it was about.
-            withdrawAddressUnavailable(notify);
+            // A pick that fills nothing still replaces the company, so the
+            // previous pick's registry phone goes (TWO-27158). The address is
+            // left as it was on these paths.
+            const unavailable = function () {
+                retractRegistryTelephone(root, identity);
+                announceAddressUnavailable(notify);
+            };
 
             if (isRegistrySuspended(scope)) {
-                announceAddressUnavailable(notify);
+                unavailable();
                 return null;
             }
 
@@ -1177,9 +1322,10 @@ define([
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
                     self.applyAddress(response.addresses[0], root, identity);
+                    self.applyRegistryTelephone(response.addresses[0].phone_number, root, identity);
                     return;
                 }
-                announceAddressUnavailable(notify);
+                unavailable();
             });
             addressResponse.fail(function (jqXHR, textStatus) {
                 // Recorded even for a superseded pick: the ceiling is
@@ -1188,7 +1334,7 @@ define([
                     suspendRegistry(scope);
                 }
                 if (!isCurrent()) return;
-                if (textStatus !== 'abort') announceAddressUnavailable(notify);
+                if (textStatus !== 'abort') unavailable();
             });
             addressResponse.always(function () {
                 if (lookupState.pending === addressResponse) lookupState.pending = null;
@@ -1226,37 +1372,92 @@ define([
          * @param {object} root jQuery set for the calling panel's own form
          * @param {object} identity the calling panel's own identity, keying the
          *        recording a later revert reads
+         * @param {object} [options] `{ buyerRules: true }` for a sole trader's
+         *        autofill record (see keepBuyerWritableValues())
          * @returns {number} 0 — no address other than `root` is ever written
          */
-        applyAddress: function (address, root, identity) {
+        applyAddress: function (address, root, identity, options) {
             console.debug({ logger: 'companySearch.applyAddress', address });
             if (!root || !root.length || !identity) {
                 console.debug({ logger: 'companySearch.applyAddress.refused' });
                 return 0;
             }
-            writeAddressInto(this, address, root, identity);
+            // A sole trader's verified address supersedes a company lookup
+            // still in flight, so its reply cannot overwrite it (TWO-27168).
+            if (options && options.buyerRules) supersedeAddressLookup(root);
+            writeAddressInto(this, address, root, identity, options);
             return 0;
         },
 
         /**
          * Write a verified buyer's own phone number into the telephone field.
          *
-         * The deliberate exception to applyAddress() never touching telephone,
-         * and left unrecorded because the buyer's own number is not something a
-         * country switch invalidates the way a registry address is.
+         * One of two exceptions to applyAddress() never touching telephone
+         * (applyRegistryTelephone() below is the other), and kept out of the
+         * country-switch revert because the buyer's own
+         * number is not something a country switch invalidates the way a
+         * registry address is. The write is marked all the same, because a
+         * blank clears the field only where it still holds this write
+         * (TWO-26775, as PrestaShop).
+         *
+         * The phone in the field is the buyer's own from here on, so the
+         * panel's record of a registry phone is dropped (TWO-27158): a verified
+         * number equal to the registry's must survive a country switch too.
          *
          * @param {string} phone
          * @param {object} root the calling panel's own form. Required: an
          *        unscoped write lands in whichever form the page happens to
          *        offer first, which is the other panel's as often as not.
+         * @param {object} [identity] the calling panel's own identity, whose
+         *        registry phone record is dropped
          * @returns {boolean} whether a field was written
          */
-        applyTelephone: function (phone, root) {
-            if (typeof phone !== 'string' || !phone.trim()) return false;
+        applyTelephone: function (phone, root, identity) {
+            if (identity) registryPhoneWrites.delete(identity);
             if (!root || !root.length) return false;
+            // A sole trader's verified phone supersedes a company lookup still
+            // in flight, so its reply cannot overwrite it (TWO-27168).
+            supersedeAddressLookup(root);
             const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
             if (!$field.length) return false;
-            $field.val(phone.trim()).trigger('change');
+            const value = typeof phone === 'string' ? phone.trim() : '';
+            if (!value) {
+                const current = $field.val() || '';
+                if (!current || $field.attr(AUTOFILL_MARKER_ATTR) !== current) return false;
+                $field.val('').removeAttr(AUTOFILL_MARKER_ATTR).trigger('change');
+                return true;
+            }
+            $field.val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
+            return true;
+        },
+
+        /**
+         * Write the company's registered phone from a company pick into the
+         * telephone field of the panel's own form, beside the address the same
+         * pick wrote there (TWO-27158, as PrestaShop and OpenCart).
+         *
+         * A registry phone replaces whatever the field holds, as the address
+         * fields do. A pick whose register has no phone writes nothing, and
+         * clears only a registry phone this panel wrote that the buyer has not
+         * since changed, so company B never leaves company A's number standing.
+         * The write is recorded for the country-switch revert, which retracts
+         * it with the address.
+         *
+         * @param {*} phone the address's `phone_number`, absent when the
+         *        register has none
+         * @param {object} root the calling panel's own form
+         * @param {object} identity the calling panel's own identity, keying
+         *        the recording
+         * @returns {boolean} whether the field changed
+         */
+        applyRegistryTelephone: function (phone, root, identity) {
+            if (!root || !root.length || !identity) return false;
+            const value = typeof phone === 'string' ? phone.trim() : '';
+            if (!value) return retractRegistryTelephone(root, identity);
+            const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
+            if (!$field.length) return false;
+            registryPhoneWrites.set(identity, value);
+            $field.val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
             return true;
         },
 
@@ -1286,13 +1487,15 @@ define([
          * allows (TWO-25461):
          *
          *  1. the region `<select>`, when the country has predefined regions AND
-         *     an option matches the region text (best-effort — see
+         *     either the payload's `region_id` is one of its options or an
+         *     option matches the region text (best-effort, see
          *     regionOptionValue());
          *  2. the free-text region input, for a country with no predefined
          *     regions;
          *  3. failing both, appended to the city with a comma ("Ashford, Kent")
          *     — a lossy home, but a visible and correctable one, where dropping
-         *     the region silently is neither.
+         *     the region silently is neither. An ISO 3166-2 code for the
+         *     form's own country is the exception: it is not appended.
          *
          * Which control is in play is resolveRegionField()'s call (shared with
          * the country-switch revert above), not CSS visibility — core keeps both
@@ -1314,6 +1517,15 @@ define([
 
             const handle = resolveRegionField($root);
             if (handle.select) {
+                // The store's own region id, when the module's relay resolved
+                // the registry's region to one (TWO-26263, TWO-26266). Taken
+                // only where this select offers it: the form may be showing
+                // another country's regions. A region taken here is never
+                // appended to the city.
+                const storeRegionId = hasValue(address.region_id) ? String(address.region_id) : '';
+                if (storeRegionId && hasRegionOption(handle.select, storeRegionId)) {
+                    return { region_id: storeRegionId };
+                }
                 const optionValue = regionOptionValue(handle.select, region);
                 // An unmatched region falls through to the city rather than
                 // guessing at a region id — a wrong id is a wrong address, and
@@ -1331,6 +1543,12 @@ define([
                     : true;
                 if (handle.$field.length && isVisible) return { region: region };
             }
+
+            // An ISO 3166-2 code for the form's own country ("ES-M" on a
+            // Spanish address) is no use to anyone reading the city, so it is
+            // not appended (TWO-26258). The required region select is left
+            // for the buyer, and Magento's own validation prompts them.
+            if (isOwnSubdivisionCode(region, currentAddressFormCountry($root))) return {};
 
             const $city = scopedFind($root, 'input[name="city"]');
             if (!$city.length) return {};
@@ -1351,7 +1569,8 @@ define([
 
         /**
          * Undo an applyAddress() write in ONE form, field by field, and forget
-         * the recording.
+         * the recording. A registry phone applyRegistryTelephone() wrote goes
+         * with it (TWO-27158); a sole trader's own phone stays.
          *
          * Called when the buyer switches country: an address autofilled from
          * the previous country's registry is not a hint about the new one, it

@@ -248,7 +248,7 @@ class SurchargeTest extends TestCase
      * Core hands the remaining memo the order's invoiced tax less the tax
      * already refunded and puts the merchandise share on the memo's item rows,
      * so the surcharge VAT this collector may still adjust is the VAT on the
-     * surcharge that is left — not on the whole order surcharge (ABN-560).
+     * surcharge that is left, not on the whole order surcharge.
      *
      * @dataProvider priorRefundCases
      */

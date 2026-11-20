@@ -168,6 +168,8 @@ namespace Magento\Framework\Webapi {
     if (!class_exists(Exception::class, false)) {
         class Exception extends \Exception
         {
+            public const HTTP_FORBIDDEN = 403;
+
             /** @var int */
             private $httpCode;
 

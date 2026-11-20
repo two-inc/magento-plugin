@@ -19,8 +19,8 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 /**
  * Differential mode disables and zeroes the row it prices against, so the grid
  * has to name the term the checkout resolves — not the stored one, which is
- * empty wherever the admin left the choice to the resolver (ABN-548). The
- * record is read at the scope the form is editing (ABN-530).
+ * empty wherever the admin left the choice to the resolver. The
+ * record is read at the scope the form is editing.
  */
 class SurchargeGridDefaultTermTest extends TestCase
 {

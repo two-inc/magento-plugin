@@ -139,6 +139,7 @@ class FulfilRefusedTest extends TestCase
     private function adapter(): Adapter
     {
         $adapter = $this->createMock(Adapter::class);
+        $adapter->method('withIdempotencyKey')->willReturnSelf();
         $adapter->method('execute')->willReturn(['http_status' => 405]);
 
         return $adapter;

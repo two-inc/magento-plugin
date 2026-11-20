@@ -12,8 +12,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Magento's guest sales handles inherit nothing from their logged-in siblings —
  * each declares its own totals block — so a surface with no layout file of its
- * own renders the grand total with the surcharge folded in but no row naming it
- * (ABN-559).
+ * own renders the grand total with the surcharge folded in but no row naming it.
  */
 class CustomerTotalsLayoutTest extends TestCase
 {

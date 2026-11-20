@@ -1,5 +1,5 @@
-import { test, expect, Locator, Page } from '@playwright/test';
-import { adminLogin, gotoConfigSection } from './_helpers';
+import { test, expect, Locator, Page } from './fixtures';
+import { adminLogin, adminLogout, gotoConfigSection } from './_helpers';
 
 // "Two" admin config (Stores -> Configuration -> Two) -> docs screenshots.
 const OUT = process.env.OUT_DIR || 'screenshots';
@@ -22,6 +22,7 @@ async function openSection(page: Page): Promise<Locator> {
 
 test.describe('Two admin config', () => {
     test.skip(!process.env.ADMIN_PASS, 'ADMIN_PASS not set');
+    test.afterEach(async ({ page }) => adminLogout(page));
 
     test('config_tabs', async ({ page }) => {
         await adminLogin(page);
