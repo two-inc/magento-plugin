@@ -112,7 +112,7 @@ jobs:
         run: |
           docker run \
             --volume "$(pwd)/:/app/workdir" \
-            michielgerritsen/magento-coding-standard:latest \
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-coding-standard:latest \
             --severity=6
 
   phpunit:
@@ -163,14 +163,14 @@ jobs:
       - name: Start Magento docker container
         run: |
           docker run --detach --name magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Check the image runs the latest PHP patch
         # TWO-27174: warns when the image is behind php.net's newest patch for
         # its PHP minor, however long; never fails the leg.
         run: |
           ./dev/check-php-patch.sh magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
         # Ship only tracked files — avoids leaking .git/, dotfiles,
@@ -216,14 +216,14 @@ jobs:
       - name: Start Magento docker container
         run: |
           docker run --detach --name magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Check the image runs the latest PHP patch
         # TWO-27174: warns when the image is behind php.net's newest patch for
         # its PHP minor, however long; never fails the leg.
         run: |
           ./dev/check-php-patch.sh magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
         # Ship only tracked files — avoids leaking .git/, dotfiles,
@@ -415,13 +415,13 @@ jobs:
         if: steps.prior.outputs.skip != 'true'
         run: |
           docker run --detach --name magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
       - name: Check the image runs the latest PHP patch
         if: steps.prior.outputs.skip != 'true'
         # TWO-27174: warns, never fails; see the di-compile job.
         run: |
           ./dev/check-php-patch.sh magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
       - name: Install prior release + di:compile
         if: steps.prior.outputs.skip != 'true'
         env:
