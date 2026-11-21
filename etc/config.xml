@@ -15,7 +15,7 @@
         <payment>
             <two_payment>
                 <active>1</active>
-                <version>4.1.1</version>
+                <version>4.1.2</version>
                 <!-- TWO-27108: no English title stored; empty shows the translated default. -->
                 <title/>
                 <sort_order>-10</sort_order>
