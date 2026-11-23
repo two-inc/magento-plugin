@@ -29,9 +29,9 @@ the order intent tile (through the checkout config) and order create read it.
 message that quotes the API's reason after the name. A same-company refusal
 reads "Buyer and merchant may not be the same company." A path drops any segment starting with a
 capital letter, which is where a validator inserts model names. A refusal that
-names nothing the buyer can fix shows a standard message: the general error, or
-at order create the "not available for this order" notice for a non-validation
-refusal. `PROXY_REFUSED`, a refusal this module made before calling the API,
+names nothing the buyer can fix shows a standard message: the general error for
+a validation refusal, and the "not available for this order" sentence for any
+other refusal, at order create and in the order intent tile alike (ABN-643). `PROXY_REFUSED`, a refusal this module made before calling the API,
 keeps its own translated sentence. The buyer's return to the shop follows the
 same rule: `OrderService` throws `Exception\TwoRefusalException`, whose message
 is Two's full account for the order comment and admin notice, and whose buyer

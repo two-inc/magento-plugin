@@ -20,7 +20,10 @@ sentence is the buyer's only account of a control that has gone dead, so
 order-intent error notice already followed. A shipped overlay
 withholds it, which is how a declined buyer came to face a disabled button and
 an empty tile. The brand switch chooses the wording; it cannot choose silence,
-and re-widening it to suppression reopens the defect.
+and re-widening it to suppression reopens the defect. The platform copy is the
+sentence order create gives for the same decline, "Invoice purchase with %1 is
+not available for this order.", shipped as `orderIntentNotAvailableMessage` so
+an overlay translates it once for both surfaces (ABN-643).
 
 The sentence lands inside a live region rendered ahead of it — a `role="alert"`
 element created together with its own text is announced inconsistently — and

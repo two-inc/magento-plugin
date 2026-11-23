@@ -36,7 +36,7 @@ const APPROVED_COPY = {
     companyNumberToken: '{{companyNumber}}'
 };
 
-const PLATFORM_FALLBACK = 'This payment method is not available for the selected company.';
+const PLATFORM_FALLBACK = 'Invoice purchase with Two is not available for this order.';
 const BRAND_SENTENCE = 'Two is not available for this order by Acme Widgets AS (123456789)';
 
 /** An observable with real knockout's "an equal write notifies nobody". */
@@ -70,6 +70,7 @@ function makeContext(declinedCopy) {
         companyName: koObservable(''),
         companyId: koObservable(''),
         generalErrorMessage: 'Something went wrong.',
+        orderIntentNotAvailableMessage: PLATFORM_FALLBACK,
         messageContainer: {
             clear: function () {},
             addSuccessMessage: function () {},
@@ -172,6 +173,23 @@ describe('a declined order intent always explains itself', () => {
 
         expect(ctx.orderIntentErrorNotice()).toBe('Something went wrong.');
         expect(ctx.orderIntentDeclinedNotice()).toBe('');
+    });
+
+    // ABN-643: a refusal reads as the decline it is; anything else stays general.
+    test.each([
+        { failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal states the not-available sentence' },
+        { failure: { status: 403, responseJSON: {} }, notice: PLATFORM_FALLBACK, case: 'a bodyless API refusal states the not-available sentence' },
+        { failure: { status: 400, responseJSON: { error_json: [{ loc: ['body'], msg: 'bad' }] } }, notice: 'Something went wrong.', case: 'a validation refusal naming nothing fixable stays general' },
+        { failure: { status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'Module refused.' } }, notice: 'Module refused.', case: 'a refusal made by this module keeps its own sentence' },
+        { failure: { status: 503, responseJSON: {} }, notice: 'Something went wrong.', case: 'a server error stays general' },
+        { failure: { status: 0 }, notice: 'Something went wrong.', case: 'a transport failure stays general' }
+    ])('the error region: $case', ({ failure, notice, case: description }) => {
+        const ctx = makeContext(null);
+
+        ctx.processOrderIntentErrorResponse.call(ctx, failure);
+
+        expect([description, ctx.orderIntentErrorNotice()]).toEqual([description, notice]);
+        expect([description, ctx.orderIntentDeclinedNotice()]).toEqual([description, '']);
     });
 
     test('the region id is per payment code, so sibling brand tiles cannot collide', () => {

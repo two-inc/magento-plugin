@@ -343,7 +343,6 @@
 "%1 is not available for this order by %2 (%3)","%1 no está disponible para este pedido de %2 (%3)"
 "%1 results are available, use up and down arrow keys to navigate.","%1 resultados disponibles, usa las teclas de flecha arriba y abajo para navegar."
 "1 result is available, use up and down arrow keys to navigate.","1 resultado disponible, usa las teclas de flecha arriba y abajo para navegar."
-"This payment method is not available for the selected company.","Este método de pago no está disponible para la empresa seleccionada."
 "This order is likely to be accepted by %1","Es probable que %1 acepte este pedido"
 "This order by %2 (%3) is likely to be accepted by %1","Es probable que %1 acepte este pedido de %2 (%3)"
 "Show ""What is Two"" link","Mostrar el enlace ""Qué es Two"""

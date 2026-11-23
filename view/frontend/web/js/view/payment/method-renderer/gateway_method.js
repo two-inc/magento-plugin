@@ -263,6 +263,7 @@ define([
             this.initOrderIntentApprovedNotice(config);
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
+            this.orderIntentNotAvailableMessage = config.orderIntentNotAvailableMessage;
             this.orderIntentFieldErrors = config.orderIntentFieldErrors || null;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.termUnavailableMessage = config.termUnavailableMessage;
@@ -1475,11 +1476,12 @@ define([
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
          * (TWO-25326). Never '' — it explains the disabled Place Order button,
-         * so a brand withholding its own wording gets the platform's.
+         * so a brand withholding its own wording gets the platform's: the
+         * sentence order create gives for the same decline (ABN-643).
          */
         resolveOrderIntentDeclinedNotice: function () {
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||
-                $t('This payment method is not available for the selected company.');
+                this.orderIntentNotAvailableMessage;
         },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {
@@ -1532,7 +1534,9 @@ define([
             // itself before calling the API (PROXY_REFUSED) keeps its own
             // translated sentence.
             const body = (response && response.responseJSON) || {};
-            let message = this.orderIntentFieldErrorMessage(body.error_json) || this.generalErrorMessage;
+            let message = this.orderIntentFieldErrorMessage(body.error_json) ||
+                (this.isOrderIntentRefusal(response, body) ? this.orderIntentNotAvailableMessage : '') ||
+                this.generalErrorMessage;
             if (body.error_code === 'PROXY_REFUSED' && body.error_message) {
                 message = body.error_message;
             }
@@ -1541,6 +1545,24 @@ define([
                 // region (TWO-25326, 2026-08-05).
                 this.showOrderIntentErrorNotice(message);
             }
+        },
+        /**
+         * Whether the API refused the intent outright: a 4xx other than a
+         * rate limit, carrying no validation errors. It reads to the buyer as
+         * the decline it is, in the sentence order create gives for the same
+         * refusal (ABN-643). A validation refusal naming nothing the buyer can
+         * fix stays general, as at order create, and a refusal this module
+         * made itself keeps its own sentence.
+         *
+         * @param {object} response the jqXHR-shaped failure
+         * @param {object} body its responseJSON, or {}
+         * @returns {boolean}
+         */
+        isOrderIntentRefusal: function (response, body) {
+            const status = (response && response.status) || 0;
+            const hasValidationErrors = Array.isArray(body.error_json) && body.error_json.length > 0;
+            return status >= 400 && status < 500 && status !== 429 &&
+                body.error_code !== 'PROXY_REFUSED' && !hasValidationErrors;
         },
         /**
          * The buyer sentence for each field a refusal's error_json names that

@@ -474,6 +474,7 @@ describe('gateway_method intent-approved notice', () => {
 function makePlaceOrderContext(noticeCopy, declinedCopy) {
     const ctx = makeContext(noticeCopy, declinedCopy);
     ctx.generalErrorMessage = 'Something went wrong.';
+    ctx.orderIntentNotAvailableMessage = 'Invoice purchase with Two is not available for this order.';
     ctx.isPlaceOrderActionAllowed = koObservable(true);
     ctx.isPaymentTermsEnabled = false;
     ctx.isPaymentTermsAccepted = koObservable(true);
@@ -541,7 +542,7 @@ describe('a declined order intent refuses placement (TWO-25657)', () => {
 
         expect(ctx.submits).toBe(0);
         expect(ctx.errors).toEqual([
-            'This payment method is not available for the selected company.'
+            'Invoice purchase with Two is not available for this order.'
         ]);
     });
 });
