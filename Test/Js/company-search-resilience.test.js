@@ -708,7 +708,7 @@ describe('what the panel paints for each outcome', () => {
         ],
         [
             '&lt;mark&gt;Exa&lt;/mark&gt;mple Ltd',
-            '&amp;lt;mark&amp;gt;Exa&amp;lt;/mark&amp;gt;mple Ltd',
+            '&lt;mark&gt;Exa&lt;/mark&gt;mple Ltd',
             'an already entity-encoded mark'
         ],
         [

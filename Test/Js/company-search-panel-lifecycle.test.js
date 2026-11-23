@@ -622,3 +622,31 @@ describe('teardown gives the field back as core rendered it', () => {
     });
 });
 
+
+// TWO-27368. The row label is HTML, so its text is entity-decoded once and
+// shown as text: the buyer reads "&", never "&amp;", and a decoded tag never
+// becomes an element.
+describe('a row label reads as text, entities decoded once', () => {
+    test.each([
+        ['Example &amp; Co', 'Example & Co (11111111)', [], 'an encoded ampersand'],
+        ['Example & Co', 'Example & Co (11111111)', [], 'a raw ampersand'],
+        ['<mark>Example &amp; Co</mark>', 'Example & Co (11111111)', ['mark'], 'an encoded ampersand inside the highlight'],
+        ['Example &#39;s &quot;Co&quot;', 'Example \'s "Co" (11111111)', [], 'numeric and named quotes'],
+        ['&lt;b&gt;Example Co', '<b>Example Co (11111111)', [], 'an encoded bold tag'],
+        ['&amp;lt;b&amp;gt;Example Co', '&lt;b&gt;Example Co (11111111)', [], 'a double-encoded tag is decoded once'],
+        ['</textarea><img src=x onerror=alert(1)>&amp; Co', '</textarea><img src=x onerror=alert(1)>& Co (11111111)', [], 'a textarea breakout']
+    ])('%s reads %s', async (highlight, text, elements, description) => {
+        const ctx = setup();
+        ctx.panel.open();
+        typeQuery('example');
+        await nextTick();
+        ctx.requests[ctx.requests.length - 1].settleDone({
+            items: [{ name: 'Example Co', highlight: highlight, national_identifier: { id: '11111111' } }]
+        });
+        await nextTick();
+
+        const row = document.querySelector(ROW);
+        const tags = Array.from(row.querySelectorAll('*')).map(function (node) { return node.tagName.toLowerCase(); });
+        expect({ description, text: row.textContent, tags }).toEqual({ description, text, tags: elements });
+    });
+});
