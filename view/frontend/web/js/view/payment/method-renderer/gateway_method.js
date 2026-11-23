@@ -1480,8 +1480,11 @@ define([
          * sentence order create gives for the same decline (ABN-643).
          */
         resolveOrderIntentDeclinedNotice: function () {
+            // The general error covers a checkout config cached before the
+            // key shipped, so the box is never blank.
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||
-                this.orderIntentNotAvailableMessage;
+                this.orderIntentNotAvailableMessage ||
+                this.generalErrorMessage;
         },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {
@@ -1547,12 +1550,14 @@ define([
             }
         },
         /**
-         * Whether the API refused the intent outright: a 4xx other than a
-         * rate limit, carrying no validation errors. It reads to the buyer as
-         * the decline it is, in the sentence order create gives for the same
-         * refusal (ABN-643). A validation refusal naming nothing the buyer can
-         * fix stays general, as at order create, and a refusal this module
-         * made itself keeps its own sentence.
+         * Whether the API refused the intent outright: a 4xx it answered
+         * through the proxy envelope, other than a rate limit, carrying no
+         * validation errors. It reads to the buyer as the decline it is, in
+         * the sentence order create gives for the same refusal (ABN-643).
+         * A fault the shop's own route raised (a 404 after a missed cache
+         * flush, a webapi input fault) is not the API's answer and stays
+         * general, as do a validation refusal naming nothing the buyer can
+         * fix and a refusal this module made itself.
          *
          * @param {object} response the jqXHR-shaped failure
          * @param {object} body its responseJSON, or {}
@@ -1561,7 +1566,8 @@ define([
         isOrderIntentRefusal: function (response, body) {
             const status = (response && response.status) || 0;
             const hasValidationErrors = Array.isArray(body.error_json) && body.error_json.length > 0;
-            return status >= 400 && status < 500 && status !== 429 &&
+            return !!(response && response.upstream) &&
+                status >= 400 && status < 500 && status !== 429 &&
                 body.error_code !== 'PROXY_REFUSED' && !hasValidationErrors;
         },
         /**
@@ -1659,8 +1665,11 @@ define([
                     } else {
                         // Shaped like a jqXHR: processOrderIntentErrorResponse
                         // reads both fields off one, and drops to a generic
-                        // decline without the status.
-                        deferred.reject({ status: envelope.status, responseJSON: envelope.body });
+                        // decline without the status. `upstream` marks a reply
+                        // the API gave, so a fault raised by the shop's own
+                        // route (on `fail` below) is never read as the API
+                        // refusing the order (ABN-643).
+                        deferred.reject({ status: envelope.status, responseJSON: envelope.body, upstream: true });
                     }
                 })
                 .fail(function (jqXHR) {
