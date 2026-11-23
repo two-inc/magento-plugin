@@ -503,3 +503,8 @@
 "Magento did not allow the order to be cancelled.","Magento no permitió cancelar el pedido."
 "an admin user","un usuario administrador"
 "Company search is temporarily unavailable. Please try again.","La búsqueda de empresas no está disponible temporalmente. Inténtalo de nuevo."
+"Order ID","ID del pedido"
+"State","Estado"
+"Payment term","Plazo de pago"
+"%1 days from end of month","%1 días desde fin de mes"
+"Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Pago anulado: %1 ha cancelado el pedido %2. Cancela este pedido para cerrarlo."

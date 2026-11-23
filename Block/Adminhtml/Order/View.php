@@ -86,6 +86,47 @@ class View extends OrderView
      *
      * @return string
      */
+    /**
+     * What Two knows about the order before anything is fulfilled
+     * (TWO-27371): its id, its live state and the term it was placed on.
+     * The state is read from Two and left out when Two cannot be reached;
+     * the term is the one stored at placement.
+     *
+     * @return array{id: string, state: ?string, term: ?string}|null null when
+     *         the order never reached Two
+     */
+    public function getTwoOrderSummary(): ?array
+    {
+        $order = $this->getOrder();
+        $twoOrderId = (string)$order->getTwoOrderId();
+        if ($twoOrderId === '') {
+            return null;
+        }
+
+        $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId, [], 'GET', (int)$order->getStoreId());
+        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+        $state = $error === null && is_string($response['state'] ?? null) ? $response['state'] : null;
+
+        return ['id' => $twoOrderId, 'state' => $state, 'term' => $this->placedTermLabel()];
+    }
+
+    /**
+     * The payment term stored with the order at placement, as a label.
+     */
+    private function placedTermLabel(): ?string
+    {
+        $terms = $this->getOrder()->getPayment()->getAdditionalInformation('terms');
+        $days = is_array($terms) ? (int)($terms['duration_days'] ?? 0) : 0;
+        if ($days <= 0) {
+            return null;
+        }
+        $label = ($terms['duration_days_calculated_from'] ?? null) === 'END_OF_MONTH'
+            ? __('%1 days from end of month', $days)
+            : __('%1 days', $days);
+
+        return (string)$label;
+    }
+
     public function getMethod(): string
     {
         return $this->getOrder()->getPayment()->getMethod();

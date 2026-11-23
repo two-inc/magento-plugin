@@ -503,3 +503,8 @@
 "Magento did not allow the order to be cancelled.","Magento stond het annuleren van de bestelling niet toe."
 "an admin user","een beheerder"
 "Company search is temporarily unavailable. Please try again.","Zoeken naar bedrijven is tijdelijk niet beschikbaar. Probeer het opnieuw."
+"Order ID","Order-ID"
+"State","Status"
+"Payment term","Betaaltermijn"
+"%1 days from end of month","%1 dagen vanaf einde maand"
+"Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Betaling geannuleerd: %1 heeft order %2 geannuleerd. Annuleer deze bestelling om haar af te sluiten."
