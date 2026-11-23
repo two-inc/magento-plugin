@@ -18,6 +18,28 @@ use Two\Gateway\Service\Api\Adapter as Adapter;
 class View extends OrderView
 {
     /**
+     * Each read to Two on the order view is bounded, so a slow or hung Two
+     * cannot stall the merchant's order page (TWO-27371). A read that runs
+     * out leaves its rows off; the page still renders.
+     */
+    private const READ_TIMEOUT_SECONDS = 5;
+
+    /**
+     * Two's order states as the merchant reads them. A state not listed is
+     * shown as Two names it.
+     */
+    private const STATE_LABELS = [
+        'UNVERIFIED' => 'Unverified',
+        'VERIFIED' => 'Verified',
+        'CONFIRMED' => 'Confirmed',
+        'FULFILLING' => 'Fulfilling',
+        'FULFILLED' => 'Fulfilled',
+        'DELIVERED' => 'Delivered',
+        'CANCELLED' => 'Cancelled',
+        'REFUNDED' => 'Refunded',
+    ];
+
+    /**
     * @var ConfigRepository
      */
     public $configRepository;
@@ -71,7 +93,10 @@ class View extends OrderView
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             [],
             'GET',
-            (int)$order->getStoreId()
+            (int)$order->getStoreId(),
+            null,
+            null,
+            self::READ_TIMEOUT_SECONDS
         );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
@@ -81,11 +106,6 @@ class View extends OrderView
         return $response;
     }
 
-    /**
-     * Get Method from Payment
-     *
-     * @return string
-     */
     /**
      * What Two knows about the order before anything is fulfilled
      * (TWO-27371): its id, its live state and the term it was placed on.
@@ -103,11 +123,31 @@ class View extends OrderView
             return null;
         }
 
-        $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId, [], 'GET', (int)$order->getStoreId());
+        $response = $this->apiAdapter->execute(
+            '/v1/order/' . $twoOrderId,
+            [],
+            'GET',
+            (int)$order->getStoreId(),
+            null,
+            null,
+            self::READ_TIMEOUT_SECONDS
+        );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         $state = $error === null && is_string($response['state'] ?? null) ? $response['state'] : null;
 
-        return ['id' => $twoOrderId, 'state' => $state, 'term' => $this->placedTermLabel()];
+        return ['id' => $twoOrderId, 'state' => $this->stateLabel($state), 'term' => $this->placedTermLabel()];
+    }
+
+    /**
+     * Two's state as a translated label, or as Two names it when unlisted.
+     */
+    private function stateLabel(?string $state): ?string
+    {
+        if ($state === null || $state === '') {
+            return null;
+        }
+
+        return isset(self::STATE_LABELS[$state]) ? (string)__(self::STATE_LABELS[$state]) : $state;
     }
 
     /**
@@ -127,6 +167,11 @@ class View extends OrderView
         return (string)$label;
     }
 
+    /**
+     * Get Method from Payment
+     *
+     * @return string
+     */
     public function getMethod(): string
     {
         return $this->getOrder()->getPayment()->getMethod();

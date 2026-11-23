@@ -21,6 +21,9 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class ViewSummaryTest extends TestCase
 {
+    /** What the adapter returns when its bounded call runs out. */
+    private const TIMED_OUT = ['error_code' => 400, 'error_message' => 'Operation timed out after 5000 milliseconds'];
+
     public static function cases(): array
     {
         $standard = ['type' => 'NET_TERMS', 'duration_days' => 30];
@@ -28,13 +31,17 @@ class ViewSummaryTest extends TestCase
         return [
             // two order id, API response, API error, stored terms, expected summary
             'placed order' => ['remote-1', ['state' => 'VERIFIED'], false, $standard,
-                ['id' => 'remote-1', 'state' => 'VERIFIED', 'term' => '30 days']],
+                ['id' => 'remote-1', 'state' => 'Verified', 'term' => '30 days']],
             'end-of-month term' => ['remote-1', ['state' => 'CONFIRMED'], false, $endOfMonth,
-                ['id' => 'remote-1', 'state' => 'CONFIRMED', 'term' => '30 days from end of month']],
+                ['id' => 'remote-1', 'state' => 'Confirmed', 'term' => '30 days from end of month']],
+            'state Two adds later shows as named' => ['remote-1', ['state' => 'SOME_NEW_STATE'], false, $standard,
+                ['id' => 'remote-1', 'state' => 'SOME_NEW_STATE', 'term' => '30 days']],
             'Two unreachable' => ['remote-1', [], true, $standard,
                 ['id' => 'remote-1', 'state' => null, 'term' => '30 days']],
+            'Two timed out' => ['remote-1', self::TIMED_OUT, true, $standard,
+                ['id' => 'remote-1', 'state' => null, 'term' => '30 days']],
             'no stored term' => ['remote-1', ['state' => 'VERIFIED'], false, null,
-                ['id' => 'remote-1', 'state' => 'VERIFIED', 'term' => null]],
+                ['id' => 'remote-1', 'state' => 'Verified', 'term' => null]],
             'never reached Two' => ['', [], false, $standard, null],
         ];
     }
@@ -42,6 +49,30 @@ class ViewSummaryTest extends TestCase
     #[DataProvider('cases')]
     public function testSummary(string $twoOrderId, array $response, bool $apiError, ?array $terms, ?array $expected): void
     {
+        $block = $this->block($twoOrderId, $response, $apiError, $terms, $calls);
+
+        $this->assertSame($expected, $block->getTwoOrderSummary());
+    }
+
+    /**
+     * Every read the order view makes to Two is bounded, so a hung Two cannot
+     * stall the page, and a read that runs out leaves its rows off.
+     */
+    public function testEveryReadIsBoundedAndATimeoutLeavesThePageRendering(): void
+    {
+        $block = $this->block('remote-1', self::TIMED_OUT, true, null, $calls);
+
+        $this->assertSame(['id' => 'remote-1', 'state' => null, 'term' => null], $block->getTwoOrderSummary());
+        $this->assertSame([], $block->getTwoOrderFulfillments());
+        $this->assertSame(
+            [['/v1/order/remote-1', 5], ['/v1/order/remote-1/fulfillments', 5]],
+            array_map(fn(array $args) => [$args[0], $args[6] ?? null], $calls)
+        );
+    }
+
+    private function block(string $twoOrderId, array $response, bool $apiError, ?array $terms, ?array &$calls): View
+    {
+        $calls = [];
         $method = $this->createMock(Two::class);
         $method->method('getErrorFromResponse')->willReturn($apiError ? new Phrase('Something went wrong') : null);
         $payment = new class ($method, $terms) {
@@ -65,11 +96,14 @@ class ViewSummaryTest extends TestCase
         $order->setData('payment', $payment);
 
         $adapter = $this->createMock(Adapter::class);
-        $adapter->method('execute')->willReturn($response);
+        $adapter->method('execute')->willReturnCallback(function (...$args) use (&$calls, $response) {
+            $calls[] = $args;
+            return $response;
+        });
         $block = (new \ReflectionClass(View::class))->newInstanceWithoutConstructor();
         (new \ReflectionProperty(View::class, 'apiAdapter'))->setValue($block, $adapter);
         $block->setData('order', $order);
 
-        $this->assertSame($expected, $block->getTwoOrderSummary());
+        return $block;
     }
 }
