@@ -932,12 +932,12 @@ The new version for a major is exactly `<target>.0.0`, so a declaration may skip
 
 ### Bumping (on the PR) and tagging (on `main`)
 
-`.github/workflows/version-bump.yml` runs on every `pull_request` into `staging`. It:
+Two workflows share the work, so the job that holds the App token runs no code from the PR:
 
-1. Runs the unit tests for the computation, then computes an absolute version with `.github/scripts/decide-bump-level.sh origin/staging HEAD`.
-2. If that version differs from the one on the PR head, runs `bumpver update --set-version <X.Y.Z> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml` and `bumpver.toml`, and pushes the commit onto the PR's own branch under the org GitHub App identity. Otherwise it writes nothing.
+- `.github/workflows/version-current.yml` runs on every `pull_request` into `staging`. It is read-only (no secrets, no token), runs the unit tests for the computation, and computes an absolute version with `staging`'s copy of `.github/scripts/decide-bump-level.sh origin/staging HEAD`. It fails until the PR head carries that version. It is a required check on `staging`, so a PR cannot merge before its bump lands.
+- `.github/workflows/version-bump.yml` runs on `workflow_run` when that check completes, so GitHub reads it from `staging` and a PR cannot change it. It checks out `staging` to run the script and the PR head only as git data, computes the same version, and if it differs from the PR head, runs `bumpver update --set-version <X.Y.Z> --no-tag-commit --no-push --no-fetch` to rewrite `composer.json`, `etc/config.xml` and `bumpver.toml`. It then pushes the commit onto the PR's own branch under the org GitHub App identity, which re-runs CI and the check. A PR that changes `bumpver.toml` beyond `current_version` is refused and needs its version set by hand. Fork PRs get no automated bump: the check names the version to set.
 
-The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons: `GITHUB_TOKEN` pushes do not trigger workflows, so CI would never re-run on the bump SHA; and the App holds the ruleset bypass. Because the commit lands on a feature branch, it is outside `terraform-managed-branch-protection` (which targets only `refs/heads/{main,release,staging}`) entirely.
+The push goes out under the App token rather than `GITHUB_TOKEN` because `GITHUB_TOKEN` pushes do not trigger workflows, so CI would never re-run on the bump SHA. The token's key comes from Secret Manager, readable only by this exact workflow file on `staging` (ISEC-853). Because the commit lands on a feature branch, it is outside `terraform-managed-branch-protection` (which targets only `refs/heads/{main,release,staging}`) entirely.
 
 `.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
 
