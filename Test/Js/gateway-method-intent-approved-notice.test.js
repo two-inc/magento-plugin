@@ -280,12 +280,13 @@ describe('gateway_method intent-approved notice', () => {
         // container across the four plugins. The message region this used to
         // go to is cleared on the next checkout update, so the buyer's only
         // sign the check failed could vanish on its own.
+        // ABN-643: in the not-available sentence a decline gives.
         const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.generalErrorMessage = 'Something went wrong.';
 
         ctx.processOrderIntentErrorResponse.call(ctx, {});
 
-        expect(ctx.orderIntentErrorNotice()).toBe('Something went wrong.');
+        expect(ctx.orderIntentErrorNotice()).toBe(DECLINED_COPY.withoutCompany);
         expect(ctx.isOrderIntentErrorNoticeVisible.call(ctx)).toBe(true);
         expect(ctx.errors).toEqual([]);
     });
@@ -302,6 +303,7 @@ describe('gateway_method intent-approved notice', () => {
     });
 
     const GENERAL = 'Something went wrong.';
+    const NOT_AVAILABLE = DECLINED_COPY.withoutCompany;
     const PHONE = ['buyer', 'representative', 'phone_number'];
     const fieldError = (loc) => ({ loc: loc, msg: 'Value error, raw validator text' });
     test.each([
@@ -309,14 +311,15 @@ describe('gateway_method intent-approved notice', () => {
         [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(['buyer', 'SomeSchema', 'company', 'organization_number'])] }, 'Please enter a valid Organization number to pay on invoice.', 'a field behind a model-name segment'],
         [{ error_code: 'SCHEMA_ERROR', error_json: [fieldError(PHONE), fieldError(['billing_address', 'city']), fieldError(PHONE)] }, 'Please enter a valid Phone number to pay on invoice. Please enter a valid City to pay on invoice.', 'two fields, one repeated'],
         [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details', error_json: [fieldError(PHONE)] }, 'Please enter a valid Phone number to pay on invoice.', 'ORDER_INVALID carrying a field path'],
-        [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(['buyer', 'unknown'])] }, GENERAL, 'a field we do not know'],
-        [{ error_code: 'JSON_MISSING_FIELD', error_details: 'raw details' }, GENERAL, 'a field missing, no path'],
-        [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'ORDER_INVALID naming nothing'],
-        [{ error_code: 'MERCHANT_NOT_FOUND_ERROR', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'a shop configuration fault'],
-        [{ error_code: 'SOMETHING_NEW', error_message: 'raw message', error_details: 'raw details' }, GENERAL, 'a code the tile does not know']
+        [{ error_code: 'SCHEMA_ERROR', error_message: 'raw message', error_json: [fieldError(['buyer', 'unknown'])] }, NOT_AVAILABLE, 'a field we do not know'],
+        [{ error_code: 'JSON_MISSING_FIELD', error_details: 'raw details' }, NOT_AVAILABLE, 'a field missing, no path'],
+        [{ error_code: 'ORDER_INVALID', error_message: 'raw message', error_details: 'raw details' }, NOT_AVAILABLE, 'ORDER_INVALID naming nothing'],
+        [{ error_code: 'MERCHANT_NOT_FOUND_ERROR', error_message: 'raw message', error_details: 'raw details' }, NOT_AVAILABLE, 'a shop configuration fault'],
+        [{ error_code: 'SOMETHING_NEW', error_message: 'raw message', error_details: 'raw details' }, NOT_AVAILABLE, 'a code the tile does not know']
     ])('a refused request (%j) shows "%s", never the API text (%s)', (body, expected, description) => {
         // TWO-26295: the API's own wording is for an integrator; a field the
-        // buyer can fix is named in our own words, anything else is general.
+        // buyer can fix is named in our own words, anything else states the
+        // not-available sentence a decline gives (ABN-643).
         const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.generalErrorMessage = GENERAL;
         ctx.orderIntentFieldErrors = {
@@ -344,7 +347,13 @@ describe('gateway_method intent-approved notice', () => {
     test('a later error replaces the earlier one rather than stacking', () => {
         const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.generalErrorMessage = 'Something went wrong.';
-        ctx.processOrderIntentErrorResponse.call(ctx, {});
+        ctx.orderIntentFieldErrors = {
+            messages: { 'buyer.representative.phone_number': 'Please enter a valid Phone number to pay on invoice.' }
+        };
+        ctx.processOrderIntentErrorResponse.call(ctx, {
+            status: 400,
+            responseJSON: { error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] }
+        });
 
         ctx.processOrderIntentErrorResponse.call(ctx, {
             responseJSON: {
@@ -353,9 +362,9 @@ describe('gateway_method intent-approved notice', () => {
             }
         });
 
-        // PROXY_REFUSED is this module's own translated refusal, so its
-        // sentence is the one shown.
-        expect(ctx.orderIntentErrorNotice()).toBe('The service is temporarily unavailable. Please try again.');
+        // Every failure but a fixable field states the not-available
+        // sentence (ABN-643), and it replaces the field sentence outright.
+        expect(ctx.orderIntentErrorNotice()).toBe(DECLINED_COPY.withoutCompany);
     });
 
     test('an approval clears a previous error box', () => {
