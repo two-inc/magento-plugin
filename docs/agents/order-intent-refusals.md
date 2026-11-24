@@ -23,8 +23,9 @@ for the merchant. At order create a refusal whose `error_json` names a field the
 buyer can fix says which, in our own words ("Please enter a valid Phone number
 to pay on invoice."), with the field chosen from its path and never from the
 message. `Two::getFieldErrorMessages()` is the one path-to-sentence map, one
-whole sentence per field in the wording the other plugins use (TWO-27108); only
-order create reads it. `Two::getFieldErrorLabels()` keeps the field names, for the merchant-facing
+whole sentence per field in the wording the other plugins use (TWO-27108); order
+create and the buyer return pages read it, the order intent tile does not.
+`Two::getFieldErrorLabels()` keeps the field names, for the merchant-facing
 message that quotes the API's reason after the name. A same-company refusal
 reads "Buyer and merchant may not be the same company." A path drops any segment starting with a
 capital letter, which is where a validator inserts model names. A refusal that
