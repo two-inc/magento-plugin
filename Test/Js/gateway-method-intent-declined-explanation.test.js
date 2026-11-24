@@ -171,31 +171,40 @@ describe('a declined order intent always explains itself', () => {
 
         ctx.processOrderIntentErrorResponse.call(ctx, {});
 
-        expect(ctx.orderIntentErrorNotice()).toBe('Something went wrong.');
+        expect(ctx.orderIntentErrorNotice()).toBe(PLATFORM_FALLBACK);
         expect(ctx.orderIntentDeclinedNotice()).toBe('');
     });
 
-    // ABN-643: a refusal the API gave (`upstream`, set when the proxy envelope
-    // says not ok) reads as the decline it is; anything else stays general,
-    // above all a fault the shop's own route raised.
+    // ABN-643: every failure of the check states the not-available sentence a
+    // decline gives, whoever failed: Two refusing, erring or timing out, the
+    // shop's own route, or this module refusing before calling Two. Only a
+    // field the buyer can fix (tested with the field copy) and a rate limit
+    // say something else.
+    const FIELD_SENTENCE = 'Please enter a valid Phone number to pay on invoice.';
     test.each([
-        { failure: { upstream: true, status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal states the not-available sentence' },
+        { copy: null, failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal states the not-available sentence' },
+        { copy: BRAND_DECLINED_COPY, failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: BRAND_SENTENCE, case: 'an API refusal names the company, as a decline does' },
+        { copy: BRAND_DECLINED_COPY, failure: { status: 502, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: BRAND_SENTENCE, case: 'an API server error names the company, as a decline does' },
         // The two bodies the envelope relays for a refusal with nothing relayable:
         // the adapter's own reading of an empty body, and its stand-in for a body
         // carrying none of the relayed keys.
-        { failure: { upstream: true, status: 403, responseJSON: { error_code: 400, error_message: 'Invalid API response from Two.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with an empty body states the not-available sentence' },
-        { failure: { upstream: true, status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: 'The service is temporarily unavailable. Please try again.', case: 'an API refusal with no relayable keys shows the try-again sentence' },
-        { failure: { upstream: true, status: 400, responseJSON: { error_json: [{ loc: ['body'], msg: 'bad' }] } }, notice: 'Something went wrong.', case: 'a validation refusal naming nothing fixable stays general' },
-        { failure: { upstream: true, status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'Module refused.' } }, notice: 'Module refused.', case: 'a refusal made by this module keeps its own sentence' },
-        { failure: { upstream: true, status: 503, responseJSON: {} }, notice: 'Something went wrong.', case: 'an API server error stays general' },
-        { failure: { status: 404, responseJSON: { message: 'Request does not match any route.' } }, notice: 'Something went wrong.', case: 'the shop route missing after a cache flush stays general' },
-        { failure: { status: 400, responseJSON: { message: '"payload" is required.' } }, notice: 'Something went wrong.', case: 'a shop webapi input fault stays general' },
-        { failure: { status: 401, responseJSON: { message: 'Not authorized.' } }, notice: 'Something went wrong.', case: 'a shop webapi auth fault stays general' },
-        { failure: { status: 400 }, notice: 'Something went wrong.', case: 'a bodyless shop 400 stays general' },
-        { failure: { status: 503, responseJSON: {} }, notice: 'Something went wrong.', case: 'a shop server error stays general' },
-        { failure: { status: 0 }, notice: 'Something went wrong.', case: 'a transport failure stays general' }
-    ])('the error region: $case', ({ failure, notice, case: description }) => {
-        const ctx = makeContext(null);
+        { copy: null, failure: { status: 403, responseJSON: { error_code: 400, error_message: 'Invalid API response from Two.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with an empty body states the not-available sentence' },
+        { copy: null, failure: { status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with no relayable keys states the not-available sentence' },
+        { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] } }, notice: FIELD_SENTENCE, case: 'a validation refusal naming a fixable field names it' },
+        { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['body'], msg: 'bad' }] } }, notice: PLATFORM_FALLBACK, case: 'a validation refusal naming nothing fixable states the not-available sentence' },
+        { copy: null, failure: { status: 503, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'Module refused.' } }, notice: PLATFORM_FALLBACK, case: 'a refusal made by this module states the not-available sentence' },
+        { copy: null, failure: { status: 502, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API server error states the not-available sentence' },
+        { copy: null, failure: { status: 0, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API timeout states the not-available sentence' },
+        { copy: null, failure: { status: 404, responseJSON: { message: 'Request does not match any route.' } }, notice: PLATFORM_FALLBACK, case: 'the shop route missing after a cache flush states the not-available sentence' },
+        { copy: null, failure: { status: 400, responseJSON: { message: '"payload" is required.' } }, notice: PLATFORM_FALLBACK, case: 'a shop webapi input fault states the not-available sentence' },
+        { copy: null, failure: { status: 401, responseJSON: { message: 'Not authorized.' } }, notice: PLATFORM_FALLBACK, case: 'a shop webapi auth fault states the not-available sentence' },
+        { copy: null, failure: { status: 400 }, notice: PLATFORM_FALLBACK, case: 'a bodyless shop 400 states the not-available sentence' },
+        { copy: null, failure: { status: 503, responseJSON: {} }, notice: PLATFORM_FALLBACK, case: 'a shop server error states the not-available sentence' },
+        { copy: null, failure: { status: 0 }, notice: PLATFORM_FALLBACK, case: 'a transport failure states the not-available sentence' },
+        { copy: null, failure: { status: 429 }, notice: 'Too many requests. Please wait a moment and try again.', case: 'a rate limit asks the buyer to wait' }
+    ])('the error region: $case', ({ copy, failure, notice, case: description }) => {
+        const ctx = makeContext(copy);
+        ctx.orderIntentFieldErrors = { messages: { 'buyer.representative.phone_number': FIELD_SENTENCE } };
 
         ctx.processOrderIntentErrorResponse.call(ctx, failure);
 
@@ -207,7 +216,7 @@ describe('a declined order intent always explains itself', () => {
     // must not leave either box blank.
     test.each([
         { run: (ctx) => ctx.processOrderIntentSuccessResponse.call(ctx, { approved: false }), read: (ctx) => ctx.orderIntentDeclinedNotice(), case: 'a decline' },
-        { run: (ctx) => ctx.processOrderIntentErrorResponse.call(ctx, { upstream: true, status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }), read: (ctx) => ctx.orderIntentErrorNotice(), case: 'an API refusal' }
+        { run: (ctx) => ctx.processOrderIntentErrorResponse.call(ctx, { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }), read: (ctx) => ctx.orderIntentErrorNotice(), case: 'an API refusal' }
     ])('with no not-available sentence in the config, $case shows the general error', ({ run, read, case: description }) => {
         const ctx = makeContext(null);
         delete ctx.orderIntentNotAvailableMessage;

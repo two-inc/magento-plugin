@@ -353,16 +353,20 @@ describe('the order-intent tile tells a rate-limited buyer to wait', () => {
         expect(ctx.notices).toEqual([RATE_LIMIT_FALLBACK_COPY]);
     });
 
-    test('the plugin\'s own in-envelope refusal renders its message', () => {
+    // ABN-643: the plugin's own refusal is not a wait, and states the
+    // not-available sentence every other failed check does.
+    test('the plugin\'s own in-envelope refusal states the not-available sentence', () => {
         const ctx = renderer();
+        ctx.orderIntentNotAvailableMessage = 'Invoice purchase with Two is not available for this order.';
 
         ctx.processOrderIntentErrorResponse.call(ctx, {
+            status: 503,
             responseJSON: {
                 error_code: 'PROXY_REFUSED',
                 error_message: 'The payment integration is not available right now.'
             }
         });
 
-        expect(ctx.notices).toEqual(['The payment integration is not available right now.']);
+        expect(ctx.notices).toEqual(['Invoice purchase with Two is not available for this order.']);
     });
 });

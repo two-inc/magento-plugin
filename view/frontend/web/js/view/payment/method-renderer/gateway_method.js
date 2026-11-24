@@ -887,7 +887,7 @@ define([
                 // Same surface as processOrderIntentErrorResponse()'s
                 // message (TWO-25326, 2026-08-05): a synchronous throw and
                 // a failed request are the same outcome to the buyer.
-                self.showOrderIntentErrorNotice(self.generalErrorMessage);
+                self.showOrderIntentErrorNotice(self.resolveOrderIntentDeclinedNotice());
                 return;
             }
             deferred
@@ -1532,43 +1532,19 @@ define([
 
             // The API's own text never reaches the buyer (TWO-26295): it is
             // written for an integrator or the merchant. A refusal naming a
-            // field the buyer can fix says which, in our own words; anything
-            // else shows the general message. A refusal this module made
-            // itself before calling the API (PROXY_REFUSED) keeps its own
-            // translated sentence.
+            // field the buyer can fix says which, in our own words. Every
+            // other failure, whether Two refused, erred or timed out, the shop's
+            // own route faulted or this module refused before calling Two,
+            // states the same "not available for this order" sentence a
+            // decline does, company name included (ABN-643). The detail
+            // stays in the error log and the browser's network panel.
             const body = (response && response.responseJSON) || {};
-            let message = this.orderIntentFieldErrorMessage(body.error_json) ||
-                (this.isOrderIntentRefusal(response, body) ? this.orderIntentNotAvailableMessage : '') ||
-                this.generalErrorMessage;
-            if (body.error_code === 'PROXY_REFUSED' && body.error_message) {
-                message = body.error_message;
-            }
-            if (message) {
-                // The tile's own bordered box, not the checkout message
-                // region (TWO-25326, 2026-08-05).
-                this.showOrderIntentErrorNotice(message);
-            }
-        },
-        /**
-         * Whether the API refused the intent outright: a 4xx it answered
-         * through the proxy envelope, other than a rate limit, carrying no
-         * validation errors. It reads to the buyer as the decline it is, in
-         * the sentence order create gives for the same refusal (ABN-643).
-         * A fault the shop's own route raised (a 404 after a missed cache
-         * flush, a webapi input fault) is not the API's answer and stays
-         * general, as do a validation refusal naming nothing the buyer can
-         * fix and a refusal this module made itself.
-         *
-         * @param {object} response the jqXHR-shaped failure
-         * @param {object} body its responseJSON, or {}
-         * @returns {boolean}
-         */
-        isOrderIntentRefusal: function (response, body) {
-            const status = (response && response.status) || 0;
-            const hasValidationErrors = Array.isArray(body.error_json) && body.error_json.length > 0;
-            return !!(response && response.upstream) &&
-                status >= 400 && status < 500 && status !== 429 &&
-                body.error_code !== 'PROXY_REFUSED' && !hasValidationErrors;
+            // The tile's own bordered box, not the checkout message
+            // region (TWO-25326, 2026-08-05).
+            this.showOrderIntentErrorNotice(
+                this.orderIntentFieldErrorMessage(body.error_json) ||
+                this.resolveOrderIntentDeclinedNotice()
+            );
         },
         /**
          * The buyer sentence for each field a refusal's error_json names that
@@ -1664,12 +1640,8 @@ define([
                         deferred.resolve(envelope.body);
                     } else {
                         // Shaped like a jqXHR: processOrderIntentErrorResponse
-                        // reads both fields off one, and drops to a generic
-                        // decline without the status. `upstream` marks a reply
-                        // the API gave, so a fault raised by the shop's own
-                        // route (on `fail` below) is never read as the API
-                        // refusing the order (ABN-643).
-                        deferred.reject({ status: envelope.status, responseJSON: envelope.body, upstream: true });
+                        // reads both fields off one.
+                        deferred.reject({ status: envelope.status, responseJSON: envelope.body });
                     }
                 })
                 .fail(function (jqXHR) {
