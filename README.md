@@ -955,7 +955,7 @@ The push goes out under the App token rather than `GITHUB_TOKEN` because `GITHUB
 
 To trigger a release, merge that `staging → main` PR. CI runs on the merged commit; once green, `release.yml` fires.
 
-`.github/workflows/release-dispatch.yml` fires on the published Release and notifies the infrastructure repository, which resolves the newly published version and raises the pull request that moves the release-tracking Magento staging shop onto it. Because that shop installs from Packagist, a dispatch can arrive before Packagist has indexed the new tag; the infrastructure repository's daily reconcile covers that case, so nothing here needs to wait or retry (TWO-25769).
+As its last step, the automated release in `release.yml` notifies the infrastructure repository as soon as it has published the Release. A Release published by hand sends no notification and waits for the infrastructure repository's daily reconcile. The infrastructure repository resolves the newly published version and raises the pull request that moves the release-tracking Magento staging shop onto it. Because that shop installs from Packagist, a dispatch can arrive before Packagist has indexed the new tag; the infrastructure repository's daily reconcile covers that case, so nothing here needs to wait or retry (TWO-25769).
 
 ## Links
 
