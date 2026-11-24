@@ -18,6 +18,20 @@ use Two\Gateway\Service\Api\Adapter as Adapter;
 class View extends OrderView
 {
     /**
+     * Each read to Two on the order view is bounded, so a slow or hung Two
+     * cannot stall the merchant's order page (TWO-27371). A read that runs
+     * out leaves its rows off; the page still renders.
+     */
+    private const READ_TIMEOUT_SECONDS = 5;
+
+    /**
+     * Prefix of the state labels' translation keys. It keeps them apart from
+     * other modules' translations of the bare words, and is dropped where no
+     * translation exists, so English reads the bare word.
+     */
+    private const STATE_KEY_PREFIX = 'Provider order state: ';
+
+    /**
     * @var ConfigRepository
      */
     public $configRepository;
@@ -71,7 +85,10 @@ class View extends OrderView
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             [],
             'GET',
-            (int)$order->getStoreId()
+            (int)$order->getStoreId(),
+            null,
+            null,
+            self::READ_TIMEOUT_SECONDS
         );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
@@ -79,6 +96,82 @@ class View extends OrderView
         }
 
         return $response;
+    }
+
+    /**
+     * What Two knows about the order before anything is fulfilled
+     * (TWO-27371): its id, its live state and the term it was placed on.
+     * The state is read from Two and left out when Two cannot be reached;
+     * the term is the one stored at placement.
+     *
+     * @return array{id: string, state: ?string, term: ?string}|null null when
+     *         the order never reached Two
+     */
+    public function getTwoOrderSummary(): ?array
+    {
+        $order = $this->getOrder();
+        $twoOrderId = (string)$order->getTwoOrderId();
+        if ($twoOrderId === '') {
+            return null;
+        }
+
+        $response = $this->apiAdapter->execute(
+            '/v1/order/' . $twoOrderId,
+            [],
+            'GET',
+            (int)$order->getStoreId(),
+            null,
+            null,
+            self::READ_TIMEOUT_SECONDS
+        );
+        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+        $state = $error === null && is_string($response['state'] ?? null) ? $response['state'] : null;
+
+        return ['id' => $twoOrderId, 'state' => $this->stateLabel($state), 'term' => $this->placedTermLabel()];
+    }
+
+    /**
+     * Two's state as a translated label, or as Two names it when unlisted.
+     * Each key is a literal so i18n:collect-phrases finds it.
+     */
+    private function stateLabel(?string $state): ?string
+    {
+        $label = match ($state) {
+            null, '' => null,
+            'UNVERIFIED' => __('Provider order state: Unverified'),
+            'VERIFIED' => __('Provider order state: Verified'),
+            'CONFIRMED' => __('Provider order state: Confirmed'),
+            'FULFILLING' => __('Provider order state: Fulfilling'),
+            'FULFILMENT_NEEDS_MANUAL_RESOLUTION' => __('Provider order state: Fulfilment needs manual resolution'),
+            'FULFILLED' => __('Provider order state: Fulfilled'),
+            'DELIVERED' => __('Provider order state: Delivered'),
+            'CANCELLED' => __('Provider order state: Cancelled'),
+            'REFUNDED' => __('Provider order state: Refunded'),
+            default => $state,
+        };
+        if ($label === null) {
+            return null;
+        }
+        $label = (string)$label;
+
+        return str_starts_with($label, self::STATE_KEY_PREFIX) ? substr($label, strlen(self::STATE_KEY_PREFIX)) : $label;
+    }
+
+    /**
+     * The payment term stored with the order at placement, as a label.
+     */
+    private function placedTermLabel(): ?string
+    {
+        $terms = $this->getOrder()->getPayment()->getAdditionalInformation('terms');
+        $days = is_array($terms) ? (int)($terms['duration_days'] ?? 0) : 0;
+        if ($days <= 0) {
+            return null;
+        }
+        $label = ($terms['duration_days_calculated_from'] ?? null) === 'END_OF_MONTH'
+            ? __('%1 days from end of month', $days)
+            : __('%1 days', $days);
+
+        return (string)$label;
     }
 
     /**
