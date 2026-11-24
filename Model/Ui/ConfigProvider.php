@@ -334,12 +334,6 @@ class ConfigProvider implements ConfigProviderInterface
                         'Invoice purchase with %1 is not available for this order.',
                         $this->brandRegistry->getProductName()
                     ),
-                    // TWO-26295: a refused intent that names a field the buyer
-                    // can fix says which, in our own words, chosen by the
-                    // field path. One map, shared with order create.
-                    'orderIntentFieldErrors' => [
-                        'messages' => array_map('strval', $this->two->getFieldErrorMessages()),
-                    ],
                     // TWO-25326: the Two method stays selectable with a
                     // manual (name-only, no organisation number) capture —
                     // it is blocked at submit instead, matching the WC/PS/

@@ -19,22 +19,22 @@ included (it asks the billing panel's `isManualEntry()`): the buyer has named th
 invoice company, and the shipping number would bill another one (TWO-26775).
 
 The API's own text never reaches the buyer: it is written for an integrator or
-for the merchant. A refusal whose `error_json` names a field the buyer can fix
-says which, in our own words ("Please enter a valid Phone number to pay on
-invoice."), with the field chosen from its path and never from the message.
-`Two::getFieldErrorMessages()` is the one path-to-sentence map, one whole
-sentence per field in the wording the other plugins use (TWO-27108), and both
-the order intent tile (through the checkout config) and order create read it.
-`Two::getFieldErrorLabels()` keeps the field names, for the merchant-facing
+for the merchant. At order create a refusal whose `error_json` names a field the
+buyer can fix says which, in our own words ("Please enter a valid Phone number
+to pay on invoice."), with the field chosen from its path and never from the
+message. `Two::getFieldErrorMessages()` is the one path-to-sentence map, one
+whole sentence per field in the wording the other plugins use (TWO-27108); only
+order create reads it. `Two::getFieldErrorLabels()` keeps the field names, for the merchant-facing
 message that quotes the API's reason after the name. A same-company refusal
 reads "Buyer and merchant may not be the same company." A path drops any segment starting with a
 capital letter, which is where a validator inserts model names. A refusal that
 names nothing the buyer can fix shows a standard message. At order create that
 is the general error for a validation refusal and the "not available for this
 order" sentence for any other refusal. In the order intent tile every failure
-of the check other than a fixable field or a rate limit states the sentence a
-decline gives, company name included (`resolveOrderIntentDeclinedNotice()`),
-as the other plugins do (ABN-643): a refusal or a server error from Two, a
+of the check other than a rate limit states the sentence a decline gives,
+company name included (`resolveOrderIntentDeclinedNotice()`), as the other
+plugins do (ABN-643), so the buyer can always choose another payment method: a
+refusal naming a field, any other refusal or a server error from Two, a
 timeout, a fault the shop's own route raises (a 404 after a missed cache flush,
 a webapi input fault), and a `PROXY_REFUSED` refusal this module made before
 calling the API or relayed for a body with nothing relayable. It shows in the
