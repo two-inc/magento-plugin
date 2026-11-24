@@ -180,7 +180,11 @@ describe('a declined order intent always explains itself', () => {
     // above all a fault the shop's own route raised.
     test.each([
         { failure: { upstream: true, status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal states the not-available sentence' },
-        { failure: { upstream: true, status: 403, responseJSON: {} }, notice: PLATFORM_FALLBACK, case: 'a bodyless API refusal states the not-available sentence' },
+        // The two bodies the envelope relays for a refusal with nothing relayable:
+        // the adapter's own reading of an empty body, and its stand-in for a body
+        // carrying none of the relayed keys.
+        { failure: { upstream: true, status: 403, responseJSON: { error_code: 400, error_message: 'Invalid API response from Two.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with an empty body states the not-available sentence' },
+        { failure: { upstream: true, status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: 'The service is temporarily unavailable. Please try again.', case: 'an API refusal with no relayable keys shows the try-again sentence' },
         { failure: { upstream: true, status: 400, responseJSON: { error_json: [{ loc: ['body'], msg: 'bad' }] } }, notice: 'Something went wrong.', case: 'a validation refusal naming nothing fixable stays general' },
         { failure: { upstream: true, status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'Module refused.' } }, notice: 'Module refused.', case: 'a refusal made by this module keeps its own sentence' },
         { failure: { upstream: true, status: 503, responseJSON: {} }, notice: 'Something went wrong.', case: 'an API server error stays general' },
