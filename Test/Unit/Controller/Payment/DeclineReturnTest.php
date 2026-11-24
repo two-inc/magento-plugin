@@ -31,7 +31,8 @@ class DeclineReturnTest extends TestCase
 {
     private const DECLINED = 'Two could not approve this purchase. Please choose another payment method.';
     private const NOT_CHECKED = 'The status of this purchase with Two could not be checked just now. Please try again in a few minutes.';
-    private const PAYMENT_STEP = 'checkout#payment';
+    /** Marked once, so Luma forgets the payment choice the browser remembers. */
+    private const PAYMENT_STEP = 'checkout?two_declined=1#payment';
     private const CART = 'checkout/cart';
     private const SUCCESS = 'checkout/onepage/success';
 
@@ -207,8 +208,9 @@ class DeclineReturnTest extends TestCase
         $url = new class {
             public function getUrl($path = null, $params = null)
             {
+                $query = isset($params['_query']) ? '?' . http_build_query($params['_query']) : '';
                 $fragment = isset($params['_fragment']) ? '#' . $params['_fragment'] : '';
-                return 'https://shop.test/' . $path . $fragment;
+                return 'https://shop.test/' . $path . $query . $fragment;
             }
         };
         $test = $this;

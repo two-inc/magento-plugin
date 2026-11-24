@@ -104,9 +104,12 @@ cannot be restored is logged and the buyer gets the message on the cart page.
 
 The restored cart has its payment method removed, so neither checkout
 preselects the method that was not approved, though it stays offered. Luma
-also remembers the last choice in the browser's checkout storage; deleting the
-`mage-cache-sessid` cookie makes Magento clear that storage, as it does at
-login.
+also remembers the last choice in the browser's checkout data, so the redirect
+carries `two_declined=1` (`Cancel::DECLINED_PARAM`). The sidebar component
+`Two_Gateway/js/view/checkout/forget-declined-choice` takes it out of the
+address bar and clears only that remembered choice, once, before the payment
+step renders; a guest's email and typed addresses stay
+(`Test/Js/checkout-forget-declined-choice.test.js`).
 
 Closing goes through Magento's own cancel service
 (`OrderManagementInterface::cancel()`, called by `OrderService::cancelLocally()`),

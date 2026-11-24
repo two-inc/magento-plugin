@@ -98,6 +98,16 @@
                                         <item name="two-preselect" xsi:type="array">
                                             <item name="component" xsi:type="string">Two_Gateway/js/view/checkout/preselect</item>
                                         </item>
+                                        <!--
+                                            TWO-27389: forgets the payment choice the
+                                            browser remembers, once, for a buyer the
+                                            decline return sent back to choose another
+                                            method. Here because the sidebar renders
+                                            before the payment step reselects it.
+                                        -->
+                                        <item name="two-forget-declined-choice" xsi:type="array">
+                                            <item name="component" xsi:type="string">Two_Gateway/js/view/checkout/forget-declined-choice</item>
+                                        </item>
                                         <item name="summary" xsi:type="array">
                                             <item name="children" xsi:type="array">
                                                 <item name="totals" xsi:type="array">

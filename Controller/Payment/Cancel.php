@@ -32,6 +32,12 @@ use Two\Gateway\Service\Payment\PendingOrderResolver as Resolver;
  */
 class Cancel extends Action
 {
+    /**
+     * Marks the redirect to the payment step, so the checkout forgets the
+     * payment method the browser remembers, once (forget-declined-choice.js).
+     */
+    public const DECLINED_PARAM = 'two_declined';
+
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
@@ -160,7 +166,7 @@ class Cancel extends Action
         }
         if ($restored || (int)$this->checkoutSession->getQuoteId() === (int)$order->getQuoteId()) {
             return $this->getResponse()->setRedirect(
-                $this->_url->getUrl('checkout', ['_fragment' => 'payment'])
+                $this->_url->getUrl('checkout', ['_query' => [self::DECLINED_PARAM => 1], '_fragment' => 'payment'])
             );
         }
         return $this->toCart();

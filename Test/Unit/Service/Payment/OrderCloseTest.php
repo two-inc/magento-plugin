@@ -12,8 +12,6 @@ use Magento\Framework\DataObject;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
-use Magento\Framework\Stdlib\CookieManagerInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Sales\Api\OrderManagementInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
@@ -156,10 +154,7 @@ class OrderCloseTest extends TestCase
             static fn (\ReflectionParameter $p) => (string)$p->getType(),
             (new \ReflectionMethod(RestoreQuote::class, '__construct'))->getParameters()
         );
-        $this->assertSame(
-            [CheckoutSession::class, CartRepositoryInterface::class, CookieManagerInterface::class, CookieMetadataFactory::class],
-            $parameters
-        );
+        $this->assertSame([CheckoutSession::class, CartRepositoryInterface::class], $parameters);
     }
 
     public static function chainCases(): array
@@ -269,22 +264,13 @@ class OrderCloseTest extends TestCase
                 $this->saved[] = $quote;
             }
         };
-        $cookies = $this->createMock(CookieManagerInterface::class);
-        $cookies->method('getCookie')->with('mage-cache-sessid')->willReturn('true');
-        $deleted = [];
-        $cookies->method('deleteCookie')->willReturnCallback(function ($name, $metadata) use (&$deleted) {
-            $deleted[] = [$name, $metadata->getPath()];
-        });
-
-        $result = (new RestoreQuote($session, $carts, $cookies, new CookieMetadataFactory()))->execute($this->order());
+        $result = (new RestoreQuote($session, $carts))->execute($this->order());
 
         $description = $this->dataName();
         $this->assertSame($expected, $result, "$description: restored");
-        // A restored cart offers every method again with none chosen, in the
-        // cart and in the browser's remembered checkout choices.
+        // A restored cart offers every method again with none chosen.
         $this->assertSame($expected, $restored->paymentRemoved, "$description: payment method cleared");
         $this->assertSame($expected ? [$restored] : [], $carts->saved, "$description: cart saved without it");
-        $this->assertSame($expected ? [['mage-cache-sessid', '/']] : [], $deleted, "$description: browser choices forgotten");
     }
 
     private function order(): Order

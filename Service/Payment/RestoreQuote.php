@@ -9,8 +9,6 @@ namespace Two\Gateway\Service\Payment;
 
 use Magento\Checkout\Model\Session;
 use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
-use Magento\Framework\Stdlib\CookieManagerInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Sales\Model\Order;
 
@@ -26,8 +24,8 @@ use Magento\Sales\Model\Order;
  *
  * The restored cart has no payment method, so neither checkout preselects
  * the one that was not approved; it stays offered. Luma also remembers the
- * buyer's last choice in the browser's checkout storage, which Magento clears
- * when its `mage-cache-sessid` cookie is gone, as it does at login.
+ * buyer's last choice in the browser, which the decline return's redirect has
+ * the checkout forget (forget-declined-choice.js).
  *
  * Stock is not touched here: closing the order through Magento's cancel
  * returns it, once.
@@ -45,31 +43,15 @@ class RestoreQuote
     private $cartRepository;
 
     /**
-     * @var CookieManagerInterface
-     */
-    private $cookieManager;
-
-    /**
-     * @var CookieMetadataFactory
-     */
-    private $cookieMetadataFactory;
-
-    /**
      * @param Session $session
      * @param CartRepositoryInterface $cartRepository
-     * @param CookieManagerInterface $cookieManager
-     * @param CookieMetadataFactory $cookieMetadataFactory
      */
     public function __construct(
         Session $session,
-        CartRepositoryInterface $cartRepository,
-        CookieManagerInterface $cookieManager,
-        CookieMetadataFactory $cookieMetadataFactory
+        CartRepositoryInterface $cartRepository
     ) {
         $this->session = $session;
         $this->cartRepository = $cartRepository;
-        $this->cookieManager = $cookieManager;
-        $this->cookieMetadataFactory = $cookieMetadataFactory;
     }
 
     /**
@@ -100,19 +82,6 @@ class RestoreQuote
         $restored = $this->session->getQuote();
         $restored->removePayment();
         $this->cartRepository->save($restored);
-        $this->forgetCheckoutChoices();
         return true;
-    }
-
-    /**
-     * Have Luma drop the payment method it remembers in the browser.
-     */
-    private function forgetCheckoutChoices(): void
-    {
-        if ($this->cookieManager->getCookie('mage-cache-sessid')) {
-            $metadata = $this->cookieMetadataFactory->createCookieMetadata();
-            $metadata->setPath('/');
-            $this->cookieManager->deleteCookie('mage-cache-sessid', $metadata);
-        }
     }
 }
