@@ -111,6 +111,14 @@ address bar and clears only that remembered choice, once, before the payment
 step renders; a guest's email and typed addresses stay
 (`Test/Js/checkout-forget-declined-choice.test.js`).
 
+The message travels as Magento's queued page message (the `mage-messages`
+cookie), which the cart page and Hyvä's checkout show. Luma's one-page checkout
+removes the page messages block, so on the marker the same component shows the
+newest queued error in the checkout's own message area (sticky, through
+`messages-sticky-errors-mixin.js`) and empties the queue, so it is not shown
+again on the buyer's next page, such as the next order's success page
+(TWO-27396).
+
 Closing goes through Magento's own cancel service
 (`OrderManagementInterface::cancel()`, called by `OrderService::cancelLocally()`),
 which returns the stock and the coupon usage. `Service\Payment\RestoreQuote`
