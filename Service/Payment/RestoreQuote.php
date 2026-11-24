@@ -80,7 +80,10 @@ class RestoreQuote
             return false;
         }
         $restored = $this->session->getQuote();
-        $restored->removePayment();
+        // Cleared on the payment itself: removePayment() only flags the loaded
+        // payment, which the quote's save never writes, so the stored method
+        // would survive (TWO-27396).
+        $restored->getPayment()->setMethod(null);
         $this->cartRepository->save($restored);
         return true;
     }

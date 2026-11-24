@@ -19,13 +19,25 @@
  * One-shot: the marker is taken out of the address bar as it is read, so a
  * reload or a shared link cannot clear a choice the buyer has made since.
  *
+ * The return's message reaches this page queued in Magento's `mage-messages`
+ * cookie, which only the page messages block reads, and the one-page checkout
+ * removes that block. Left there it would surface on the buyer's next page,
+ * typically the next order's success page (TWO-27396). So on the marker this
+ * component also takes the newest queued error, shows it in the checkout's
+ * own message area (sticky, see messages-sticky-errors-mixin.js), and empties
+ * the queue the way Magento_Theme/js/view/messages does.
+ *
  * Mounted from checkout_index_index.xml under the always-present sidebar,
  * beside the express preselect, which renders before the payment step.
  */
 define([
+    'jquery',
     'uiComponent',
-    'Magento_Checkout/js/checkout-data'
-], function (Component, checkoutData) {
+    'Magento_Checkout/js/checkout-data',
+    'Magento_Ui/js/model/messageList',
+    'mage/cookies',
+    'jquery/jquery-storageapi'
+], function ($, Component, checkoutData, messageList) {
     'use strict';
 
     /**
@@ -68,6 +80,36 @@ define([
         return true;
     }
 
+    /**
+     * The cookie Magento queues a redirect's messages in (MessagePlugin).
+     */
+    var QUEUE = 'mage-messages';
+
+    /**
+     * Shows the newest error queued for the page messages block in the
+     * checkout's message area, and empties the queue so nothing queued
+     * before the landing turns up on a later page.
+     */
+    function showQueuedError() {
+        var queued = $.cookieStorage.get(QUEUE);
+        var newest = null;
+
+        (Array.isArray(queued) ? queued : []).forEach(function (message) {
+            if (message && message.type === 'error' && message.text) {
+                newest = String(message.text);
+            }
+        });
+
+        $.mage.cookies.set(QUEUE, '', {
+            samesite: 'strict',
+            domain: ''
+        });
+
+        if (newest) {
+            messageList.addErrorMessage({ message: newest });
+        }
+    }
+
     return Component.extend({
         defaults: {
             template: null
@@ -81,6 +123,7 @@ define([
 
             if (takeMarker()) {
                 checkoutData.setSelectedPaymentMethod(null);
+                showQueuedError();
             }
 
             return this;

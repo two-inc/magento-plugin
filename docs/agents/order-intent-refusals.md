@@ -102,14 +102,24 @@ browser or device gets the message on the cart page and nothing restored, so
 a buyer's cart is never attached to someone else's session. A cart that
 cannot be restored is logged and the buyer gets the message on the cart page.
 
-The restored cart has its payment method removed, so neither checkout
-preselects the method that was not approved, though it stays offered. Luma
+The restored cart has its payment method cleared and saved (set to none on the
+payment itself: `removePayment()` only flags the loaded payment, and the save
+never writes it, TWO-27396), so neither checkout preselects the method that
+was not approved, though it stays offered. Luma
 also remembers the last choice in the browser's checkout data, so the redirect
 carries `two_declined=1` (`Cancel::DECLINED_PARAM`). The sidebar component
 `Two_Gateway/js/view/checkout/forget-declined-choice` takes it out of the
 address bar and clears only that remembered choice, once, before the payment
 step renders; a guest's email and typed addresses stay
 (`Test/Js/checkout-forget-declined-choice.test.js`).
+
+The message travels as Magento's queued page message (the `mage-messages`
+cookie), which the cart page and Hyvä's checkout show. Luma's one-page checkout
+removes the page messages block, so on the marker the same component shows the
+newest queued error in the checkout's own message area (sticky, through
+`messages-sticky-errors-mixin.js`) and empties the queue, so it is not shown
+again on the buyer's next page, such as the next order's success page
+(TWO-27396).
 
 Closing goes through Magento's own cancel service
 (`OrderManagementInterface::cancel()`, called by `OrderService::cancelLocally()`),

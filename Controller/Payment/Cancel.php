@@ -34,7 +34,8 @@ class Cancel extends Action
 {
     /**
      * Marks the redirect to the payment step, so the checkout forgets the
-     * payment method the browser remembers, once (forget-declined-choice.js).
+     * payment method the browser remembers, once, and shows the queued
+     * message where the page has no messages block (forget-declined-choice.js).
      */
     public const DECLINED_PARAM = 'two_declined';
 
