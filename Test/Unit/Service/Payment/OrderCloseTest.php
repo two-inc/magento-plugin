@@ -66,6 +66,33 @@ class OrderCloseTest extends TestCase
         $this->assertSame('2026-11-24 10:00:00', $managed->getData(OrderService::PENDING_CHECKED_AT), "$description: check time kept");
     }
 
+    public function testHistoryTheCallerAddedIsSavedWithTheClosedOrder(): void
+    {
+        $order = $this->order();
+        $unsaved = new DataObject(['comment' => 'Two declined this order.', 'status' => Two::STATUS_PENDING]);
+        $saved = new DataObject(['id' => 5, 'comment' => 'placed', 'status' => Two::STATUS_PENDING]);
+        $order->setData('status_histories', [$saved, $unsaved]);
+        $managed = $this->order();
+        $service = $this->service($managed, true);
+
+        $service->failOrder($order, 'why');
+
+        $this->assertSame([$unsaved], $managed->getData('status_histories'), 'only the unsaved entry, once');
+        $this->assertSame(Two::STATUS_FAILED, $managed->getStatus());
+    }
+
+    public function testAnOrderTheRepositoryAlreadyHoldsIsNotGivenItsHistoryTwice(): void
+    {
+        $order = $this->order();
+        $unsaved = new DataObject(['comment' => 'Two declined this order.', 'status' => Two::STATUS_PENDING]);
+        $order->setData('status_histories', [$unsaved]);
+        $service = $this->service($order, true);
+
+        $service->failOrder($order, 'why');
+
+        $this->assertSame([$unsaved], $order->getData('status_histories'));
+    }
+
     public function testAnOrderMagentoWillNotCancelIsNotSaved(): void
     {
         $managed = $this->order();

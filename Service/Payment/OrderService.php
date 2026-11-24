@@ -541,6 +541,16 @@ class OrderService
     {
         $id = (int)$order->getId();
         $managed = $this->orderRepository->get($id);
+        if ($managed !== $order) {
+            // Only the repository's instance is saved, so history the caller
+            // added to its own copy (the resolver's account of what Two
+            // reported) is carried over, or the merchant never sees it.
+            foreach ((array)$order->getStatusHistories() as $history) {
+                if (!$history->getId()) {
+                    $managed->addStatusHistory($history);
+                }
+            }
+        }
         $managed->setData(self::SKIP_CANCEL_SYNC, $cancelledBy);
         if ($order->getData(self::PENDING_CHECKED_AT) !== null) {
             $managed->setData(self::PENDING_CHECKED_AT, $order->getData(self::PENDING_CHECKED_AT));
