@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Block\Adminhtml\Order;
 
 use Magento\Framework\Phrase;
+use Magento\Framework\Phrase\RendererInterface;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -34,6 +35,8 @@ class ViewSummaryTest extends TestCase
                 ['id' => 'remote-1', 'state' => 'Verified', 'term' => '30 days']],
             'end-of-month term' => ['remote-1', ['state' => 'CONFIRMED'], false, $endOfMonth,
                 ['id' => 'remote-1', 'state' => 'Confirmed', 'term' => '30 days from end of month']],
+            'fulfilment needing manual resolution' => ['remote-1', ['state' => 'FULFILMENT_NEEDS_MANUAL_RESOLUTION'], false, $standard,
+                ['id' => 'remote-1', 'state' => 'Fulfilment needs manual resolution', 'term' => '30 days']],
             'state Two adds later shows as named' => ['remote-1', ['state' => 'SOME_NEW_STATE'], false, $standard,
                 ['id' => 'remote-1', 'state' => 'SOME_NEW_STATE', 'term' => '30 days']],
             'Two unreachable' => ['remote-1', [], true, $standard,
@@ -52,6 +55,27 @@ class ViewSummaryTest extends TestCase
         $block = $this->block($twoOrderId, $response, $apiError, $terms, $calls);
 
         $this->assertSame($expected, $block->getTwoOrderSummary());
+    }
+
+    /**
+     * The state label is looked up under its own key, not the bare word, so
+     * another module's translation of "Confirmed" cannot replace it.
+     */
+    public function testStateIsTranslatedUnderItsOwnKey(): void
+    {
+        Phrase::setRenderer(new class implements RendererInterface {
+            public function render(array $source, array $arguments)
+            {
+                $text = end($source);
+                return ['Provider order state: Confirmed' => 'Bevestigd', 'Confirmed' => 'Wrong'][$text] ?? $text;
+            }
+        });
+        try {
+            $block = $this->block('remote-1', ['state' => 'CONFIRMED'], false, null, $calls);
+            $this->assertSame('Bevestigd', $block->getTwoOrderSummary()['state']);
+        } finally {
+            Phrase::setRenderer(null);
+        }
     }
 
     /**

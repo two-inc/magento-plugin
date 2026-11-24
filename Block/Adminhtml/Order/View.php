@@ -25,19 +25,11 @@ class View extends OrderView
     private const READ_TIMEOUT_SECONDS = 5;
 
     /**
-     * Two's order states as the merchant reads them. A state not listed is
-     * shown as Two names it.
+     * Prefix of the state labels' translation keys. It keeps them apart from
+     * other modules' translations of the bare words, and is dropped where no
+     * translation exists, so English reads the bare word.
      */
-    private const STATE_LABELS = [
-        'UNVERIFIED' => 'Unverified',
-        'VERIFIED' => 'Verified',
-        'CONFIRMED' => 'Confirmed',
-        'FULFILLING' => 'Fulfilling',
-        'FULFILLED' => 'Fulfilled',
-        'DELIVERED' => 'Delivered',
-        'CANCELLED' => 'Cancelled',
-        'REFUNDED' => 'Refunded',
-    ];
+    private const STATE_KEY_PREFIX = 'Provider order state: ';
 
     /**
     * @var ConfigRepository
@@ -140,14 +132,29 @@ class View extends OrderView
 
     /**
      * Two's state as a translated label, or as Two names it when unlisted.
+     * Each key is a literal so i18n:collect-phrases finds it.
      */
     private function stateLabel(?string $state): ?string
     {
-        if ($state === null || $state === '') {
+        $label = match ($state) {
+            null, '' => null,
+            'UNVERIFIED' => __('Provider order state: Unverified'),
+            'VERIFIED' => __('Provider order state: Verified'),
+            'CONFIRMED' => __('Provider order state: Confirmed'),
+            'FULFILLING' => __('Provider order state: Fulfilling'),
+            'FULFILMENT_NEEDS_MANUAL_RESOLUTION' => __('Provider order state: Fulfilment needs manual resolution'),
+            'FULFILLED' => __('Provider order state: Fulfilled'),
+            'DELIVERED' => __('Provider order state: Delivered'),
+            'CANCELLED' => __('Provider order state: Cancelled'),
+            'REFUNDED' => __('Provider order state: Refunded'),
+            default => $state,
+        };
+        if ($label === null) {
             return null;
         }
+        $label = (string)$label;
 
-        return isset(self::STATE_LABELS[$state]) ? (string)__(self::STATE_LABELS[$state]) : $state;
+        return str_starts_with($label, self::STATE_KEY_PREFIX) ? substr($label, strlen(self::STATE_KEY_PREFIX)) : $label;
     }
 
     /**
