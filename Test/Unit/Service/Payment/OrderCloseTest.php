@@ -225,12 +225,25 @@ class OrderCloseTest extends TestCase
         bool $magentoRestores,
         bool $expected
     ): void {
+        // Models core: the payment carries the method the quote's save writes,
+        // and removePayment() only flags the loaded payment, which that save
+        // never writes, so the stored method would survive it (TWO-27396).
         $restored = new class {
-            public $paymentRemoved = false;
+            public $payment;
+
+            public function __construct()
+            {
+                $this->payment = new DataObject(['method' => 'two_payment']);
+            }
+
+            public function getPayment()
+            {
+                return $this->payment;
+            }
 
             public function removePayment()
             {
-                $this->paymentRemoved = true;
+                $this->payment->setData('is_deleted', true);
                 return $this;
             }
         };
@@ -261,7 +274,7 @@ class OrderCloseTest extends TestCase
 
             public function save($quote)
             {
-                $this->saved[] = $quote;
+                $this->saved[] = $quote->getPayment()->getMethod();
             }
         };
         $result = (new RestoreQuote($session, $carts))->execute($this->order());
@@ -269,8 +282,7 @@ class OrderCloseTest extends TestCase
         $description = $this->dataName();
         $this->assertSame($expected, $result, "$description: restored");
         // A restored cart offers every method again with none chosen.
-        $this->assertSame($expected, $restored->paymentRemoved, "$description: payment method cleared");
-        $this->assertSame($expected ? [$restored] : [], $carts->saved, "$description: cart saved without it");
+        $this->assertSame($expected ? [null] : [], $carts->saved, "$description: cart saved with no method stored");
     }
 
     private function order(): Order

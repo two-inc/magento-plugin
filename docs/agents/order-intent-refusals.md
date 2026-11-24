@@ -102,8 +102,10 @@ browser or device gets the message on the cart page and nothing restored, so
 a buyer's cart is never attached to someone else's session. A cart that
 cannot be restored is logged and the buyer gets the message on the cart page.
 
-The restored cart has its payment method removed, so neither checkout
-preselects the method that was not approved, though it stays offered. Luma
+The restored cart has its payment method cleared and saved (set to none on the
+payment itself: `removePayment()` only flags the loaded payment, and the save
+never writes it, TWO-27396), so neither checkout preselects the method that
+was not approved, though it stays offered. Luma
 also remembers the last choice in the browser's checkout data, so the redirect
 carries `two_declined=1` (`Cancel::DECLINED_PARAM`). The sidebar component
 `Two_Gateway/js/view/checkout/forget-declined-choice` takes it out of the
