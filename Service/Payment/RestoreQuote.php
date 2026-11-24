@@ -9,6 +9,8 @@ namespace Two\Gateway\Service\Payment;
 
 use Magento\Checkout\Model\Session;
 use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
+use Magento\Framework\Stdlib\CookieManagerInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Sales\Model\Order;
 
@@ -21,6 +23,11 @@ use Magento\Sales\Model\Order;
  * reserved for it (a quote already restored, or reused for another order, is
  * left alone). Another browser or device gets nothing, so a buyer's cart is
  * never attached to someone else's session.
+ *
+ * The restored cart has no payment method, so neither checkout preselects
+ * the one that was not approved; it stays offered. Luma also remembers the
+ * buyer's last choice in the browser's checkout storage, which Magento clears
+ * when its `mage-cache-sessid` cookie is gone, as it does at login.
  *
  * Stock is not touched here: closing the order through Magento's cancel
  * returns it, once.
@@ -38,15 +45,31 @@ class RestoreQuote
     private $cartRepository;
 
     /**
+     * @var CookieManagerInterface
+     */
+    private $cookieManager;
+
+    /**
+     * @var CookieMetadataFactory
+     */
+    private $cookieMetadataFactory;
+
+    /**
      * @param Session $session
      * @param CartRepositoryInterface $cartRepository
+     * @param CookieManagerInterface $cookieManager
+     * @param CookieMetadataFactory $cookieMetadataFactory
      */
     public function __construct(
         Session $session,
-        CartRepositoryInterface $cartRepository
+        CartRepositoryInterface $cartRepository,
+        CookieManagerInterface $cookieManager,
+        CookieMetadataFactory $cookieMetadataFactory
     ) {
         $this->session = $session;
         $this->cartRepository = $cartRepository;
+        $this->cookieManager = $cookieManager;
+        $this->cookieMetadataFactory = $cookieMetadataFactory;
     }
 
     /**
@@ -71,6 +94,25 @@ class RestoreQuote
         }
         // Magento's own restore: the last real order's quote, which the checks
         // above have shown is this order's, made active and current again.
-        return (bool)$this->session->restoreQuote();
+        if (!$this->session->restoreQuote()) {
+            return false;
+        }
+        $restored = $this->session->getQuote();
+        $restored->removePayment();
+        $this->cartRepository->save($restored);
+        $this->forgetCheckoutChoices();
+        return true;
+    }
+
+    /**
+     * Have Luma drop the payment method it remembers in the browser.
+     */
+    private function forgetCheckoutChoices(): void
+    {
+        if ($this->cookieManager->getCookie('mage-cache-sessid')) {
+            $metadata = $this->cookieMetadataFactory->createCookieMetadata();
+            $metadata->setPath('/');
+            $this->cookieManager->deleteCookie('mage-cache-sessid', $metadata);
+        }
     }
 }

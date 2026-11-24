@@ -62,7 +62,9 @@ A local cancel must never send a cancel back: `cancelLocally()` closes the order
 through Magento's order cancel service (`OrderManagementInterface::cancel()`,
 which returns stock and coupon usage, TWO-27389), after setting
 `OrderService::SKIP_CANCEL_SYNC` on the instance the order repository holds,
-which is the one that service cancels. `Observer\SalesOrderCancelAfter` then
+which is the one that service cancels. That instance is read afresh first,
+because the admin's button loads it before waiting for the lock, and any
+status history the caller added without saving is carried onto it. `Observer\SalesOrderCancelAfter` then
 sends nothing to Two. It still dispatches `two_payment_order_cancelled`, with
 `two_data` `['cancelled_by' => ...]` naming who closed it: `two` when Two
 cancelled or declined it, `buyer` when the buyer left verification and the

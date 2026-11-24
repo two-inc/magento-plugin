@@ -517,3 +517,4 @@
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Pago anulado: %1 ha cancelado el pedido %2. Cancela este pedido para cerrarlo."
 "%1 could not approve this purchase. Please choose another payment method.","%1 no ha podido aprobar esta compra. Elige otro método de pago."
 "The buyer came back from %1 without finishing verification. Cancelled with %1.","El comprador volvió de %1 sin terminar la verificación. Cancelado con %1."
+"The status of this purchase with %1 could not be checked just now. Please try again in a few minutes.","No se ha podido comprobar ahora mismo el estado de esta compra con %1. Inténtalo de nuevo en unos minutos."

@@ -517,3 +517,4 @@
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Betaling ingetrokken: %1 heeft bestelling %2 geannuleerd. Annuleer deze bestelling om haar af te sluiten."
 "%1 could not approve this purchase. Please choose another payment method.","%1 kon deze aankoop niet goedkeuren. Kies een andere betaalmethode."
 "The buyer came back from %1 without finishing verification. Cancelled with %1.","De koper is teruggekomen van %1 zonder de verificatie af te ronden. Geannuleerd bij %1."
+"The status of this purchase with %1 could not be checked just now. Please try again in a few minutes.","De status van deze aankoop met %1 kon nu niet worden gecontroleerd. Probeer het over een paar minuten opnieuw."

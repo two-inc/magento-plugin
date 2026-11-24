@@ -9,24 +9,30 @@ namespace Two\Gateway\Test\Unit\Service\Payment;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\DataObject;
+use Magento\Framework\Event\Observer;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Stdlib\Cookie\CookieMetadataFactory;
+use Magento\Framework\Stdlib\CookieManagerInterface;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Sales\Api\OrderManagementInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
+use Two\Gateway\Observer\SalesOrderCancelAfter;
 use Two\Gateway\Service\Payment\OrderService;
 use Two\Gateway\Service\Payment\RestoreQuote;
 
 /**
  * TWO-27389: an order is closed through Magento's own cancel service, which
  * returns its stock and coupon usage, and a cart comes back only to the
- * browser that placed the order, without returning stock a second time.
+ * browser that placed the order, without returning stock a second time and
+ * without the declined payment method chosen.
  */
 class OrderCloseTest extends TestCase
 {
@@ -35,6 +41,9 @@ class OrderCloseTest extends TestCase
 
     /** @var int units returned to stock by Magento's cancel */
     private $stockReturned = 0;
+
+    /** @var array[] the cancelled events integrations heard */
+    private $events = [];
 
     public static function closeCases(): array
     {
@@ -46,7 +55,7 @@ class OrderCloseTest extends TestCase
     }
 
     #[DataProvider('closeCases')]
-    public function testAnOrderIsClosedThroughMagentosCancelService(
+    public function testAnOrderIsReadAfreshThenClosedThroughMagentosCancelService(
         string $cancelledBy,
         ?string $status,
         string $expectedStatus,
@@ -60,37 +69,54 @@ class OrderCloseTest extends TestCase
         $service->cancelLocally($order, 'why', $cancelledBy, $status);
 
         $description = $this->dataName();
-        $this->assertSame(['cancel', 'addOrderComment why', 'save'], $this->calls, "$description: actions");
+        $this->assertSame(['load', 'cancel', 'addOrderComment why', 'save'], $this->calls, "$description: actions");
         $this->assertSame($expectedFlag, $managed->getData(OrderService::SKIP_CANCEL_SYNC), "$description: no cancel echoed to Two");
         $this->assertSame([Order::STATE_CANCELED, $expectedStatus], [$managed->getState(), $managed->getStatus()], "$description: closed");
         $this->assertSame('2026-11-24 10:00:00', $managed->getData(OrderService::PENDING_CHECKED_AT), "$description: check time kept");
     }
 
-    public function testHistoryTheCallerAddedIsSavedWithTheClosedOrder(): void
+    public function testAnInstanceLoadedBeforeTheLockIsNotCancelledAsItWas(): void
+    {
+        // The admin's button loads the order through the repository, then
+        // waits for the lock; another request changes it meanwhile.
+        $managed = $this->order()->setTwoOrderId('read before the lock');
+        $service = $this->service($managed, true);
+        $seen = null;
+        (new \ReflectionProperty(OrderService::class, 'orderManagement'))->setValue(
+            $service,
+            $this->management($managed, true, function () use ($managed, &$seen) {
+                $seen = $managed->getTwoOrderId();
+            })
+        );
+
+        $service->cancelLocally($this->order(), 'why');
+
+        $this->assertSame('two-1', $seen, 'cancelled as the database holds it');
+    }
+
+    public static function historyCases(): array
+    {
+        return [
+            'the caller holds its own copy' => [false],
+            'the caller holds the repository\'s instance' => [true],
+        ];
+    }
+
+    #[DataProvider('historyCases')]
+    public function testHistoryTheCallerAddedIsSavedWithTheClosedOrderOnce(bool $sameInstance): void
     {
         $order = $this->order();
         $unsaved = new DataObject(['comment' => 'Two declined this order.', 'status' => Two::STATUS_PENDING]);
         $saved = new DataObject(['id' => 5, 'comment' => 'placed', 'status' => Two::STATUS_PENDING]);
         $order->setData('status_histories', [$saved, $unsaved]);
-        $managed = $this->order();
+        $managed = $sameInstance ? $order : $this->order();
         $service = $this->service($managed, true);
 
         $service->failOrder($order, 'why');
 
-        $this->assertSame([$unsaved], $managed->getData('status_histories'), 'only the unsaved entry, once');
-        $this->assertSame(Two::STATUS_FAILED, $managed->getStatus());
-    }
-
-    public function testAnOrderTheRepositoryAlreadyHoldsIsNotGivenItsHistoryTwice(): void
-    {
-        $order = $this->order();
-        $unsaved = new DataObject(['comment' => 'Two declined this order.', 'status' => Two::STATUS_PENDING]);
-        $order->setData('status_histories', [$unsaved]);
-        $service = $this->service($order, true);
-
-        $service->failOrder($order, 'why');
-
-        $this->assertSame([$unsaved], $order->getData('status_histories'));
+        $description = $this->dataName();
+        $this->assertSame([$unsaved], $managed->getData('status_histories'), "$description: only the unsaved entry, once");
+        $this->assertSame(Two::STATUS_FAILED, $managed->getStatus(), $description);
     }
 
     public function testAnOrderMagentoWillNotCancelIsNotSaved(): void
@@ -102,7 +128,7 @@ class OrderCloseTest extends TestCase
             $service->cancelLocally($this->order(), 'why');
             $this->fail('a refused cancel must throw');
         } catch (LocalizedException $exception) {
-            $this->assertSame(['cancel'], $this->calls, 'nothing written');
+            $this->assertSame(['load', 'cancel'], $this->calls, 'nothing written');
             $this->assertSame(Order::STATE_PENDING_PAYMENT, $managed->getState());
         }
     }
@@ -122,39 +148,78 @@ class OrderCloseTest extends TestCase
         $shown = $service->failBuyerReturn($order, new LocalizedException(__('For the buyer.')));
 
         $this->assertSame('For the buyer.', $shown);
-        $this->assertSame(['restoreQuote', 'cancel', 'addOrderComment For the buyer.', 'save'], $this->calls);
+        $this->assertSame(['restoreQuote', 'load', 'cancel', 'addOrderComment For the buyer.', 'save'], $this->calls);
         $this->assertSame([Order::STATE_CANCELED, Two::STATUS_FAILED], [$managed->getState(), $managed->getStatus()]);
         $this->assertSame(1, $this->stockReturned, 'only Magento\'s cancel returns stock');
-        // Restoring the cart returns nothing to stock itself.
+        // Restoring the cart has nothing that could return stock.
         $parameters = array_map(
             static fn (\ReflectionParameter $p) => (string)$p->getType(),
             (new \ReflectionMethod(RestoreQuote::class, '__construct'))->getParameters()
         );
-        $this->assertSame([CheckoutSession::class, CartRepositoryInterface::class], $parameters);
+        $this->assertSame(
+            [CheckoutSession::class, CartRepositoryInterface::class, CookieManagerInterface::class, CookieMetadataFactory::class],
+            $parameters
+        );
     }
 
-    public function testAReturnWithNoOrderRestoresNothing(): void
+    public static function chainCases(): array
     {
-        $service = $this->service($this->order(), true);
-        $restore = $this->createMock(RestoreQuote::class);
-        $restore->expects($this->never())->method('execute');
-        (new \ReflectionProperty(OrderService::class, 'restoreQuote'))->setValue($service, $restore);
+        return [
+            'Two cancelled it' => ['two'],
+            'the buyer left verification' => ['buyer'],
+            'a failed return' => ['shop'],
+        ];
+    }
 
-        $service->failBuyerReturn(null, new LocalizedException(__('For the buyer.')));
+    /**
+     * The flag must reach the order Magento's cancel hands its observers, or
+     * the cancel observer sends a cancel to Two as well.
+     */
+    #[DataProvider('chainCases')]
+    public function testTheCancelObserverSendsNothingToTwo(string $cancelledBy): void
+    {
+        $managed = $this->order()->setPayment((new Order\Payment())->setMethod('two_payment'));
+        $service = $this->service($managed, true);
+        $observer = $this->cancelObserver($service);
+        (new \ReflectionProperty(OrderService::class, 'orderManagement'))->setValue(
+            $service,
+            $this->management($managed, true, function () use ($observer, $managed) {
+                // Magento dispatches order_cancel_after with the order it cancelled.
+                $observer->execute(new class (new DataObject(['order' => $managed])) extends Observer {
+                    private $event;
 
-        $this->assertSame([], $this->calls);
+                    public function __construct($event)
+                    {
+                        $this->event = $event;
+                    }
+
+                    public function getEvent()
+                    {
+                        return $this->event;
+                    }
+                });
+            })
+        );
+
+        $service->cancelLocally($this->order(), 'why', $cancelledBy);
+
+        $description = $this->dataName();
+        $this->assertNotContains('cancelTwoOrder', $this->calls, "$description: no cancel sent to Two");
+        $this->assertSame([['cancelled_by' => $cancelledBy]], $this->events, "$description: integrations told who");
     }
 
     public static function restoreCases(): array
     {
-        // last order placed in this browser, the quote's reserved order id (null: quote gone), restored
+        // last order placed in this browser, the quote's reserved order id (null: quote gone),
+        // Magento restores it, restored
         return [
-            'this browser placed the order: its cart comes back' => ['100000042', '100000042', true],
-            'another order placed since in this browser: nothing' => ['100000043', '100000042', false],
-            'no order placed in this browser: nothing' => [null, '100000042', false],
-            'the cart already came back: nothing' => ['100000042', '', false],
-            'the cart was reserved for another order: nothing' => ['100000042', '100000050', false],
-            'the cart is gone: nothing' => ['100000042', null, false],
+            'this browser placed the order: its cart comes back' => ['100000042', '100000042', true, true],
+            'Magento could not restore it: nothing' => ['100000042', '100000042', false, false],
+            'another order placed since in this browser: nothing' => ['100000043', '100000042', true, false],
+            'no order placed in this browser: nothing' => [null, '100000042', true, false],
+            'the cart already came back: nothing' => ['100000042', '', true, false],
+            'the cart was reserved for another order: nothing' => ['100000042', '100000050', true, false],
+            'the cart is gone: nothing' => ['100000042', null, true, false],
         ];
     }
 
@@ -162,12 +227,25 @@ class OrderCloseTest extends TestCase
     public function testACartComesBackOnlyToTheBrowserThatPlacedTheOrder(
         ?string $lastRealOrderId,
         ?string $reservedOrderId,
+        bool $magentoRestores,
         bool $expected
     ): void {
+        $restored = new class {
+            public $paymentRemoved = false;
+
+            public function removePayment()
+            {
+                $this->paymentRemoved = true;
+                return $this;
+            }
+        };
         $session = $this->getMockBuilder(CheckoutSession::class)->onlyMethods(['restoreQuote'])->getMock();
         $session->setLastRealOrderId($lastRealOrderId);
-        $session->expects($expected ? $this->once() : $this->never())->method('restoreQuote')->willReturn(true);
+        $session->setQuote($restored);
+        $shouldRestore = $expected || !$magentoRestores;
+        $session->expects($shouldRestore ? $this->once() : $this->never())->method('restoreQuote')->willReturn($magentoRestores);
         $carts = new class ($this, $reservedOrderId) implements CartRepositoryInterface {
+            public $saved = [];
             private $test;
             private $reserved;
 
@@ -185,17 +263,34 @@ class OrderCloseTest extends TestCase
                 }
                 return new DataObject(['reservedOrderId' => $this->reserved === '' ? null : $this->reserved]);
             }
+
+            public function save($quote)
+            {
+                $this->saved[] = $quote;
+            }
         };
+        $cookies = $this->createMock(CookieManagerInterface::class);
+        $cookies->method('getCookie')->with('mage-cache-sessid')->willReturn('true');
+        $deleted = [];
+        $cookies->method('deleteCookie')->willReturnCallback(function ($name, $metadata) use (&$deleted) {
+            $deleted[] = [$name, $metadata->getPath()];
+        });
 
-        $restored = (new RestoreQuote($session, $carts))->execute($this->order());
+        $result = (new RestoreQuote($session, $carts, $cookies, new CookieMetadataFactory()))->execute($this->order());
 
-        $this->assertSame($expected, $restored, $this->dataName());
+        $description = $this->dataName();
+        $this->assertSame($expected, $result, "$description: restored");
+        // A restored cart offers every method again with none chosen, in the
+        // cart and in the browser's remembered checkout choices.
+        $this->assertSame($expected, $restored->paymentRemoved, "$description: payment method cleared");
+        $this->assertSame($expected ? [$restored] : [], $carts->saved, "$description: cart saved without it");
+        $this->assertSame($expected ? [['mage-cache-sessid', '/']] : [], $deleted, "$description: browser choices forgotten");
     }
 
     private function order(): Order
     {
         return (new Order())->setState(Order::STATE_PENDING_PAYMENT)->setStatus(Two::STATUS_PENDING)
-            ->setId(42)->setIncrementId('100000042')->setQuoteId(7);
+            ->setId(42)->setIncrementId('100000042')->setQuoteId(7)->setTwoOrderId('two-1');
     }
 
     /**
@@ -206,12 +301,16 @@ class OrderCloseTest extends TestCase
     {
         $service = $this->getMockBuilder(OrderService::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['addOrderComment'])
+            ->onlyMethods(['addOrderComment', 'cancelTwoOrder'])
             ->getMock();
         $service->method('addOrderComment')->willReturnCallback(function ($order, $comment) use ($service, $managed) {
             $this->assertSame($managed, $order, 'comments on the closed order');
             $this->calls[] = 'addOrderComment ' . $comment;
             return $service;
+        });
+        $service->method('cancelTwoOrder')->willReturnCallback(function () {
+            $this->calls[] = 'cancelTwoOrder';
+            return true;
         });
         $repository = $this->createMock(OrderRepositoryInterface::class);
         $repository->method('get')->with(42)->willReturn($managed);
@@ -220,22 +319,31 @@ class OrderCloseTest extends TestCase
             $this->calls[] = 'save';
             return $order;
         });
-        $management = $this->createMock(OrderManagementInterface::class);
-        $management->method('cancel')->willReturnCallback(function ($id) use ($managed, $cancels) {
-            $this->assertSame(42, $id);
-            $this->calls[] = 'cancel';
-            if (!$cancels) {
-                return false;
+        // Reading an order replaces its data with the row as stored.
+        $resource = new class ($this) {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
             }
-            $this->stockReturned++;
-            $managed->setState(Order::STATE_CANCELED)->setStatus('canceled');
-            return true;
-        });
+
+            public function load($order, $id)
+            {
+                $this->test->record('load');
+                $order->setData('status_histories', null)
+                    ->setData(OrderService::PENDING_CHECKED_AT, null)
+                    ->setState(Order::STATE_PENDING_PAYMENT)->setStatus(Two::STATUS_PENDING)
+                    ->setTwoOrderId('two-1');
+                return $this;
+            }
+        };
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
         $values = [
             'orderRepository' => $repository,
-            'orderManagement' => $management,
+            'orderResource' => $resource,
+            'orderManagement' => $this->management($managed, $cancels),
             'brandRegistry' => $brand,
             'logRepository' => $this->createMock(LogRepository::class),
         ];
@@ -243,5 +351,71 @@ class OrderCloseTest extends TestCase
             (new \ReflectionProperty(OrderService::class, $property))->setValue($service, $value);
         }
         return $service;
+    }
+
+    /**
+     * Magento's cancel service: it cancels the repository's instance, which
+     * returns stock, then hands that order to the cancel observers.
+     */
+    private function management(Order $managed, bool $cancels, ?callable $observers = null): OrderManagementInterface
+    {
+        $management = $this->createMock(OrderManagementInterface::class);
+        $management->method('cancel')->willReturnCallback(function ($id) use ($managed, $cancels, $observers) {
+            $this->assertSame(42, $id);
+            $this->calls[] = 'cancel';
+            if (!$cancels) {
+                return false;
+            }
+            if ($observers !== null) {
+                $observers();
+            }
+            $this->stockReturned++;
+            $managed->setState(Order::STATE_CANCELED)->setStatus('canceled');
+            return true;
+        });
+        return $management;
+    }
+
+    private function cancelObserver(OrderService $service): SalesOrderCancelAfter
+    {
+        $overlay = $this->createMock(BrandOverlayRegistryInterface::class);
+        $overlay->method('isTwoStackMethod')->willReturn(true);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Two');
+        $lifecycle = new class ($this) {
+            private $test;
+
+            public function __construct($test)
+            {
+                $this->test = $test;
+            }
+
+            public function dispatchCancelled($order, array $twoData = [])
+            {
+                $this->test->recordEvent($twoData);
+            }
+        };
+        $reflection = new \ReflectionClass(SalesOrderCancelAfter::class);
+        $observer = $reflection->newInstanceWithoutConstructor();
+        $values = [
+            'orderService' => $service,
+            'brandRegistry' => $brand,
+            'overlayRegistry' => $overlay,
+            'lifecycleEvents' => $lifecycle,
+        ];
+        foreach ($values as $property => $value) {
+            $reflection->getProperty($property)->setValue($observer, $value);
+        }
+        return $observer;
+    }
+
+    public function record(string $call): void
+    {
+        $this->calls[] = $call;
+    }
+
+    public function recordEvent(array $twoData): void
+    {
+        $this->events[] = $twoData;
     }
 }

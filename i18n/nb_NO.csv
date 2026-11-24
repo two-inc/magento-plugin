@@ -517,3 +517,4 @@
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Betaling annullert: %1 har kansellert ordre %2. Kanseller denne ordren for å lukke den."
 "%1 could not approve this purchase. Please choose another payment method.","%1 kunne ikke godkjenne dette kjøpet. Velg en annen betalingsmåte."
 "The buyer came back from %1 without finishing verification. Cancelled with %1.","Kjøperen kom tilbake fra %1 uten å fullføre bekreftelsen. Kansellert hos %1."
+"The status of this purchase with %1 could not be checked just now. Please try again in a few minutes.","Statusen for dette kjøpet med %1 kunne ikke sjekkes akkurat nå. Prøv igjen om noen minutter."

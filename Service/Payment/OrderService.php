@@ -528,7 +528,9 @@ class OrderService
      * The cancel goes through Magento's order cancel service, which returns
      * the stock and the coupon usage (TWO-27389). That service reads the order
      * through the order repository, which hands back the instance it holds,
-     * so the flag is set on that instance.
+     * so the flag is set on that instance. That instance may have been loaded
+     * before the caller took the order's lock (the admin's Check status
+     * button loads it first), so it is read afresh before it is cancelled.
      *
      * @param Order $order
      * @param string|\Magento\Framework\Phrase $comment why, for the merchant
@@ -540,21 +542,24 @@ class OrderService
     public function cancelLocally(Order $order, $comment, string $cancelledBy = 'two', ?string $status = null)
     {
         $id = (int)$order->getId();
+        // What the caller has added and not saved yet: its account of what
+        // Two reported, and the time of the check. Only the repository's
+        // instance is saved, and reading it afresh replaces its data, so both
+        // are carried over afterwards, or the merchant never sees them.
+        $unsaved = array_filter(
+            (array)$order->getStatusHistories(),
+            static fn ($history) => !$history->getId()
+        );
+        $checkedAt = $order->getData(self::PENDING_CHECKED_AT);
         $managed = $this->orderRepository->get($id);
-        if ($managed !== $order) {
-            // Only the repository's instance is saved, so history the caller
-            // added to its own copy (the resolver's account of what Two
-            // reported) is carried over, or the merchant never sees it.
-            foreach ((array)$order->getStatusHistories() as $history) {
-                if (!$history->getId()) {
-                    $managed->addStatusHistory($history);
-                }
-            }
+        $this->orderResource->load($managed, $id);
+        foreach ($unsaved as $history) {
+            $managed->addStatusHistory($history);
+        }
+        if ($checkedAt !== null) {
+            $managed->setData(self::PENDING_CHECKED_AT, $checkedAt);
         }
         $managed->setData(self::SKIP_CANCEL_SYNC, $cancelledBy);
-        if ($order->getData(self::PENDING_CHECKED_AT) !== null) {
-            $managed->setData(self::PENDING_CHECKED_AT, $order->getData(self::PENDING_CHECKED_AT));
-        }
         if (!$this->orderManagement->cancel($id) || $managed->getState() !== Order::STATE_CANCELED) {
             throw new LocalizedException(__('Magento did not allow the order to be cancelled.'));
         }

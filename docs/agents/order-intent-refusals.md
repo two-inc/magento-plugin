@@ -79,7 +79,9 @@ to pay for the same basket another way, so the click is never taken as a
 cancel (TWO-27389). The controller asks the resolver with the `buyer_decline`
 trigger, under the same per-order lock, and what Two reports decides:
 
-- VERIFIED or later: processed exactly as a confirm return, success page.
+- VERIFIED or later: processed exactly as a confirm return, success page. The
+  link sets nothing in the checkout session, so only the browser that placed
+  the order sees it there.
 - CANCELLED, or a `status` of REJECTED or DECLINED: closed here with no cancel
   sent to Two.
 - UNVERIFIED (the buyer left): cancelled at Two, then closed here. When Two
@@ -87,8 +89,8 @@ trigger, under the same per-order lock, and what Two reports decides:
   records the account as an order comment and leaves both the order and the
   cart as they are.
 - Two cannot be asked, or reports any other state, or another request holds
-  the order: nothing changes, and the buyer sees the still-being-checked
-  notice.
+  the order, or the resolver itself fails: nothing changes, and the buyer sees
+  a neutral notice that the status could not be checked just now.
 
 A closed order, whether closed now, by the scheduled check or by an earlier
 click, shows "{product} could not approve this purchase. Please choose another
@@ -97,7 +99,14 @@ last order is this order, and the order's own quote is still reserved for it)
 the cart comes back and the buyer lands on `checkout/#payment`; a second click
 finds that cart already in the session and lands there again. Any other
 browser or device gets the message on the cart page and nothing restored, so
-a buyer's cart is never attached to someone else's session.
+a buyer's cart is never attached to someone else's session. A cart that
+cannot be restored is logged and the buyer gets the message on the cart page.
+
+The restored cart has its payment method removed, so neither checkout
+preselects the method that was not approved, though it stays offered. Luma
+also remembers the last choice in the browser's checkout storage; deleting the
+`mage-cache-sessid` cookie makes Magento clear that storage, as it does at
+login.
 
 Closing goes through Magento's own cancel service
 (`OrderManagementInterface::cancel()`, called by `OrderService::cancelLocally()`),

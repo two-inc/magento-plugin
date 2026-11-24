@@ -517,3 +517,4 @@
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Betalning makulerad: %1 har avbrutit order %2. Avbryt den här beställningen för att stänga den."
 "%1 could not approve this purchase. Please choose another payment method.","%1 kunde inte godkänna det här köpet. Välj ett annat betalningssätt."
 "The buyer came back from %1 without finishing verification. Cancelled with %1.","Köparen kom tillbaka från %1 utan att slutföra verifieringen. Annullerad hos %1."
+"The status of this purchase with %1 could not be checked just now. Please try again in a few minutes.","Statusen för det här köpet med %1 kunde inte kontrolleras just nu. Försök igen om några minuter."

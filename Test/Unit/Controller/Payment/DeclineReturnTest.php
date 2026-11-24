@@ -13,6 +13,7 @@ use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Controller\Payment\Cancel;
 use Two\Gateway\Controller\Payment\Verificationfailed;
 use Two\Gateway\Model\Two;
@@ -29,7 +30,7 @@ use Two\Gateway\Service\Payment\PendingOrderResolver as R;
 class DeclineReturnTest extends TestCase
 {
     private const DECLINED = 'Two could not approve this purchase. Please choose another payment method.';
-    private const STILL_CHECKING = 'Your order is still being checked with Two. The shop will confirm your order by email if it goes through.';
+    private const NOT_CHECKED = 'The status of this purchase with Two could not be checked just now. Please try again in a few minutes.';
     private const PAYMENT_STEP = 'checkout#payment';
     private const CART = 'checkout/cart';
     private const SUCCESS = 'checkout/onepage/success';
@@ -57,8 +58,8 @@ class DeclineReturnTest extends TestCase
     public static function cases(): array
     {
         $restore = ['resolve', 'restoreQuote'];
-        // order before, Two's answer (outcome, order after, buyer message), basket restored now,
-        // the session's quote, actions, errors, notices, landing
+        // order before, Two's answer (outcome, order after, buyer message) or the resolver's failure,
+        // basket restored now (null: the restore fails), the session's quote, actions, errors, notices, landing
         $table = [
             'Two declined, same browser: basket back on the payment step' =>
                 [self::AWAITING, [R::OUTCOME_DECLINED, self::CANCELLED], true, null, $restore, [self::DECLINED], [], self::PAYMENT_STEP],
@@ -81,11 +82,15 @@ class DeclineReturnTest extends TestCase
             'Two refused the cancel: order and basket kept, its message shown' =>
                 [self::AWAITING, [R::OUTCOME_FAILED, self::AWAITING, 'Cannot cancel.'], false, null, ['resolve'], ['Cannot cancel.'], [], self::CART],
             'Two could not be asked: nothing changed' =>
-                [self::AWAITING, [R::OUTCOME_FAILED, self::AWAITING], false, null, ['resolve'], [], [self::STILL_CHECKING], self::CART],
+                [self::AWAITING, [R::OUTCOME_FAILED, self::AWAITING], false, null, ['resolve'], [], [self::NOT_CHECKED], self::CART],
             'Two reports a state not acted on: nothing changed' =>
-                [self::AWAITING, [R::OUTCOME_UNCHANGED, self::AWAITING], false, null, ['resolve'], [], [self::STILL_CHECKING], self::CART],
+                [self::AWAITING, [R::OUTCOME_UNCHANGED, self::AWAITING], false, null, ['resolve'], [], [self::NOT_CHECKED], self::CART],
             'another request holds the order: nothing changed' =>
-                [self::AWAITING, [R::OUTCOME_BUSY, self::AWAITING], false, null, ['resolve'], [], [self::STILL_CHECKING], self::CART],
+                [self::AWAITING, [R::OUTCOME_BUSY, self::AWAITING], false, null, ['resolve'], [], [self::NOT_CHECKED], self::CART],
+            'the resolver fails: nothing changed, logged' =>
+                [self::AWAITING, new \RuntimeException('lock backend down'), false, null, ['resolve', 'log resolve'], [], [self::NOT_CHECKED], self::CART],
+            'the cart cannot be restored: the message on the cart page, logged' =>
+                [self::AWAITING, [R::OUTCOME_DECLINED, self::CANCELLED], null, null, ['resolve', 'restoreQuote', 'log restore-quote'], [self::DECLINED], [], self::CART],
             'the scheduled check already closed it for a decline: basket back on the payment step' =>
                 [self::CANCELLED, null, true, null, ['restoreQuote'], [self::DECLINED], [], self::PAYMENT_STEP],
             'an order failed before this change: basket back on the payment step' =>
@@ -113,8 +118,8 @@ class DeclineReturnTest extends TestCase
     public function testTheReturnFollowsWhatTwoReports(
         string $controllerClass,
         array $before,
-        ?array $twoAnswer,
-        bool $restored,
+        $twoAnswer,
+        ?bool $restored,
         ?int $sessionQuoteId,
         array $expectedCalls,
         array $expectedErrors,
@@ -126,8 +131,8 @@ class DeclineReturnTest extends TestCase
         if ($sessionQuoteId !== null) {
             $session->setQuoteId($sessionQuoteId);
         }
-        $resolution = null;
-        if ($twoAnswer !== null) {
+        $resolution = $twoAnswer;
+        if (is_array($twoAnswer)) {
             [$outcome, $after, $buyerMessage] = $twoAnswer + [2 => ''];
             $resolution = new PendingOrderResolution($outcome, $this->order($after), '', '', $buyerMessage);
         }
@@ -139,9 +144,9 @@ class DeclineReturnTest extends TestCase
         $this->assertSame($expectedErrors, $this->errors, "$description: error shown");
         $this->assertSame($expectedNotices, $this->notices, "$description: notice shown");
         $this->assertSame(['https://shop.test/' . $expectedLanding], $this->redirects, "$description: landing");
-        if ($expectedLanding === self::SUCCESS) {
-            $this->assertSame('100000042', $session->getLastRealOrderId(), "$description: success page for this order");
-        }
+        // The link never seeds a session: the success page shows only the
+        // order this browser placed itself.
+        $this->assertNull($session->getLastRealOrderId(), "$description: session left alone");
     }
 
     private function order(array $stateAndStatus): Order
@@ -154,8 +159,8 @@ class DeclineReturnTest extends TestCase
     private function controller(
         string $class,
         Order $order,
-        ?PendingOrderResolution $resolution,
-        bool $restored,
+        $resolution,
+        ?bool $restored,
         CheckoutSession $session
     ): object {
         $service = $this->getMockBuilder(OrderService::class)
@@ -167,6 +172,9 @@ class DeclineReturnTest extends TestCase
         $service->method('restoreQuote')->willReturnCallback(function (Order $restoring) use ($restored) {
             $this->calls[] = 'restoreQuote';
             $this->assertSame(self::QUOTE, $restoring->getQuoteId(), 'restores the order\'s own quote');
+            if ($restored === null) {
+                throw new \RuntimeException('quote save failed');
+            }
             return $restored;
         });
 
@@ -174,9 +182,17 @@ class DeclineReturnTest extends TestCase
         $resolver->method('resolve')->willReturnCallback(function ($resolving, $trigger) use ($resolution) {
             $this->calls[] = 'resolve';
             $this->assertSame(R::TRIGGER_BUYER_DECLINE, $trigger, 'resolved as a decline return');
+            if ($resolution instanceof \Throwable) {
+                throw $resolution;
+            }
             return $resolution;
         });
 
+        $log = $this->createMock(LogRepository::class);
+        $log->method('addErrorLog')->willReturnCallback(function ($type, $data) {
+            $this->assertSame('buyer-decline-return-failed', $type);
+            $this->calls[] = 'log ' . $data['stage'];
+        });
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
         $messages = $this->createMock(ManagerInterface::class);
@@ -218,6 +234,7 @@ class DeclineReturnTest extends TestCase
             'pendingOrderResolver' => $resolver,
             'brandRegistry' => $brand,
             'checkoutSession' => $session,
+            'logRepository' => $log,
             'messageManager' => $messages,
             '_url' => $url,
             '_response' => $response,

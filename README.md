@@ -733,6 +733,33 @@ check a v1 subscriber could already pass, or firing on fewer requests is never
 done. A genuinely incompatible change would arrive as a new interface, with this
 one still firing alongside it.
 
+## When Two does not approve a buyer
+
+Two's checkout sends a buyer it did not approve, or who left verification,
+back to the shop. The shop asks Two what happened to the order before acting
+on it:
+
+- An order Two approved is processed as usual, and the buyer sees the success
+  page.
+- Any other order is cancelled in Magento, which returns its stock and coupon
+  usage. The buyer sees "Two could not approve this purchase. Please choose
+  another payment method." (with your brand's product name).
+- In the browser that placed the order, the basket comes back with no payment
+  method chosen, and the buyer lands on the checkout's payment step to choose
+  another method. Two stays offered. On Hyvä Checkout the buyer lands on the
+  checkout rather than a specific step.
+- On Luma, the payment step opens directly only when the basket already has a
+  shipping method. Otherwise the buyer starts at the shipping step.
+- In any other browser or device the buyer sees the message, and no basket is
+  restored.
+
+The order gets the status Canceled, or the provider's Failed status when the
+buyer's return itself fails. Integrations that observe
+`two_payment_order_cancelled` receive `cancelled_by` in `two_data` when the
+shop closed the order without sending a cancel to Two: `two` (Two cancelled or
+declined it), `buyer` (the buyer left verification) or `shop` (the buyer's
+return failed).
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
