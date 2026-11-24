@@ -22,6 +22,10 @@ const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_meth
 // it so a test cannot pass by falling back instead of reading the response.
 const RATE_LIMIT_FALLBACK_COPY = 'Too many requests. Please wait a moment and try again.';
 const RATE_LIMIT_SERVER_COPY = 'Slow down: retry in 42 seconds.';
+const GENERAL_COPY = 'Something went wrong with your order.';
+const NOT_AVAILABLE_COPY = 'Invoice purchase with Two is not available for this order.';
+const FIELD_COPY = 'Check the email address.';
+const UNAVAILABLE_COPY = 'The service is temporarily unavailable. Please try again.';
 
 function loadRenderer() {
     const requests = [];
@@ -163,6 +167,44 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         requests[0].settleFail(jqXHR);
 
         expect(notices).toEqual([expected], description);
+    });
+
+    // ABN-643: every 400 (and the shop's own 404) a buyer can meet at the
+    // intent check, from the wire to the tile's box. Only a refusal the API
+    // gave through the envelope states the not-available sentence; a fault
+    // the shop's own route raised never does, and no shape leaves the box
+    // blank.
+    test.each([
+        { settle: 'done', reply: proxyEnvelope({ error_code: 'BUYER_REFUSED', error_message: 'API text.' }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 refusal' },
+        { settle: 'done', reply: proxyEnvelope({ error_code: 'ORDER_INVALID', error_details: 'API text.' }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 refusal with details only' },
+        { settle: 'done', reply: proxyEnvelope({ error_json: [{ loc: ['buyer', 'representative', 'email'], msg: 'bad' }] }, { ok: false, status: 400 }), notice: FIELD_COPY, case: 'an API 400 naming a field the buyer can fix' },
+        { settle: 'done', reply: proxyEnvelope({ error_json: [{ loc: ['merchant_id'], msg: 'bad' }] }, { ok: false, status: 400 }), notice: GENERAL_COPY, case: 'an API 400 naming nothing the buyer can fix' },
+        { settle: 'done', reply: proxyEnvelope({ error_code: 'PROXY_REFUSED', error_message: UNAVAILABLE_COPY }, { ok: false, status: 400 }), notice: UNAVAILABLE_COPY, case: 'an API 400 with nothing relayable' },
+        { settle: 'done', reply: proxyEnvelope({ error_code: 'PROXY_REFUSED', error_message: UNAVAILABLE_COPY }, { ok: false, status: 502 }), notice: UNAVAILABLE_COPY, case: 'an API 5xx' },
+        { settle: 'fail', reply: { status: 400, responseJSON: { message: '"payload" is required.' } }, notice: GENERAL_COPY, case: 'a shop webapi 400' },
+        { settle: 'fail', reply: { status: 400 }, notice: GENERAL_COPY, case: 'a bodyless shop 400' },
+        { settle: 'fail', reply: { status: 404, responseJSON: { message: 'Request does not match any route.' } }, notice: GENERAL_COPY, case: 'the shop route missing after a cache flush' }
+    ])('$case reaches the tile as the right sentence', ({ settle, reply, notice, case: description }) => {
+        const { ctx, requests } = loadRenderer();
+        const notices = [];
+        const tile = Object.assign({}, ctx, {
+            generalErrorMessage: GENERAL_COPY,
+            orderIntentNotAvailableMessage: NOT_AVAILABLE_COPY,
+            orderIntentFieldErrors: { messages: { 'buyer.representative.email': FIELD_COPY } },
+            clearOrderIntentNotices: function () {},
+            showOrderIntentErrorNotice: function (message) { notices.push(message); }
+        });
+
+        tile.placeOrderIntent.call(tile).fail(function (response) {
+            tile.processOrderIntentErrorResponse.call(tile, response);
+        });
+        if (settle === 'done') {
+            requests[0].settleDone(reply);
+        } else {
+            requests[0].settleFail(reply);
+        }
+
+        expect([description, notices]).toEqual([description, [notice]]);
     });
 
     test('a transport failure still reaches the failure handler as a jqXHR', () => {

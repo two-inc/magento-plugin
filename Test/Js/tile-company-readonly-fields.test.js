@@ -1030,6 +1030,7 @@ describe('the notices are gated on their own observables, not on capture', () =>
         const { renderer } = loadTile();
 
         renderer.initOrderIntentApprovedNotice({});
+        renderer.orderIntentNotAvailableMessage = 'Invoice purchase with Two is not available for this order.';
         expect(renderer.orderIntentApprovedNoticeCopy).toBeNull();
         expect(renderer.orderIntentDeclinedNoticeCopy).toBeNull();
 
@@ -1042,7 +1043,7 @@ describe('the notices are gated on their own observables, not on capture', () =>
 
         declineIntent(renderer);
         expect(declinedNoticeText(renderer)).toBe(
-            'This payment method is not available for the selected company.'
+            'Invoice purchase with Two is not available for this order.'
         );
 
         expect(nameFieldVisible(renderer)).toBe(true);

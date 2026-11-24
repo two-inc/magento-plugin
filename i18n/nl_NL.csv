@@ -343,7 +343,6 @@
 "%1 is not available for this order by %2 (%3)","%1 is niet beschikbaar voor deze bestelling van %2 (%3)"
 "%1 results are available, use up and down arrow keys to navigate.","%1 resultaten zijn beschikbaar, gebruik de pijltoetsen omhoog en omlaag om te navigeren."
 "1 result is available, use up and down arrow keys to navigate.","1 resultaat is beschikbaar, gebruik de pijltoetsen omhoog en omlaag om te navigeren."
-"This payment method is not available for the selected company.","Deze betaalmethode is niet beschikbaar voor het geselecteerde bedrijf."
 "This order is likely to be accepted by %1","Deze bestelling wordt waarschijnlijk geaccepteerd door %1"
 "This order by %2 (%3) is likely to be accepted by %1","Deze bestelling van %2 (%3) wordt waarschijnlijk geaccepteerd door %1"
 "Show ""What is Two"" link","Toon de link ""Wat is Two"""
