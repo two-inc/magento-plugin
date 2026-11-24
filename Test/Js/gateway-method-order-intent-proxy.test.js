@@ -24,7 +24,6 @@ const RATE_LIMIT_FALLBACK_COPY = 'Too many requests. Please wait a moment and tr
 const RATE_LIMIT_SERVER_COPY = 'Slow down: retry in 42 seconds.';
 const GENERAL_COPY = 'Something went wrong with your order.';
 const NOT_AVAILABLE_COPY = 'Invoice purchase with Two is not available for this order.';
-const FIELD_COPY = 'Check the email address.';
 const UNAVAILABLE_COPY = 'The service is temporarily unavailable. Please try again.';
 
 function loadRenderer() {
@@ -170,13 +169,13 @@ describe('the order-intent check goes through the plugin, not straight to the AP
     });
 
     // ABN-643: every failure a buyer can meet at the intent check, from the
-    // wire to the tile's box. Only a field the buyer can fix says something
-    // other than the not-available sentence a decline gives, whether Two or
-    // the shop's own route failed, and no shape leaves the box blank.
+    // wire to the tile's box. Each states the not-available sentence a decline
+    // gives, a refusal naming a field included, whether Two or the shop's own
+    // route failed, and no shape leaves the box blank.
     test.each([
         { settle: 'done', reply: proxyEnvelope({ error_code: 'BUYER_REFUSED', error_message: 'API text.' }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 refusal' },
         { settle: 'done', reply: proxyEnvelope({ error_code: 'ORDER_INVALID', error_details: 'API text.' }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 refusal with details only' },
-        { settle: 'done', reply: proxyEnvelope({ error_json: [{ loc: ['buyer', 'representative', 'email'], msg: 'bad' }] }, { ok: false, status: 400 }), notice: FIELD_COPY, case: 'an API 400 naming a field the buyer can fix' },
+        { settle: 'done', reply: proxyEnvelope({ error_json: [{ loc: ['buyer', 'representative', 'email'], msg: 'bad' }] }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 naming a field the buyer could fix' },
         { settle: 'done', reply: proxyEnvelope({ error_json: [{ loc: ['merchant_id'], msg: 'bad' }] }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 naming nothing the buyer can fix' },
         { settle: 'done', reply: proxyEnvelope({ error_code: 'PROXY_REFUSED', error_message: UNAVAILABLE_COPY }, { ok: false, status: 400 }), notice: NOT_AVAILABLE_COPY, case: 'an API 400 with nothing relayable' },
         { settle: 'done', reply: proxyEnvelope({ error_code: 'PROXY_REFUSED', error_message: UNAVAILABLE_COPY }, { ok: false, status: 502 }), notice: NOT_AVAILABLE_COPY, case: 'an API 5xx' },
@@ -192,7 +191,6 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         const tile = Object.assign({}, ctx, {
             generalErrorMessage: GENERAL_COPY,
             orderIntentNotAvailableMessage: NOT_AVAILABLE_COPY,
-            orderIntentFieldErrors: { messages: { 'buyer.representative.email': FIELD_COPY } },
             clearOrderIntentNotices: function () {},
             showOrderIntentErrorNotice: function (message) { notices.push(message); }
         });

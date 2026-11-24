@@ -264,7 +264,6 @@ define([
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
             this.orderIntentNotAvailableMessage = config.orderIntentNotAvailableMessage;
-            this.orderIntentFieldErrors = config.orderIntentFieldErrors || null;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.termUnavailableMessage = config.termUnavailableMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
@@ -1531,44 +1530,16 @@ define([
             }
 
             // The API's own text never reaches the buyer (TWO-26295): it is
-            // written for an integrator or the merchant. A refusal naming a
-            // field the buyer can fix says which, in our own words. Every
-            // other failure, whether Two refused, erred or timed out, the shop's
-            // own route faulted or this module refused before calling Two,
-            // states the same "not available for this order" sentence a
-            // decline does, company name included (ABN-643). The detail
-            // stays in the error log and the browser's network panel.
-            const body = (response && response.responseJSON) || {};
-            // The tile's own bordered box, not the checkout message
+            // written for an integrator or the merchant. Every failure,
+            // whether Two refused (a field it names included), erred or timed
+            // out, the shop's own route faulted or this module refused before
+            // calling Two, states the same "not available for this order"
+            // sentence a decline does, company name included (ABN-643), so
+            // the buyer always has a way forward: another payment method.
+            // The detail stays in the error log and the browser's network
+            // panel. The tile's own bordered box, not the checkout message
             // region (TWO-25326, 2026-08-05).
-            this.showOrderIntentErrorNotice(
-                this.orderIntentFieldErrorMessage(body.error_json) ||
-                this.resolveOrderIntentDeclinedNotice()
-            );
-        },
-        /**
-         * The buyer sentence for each field a refusal's error_json names that
-         * the buyer can fix, or '' when it names none (TWO-26295, TWO-27108).
-         * Chosen from the field path, never the message, with model-name
-         * segments a validator may insert (a capital first letter) dropped,
-         * exactly as order create does.
-         *
-         * @param {Array} errors the refusal's error_json
-         * @returns {string}
-         */
-        orderIntentFieldErrorMessage: function (errors) {
-            const copy = this.orderIntentFieldErrors;
-            if (!copy || !copy.messages || !Array.isArray(errors)) return '';
-            const messages = [];
-            errors.forEach(function (error) {
-                if (!error || !Array.isArray(error.loc)) return;
-                const path = error.loc.filter(function (segment) {
-                    return typeof segment === 'string' && segment !== '' && !/^[A-Z]/.test(segment);
-                }).join('.');
-                const text = Object.prototype.hasOwnProperty.call(copy.messages, path) ? copy.messages[path] : '';
-                if (text && messages.indexOf(text) === -1) messages.push(text);
-            });
-            return messages.join(' ');
+            this.showOrderIntentErrorNotice(this.resolveOrderIntentDeclinedNotice());
         },
         processTermsNotAcceptedErrorResponse: function (response) {
             this.showErrorMessage(this.termsNotAcceptedMessage);

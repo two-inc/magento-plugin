@@ -177,10 +177,8 @@ describe('a declined order intent always explains itself', () => {
 
     // ABN-643: every failure of the check states the not-available sentence a
     // decline gives, whoever failed: Two refusing, erring or timing out, the
-    // shop's own route, or this module refusing before calling Two. Only a
-    // field the buyer can fix (tested with the field copy) and a rate limit
-    // say something else.
-    const FIELD_SENTENCE = 'Please enter a valid Phone number to pay on invoice.';
+    // shop's own route, or this module refusing before calling Two, a refusal
+    // naming a field included. Only a rate limit says something else.
     test.each([
         { copy: null, failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal states the not-available sentence' },
         { copy: BRAND_DECLINED_COPY, failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: BRAND_SENTENCE, case: 'an API refusal names the company, as a decline does' },
@@ -190,7 +188,8 @@ describe('a declined order intent always explains itself', () => {
         // carrying none of the relayed keys.
         { copy: null, failure: { status: 403, responseJSON: { error_code: 400, error_message: 'Invalid API response from Two.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with an empty body states the not-available sentence' },
         { copy: null, failure: { status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with no relayable keys states the not-available sentence' },
-        { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] } }, notice: FIELD_SENTENCE, case: 'a validation refusal naming a fixable field names it' },
+        { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] } }, notice: PLATFORM_FALLBACK, case: 'a validation refusal naming a field states the not-available sentence' },
+        { copy: BRAND_DECLINED_COPY, failure: { status: 400, responseJSON: { error_code: 'SCHEMA_ERROR', error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] } }, notice: BRAND_SENTENCE, case: 'a validation refusal naming a field names the company, as a decline does' },
         { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['body'], msg: 'bad' }] } }, notice: PLATFORM_FALLBACK, case: 'a validation refusal naming nothing fixable states the not-available sentence' },
         { copy: null, failure: { status: 503, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'Module refused.' } }, notice: PLATFORM_FALLBACK, case: 'a refusal made by this module states the not-available sentence' },
         { copy: null, failure: { status: 502, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API server error states the not-available sentence' },
@@ -204,7 +203,6 @@ describe('a declined order intent always explains itself', () => {
         { copy: null, failure: { status: 429 }, notice: 'Too many requests. Please wait a moment and try again.', case: 'a rate limit asks the buyer to wait' }
     ])('the error region: $case', ({ copy, failure, notice, case: description }) => {
         const ctx = makeContext(copy);
-        ctx.orderIntentFieldErrors = { messages: { 'buyer.representative.phone_number': FIELD_SENTENCE } };
 
         ctx.processOrderIntentErrorResponse.call(ctx, failure);
 
