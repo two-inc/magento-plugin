@@ -80,6 +80,15 @@ namespace Magento\Checkout\Model {
                 // otherwise be handed a different object than the one it built.
                 return $this->getData('quote') ?: new \Magento\Quote\Model\Quote();
             }
+
+            /**
+             * TWO-27389: restores the last real order's quote. Declared so a
+             * mock can configure it.
+             */
+            public function restoreQuote()
+            {
+                return false;
+            }
         }
     }
 }

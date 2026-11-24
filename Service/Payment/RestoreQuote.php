@@ -7,119 +7,81 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Payment;
 
-use Magento\Catalog\Model\Indexer\Product\Price\Processor as ProductPriceProcessor;
-use Magento\CatalogInventory\Api\StockManagementInterface;
-use Magento\CatalogInventory\Model\Indexer\Stock\Processor as StockIndexerProcessor;
-use Magento\CatalogInventory\Observer\ProductQty;
 use Magento\Checkout\Model\Session;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\Sales\Model\Order;
 
 /**
- * Restore Quote Service
+ * Gives a buyer back the cart of an order that did not go through, so they
+ * can pay for the same basket another way (TWO-27389).
+ *
+ * Only the browser that placed the order gets it back: the checkout session's
+ * last order must be this order, and the order's own quote must still be
+ * reserved for it (a quote already restored, or reused for another order, is
+ * left alone). Another browser or device gets nothing, so a buyer's cart is
+ * never attached to someone else's session.
+ *
+ * The restored cart has no payment method, so neither checkout preselects
+ * the one that was not approved; it stays offered. Luma also remembers the
+ * buyer's last choice in the browser, which the decline return's redirect has
+ * the checkout forget (forget-declined-choice.js).
+ *
+ * Stock is not touched here: closing the order through Magento's cancel
+ * returns it, once.
  */
 class RestoreQuote
 {
     /**
-     * @var StockManagementInterface
-     */
-    protected $stockManagement;
-    /**
-     * @var StockIndexerProcessor
-     */
-    protected $stockIndexerProcessor;
-    /**
-     * @var ProductPriceProcessor
-     */
-    protected $priceIndexer;
-    /**
      * @var Session
      */
     private $session;
-    /**
-     * @var ConfigRepository
-     */
-    private $configRepository;
-    /**
-     * @var ProductQty
-     */
-    private $productQty;
 
     /**
-     * RestoreQuote constructor.
-     *
+     * @var CartRepositoryInterface
+     */
+    private $cartRepository;
+
+    /**
      * @param Session $session
-     * @param ConfigRepository $configRepository
-     * @param ProductQty $productQty
-     * @param StockManagementInterface $stockManagement
-     * @param StockIndexerProcessor $stockIndexerProcessor
-     * @param ProductPriceProcessor $priceIndexer
+     * @param CartRepositoryInterface $cartRepository
      */
     public function __construct(
         Session $session,
-        ConfigRepository $configRepository,
-        ProductQty $productQty,
-        StockManagementInterface $stockManagement,
-        StockIndexerProcessor $stockIndexerProcessor,
-        ProductPriceProcessor $priceIndexer
+        CartRepositoryInterface $cartRepository
     ) {
         $this->session = $session;
-        $this->configRepository = $configRepository;
-        $this->productQty = $productQty;
-        $this->stockManagement = $stockManagement;
-        $this->stockIndexerProcessor = $stockIndexerProcessor;
-        $this->priceIndexer = $priceIndexer;
+        $this->cartRepository = $cartRepository;
     }
 
     /**
-     * Restore quote
+     * Restore the order's cart into this browser's session.
      *
-     * @return bool
+     * @param Order $order
+     * @return bool whether the cart came back
      */
-    public function execute()
+    public function execute(Order $order): bool
     {
-        $result = $this->session->restoreQuote();
-        // Versions 2.2.4 onwards need an explicit action to return items.
-        if ($result && $this->isReturnItemsToInventoryRequired()) {
-            $this->returnItemsToInventory();
+        $incrementId = (string)$order->getIncrementId();
+        if ($incrementId === '' || (string)$this->session->getLastRealOrderId() !== $incrementId) {
+            return false;
         }
-
-        return $result;
-    }
-
-    /**
-     * Checks if version requires restore quote fix.
-     *
-     * @return bool
-     */
-    private function isReturnItemsToInventoryRequired()
-    {
-        $version = $this->configRepository->getMagentoVersion();
-        return version_compare($version, "2.2.4", ">=");
-    }
-
-    /**
-     * Returns items to inventory.
-     */
-    private function returnItemsToInventory()
-    {
-        // Code from \Magento\CatalogInventory\Observer\RevertQuoteInventoryObserver
-        $quote = $this->session->getQuote();
-        $items = $this->productQty->getProductQty($quote->getAllItems());
-        $revertedItems = $this->stockManagement->revertProductsSale($items, $quote->getStore()->getWebsiteId());
-
-        // If the Magento 2 server has multi source inventory enabled,
-        // the revertProductsSale method is intercepted with new logic that returns a boolean.
-        // In such case, no further action is necessary.
-        if (is_bool($revertedItems)) {
-            return;
+        try {
+            $quote = $this->cartRepository->get((int)$order->getQuoteId());
+        } catch (NoSuchEntityException $exception) {
+            return false;
         }
-
-        $productIds = array_keys($revertedItems);
-        if (!empty($productIds)) {
-            $this->stockIndexerProcessor->reindexList($productIds);
-            $this->priceIndexer->reindexList($productIds);
+        if ((string)$quote->getReservedOrderId() !== $incrementId) {
+            return false;
         }
-        // Clear flag, so if order placement retried again with success - it will be processed
-        $quote->setInventoryProcessed(false);
+        // Magento's own restore: the last real order's quote, which the checks
+        // above have shown is this order's, made active and current again.
+        if (!$this->session->restoreQuote()) {
+            return false;
+        }
+        $restored = $this->session->getQuote();
+        $restored->removePayment();
+        $this->cartRepository->save($restored);
+        return true;
     }
 }

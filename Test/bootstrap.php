@@ -158,6 +158,10 @@ require_once __DIR__ . '/Stubs/OrderViewToolbar.php';
 // per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/InvoiceUpload.php';
 
+// Order cancel service and cart repository, for closing an order and
+// restoring its cart (TWO-27389).
+require_once __DIR__ . '/Stubs/OrderClose.php';
+
 // Config\Structure\Converter (real convert() signature), Module\Dir (real
 // getDir() + MODULE_ETC_DIR) and Psr\Log\LoggerInterface (real PSR-3
 // methods) — needed so SynthesiseBrandAdminFormProviderTokenTest can mock

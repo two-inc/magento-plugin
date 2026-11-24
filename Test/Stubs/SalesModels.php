@@ -217,5 +217,19 @@ if (!class_exists(Order::class, false)) {
             $this->creditmemos = $creditmemos;
             return $this;
         }
+
+        /**
+         * Real Magento sets the order's status from the entry and keeps an
+         * entry with no id among the histories saved with the order
+         * (TWO-27389).
+         */
+        public function addStatusHistory($history): self
+        {
+            $this->setStatus($history->getStatus());
+            if (!$history->getId()) {
+                $this->setData('status_histories', array_merge((array)$this->getData('status_histories'), [$history]));
+            }
+            return $this;
+        }
     }
 }

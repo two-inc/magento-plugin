@@ -28,15 +28,18 @@ class SalesOrderCancelAfterSkipSyncTest extends TestCase
         return [
             'a merchant cancel is sent to Two' => [false, 1, [[]]],
             'a cancel matching Two is not sent back, and integrations still hear of it' => [true, 0, [['cancelled_by' => 'two']]],
+            // TWO-27389: closed here by whoever the flag names, with nothing sent to Two.
+            'a buyer\'s cancel already sent to Two is not sent again' => ['buyer', 0, [['cancelled_by' => 'buyer']]],
+            'a failed buyer return is not sent to Two' => ['shop', 0, [['cancelled_by' => 'shop']]],
         ];
     }
 
     #[DataProvider('cases')]
-    public function testTheCancelIsSentUnlessTwoAlreadyCancelled(bool $flag, int $expectedSends, array $expectedEvents): void
+    public function testTheCancelIsSentUnlessTwoAlreadyCancelled($flag, int $expectedSends, array $expectedEvents): void
     {
         $order = (new Order())->setTwoOrderId('two-1')->setPayment((new Order\Payment())->setMethod('two_payment'));
         if ($flag) {
-            $order->setData(OrderService::SKIP_CANCEL_SYNC, true);
+            $order->setData(OrderService::SKIP_CANCEL_SYNC, $flag);
         }
         $service = $this->getMockBuilder(OrderService::class)
             ->disableOriginalConstructor()

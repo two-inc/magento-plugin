@@ -106,7 +106,13 @@ class ReturnFailureMessageTest extends TestCase
         } else {
             $service->method('getOrderByReference')->willReturn($order);
         }
-        $service->method('getTwoOrderFromApi')->willThrowException($exception);
+        if ($controllerClass === Cancel::class) {
+            // The cancel link sends a cancel only for a buyer who left
+            // verification, and that cancel fails here (TWO-27389).
+            $service->method('getTwoOrderFromApi')->willReturn(['id' => 'two-1', 'state' => 'UNVERIFIED']);
+        } else {
+            $service->method('getTwoOrderFromApi')->willThrowException($exception);
+        }
         $service->method('cancelTwoOrder')->willThrowException($exception);
         if ($restoreFails) {
             $service->method('restoreQuote')->willThrowException(new \PDOException('SQLSTATE[HY000]: quote table'));

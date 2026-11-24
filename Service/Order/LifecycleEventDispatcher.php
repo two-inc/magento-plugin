@@ -70,6 +70,12 @@ class LifecycleEventDispatcher
     }
 
     /**
+     * When the shop closed the order without sending a cancel to Two,
+     * `$twoData['cancelled_by']` says why: `two` (Two cancelled or declined
+     * it), `buyer` (the buyer left verification and the cancel was sent when
+     * they came back) or `shop` (the buyer's return failed). A merchant's own
+     * cancel carries no `cancelled_by` (TWO-27389).
+     *
      * @param array<string, mixed> $twoData
      */
     public function dispatchCancelled(Order $order, array $twoData = []): void

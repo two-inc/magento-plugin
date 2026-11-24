@@ -15,24 +15,16 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Controller\Payment\Cancel;
 use Two\Gateway\Controller\Payment\Confirm;
-use Two\Gateway\Controller\Payment\Verificationfailed;
-use Two\Gateway\Exception\TwoRefusalException;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Payment\OrderService;
 
 /**
- * TWO-27057: a buyer return link acts only on an order still awaiting the
- * buyer's verification, and a cancel Two did not carry out leaves the order
- * as it is.
+ * TWO-27057: the confirm link acts only on an order still awaiting the
+ * buyer's verification.
  */
 class ReturnReplayTest extends TestCase
 {
-    private const CANCELLED = 'Your invoice purchase with Two has been cancelled. The cart will be restored.';
-    private const GENERAL = 'Something went wrong with your request to Two. Please try again later.';
-    private const FAILED = 'Your invoice purchase with Two failed verification. The cart will be restored.';
-
     /** @var string[] what the order service was asked to do, in order */
     private $calls = [];
 
@@ -44,18 +36,16 @@ class ReturnReplayTest extends TestCase
 
     public static function cases(): array
     {
-        $awaiting = [Order::STATE_PENDING_PAYMENT, Two::STATUS_PENDING];
         $moved = [
             'processing' => [Order::STATE_PROCESSING, Order::STATE_PROCESSING],
             'complete' => [Order::STATE_COMPLETE, Order::STATE_COMPLETE],
             'already failed' => [Order::STATE_CANCELED, Two::STATUS_FAILED],
             'pending state, another status' => [Order::STATE_PENDING_PAYMENT, 'holded'],
         ];
-        $refusal = static fn (): \Exception => new TwoRefusalException(__('Two refused: raw account'), __('Cannot cancel.'));
-        $transport = static fn (): \Exception => new \Exception('connection reset');
 
         $rows = [];
-        foreach ([Confirm::class, Cancel::class, Verificationfailed::class] as $controller) {
+        // The cancel and failed-verification links: DeclineReturnTest (TWO-27389).
+        foreach ([Confirm::class] as $controller) {
             $name = substr($controller, strrpos($controller, '\\') + 1);
             foreach ($moved as $label => $order) {
                 $rows["$name: a $label order is left alone"] = [$controller, $order, null, [], []];
@@ -76,20 +66,6 @@ class ReturnReplayTest extends TestCase
                 ],
             ];
         }
-        $rows += [
-            'Cancel: a refused cancel keeps the order and the cart' =>
-                [Cancel::class, $awaiting, $refusal, ['cancelTwoOrder', 'addOrderComment', 'save'], ['Cannot cancel.']],
-            'Cancel: a cancel with no answer keeps the order and the cart' =>
-                [Cancel::class, $awaiting, $transport, ['cancelTwoOrder', 'addOrderComment', 'save'], [self::GENERAL]],
-            'Cancel: an accepted cancel fails the order and restores the cart' =>
-                [Cancel::class, $awaiting, null, ['cancelTwoOrder', 'restoreQuote', 'failOrder'], [self::CANCELLED]],
-            'Verificationfailed: a refused cancel keeps the order and the cart' =>
-                [Verificationfailed::class, $awaiting, $refusal, ['cancelTwoOrder', 'addOrderComment', 'save'], ['Cannot cancel.']],
-            'Verificationfailed: a cancel with no answer keeps the order and the cart' =>
-                [Verificationfailed::class, $awaiting, $transport, ['cancelTwoOrder', 'addOrderComment', 'save'], [self::GENERAL]],
-            'Verificationfailed: an accepted cancel fails the order and restores the cart' =>
-                [Verificationfailed::class, $awaiting, null, ['cancelTwoOrder', 'restoreQuote', 'failOrder'], [self::FAILED]],
-        ];
         return $rows;
     }
 
