@@ -36,6 +36,7 @@ class PendingOrderResolverTest extends TestCase
     private const UNDEFINED = 'Two reports state undefined; not changed. Check the order in the Two portal.';
     private const BUYER_CANCELLED = 'Your invoice purchase with Two has been cancelled. The cart will be restored.';
     private const BUYER_NOT_PROCESSED = 'Your invoice purchase with Two could not be processed. The cart will be restored.';
+    private const ABANDONED = 'The buyer came back from Two without finishing verification. Cancelled with Two.';
 
     /** @var array[] [call, argument] in order */
     private $calls = [];
@@ -74,7 +75,7 @@ class PendingOrderResolverTest extends TestCase
         }
         // Whichever trigger asks, a state this module does not act on changes
         // nothing but the check time, and is reported once per state.
-        foreach ([R::TRIGGER_SCHEDULED => 'scheduled', R::TRIGGER_ADMIN => 'admin', R::TRIGGER_BUYER_RETURN => 'buyer return'] as $trigger => $who) {
+        foreach ([R::TRIGGER_SCHEDULED => 'scheduled', R::TRIGGER_ADMIN => 'admin', R::TRIGGER_BUYER_RETURN => 'buyer return', R::TRIGGER_BUYER_DECLINE => 'buyer decline'] as $trigger => $who) {
             foreach (['REFUNDED' => self::REFUNDED, '' => self::UNDEFINED] as $state => $comment) {
                 $label = $state !== '' ? $state : 'no state';
                 $rows["$who: $label changes nothing and says so"] = [$trigger, $state !== '' ? ['state' => $state] : [], R::OUTCOME_UNCHANGED, [
@@ -106,6 +107,36 @@ class PendingOrderResolverTest extends TestCase
         $rows['buyer return: UNVERIFIED fails the return while locked'] = [R::TRIGGER_BUYER_RETURN, ['state' => 'UNVERIFIED'], R::OUTCOME_UNVERIFIED, [
             ['getTwoOrderFromApi', null], ['addOrderComment', 'Unable to confirm Two order with UNVERIFIED state.'], ['failBuyerReturn', self::BUYER_NOT_PROCESSED],
         ]];
+        // TWO-27389: the buyer's return from a decline or an abandoned
+        // verification (the cancel and failed-verification links) never
+        // trusts the click: what Two reports decides.
+        $decline = R::TRIGGER_BUYER_DECLINE;
+        $rows += [
+            'buyer decline: VERIFIED is confirmed and processed as a confirm return' => [$decline, ['state' => 'VERIFIED'], R::OUTCOME_CONFIRMED, [
+                ['getTwoOrderFromApi', null], ['confirmOrder', null], ['send', null], ['processOrder', 'two-1'],
+            ]],
+            'buyer decline: CONFIRMED is processed as a confirm return' => [$decline, ['state' => 'CONFIRMED'], R::OUTCOME_PROCESSED, [
+                ['getTwoOrderFromApi', null], ['send', null], ['processOrder', 'two-1'],
+            ]],
+            'buyer decline: CANCELLED is closed here, with no cancel sent to Two' => [$decline, ['state' => 'CANCELLED'], R::OUTCOME_CANCELLED, [
+                ['getTwoOrderFromApi', null], ['cancelLocally', self::CANCELLED],
+            ]],
+            'buyer decline: a REJECTED status is closed here, with no cancel sent to Two' => [$decline, ['state' => 'UNVERIFIED', 'status' => 'REJECTED'], R::OUTCOME_DECLINED, [
+                ['getTwoOrderFromApi', null], ['cancelLocally', self::DECLINED],
+            ]],
+            'buyer decline: a DECLINED status is closed here, with no cancel sent to Two' => [$decline, ['state' => 'UNVERIFIED', 'status' => 'DECLINED'], R::OUTCOME_DECLINED, [
+                ['getTwoOrderFromApi', null], ['cancelLocally', self::DECLINED],
+            ]],
+            'buyer decline: UNVERIFIED is cancelled with Two, then closed here' => [$decline, ['state' => 'UNVERIFIED'], R::OUTCOME_UNVERIFIED, [
+                ['getTwoOrderFromApi', null], ['cancelTwoOrder', 'buyer_cancel'], ['cancelLocally', self::ABANDONED . ' (by buyer)'],
+            ]],
+            'buyer decline: UNVERIFIED with a cancel Two refuses keeps the order' => [$decline, ['state' => 'UNVERIFIED'], R::OUTCOME_FAILED, [
+                ['getTwoOrderFromApi', null], ['cancelTwoOrder', 'buyer_cancel'], ['keepRefusedCancel', 'cancel refused'],
+            ], [], false, true],
+            'buyer decline: a failed read changes nothing' => [$decline, new \Exception('connection reset'), R::OUTCOME_FAILED, [
+                ['getTwoOrderFromApi', null], ['stamp', null],
+            ]],
+        ];
         return $rows;
     }
 
@@ -116,12 +147,14 @@ class PendingOrderResolverTest extends TestCase
         string $expectedOutcome,
         array $expectedCalls,
         array $earlierComments = [],
-        bool $confirmRefused = false
+        bool $confirmRefused = false,
+        bool $cancelRefused = false
     ): void {
         $order = $this->waitingOrder();
         $order->setStatusHistoryCollection(array_map(static fn ($c) => new DataObject(['comment' => $c]), $earlierComments));
 
-        $resolution = $this->resolver($order, $twoOrder, $confirmRefused)->resolve($order, $trigger, 'jane');
+        $resolution = $this->resolver($order, $twoOrder, $confirmRefused, null, null, $cancelRefused)
+            ->resolve($order, $trigger, 'jane');
 
         $description = $this->dataName();
         $this->assertSame($expectedOutcome, $resolution->getOutcome(), "$description: outcome");
@@ -135,8 +168,8 @@ class PendingOrderResolverTest extends TestCase
 
     public function testACancelDuringTheReadIsNotUndone(): void
     {
-        foreach ([R::TRIGGER_SCHEDULED, R::TRIGGER_ADMIN, R::TRIGGER_BUYER_RETURN] as $trigger) {
-            foreach (['CANCELLED', 'VERIFIED', 'REFUNDED'] as $state) {
+        foreach ([R::TRIGGER_SCHEDULED, R::TRIGGER_ADMIN, R::TRIGGER_BUYER_RETURN, R::TRIGGER_BUYER_DECLINE] as $trigger) {
+            foreach (['CANCELLED', 'VERIFIED', 'REFUNDED', 'UNVERIFIED'] as $state) {
                 $this->calls = [];
                 $waiting = $this->waitingOrder();
                 $cancelled = $this->waitingOrder()->setState(Order::STATE_CANCELED)->setStatus('canceled');
@@ -155,6 +188,7 @@ class PendingOrderResolverTest extends TestCase
             'scheduled: never waits, and skips a held order' => [R::TRIGGER_SCHEDULED, 0],
             'admin: waits briefly, then reports it busy' => [R::TRIGGER_ADMIN, R::LOCK_WAIT_SECONDS],
             'buyer return: waits briefly, then reports it busy' => [R::TRIGGER_BUYER_RETURN, R::LOCK_WAIT_SECONDS],
+            'buyer decline: waits briefly, then reports it busy' => [R::TRIGGER_BUYER_DECLINE, R::LOCK_WAIT_SECONDS],
         ];
     }
 
@@ -190,7 +224,7 @@ class PendingOrderResolverTest extends TestCase
         $stale = $this->waitingOrder();
         $fresh = $this->waitingOrder()->setState($state)->setStatus($status);
 
-        foreach ([R::TRIGGER_SCHEDULED, R::TRIGGER_ADMIN, R::TRIGGER_BUYER_RETURN] as $trigger) {
+        foreach ([R::TRIGGER_SCHEDULED, R::TRIGGER_ADMIN, R::TRIGGER_BUYER_RETURN, R::TRIGGER_BUYER_DECLINE] as $trigger) {
             $this->calls = [];
             $resolution = $this->resolver($fresh, ['state' => 'VERIFIED'])->resolve($stale, $trigger);
             $description = $this->dataName() . " ($trigger)";
@@ -220,13 +254,14 @@ class PendingOrderResolverTest extends TestCase
         $twoOrder,
         bool $confirmRefused = false,
         ?callable $lock = null,
-        ?Order $afterRead = null
+        ?Order $afterRead = null,
+        bool $cancelRefused = false
     ): R {
         $service = $this->getMockBuilder(OrderService::class)
             ->disableOriginalConstructor()
             ->onlyMethods([
                 'reloadOrder', 'getTwoOrderFromApi', 'confirmOrder', 'processOrder', 'cancelLocally', 'addOrderComment',
-                'failBuyerReturn',
+                'failBuyerReturn', 'cancelTwoOrder', 'keepRefusedCancel',
             ])
             ->getMock();
         $reads = 0;
@@ -237,10 +272,26 @@ class PendingOrderResolverTest extends TestCase
             $this->calls[] = ['failBuyerReturn', $exception->getMessage()];
             return 'shown to the buyer';
         });
-        $record = function (string $call) use ($service, $twoOrder, $confirmRefused) {
-            return function (...$args) use ($call, $service, $twoOrder, $confirmRefused) {
-                $argument = in_array($call, ['addOrderComment', 'cancelLocally', 'processOrder'], true) ? (string)$args[1] : null;
+        $service->method('keepRefusedCancel')->willReturnCallback(function ($order, \Throwable $exception) {
+            $this->calls[] = ['keepRefusedCancel', $exception->getMessage()];
+            return 'shown to the buyer';
+        });
+        $record = function (string $call) use ($service, $twoOrder, $confirmRefused, $cancelRefused) {
+            return function (...$args) use ($call, $service, $twoOrder, $confirmRefused, $cancelRefused) {
+                $argument = in_array($call, ['addOrderComment', 'cancelLocally', 'processOrder', 'cancelTwoOrder'], true)
+                    ? (string)$args[1]
+                    : null;
+                // Who closed the order, when anyone other than Two did.
+                if ($call === 'cancelLocally' && ($args[2] ?? 'two') !== 'two') {
+                    $argument .= " (by {$args[2]})";
+                }
                 $this->calls[] = [$call, $argument];
+                if ($call === 'cancelTwoOrder') {
+                    if ($cancelRefused) {
+                        throw new \Exception('cancel refused');
+                    }
+                    return true;
+                }
                 if ($call === 'getTwoOrderFromApi') {
                     if ($twoOrder instanceof \Exception) {
                         throw $twoOrder;
@@ -253,7 +304,7 @@ class PendingOrderResolverTest extends TestCase
                 return $call === 'confirmOrder' ? [] : $service;
             };
         };
-        foreach (['getTwoOrderFromApi', 'confirmOrder', 'processOrder', 'cancelLocally', 'addOrderComment'] as $method) {
+        foreach (['getTwoOrderFromApi', 'confirmOrder', 'processOrder', 'cancelLocally', 'addOrderComment', 'cancelTwoOrder'] as $method) {
             $service->method($method)->willReturnCallback($record($method));
         }
 

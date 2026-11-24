@@ -7,11 +7,11 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Payment;
 
-use Exception;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\DB\Transaction;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url\DecoderInterface;
+use Magento\Sales\Api\OrderManagementInterface;
 use Magento\Sales\Api\OrderPaymentRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
@@ -123,6 +123,9 @@ class OrderService
     /** @var OrderPostprocessor */
     private $orderPostprocessor;
 
+    /** @var OrderManagementInterface */
+    private $orderManagement;
+
     /**
      * OrderService constructor.
      * @param Adapter $apiAdapter
@@ -142,6 +145,7 @@ class OrderService
      * @param LogRepository $logRepository
      * @param BrandOverlayRegistryInterface $overlayRegistry
      * @param OrderPostprocessor $orderPostprocessor
+     * @param OrderManagementInterface $orderManagement
      */
     public function __construct(
         Adapter $apiAdapter,
@@ -161,7 +165,8 @@ class OrderService
         OrderRepositoryInterface $orderRepository,
         LogRepository $logRepository,
         BrandOverlayRegistryInterface $overlayRegistry,
-        OrderPostprocessor $orderPostprocessor
+        OrderPostprocessor $orderPostprocessor,
+        OrderManagementInterface $orderManagement
     ) {
         $this->apiAdapter = $apiAdapter;
         $this->restoreQuote = $restoreQuote;
@@ -181,6 +186,7 @@ class OrderService
         $this->logRepository = $logRepository;
         $this->overlayRegistry = $overlayRegistry;
         $this->orderPostprocessor = $orderPostprocessor;
+        $this->orderManagement = $orderManagement;
     }
 
     /**
@@ -361,9 +367,10 @@ class OrderService
     }
 
     /**
-     * Wind up a buyer's failed return to the shop (confirm, cancel or failed
-     * verification): restore the cart, fail the order with the full account
-     * for the merchant, and answer what the buyer may be shown (TWO-26295).
+     * Wind up a buyer's failed return to the shop: restore the order's cart
+     * when this browser placed it (TWO-27389), fail the order with the full
+     * account for the merchant, and answer what the buyer may be shown
+     * (TWO-26295).
      *
      * Neither clean-up step may keep the buyer from that answer, so each is
      * guarded and logged.
@@ -374,12 +381,12 @@ class OrderService
      */
     public function failBuyerReturn(?Order $order, \Throwable $exception): string
     {
-        try {
-            $this->restoreQuote();
-        } catch (\Throwable $e) {
-            $this->logBuyerReturnFailure('restore-quote', $e);
-        }
         if ($order !== null) {
+            try {
+                $this->restoreQuote($order);
+            } catch (\Throwable $e) {
+                $this->logBuyerReturnFailure('restore-quote', $e);
+            }
             try {
                 $this->failOrder($order, $exception->getMessage());
             } catch (\Throwable $e) {
@@ -466,32 +473,30 @@ class OrderService
     }
 
     /**
-     * Restore quote
+     * Give the order's cart back to this browser, when this browser placed
+     * the order (TWO-27389).
      *
-     * @return $this
+     * @param Order $order
+     * @return bool whether the cart came back
      */
-    public function restoreQuote()
+    public function restoreQuote(Order $order): bool
     {
-        $this->restoreQuote->execute();
-        return $this;
+        return $this->restoreQuote->execute($order);
     }
 
     /**
-     * Fail Two order
+     * Fail a buyer's return: close the order as failed, with nothing sent to
+     * Two. Closing goes through Magento's cancel, so stock and coupon usage
+     * come back (TWO-27389).
      *
      * @param Order $order
-     * @param $reason
+     * @param string|\Magento\Framework\Phrase $reason the full account, for the merchant
      * @return $this
-     * @throws Exception
+     * @throws LocalizedException when Magento will not cancel the order
      */
     public function failOrder(Order $order, $reason)
     {
-        $order->setStatus(Two::STATUS_FAILED);
-        $order->setState(Order::STATE_CANCELED);
-        $this->addOrderComment($order, $reason);
-        $order->getPayment()->save();
-        $this->orderRepository->save($order);
-        return $this;
+        return $this->cancelLocally($order, $reason, 'shop', Two::STATUS_FAILED);
     }
 
     /**
@@ -516,23 +521,38 @@ class OrderService
 
     /**
      * Cancel the order in Magento only, because Two has already cancelled or
-     * declined it: the flag keeps SalesOrderCancelAfter from sending a cancel
-     * back to Two (TWO-26300).
+     * declined it, or has just been told: the flag keeps SalesOrderCancelAfter
+     * from sending a cancel to Two, and names who closed it for integrations
+     * (TWO-26300).
+     *
+     * The cancel goes through Magento's order cancel service, which returns
+     * the stock and the coupon usage (TWO-27389). That service reads the order
+     * through the order repository, which hands back the instance it holds,
+     * so the flag is set on that instance.
      *
      * @param Order $order
      * @param string|\Magento\Framework\Phrase $comment why, for the merchant
+     * @param string $cancelledBy `two`, `buyer` or `shop`
+     * @param string|null $status the status to close with, when not Magento's own
      * @return $this
      * @throws LocalizedException when Magento will not cancel the order
      */
-    public function cancelLocally(Order $order, $comment)
+    public function cancelLocally(Order $order, $comment, string $cancelledBy = 'two', ?string $status = null)
     {
-        $order->setData(self::SKIP_CANCEL_SYNC, true);
-        $order->cancel();
-        if ($order->getState() !== Order::STATE_CANCELED) {
+        $id = (int)$order->getId();
+        $managed = $this->orderRepository->get($id);
+        $managed->setData(self::SKIP_CANCEL_SYNC, $cancelledBy);
+        if ($order->getData(self::PENDING_CHECKED_AT) !== null) {
+            $managed->setData(self::PENDING_CHECKED_AT, $order->getData(self::PENDING_CHECKED_AT));
+        }
+        if (!$this->orderManagement->cancel($id) || $managed->getState() !== Order::STATE_CANCELED) {
             throw new LocalizedException(__('Magento did not allow the order to be cancelled.'));
         }
-        $this->addOrderComment($order, $comment);
-        $this->orderRepository->save($order);
+        if ($status !== null) {
+            $managed->setStatus($status);
+        }
+        $this->addOrderComment($managed, $comment);
+        $this->orderRepository->save($managed);
         return $this;
     }
 

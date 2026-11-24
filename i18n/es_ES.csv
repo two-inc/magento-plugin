@@ -120,7 +120,6 @@
 "Version","Versión"
 "You must accept %1 to place order.","Debes aceptar %1 para realizar el pedido."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Tu compra con factura con %1 no se ha podido procesar. Se restaurará el carrito."
-"Your invoice purchase with %1 failed verification. The cart will be restored.","Tu compra con factura con %1 no ha superado la verificación. Se restaurará el carrito."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Tu compra con factura con %1 ha sido cancelada. Se restaurará el carrito."
 "Your invoice purchase with %1 has been declined.","Tu compra con factura con %1 ha sido rechazada."
 "Your invoice with %1 is likely to be accepted, subject to additional checks.","Es probable que tu factura con %1 sea aceptada, sujeta a comprobaciones adicionales."
@@ -516,3 +515,5 @@
 "Provider order state: Cancelled","Cancelado"
 "Provider order state: Refunded","Reembolsado"
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Pago anulado: %1 ha cancelado el pedido %2. Cancela este pedido para cerrarlo."
+"%1 could not approve this purchase. Please choose another payment method.","%1 no ha podido aprobar esta compra. Elige otro método de pago."
+"The buyer came back from %1 without finishing verification. Cancelled with %1.","El comprador volvió de %1 sin terminar la verificación. Cancelado con %1."

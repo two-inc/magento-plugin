@@ -123,7 +123,6 @@
 "Version","Versie"
 "You must accept %1 to place order.","U moet %1 accepteren om de bestelling te plaatsen."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Uw factuuraankoop met %1 kon niet worden verwerkt. De winkelwagen wordt hersteld."
-"Your invoice purchase with %1 failed verification. The cart will be restored.","Uw aankoop op factuur met %1 is niet geverifieerd. De winkelwagen wordt hersteld."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Uw aankoop op factuur met %1 is geannuleerd. De winkelwagen wordt hersteld."
 "Your invoice purchase with %1 has been declined.","Uw aankoop op factuur met %1 is geweigerd."
 "Your invoice with %1 is likely to be accepted, subject to additional checks.","Uw factuur met %1 wordt waarschijnlijk geaccepteerd, mits er aanvullende controles worden uitgevoerd."
@@ -516,3 +515,5 @@
 "Provider order state: Cancelled","Geannuleerd"
 "Provider order state: Refunded","Terugbetaald"
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Betaling ingetrokken: %1 heeft bestelling %2 geannuleerd. Annuleer deze bestelling om haar af te sluiten."
+"%1 could not approve this purchase. Please choose another payment method.","%1 kon deze aankoop niet goedkeuren. Kies een andere betaalmethode."
+"The buyer came back from %1 without finishing verification. Cancelled with %1.","De koper is teruggekomen van %1 zonder de verificatie af te ronden. Geannuleerd bij %1."

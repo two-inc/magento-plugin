@@ -30,6 +30,8 @@ use Two\Gateway\Service\Payment\PendingOrderResolver as Resolver;
  */
 class Confirm extends Action
 {
+    use BuyerReturnPages;
+
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
@@ -126,38 +128,5 @@ class Confirm extends Action
             return $this->showSuccessPage($order);
         }
         return $this->stillChecking();
-    }
-
-    /**
-     * Neither a success page nor a restored cart: the order still stands,
-     * and how it ends is not known yet.
-     *
-     * @return ResponseInterface
-     */
-    private function stillChecking()
-    {
-        $this->messageManager->addNoticeMessage(__(
-            'Your order is still being checked with %1. The shop will confirm your order by email if it goes through.',
-            $this->brandRegistry->getProductName()
-        ));
-        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
-    }
-
-    /**
-     * Send the buyer to the success page for this order. The page reads the
-     * last order and quote from the checkout session, so they are set from the
-     * order the reference found, and from nothing else.
-     *
-     * @param \Magento\Sales\Model\Order $order
-     * @return ResponseInterface
-     */
-    private function showSuccessPage($order)
-    {
-        $this->checkoutSession->setLastQuoteId($order->getQuoteId());
-        $this->checkoutSession->setLastSuccessQuoteId($order->getQuoteId());
-        $this->checkoutSession->setLastOrderId($order->getId());
-        $this->checkoutSession->setLastRealOrderId($order->getIncrementId());
-        $this->checkoutSession->setLastOrderStatus($order->getStatus());
-        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
     }
 }

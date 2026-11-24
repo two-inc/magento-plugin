@@ -9,23 +9,29 @@ the buyer comes back to the shop from Two's verification. A buyer who verifies
 and then closes the tab never comes back, so the shop also asks Two itself
 (TWO-26300).
 
-## One resolver, three triggers
+## One resolver, four triggers
 
 `Service\Payment\PendingOrderResolver::resolve()` settles one waiting order. It
 is called with a trigger:
 
 - `buyer_return`: the confirm return controller (`Controller\Payment\Confirm`).
+- `buyer_decline`: the cancel and failed-verification return controllers
+  (`Controller\Payment\Cancel`, `Verificationfailed`), where Two's checkout
+  sends a buyer it did not approve or who left verification. What it does for
+  each state is in
+  [order-intent-refusals.md](order-intent-refusals.md#the-cancel-and-failed-verification-links)
+  (TWO-27389).
 - `scheduled_check`: `Cron\CheckPendingOrders`, every 15 minutes.
 - `admin_check`: the order view's Check status button
   (`Controller\Adminhtml\Order\CheckStatus`).
 
-All three take one lock per order (`LockManagerInterface`, name
+All of them take one lock per order (`LockManagerInterface`, name
 `two_gateway_pending_order_<entity id>`), then read the order afresh
 (`OrderService::reloadOrder()`) and leave it alone unless it still awaits the
 buyer. They read it once more after asking Two, just before acting, because the
-buyer's cancel return and the admin's Cancel do not take the lock: a cancel
+admin's Cancel does not take the lock: a cancel
 that lands while Two is being asked is never undone. The scheduled check takes
-the lock with no wait and skips a held order; the return and the button wait up
+the lock with no wait and skips a held order; the returns and the button wait up
 to 10 seconds. A return that still finds the lock held shows the success page
 if the order has meanwhile been processed, and otherwise a neutral notice,
 without failing the order or restoring the cart.
@@ -52,11 +58,16 @@ Every action by the scheduled check or the button adds a merchant-only comment
 naming the trigger (the admin user for the button). The return adds none beyond
 what it always added.
 
-A local cancel must never send a cancel back: `cancelLocally()` sets
-`OrderService::SKIP_CANCEL_SYNC` on the order before `Order::cancel()`, and
-`Observer\SalesOrderCancelAfter` then sends nothing to Two. It still dispatches
-`two_payment_order_cancelled`, with `two_data` `['cancelled_by' => 'two']`, so
-integrations hear of cancels Two made as well as the merchant's.
+A local cancel must never send a cancel back: `cancelLocally()` closes the order
+through Magento's order cancel service (`OrderManagementInterface::cancel()`,
+which returns stock and coupon usage, TWO-27389), after setting
+`OrderService::SKIP_CANCEL_SYNC` on the instance the order repository holds,
+which is the one that service cancels. `Observer\SalesOrderCancelAfter` then
+sends nothing to Two. It still dispatches `two_payment_order_cancelled`, with
+`two_data` `['cancelled_by' => ...]` naming who closed it: `two` when Two
+cancelled or declined it, `buyer` when the buyer left verification and the
+cancel was sent from the return, `shop` when a failed buyer return closed it
+(`OrderService::failOrder()`, status failed).
 
 ## Selection
 
@@ -87,6 +98,11 @@ the Two state and what changed as an admin message, and acts at any order age.
   for each trigger, the lock waits, and an order that moved on.
 - `Test/Unit/Controller/Payment/ConfirmTwoStateTest.php`: the buyer's return
   for each state.
+- `Test/Unit/Controller/Payment/DeclineReturnTest.php`: the cancel and
+  failed-verification returns for each outcome, in the browser that placed
+  the order and in another.
+- `Test/Unit/Service/Payment/OrderCloseTest.php`: closing through Magento's
+  cancel service, and which browser gets the cart back.
 - `Test/Unit/Cron/CheckPendingOrdersTest.php`: the selection query and the run.
 - `e2e/tests/pending-recovery.spec.ts`: places an order with the return
   blocked, then settles it with the button (and checks the late return), or,

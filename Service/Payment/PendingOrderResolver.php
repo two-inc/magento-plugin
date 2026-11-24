@@ -25,7 +25,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * Settles an order still waiting for the buyer's verification by asking Two
  * what became of it, then acting on the answer (TWO-26300).
  *
- * Three triggers share it: the buyer's return to the shop, the scheduled check
+ * Four triggers share it: the buyer's return to the shop, the buyer's return
+ * from a decline or an abandoned verification (TWO-27389), the scheduled check
  * of orders whose buyer never came back, and the admin's Check status button.
  * They share one lock per order, and the order is read afresh once the lock is
  * held and again just before acting, so whichever arrives second finds the
@@ -38,6 +39,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 class PendingOrderResolver
 {
     public const TRIGGER_BUYER_RETURN = 'buyer_return';
+    /** The cancel and failed-verification links: the buyer wants to pay another way. */
+    public const TRIGGER_BUYER_DECLINE = 'buyer_decline';
     public const TRIGGER_SCHEDULED = 'scheduled_check';
     public const TRIGGER_ADMIN = 'admin_check';
 
@@ -49,7 +52,10 @@ class PendingOrderResolver
     public const OUTCOME_CANCELLED = 'cancelled';
     /** Declined by Two, so cancelled here (or, on the buyer's return, failed). */
     public const OUTCOME_DECLINED = 'declined';
-    /** The buyer has not finished verification. */
+    /**
+     * The buyer has not finished verification. On the decline return the
+     * order has been cancelled with Two and closed here.
+     */
     public const OUTCOME_UNVERIFIED = 'unverified';
     /** Any other state: nothing changed, the merchant is told to look. */
     public const OUTCOME_UNCHANGED = 'unchanged';
@@ -243,7 +249,7 @@ class PendingOrderResolver
         string $outcome
     ): PendingOrderResolution {
         $message = '';
-        if ($trigger !== self::TRIGGER_BUYER_RETURN) {
+        if (in_array($trigger, [self::TRIGGER_SCHEDULED, self::TRIGGER_ADMIN], true)) {
             $message = $this->recoveryComment($trigger, $actor, $outcome === self::OUTCOME_PROCESSED);
             $this->orderService->addOrderComment($order, $message);
         }
@@ -263,7 +269,8 @@ class PendingOrderResolver
 
     /**
      * Two has cancelled or declined the order. Cancel it here without sending
-     * a cancel back; on the buyer's return, fail it as any failed return is.
+     * a cancel back; on the buyer's confirm return, fail it as any failed
+     * return is.
      */
     private function cancel(
         Order $order,
@@ -286,12 +293,35 @@ class PendingOrderResolver
 
     /**
      * The buyer has not finished verification. The scheduled check and the
-     * button change nothing; a buyer back at the shop without verifying has
-     * the return failed, as it always was.
+     * button change nothing; a buyer back at the shop through the confirm
+     * link without verifying has the return failed, as it always was. A buyer
+     * back through the cancel or failed-verification link has left: the order
+     * is cancelled with Two, then closed here, and when Two refuses the cancel
+     * the order stays as it is (TWO-27389, TWO-27057).
      */
     private function unverified(Order $order, string $trigger): PendingOrderResolution
     {
         $state = 'UNVERIFIED';
+        if ($trigger === self::TRIGGER_BUYER_DECLINE) {
+            try {
+                $this->orderService->cancelTwoOrder($order, 'buyer_cancel');
+            } catch (Throwable $exception) {
+                $buyerMessage = $this->orderService->keepRefusedCancel($order, $exception);
+                return new PendingOrderResolution(
+                    self::OUTCOME_FAILED,
+                    $order,
+                    $state,
+                    $exception->getMessage(),
+                    $buyerMessage
+                );
+            }
+            $comment = (string)__(
+                'The buyer came back from %1 without finishing verification. Cancelled with %1.',
+                $this->product()
+            );
+            $this->orderService->cancelLocally($order, $comment, 'buyer');
+            return new PendingOrderResolution(self::OUTCOME_UNVERIFIED, $order, $state, $comment);
+        }
         if ($trigger === self::TRIGGER_BUYER_RETURN) {
             $comment = (string)__('Unable to confirm %1 order with %2 state.', $this->product(), $state);
             $this->orderService->addOrderComment($order, $comment);

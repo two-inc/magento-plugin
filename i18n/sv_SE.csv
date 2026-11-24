@@ -122,7 +122,6 @@
 "Version","Version"
 "You must accept %1 to place order.","Du måste acceptera %1 för att göra en beställning."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Ditt fakturaköp med %1 kunde inte behandlas. Varukorgen kommer att återställas."
-"Your invoice purchase with %1 failed verification. The cart will be restored.","Ditt fakturaköp med %1 misslyckades med verifiering. Vagnen kommer att återställas."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Ditt fakturaköp med %1 har annullerats. Vagnen kommer att återställas."
 "Your invoice purchase with %1 has been declined.","Ditt fakturaköp med %1 har avvisats."
 "Your invoice with %1 is likely to be accepted, subject to additional checks.","Din faktura med %1 kommer sannolikt att accepteras, under förutsättning av ytterligare kontroller."
@@ -516,3 +515,5 @@
 "Provider order state: Cancelled","Avbruten"
 "Provider order state: Refunded","Återbetald"
 "Payment voided: %1 has cancelled order %2. Cancel this order to close it.","Betalning makulerad: %1 har avbrutit order %2. Avbryt den här beställningen för att stänga den."
+"%1 could not approve this purchase. Please choose another payment method.","%1 kunde inte godkänna det här köpet. Välj ett annat betalningssätt."
+"The buyer came back from %1 without finishing verification. Cancelled with %1.","Köparen kom tillbaka från %1 utan att slutföra verifieringen. Annullerad hos %1."

@@ -108,7 +108,8 @@ class OrderServiceStoreScopeTest extends TestCase
             $this->createMock(OrderRepositoryInterface::class),
             $this->createMock(LogRepository::class),
             $this->createMock(BrandOverlayRegistryInterface::class),
-            $this->passThroughPostprocessor()
+            $this->passThroughPostprocessor(),
+            $this->createMock(\Magento\Sales\Api\OrderManagementInterface::class)
         );
     }
 

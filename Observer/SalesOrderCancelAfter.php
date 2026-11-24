@@ -90,11 +90,14 @@ class SalesOrderCancelAfter implements ObserverInterface
             return;
         }
 
-        // Cancelled here because Two already cancelled or declined it: there
-        // is nothing to send, but integrations still hear of the cancel
-        // (TWO-26300).
-        if ($order->getData(OrderService::SKIP_CANCEL_SYNC)) {
-            $this->lifecycleEvents->dispatchCancelled($order, ['cancelled_by' => 'two']);
+        // Cancelled here because Two already cancelled or declined it, or was
+        // already told: there is nothing to send, but integrations still hear
+        // of the cancel (TWO-26300). The flag names who closed it when anyone
+        // other than Two did: the buyer, whose cancel was already sent, or the
+        // shop, on a failed buyer return (TWO-27389).
+        $skip = $order->getData(OrderService::SKIP_CANCEL_SYNC);
+        if ($skip) {
+            $this->lifecycleEvents->dispatchCancelled($order, ['cancelled_by' => is_string($skip) ? $skip : 'two']);
             return;
         }
 
