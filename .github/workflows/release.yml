@@ -99,6 +99,8 @@ jobs:
         id: gate
         env:
           PASSED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           actual=$(git rev-parse HEAD)
@@ -111,6 +113,14 @@ jobs:
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."
             echo "skip=1" >> "$GITHUB_OUTPUT"
+            # A re-run of this job after the tag and Release were created (say
+            # the dispatch failed) still sends the dispatch, so platform-tools
+            # need not wait for its daily reconcile. A first attempt never
+            # re-sends: the tag exists because an earlier run released it.
+            if [ "$ATTEMPT" -gt 1 ] && gh release view "$existing" >/dev/null 2>&1; then
+              echo "Release $existing exists: re-sending the dispatch on this re-run."
+              echo "redispatch=1" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           echo "skip=0" >> "$GITHUB_OUTPUT"
@@ -236,7 +246,7 @@ jobs:
       # needs its own token that can reach platform-tools.
       - name: Mint platform-tools dispatch token
         id: dispatch-token
-        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
+        if: (steps.gate.outputs.skip == '0' || steps.gate.outputs.redispatch == '1') && env.BRANCH == 'main'
         uses: two-inc/actions-public/app-token@main
         with:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
@@ -250,7 +260,7 @@ jobs:
       # reader (ISEC-853). platform-tools' daily reconcile is the backstop for
       # a Release published any other way.
       - name: Dispatch plugin-release-published
-        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
+        if: (steps.gate.outputs.skip == '0' || steps.gate.outputs.redispatch == '1') && env.BRANCH == 'main'
         env:
           GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
           # The receiver maps this to a shop and fails on a repository it has
