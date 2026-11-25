@@ -35,6 +35,7 @@ jobs:
         uses: two-inc/actions-public/app-token@main
         with:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          repositories: ${{ github.event.repository.name }}
 
       - name: Ensure open PR staging → main
         env:
