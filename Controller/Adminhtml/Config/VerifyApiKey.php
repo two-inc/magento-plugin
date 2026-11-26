@@ -12,6 +12,7 @@ use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Json;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\EnvironmentMode;
@@ -100,7 +101,12 @@ class VerifyApiKey extends Action
             $request->getParam('scopeId', 0)
         );
         // At the default scope there is no parent, so no box to tick.
-        $parent = $this->credentialsSave->parentScope($scope, $scopeId);
+        try {
+            $parent = $this->credentialsSave->parentScope($scope, $scopeId);
+        } catch (NoSuchEntityException $e) {
+            // A store id the shop does not know has nothing to judge.
+            return $result->setData(['skipped' => true]);
+        }
         $keyInherited = $parent !== null && $request->getParam('key_inherit');
         $modeInherited = $parent !== null && $request->getParam('mode_inherit');
         $apiKey = trim((string)$request->getParam('api_key', ''));

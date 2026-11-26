@@ -96,7 +96,7 @@ save reads.
 
 When the key it reads is empty, `VerifyApiKey` returns the not-configured
 verdict ("API key is missing") without asking Two, because the save then stops
-at "Enter an API key.".
+at "Enter an API key.". A store id the shop does not know returns `skipped`.
 
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's

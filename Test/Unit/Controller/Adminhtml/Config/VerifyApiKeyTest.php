@@ -426,6 +426,10 @@ class VerifyApiKeyTest extends TestCase
         return [
             'key inherited, parent has none' => [['stored' => '1', 'key_inherit' => '1', 'mode' => 'production'], $missing,
                 "the save finds no key, so this scope's own valid key must not stand"],
+            'unknown store view' => [['scope' => 'stores', 'scopeId' => 99, 'stored' => '1', 'key_inherit' => '1'],
+                ['skipped' => true], 'a store id the shop does not know is skipped, not a server error'],
+            'unknown store view, typed key' => [['scope' => 'stores', 'scopeId' => 99, 'api_key' => self::VALID_LENGTH_KEY],
+                ['skipped' => true], 'an unknown store id is skipped whatever was typed'],
         ];
     }
 
