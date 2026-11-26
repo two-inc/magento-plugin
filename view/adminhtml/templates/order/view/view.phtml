@@ -14,6 +14,22 @@
         <div class="admin__page-section-content">
             <div>
                 <table width="100%">
+                    <?php $summary = $block->getTwoOrderSummary(); ?>
+                    <?php if ($summary !== null): ?>
+                        <?php $rows = [
+                            [__('Order ID'), $summary['id']],
+                            [__('State'), $summary['state']],
+                            [__('Payment term'), $summary['term']],
+                        ]; ?>
+                        <?php foreach ($rows as [$rowLabel, $rowValue]): ?>
+                            <?php if ($rowValue !== null): ?>
+                                <tr>
+                                    <td><strong><?= $block->escapeHtml($rowLabel) ?></strong></td>
+                                    <td><?= $block->escapeHtml($rowValue) ?></td>
+                                </tr>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                     <?php $fulfillments = $block->getTwoOrderFulfillments(); ?>
                     <?php if (!empty($fulfillments['fulfilled_orders'])): ?>
                         <tr>

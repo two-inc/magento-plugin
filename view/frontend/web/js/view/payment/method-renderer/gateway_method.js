@@ -263,7 +263,7 @@ define([
             this.initOrderIntentApprovedNotice(config);
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
-            this.orderIntentFieldErrors = config.orderIntentFieldErrors || null;
+            this.orderIntentNotAvailableMessage = config.orderIntentNotAvailableMessage;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.termUnavailableMessage = config.termUnavailableMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
@@ -886,7 +886,7 @@ define([
                 // Same surface as processOrderIntentErrorResponse()'s
                 // message (TWO-25326, 2026-08-05): a synchronous throw and
                 // a failed request are the same outcome to the buyer.
-                self.showOrderIntentErrorNotice(self.generalErrorMessage);
+                self.showOrderIntentErrorNotice(self.resolveOrderIntentDeclinedNotice());
                 return;
             }
             deferred
@@ -1475,11 +1475,15 @@ define([
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
          * (TWO-25326). Never '' — it explains the disabled Place Order button,
-         * so a brand withholding its own wording gets the platform's.
+         * so a brand withholding its own wording gets the platform's: the
+         * sentence order create gives for the same decline (ABN-643).
          */
         resolveOrderIntentDeclinedNotice: function () {
+            // The general error covers a checkout config cached before the
+            // key shipped, so the box is never blank.
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy) ||
-                $t('This payment method is not available for the selected company.');
+                this.orderIntentNotAvailableMessage ||
+                this.generalErrorMessage;
         },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {
@@ -1526,45 +1530,16 @@ define([
             }
 
             // The API's own text never reaches the buyer (TWO-26295): it is
-            // written for an integrator or the merchant. A refusal naming a
-            // field the buyer can fix says which, in our own words; anything
-            // else shows the general message. A refusal this module made
-            // itself before calling the API (PROXY_REFUSED) keeps its own
-            // translated sentence.
-            const body = (response && response.responseJSON) || {};
-            let message = this.orderIntentFieldErrorMessage(body.error_json) || this.generalErrorMessage;
-            if (body.error_code === 'PROXY_REFUSED' && body.error_message) {
-                message = body.error_message;
-            }
-            if (message) {
-                // The tile's own bordered box, not the checkout message
-                // region (TWO-25326, 2026-08-05).
-                this.showOrderIntentErrorNotice(message);
-            }
-        },
-        /**
-         * The buyer sentence for each field a refusal's error_json names that
-         * the buyer can fix, or '' when it names none (TWO-26295, TWO-27108).
-         * Chosen from the field path, never the message, with model-name
-         * segments a validator may insert (a capital first letter) dropped,
-         * exactly as order create does.
-         *
-         * @param {Array} errors the refusal's error_json
-         * @returns {string}
-         */
-        orderIntentFieldErrorMessage: function (errors) {
-            const copy = this.orderIntentFieldErrors;
-            if (!copy || !copy.messages || !Array.isArray(errors)) return '';
-            const messages = [];
-            errors.forEach(function (error) {
-                if (!error || !Array.isArray(error.loc)) return;
-                const path = error.loc.filter(function (segment) {
-                    return typeof segment === 'string' && segment !== '' && !/^[A-Z]/.test(segment);
-                }).join('.');
-                const text = Object.prototype.hasOwnProperty.call(copy.messages, path) ? copy.messages[path] : '';
-                if (text && messages.indexOf(text) === -1) messages.push(text);
-            });
-            return messages.join(' ');
+            // written for an integrator or the merchant. Every failure,
+            // whether Two refused (a field it names included), erred or timed
+            // out, the shop's own route faulted or this module refused before
+            // calling Two, states the same "not available for this order"
+            // sentence a decline does, company name included (ABN-643), so
+            // the buyer always has a way forward: another payment method.
+            // The detail stays in the error log and the browser's network
+            // panel. The tile's own bordered box, not the checkout message
+            // region (TWO-25326, 2026-08-05).
+            this.showOrderIntentErrorNotice(this.resolveOrderIntentDeclinedNotice());
         },
         processTermsNotAcceptedErrorResponse: function (response) {
             this.showErrorMessage(this.termsNotAcceptedMessage);
@@ -1636,8 +1611,7 @@ define([
                         deferred.resolve(envelope.body);
                     } else {
                         // Shaped like a jqXHR: processOrderIntentErrorResponse
-                        // reads both fields off one, and drops to a generic
-                        // decline without the status.
+                        // reads both fields off one.
                         deferred.reject({ status: envelope.status, responseJSON: envelope.body });
                     }
                 })

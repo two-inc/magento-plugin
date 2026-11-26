@@ -896,9 +896,15 @@ class Two extends AbstractMethod
                 // Void, in a later request, knows Two already holds the order
                 // as cancelled.
                 $payment->setAdditionalInformation(self::CANCELLED_AT_TWO, true);
+                // Says what the void did, because the line carries the order's
+                // status at the time, which a void leaves unchanged (TWO-27371).
                 $order->addStatusToHistory(
                     $order->getStatus(),
-                    __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())
+                    __(
+                        'Payment voided: %1 has cancelled order %2. Cancel this order to close it.',
+                        $this->brandRegistry->getProductName(),
+                        $twoOrderId
+                    )
                 );
                 $this->lifecycleEvents->dispatchCancelled($order);
             }

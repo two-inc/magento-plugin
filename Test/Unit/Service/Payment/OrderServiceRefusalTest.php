@@ -202,7 +202,8 @@ class OrderServiceRefusalTest extends TestCase
             $this->createMock(OrderRepositoryInterface::class),
             $log,
             $this->createMock(BrandOverlayRegistryInterface::class),
-            $postprocessor
+            $postprocessor,
+            $this->createMock(\Magento\Sales\Api\OrderManagementInterface::class)
         );
     }
 

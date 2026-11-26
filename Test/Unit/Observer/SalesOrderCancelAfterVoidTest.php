@@ -68,9 +68,34 @@ class SalesOrderCancelAfterVoidTest extends TestCase
         );
     }
 
-    private function order(): Order
+    /**
+     * TWO-27371: the history line carries the order's status at the time,
+     * which a void leaves unchanged, so its comment says what happened.
+     */
+    public function testAnAcceptedVoidSaysWhatItDid(): void
     {
-        $order = new Order();
+        $order = $this->order(new class extends Order {
+            /** @var string[] */
+            public array $history = [];
+
+            public function addStatusToHistory($status, $comment = '', $isCustomerNotified = false)
+            {
+                $this->history[] = (string)$comment;
+                return $this;
+            }
+        });
+
+        $this->two([])->void($order->getPayment());
+
+        $this->assertSame(
+            ['Payment voided: Two has cancelled order remote-order-id. Cancel this order to close it.'],
+            $order->history
+        );
+    }
+
+    private function order(?Order $order = null): Order
+    {
+        $order = $order ?? new Order();
         $order->setData('two_order_id', 'remote-order-id');
         $order->setData('increment_id', '100000042');
         $order->setData('store_id', 1);

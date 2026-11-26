@@ -7,93 +7,13 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Controller\Payment;
 
-use Exception;
-use Magento\Framework\App\Action\Action;
-use Magento\Framework\App\Action\Context;
-use Magento\Framework\App\ResponseInterface;
-use Magento\Framework\Exception\LocalizedException;
-use Two\Gateway\Service\Payment\OrderService;
-use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-
 /**
- * Verification failed controller
+ * Failed verification return controller.
+ *
+ * The same return as the cancel link: the buyer comes back to pay for the
+ * same basket another way, and what Two reports decides what happens to the
+ * order (TWO-27389).
  */
-class Verificationfailed extends Action
+class Verificationfailed extends Cancel
 {
-    /**
-     * @var ConfigRepository
-     */
-    private $configRepository;
-
-    /** @var BrandRegistryInterface */
-    private $brandRegistry;
-
-    /**
-     * @var OrderService
-     */
-    private $orderService;
-
-    /**
-     * Verificationfailed constructor.
-     *
-     * @param OrderService $orderService
-     * @param Context $context
-     */
-    public function __construct(
-        ConfigRepository $configRepository,
-        BrandRegistryInterface $brandRegistry,
-        OrderService $orderService,
-        Context $context
-    ) {
-        $this->configRepository = $configRepository;
-        $this->brandRegistry = $brandRegistry;
-        $this->orderService = $orderService;
-        parent::__construct($context);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function execute()
-    {
-        $order = null;
-        try {
-            $order = $this->orderService->getOrderByReference();
-        } catch (Exception $exception) {
-            // The buyer sees only a message meant for them (TWO-26295).
-            $this->messageManager->addErrorMessage($this->orderService->failBuyerReturn($order, $exception));
-            return $this->toCart();
-        }
-        // A replayed link changes nothing on an order that has moved on (TWO-27057).
-        if (!$this->orderService->isAwaitingVerification($order)) {
-            return $this->toCart();
-        }
-        // The order is failed only once Two has cancelled it, as on the
-        // cancel link: Two did not cancel, so neither does the shop (TWO-27057).
-        try {
-            $this->orderService->cancelTwoOrder($order, 'buyer_cancel');
-        } catch (Exception $exception) {
-            $this->messageManager->addErrorMessage($this->orderService->keepRefusedCancel($order, $exception));
-            return $this->toCart();
-        }
-        $message = __(
-            'Your invoice purchase with %1 failed verification. The cart will be restored.',
-            $this->brandRegistry->getProductName()
-        );
-        // The order comment keeps the full account for the merchant; the
-        // buyer sees only a message meant for them (TWO-26295).
-        $this->messageManager->addErrorMessage(
-            $this->orderService->failBuyerReturn($order, new LocalizedException($message))
-        );
-        return $this->toCart();
-    }
-
-    /**
-     * @return ResponseInterface
-     */
-    private function toCart()
-    {
-        return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
-    }
 }

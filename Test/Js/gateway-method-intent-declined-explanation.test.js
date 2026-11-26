@@ -36,7 +36,7 @@ const APPROVED_COPY = {
     companyNumberToken: '{{companyNumber}}'
 };
 
-const PLATFORM_FALLBACK = 'This payment method is not available for the selected company.';
+const PLATFORM_FALLBACK = 'Invoice purchase with Two is not available for this order.';
 const BRAND_SENTENCE = 'Two is not available for this order by Acme Widgets AS (123456789)';
 
 /** An observable with real knockout's "an equal write notifies nobody". */
@@ -70,6 +70,7 @@ function makeContext(declinedCopy) {
         companyName: koObservable(''),
         companyId: koObservable(''),
         generalErrorMessage: 'Something went wrong.',
+        orderIntentNotAvailableMessage: PLATFORM_FALLBACK,
         messageContainer: {
             clear: function () {},
             addSuccessMessage: function () {},
@@ -170,8 +171,57 @@ describe('a declined order intent always explains itself', () => {
 
         ctx.processOrderIntentErrorResponse.call(ctx, {});
 
-        expect(ctx.orderIntentErrorNotice()).toBe('Something went wrong.');
+        expect(ctx.orderIntentErrorNotice()).toBe(PLATFORM_FALLBACK);
         expect(ctx.orderIntentDeclinedNotice()).toBe('');
+    });
+
+    // ABN-643: every failure of the check states the not-available sentence a
+    // decline gives, whoever failed: Two refusing, erring or timing out, the
+    // shop's own route, or this module refusing before calling Two, a refusal
+    // naming a field included. Only a rate limit says something else.
+    test.each([
+        { copy: null, failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal states the not-available sentence' },
+        { copy: BRAND_DECLINED_COPY, failure: { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }, notice: BRAND_SENTENCE, case: 'an API refusal names the company, as a decline does' },
+        { copy: BRAND_DECLINED_COPY, failure: { status: 502, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: BRAND_SENTENCE, case: 'an API server error names the company, as a decline does' },
+        // The two bodies the envelope relays for a refusal with nothing relayable:
+        // the adapter's own reading of an empty body, and its stand-in for a body
+        // carrying none of the relayed keys.
+        { copy: null, failure: { status: 403, responseJSON: { error_code: 400, error_message: 'Invalid API response from Two.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with an empty body states the not-available sentence' },
+        { copy: null, failure: { status: 403, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API refusal with no relayable keys states the not-available sentence' },
+        { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] } }, notice: PLATFORM_FALLBACK, case: 'a validation refusal naming a field states the not-available sentence' },
+        { copy: BRAND_DECLINED_COPY, failure: { status: 400, responseJSON: { error_code: 'SCHEMA_ERROR', error_json: [{ loc: ['buyer', 'representative', 'phone_number'], msg: 'bad' }] } }, notice: BRAND_SENTENCE, case: 'a validation refusal naming a field names the company, as a decline does' },
+        { copy: null, failure: { status: 400, responseJSON: { error_json: [{ loc: ['body'], msg: 'bad' }] } }, notice: PLATFORM_FALLBACK, case: 'a validation refusal naming nothing fixable states the not-available sentence' },
+        { copy: null, failure: { status: 503, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'Module refused.' } }, notice: PLATFORM_FALLBACK, case: 'a refusal made by this module states the not-available sentence' },
+        { copy: null, failure: { status: 502, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API server error states the not-available sentence' },
+        { copy: null, failure: { status: 0, responseJSON: { error_code: 'PROXY_REFUSED', error_message: 'The service is temporarily unavailable. Please try again.' } }, notice: PLATFORM_FALLBACK, case: 'an API timeout states the not-available sentence' },
+        { copy: null, failure: { status: 404, responseJSON: { message: 'Request does not match any route.' } }, notice: PLATFORM_FALLBACK, case: 'the shop route missing after a cache flush states the not-available sentence' },
+        { copy: null, failure: { status: 400, responseJSON: { message: '"payload" is required.' } }, notice: PLATFORM_FALLBACK, case: 'a shop webapi input fault states the not-available sentence' },
+        { copy: null, failure: { status: 401, responseJSON: { message: 'Not authorized.' } }, notice: PLATFORM_FALLBACK, case: 'a shop webapi auth fault states the not-available sentence' },
+        { copy: null, failure: { status: 400 }, notice: PLATFORM_FALLBACK, case: 'a bodyless shop 400 states the not-available sentence' },
+        { copy: null, failure: { status: 503, responseJSON: {} }, notice: PLATFORM_FALLBACK, case: 'a shop server error states the not-available sentence' },
+        { copy: null, failure: { status: 0 }, notice: PLATFORM_FALLBACK, case: 'a transport failure states the not-available sentence' },
+        { copy: null, failure: { status: 429 }, notice: 'Too many requests. Please wait a moment and try again.', case: 'a rate limit asks the buyer to wait' }
+    ])('the error region: $case', ({ copy, failure, notice, case: description }) => {
+        const ctx = makeContext(copy);
+
+        ctx.processOrderIntentErrorResponse.call(ctx, failure);
+
+        expect([description, ctx.orderIntentErrorNotice()]).toEqual([description, notice]);
+        expect([description, ctx.orderIntentDeclinedNotice()]).toEqual([description, '']);
+    });
+
+    // A checkout config cached before `orderIntentNotAvailableMessage` shipped
+    // must not leave either box blank.
+    test.each([
+        { run: (ctx) => ctx.processOrderIntentSuccessResponse.call(ctx, { approved: false }), read: (ctx) => ctx.orderIntentDeclinedNotice(), case: 'a decline' },
+        { run: (ctx) => ctx.processOrderIntentErrorResponse.call(ctx, { status: 400, responseJSON: { error_code: 'BUYER_REFUSED' } }), read: (ctx) => ctx.orderIntentErrorNotice(), case: 'an API refusal' }
+    ])('with no not-available sentence in the config, $case shows the general error', ({ run, read, case: description }) => {
+        const ctx = makeContext(null);
+        delete ctx.orderIntentNotAvailableMessage;
+
+        run(ctx);
+
+        expect([description, read(ctx)]).toEqual([description, 'Something went wrong.']);
     });
 
     test('the region id is per payment code, so sibling brand tiles cannot collide', () => {

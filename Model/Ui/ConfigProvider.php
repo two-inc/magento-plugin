@@ -327,12 +327,13 @@ class ConfigProvider implements ConfigProviderInterface
                         $this->brandRegistry->getProductName(),
                         $tryAgainLater
                     ),
-                    // TWO-26295: a refused intent that names a field the buyer
-                    // can fix says which, in our own words, chosen by the
-                    // field path. One map, shared with order create.
-                    'orderIntentFieldErrors' => [
-                        'messages' => array_map('strval', $this->two->getFieldErrorMessages()),
-                    ],
+                    // ABN-643: what a declined or refused buyer reads when the
+                    // brand withholds its own declined notice. The same
+                    // sentence order create gives for a decline.
+                    'orderIntentNotAvailableMessage' => __(
+                        'Invoice purchase with %1 is not available for this order.',
+                        $this->brandRegistry->getProductName()
+                    ),
                     // TWO-25326: the Two method stays selectable with a
                     // manual (name-only, no organisation number) capture —
                     // it is blocked at submit instead, matching the WC/PS/

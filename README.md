@@ -733,6 +733,33 @@ check a v1 subscriber could already pass, or firing on fewer requests is never
 done. A genuinely incompatible change would arrive as a new interface, with this
 one still firing alongside it.
 
+## When Two does not approve a buyer
+
+Two's checkout sends a buyer it did not approve, or who left verification,
+back to the shop. The shop asks Two what happened to the order before acting
+on it:
+
+- An order Two approved is processed as usual, and the buyer sees the success
+  page.
+- Any other order is cancelled in Magento, which returns its stock and coupon
+  usage. The buyer sees "Two could not approve this purchase. Please choose
+  another payment method." (with your brand's product name).
+- In the browser that placed the order, the basket comes back with no payment
+  method chosen, and the buyer lands on the checkout's payment step to choose
+  another method. Two stays offered. On Hyvä Checkout the buyer lands on the
+  checkout rather than a specific step.
+- On Luma, the payment step opens directly only when the basket already has a
+  shipping method. Otherwise the buyer starts at the shipping step.
+- In any other browser or device the buyer sees the message, and no basket is
+  restored.
+
+The order gets the status Canceled, or the provider's Failed status when the
+buyer's return itself fails. Integrations that observe
+`two_payment_order_cancelled` receive `cancelled_by` in `two_data` when the
+shop closed the order without sending a cancel to Two: `two` (Two cancelled or
+declined it), `buyer` (the buyer left verification) or `shop` (the buyer's
+return failed).
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
@@ -932,12 +959,17 @@ The new version for a major is exactly `<target>.0.0`, so a declaration may skip
 
 ### Bumping (on the PR) and tagging (on `main`)
 
-`.github/workflows/version-bump.yml` runs on every `pull_request` into `staging`. It:
+Two workflows share the work, so the job that holds the App token runs no code from the PR:
 
-1. Runs the unit tests for the computation, then computes an absolute version with `.github/scripts/decide-bump-level.sh origin/staging HEAD`.
-2. If that version differs from the one on the PR head, runs `bumpver update --set-version <X.Y.Z> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml` and `bumpver.toml`, and pushes the commit onto the PR's own branch under the org GitHub App identity. Otherwise it writes nothing.
+- `.github/workflows/version-preview.yml` ("Version preview") runs on every PR. It is read-only (no secrets, no token) and advisory: it runs the unit tests for the computation and shows the version `staging`'s copy of `.github/scripts/decide-bump-level.sh origin/staging HEAD` computes. A PR can edit it, so it is not the gate.
+- `.github/workflows/version-retarget.yml` ("Version retarget") runs on `pull_request_target` when a PR into `staging`, `main` or `release` is opened, reopened, pushed to or closed, and when a PR's base changes into or out of those branches. GitHub always reads it from the default branch, `staging`, so a PR cannot stop it firing. It runs no PR code and holds no token; it only starts "Version bump" for the PR head.
+- `.github/workflows/version-bump.yml` runs on `workflow_run` when either completes, so GitHub reads it from `staging` and a PR cannot change it. Runs are queued per head SHA. It has two jobs:
+  - **decide** has no id-token and no secrets. It finds the PRs on the head SHA with `.github/scripts/find-version-pr.sh` (only PRs into `staging`, `main` or `release` count, and fork PRs are left out when a PR from this repo shares the head), fetches the PR head as git objects only, never checking it out (the few files it reads are written out from blobs, and only if the tree records them as regular files, so a committed symlink can't make it read the runner's files), computes the same version over it, and refuses a PR that changes `bumpver.toml` beyond `current_version`. A head that already carries the version passes only if each pattern `bumpver.toml` lists matches its file exactly once, at that version, ignoring layout and comments, so a reformatted declaration, a copy in a comment or a duplicate key cannot stand in for the real one. It guards against accidental drift, not against a deliberately misleading author, whom the required reviews cover.
+  - **publish** checks out nothing from the PR. If the version differs, it fetches `composer.json`, `etc/config.xml` and `bumpver.toml` at the PR head as data, rewrites them with `staging`'s `.github/scripts/set-version.py`, and commits onto the PR's own branch with GraphQL `createCommitOnBranch` under the org GitHub App identity, only if the branch still points at the head it decided for. bumpver is not run, so no config or hook from the PR is loaded.
 
-The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons: `GITHUB_TOKEN` pushes do not trigger workflows, so CI would never re-run on the bump SHA; and the App holds the ruleset bypass. Because the commit lands on a feature branch, it is outside `terraform-managed-branch-protection` (which targets only `refs/heads/{main,release,staging}`) entirely.
+  `publish` runs even when `decide` fails, and then posts `error`, so a failed decision never leaves an earlier success in place. Otherwise it posts the required `version-current` commit status as the App on every PR: success once the head carries the version (or the PR is a promotion or merge-back), failure when it can't be automated, and a terminal failure ("Superseded by the version bump") on a head the bump was pushed on top of, so a fork PR mirroring it fails instead of hanging. Fork PRs get the version to set by hand. Before posting any verdict it looks up the PRs on the SHA again, and posts nothing if they changed since the decision: the run that change started posts the verdict for the new state. The ruleset accepts that status only from the App, and only on a branch that is up to date with `staging`, so a PR cannot merge before its bump lands.
+
+The push goes out under the App token rather than `GITHUB_TOKEN` because `GITHUB_TOKEN` pushes do not trigger workflows, so CI would never re-run on the bump SHA. The token's key comes from Secret Manager, readable only by this exact workflow file on `staging` (ISEC-853). Because the commit lands on a feature branch, it is outside `terraform-managed-branch-protection` (which targets only `refs/heads/{main,release,staging}`) entirely.
 
 `.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
 
@@ -951,7 +983,7 @@ The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons
 
 To trigger a release, merge that `staging → main` PR. CI runs on the merged commit; once green, `release.yml` fires.
 
-`.github/workflows/release-dispatch.yml` fires on the published Release and notifies the infrastructure repository, which resolves the newly published version and raises the pull request that moves the release-tracking Magento staging shop onto it. Because that shop installs from Packagist, a dispatch can arrive before Packagist has indexed the new tag; the infrastructure repository's daily reconcile covers that case, so nothing here needs to wait or retry (TWO-25769).
+As its last step, the automated release in `release.yml` notifies the infrastructure repository as soon as it has published the Release. A Release published by hand sends no notification and waits for the infrastructure repository's daily reconcile. The infrastructure repository resolves the newly published version and raises the pull request that moves the release-tracking Magento staging shop onto it. Because that shop installs from Packagist, a dispatch can arrive before Packagist has indexed the new tag; the infrastructure repository's daily reconcile covers that case, so nothing here needs to wait or retry (TWO-25769).
 
 ## Links
 

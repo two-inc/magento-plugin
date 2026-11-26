@@ -181,24 +181,37 @@ class CredentialsSave
     }
 
     /**
-     * The value a field takes from the parent scope when "Use Default" is
-     * ticked: a website's from the default scope, a store view's from its
-     * website. Null at the default scope, which has no parent.
+     * The scope a field takes its value from when "Use Default" is ticked: a
+     * website's is the default scope, a store view's is its website. Null at
+     * the default scope, which has no parent. The live key check reads the
+     * same scope, so it judges what the save would (TWO-27303).
+     *
+     * @param int|string|null $scopeId
+     * @return array{0: string, 1: int|string|null}|null the scope type and id, as a config read takes them
+     */
+    public function parentScope(string $scope, $scopeId): ?array
+    {
+        if (in_array($scope, ['websites', 'website'], true)) {
+            return [ScopeConfigInterface::SCOPE_TYPE_DEFAULT, null];
+        }
+        if (in_array($scope, ['stores', 'store'], true)) {
+            return ['websites', $this->storeManager->getStore((int)$scopeId)->getWebsiteId()];
+        }
+
+        return null;
+    }
+
+    /**
+     * The value a field takes from the parent scope when "Use Default" is ticked.
      *
      * @param int|string|null $scopeId
      * @return mixed
      */
     private function parentValue(string $path, string $scope, $scopeId)
     {
-        if (in_array($scope, ['websites', 'website'], true)) {
-            return $this->scopeConfig->getValue($path, ScopeConfigInterface::SCOPE_TYPE_DEFAULT);
-        }
-        if (in_array($scope, ['stores', 'store'], true)) {
-            $websiteId = $this->storeManager->getStore((int)$scopeId)->getWebsiteId();
-            return $this->scopeConfig->getValue($path, 'websites', $websiteId);
-        }
+        $parent = $this->parentScope($scope, $scopeId);
 
-        return null;
+        return $parent === null ? null : $this->scopeConfig->getValue($path, $parent[0], $parent[1]);
     }
 
     /**
