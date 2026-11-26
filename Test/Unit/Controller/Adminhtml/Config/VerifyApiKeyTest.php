@@ -4,14 +4,20 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Controller\Adminhtml\Config;
 
 use Magento\Backend\App\Action\Context;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
+use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Message\ManagerInterface as MessageManager;
+use Magento\Store\Api\Data\StoreInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Controller\Adminhtml\Config\VerifyApiKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
+use Two\Gateway\Service\Merchant\CredentialsSave;
 
 /**
  * The live API-key check behind the admin settings page.
@@ -55,12 +61,27 @@ class VerifyApiKeyTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
+        // The save's own rule for the parent scope: store view 7 is on website 3.
+        $store = $this->createMock(StoreInterface::class);
+        $store->method('getWebsiteId')->willReturn('3');
+        $storeManager = $this->createMock(StoreManagerInterface::class);
+        $storeManager->method('getStore')->with(7)->willReturn($store);
+        $credentialsSave = new CredentialsSave(
+            $this->createMock(ApiKeyStatus::class),
+            new ApiKeyStatusMessage($brandRegistry),
+            $this->createMock(MessageManager::class),
+            $this->createMock(ScopeConfigInterface::class),
+            $this->createMock(EncryptorInterface::class),
+            $storeManager
+        );
+
         $controller = new VerifyApiKey(
             $context,
             new JsonFactory(),
             $this->apiKeyStatus,
             new ApiKeyStatusMessage($brandRegistry),
-            $this->configRepository
+            $this->configRepository,
+            $credentialsSave
         );
 
         return (array)$controller->execute()->getData();
@@ -341,6 +362,71 @@ class VerifyApiKeyTest extends TestCase
                 'an empty field without stored is skipped, as before'],
             'typed key wins' => [['stored' => '1', 'api_key' => 'typed-key-of-ample-length', 'mode' => 'production'], $saved,
                 ['typed-key-of-ample-length', 3, 'production', 'website'], 'a typed key is checked, not the saved one'],
+        ];
+    }
+
+    /**
+     * @dataProvider inheritedFields
+     * @param array<string,mixed> $params
+     * @param array<int,mixed> $expectedCall
+     */
+    public function testAnInheritedFieldIsJudgedAsTheSaveJudgesIt(
+        array $params,
+        array $expectedCall,
+        string $description
+    ): void {
+        // TWO-27303: "Use Default" makes the save use the parent's value, so the check must too.
+        $saved = [
+            'default' => ['default-key-of-ample-length', 'sandbox'],
+            'website' => ['website-key-of-ample-length', 'production'],
+            'websites' => ['website-key-of-ample-length', 'production'],
+            'store' => ['store-key-of-ample-length', 'staging'],
+        ];
+        $this->configRepository->method('getApiKey')->willReturnCallback(
+            function ($id, $scope) use ($saved) {
+                return $saved[$scope][0];
+            }
+        );
+        $this->configRepository->method('getStoredMode')->willReturnCallback(
+            function ($id, $scope) use ($saved) {
+                return $saved[$scope][1];
+            }
+        );
+        $this->apiKeyStatus->expects($this->once())
+            ->method('verifyCandidate')
+            ->with(...$expectedCall)
+            ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
+
+        $response = $this->invoke($params + ['scope' => 'websites', 'scopeId' => 3]);
+
+        $this->assertTrue($response['verified'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: array<int,mixed>, 2: string}>
+     */
+    public static function inheritedFields(): array
+    {
+        $typed = 'typed-key-of-ample-length';
+        $default = 'default-key-of-ample-length';
+        $website = 'website-key-of-ample-length';
+        return [
+            'env inherited, parent differs' => [['api_key' => $typed, 'mode_inherit' => '1', 'mode' => 'production'],
+                [$typed, 3, 'sandbox', 'website'], "a typed key is judged in the parent's environment, not this scope's"],
+            'env inherited, stored check' => [['stored' => '1', 'mode_inherit' => '1'],
+                [$website, 3, 'sandbox', 'website'], "the saved key is judged in the parent's environment"],
+            'key inherited' => [['stored' => '1', 'key_inherit' => '1', 'mode' => 'production'],
+                [$default, 3, 'production', 'website'], "the parent's key is judged, not this scope's"],
+            'key inherited, field ignored' => [['api_key' => $typed, 'key_inherit' => '1', 'mode' => 'production'],
+                [$default, 3, 'production', 'website'], 'an inherited key is never the typed one, as on save'],
+            'both inherited' => [['stored' => '1', 'key_inherit' => '1', 'mode_inherit' => '1'],
+                [$default, 3, 'sandbox', 'website'], "the parent's key in the parent's environment"],
+            'store view inherits its website' => [
+                ['scope' => 'stores', 'scopeId' => 7, 'stored' => '1', 'key_inherit' => '1', 'mode_inherit' => '1'],
+                [$website, 7, 'production', 'store'], "a store view's parent is its website, not the default"],
+            'default scope has no parent' => [
+                ['scope' => 'default', 'scopeId' => 0, 'api_key' => $typed, 'mode_inherit' => '1', 'mode' => 'production'],
+                [$typed, null, 'production', 'default'], 'the default scope has no box, so the posted environment applies'],
         ];
     }
 

@@ -461,7 +461,14 @@ class ApiKeyScenarioTest extends TestCase
         $context = $this->createMock(ActionContext::class);
         $context->method('getRequest')->willReturn($request);
 
-        (new VerifyApiKey($context, new JsonFactory(), $this->apiKeyStatus, $this->statusMessage, $this->repository))->execute();
+        (new VerifyApiKey(
+            $context,
+            new JsonFactory(),
+            $this->apiKeyStatus,
+            $this->statusMessage,
+            $this->repository,
+            $this->credentialsSave
+        ))->execute();
     }
 
     /**

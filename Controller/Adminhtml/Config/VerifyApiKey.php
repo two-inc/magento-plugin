@@ -17,6 +17,7 @@ use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\EnvironmentMode;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
+use Two\Gateway\Service\Merchant\CredentialsSave;
 
 /**
  * AJAX endpoint behind the admin settings page's live API-key check.
@@ -29,6 +30,10 @@ use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
  * With `stored` set and no key typed, it verifies the key saved for the scope
  * instead, so switching the environment shows whether the saved key works
  * there (TWO-27303). That key is read here and never leaves the server.
+ *
+ * `key_inherit` and `mode_inherit` say the field's "Use Default" box is
+ * ticked. The check then uses the parent scope's key or environment, as the
+ * save does, not the one saved at this scope.
  */
 class VerifyApiKey extends Action
 {
@@ -60,18 +65,25 @@ class VerifyApiKey extends Action
      */
     private $configRepository;
 
+    /**
+     * @var CredentialsSave
+     */
+    private $credentialsSave;
+
     public function __construct(
         Action\Context $context,
         JsonFactory $resultJsonFactory,
         ApiKeyStatus $apiKeyStatus,
         ApiKeyStatusMessage $statusMessage,
-        ConfigRepository $configRepository
+        ConfigRepository $configRepository,
+        CredentialsSave $credentialsSave
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
         $this->apiKeyStatus = $apiKeyStatus;
         $this->statusMessage = $statusMessage;
         $this->configRepository = $configRepository;
+        $this->credentialsSave = $credentialsSave;
     }
 
     /**
@@ -81,21 +93,33 @@ class VerifyApiKey extends Action
     {
         $result = $this->resultJsonFactory->create();
 
+        $request = $this->getRequest();
         [$scopeId, $scope] = AdminScope::fromScope(
-            (string)$this->getRequest()->getParam('scope', 'default'),
-            $this->getRequest()->getParam('scopeId', 0)
+            (string)$request->getParam('scope', 'default'),
+            $request->getParam('scopeId', 0)
         );
-        $apiKey = trim((string)$this->getRequest()->getParam('api_key', ''));
-        if ($apiKey === '' && $this->getRequest()->getParam('stored')) {
-            // The key saved or inherited at this scope, as the save judges it.
-            $apiKey = trim($this->configRepository->getApiKey($scopeId, $scope));
+        // At the default scope there is no parent, so no box to tick.
+        $parent = $this->credentialsSave->parentScope($scope, $scopeId);
+        $keyInherited = $parent !== null && $request->getParam('key_inherit');
+        $modeInherited = $parent !== null && $request->getParam('mode_inherit');
+        $apiKey = trim((string)$request->getParam('api_key', ''));
+        // An inherited key is the parent's, never the field's.
+        $stored = $keyInherited || ($apiKey === '' && $request->getParam('stored'));
+        if ($stored) {
+            // The key the save would keep, read here: inherited, or saved at this scope.
+            $apiKey = trim($keyInherited
+                ? $this->configRepository->getApiKey(self::configId($parent[1]), $parent[0])
+                : $this->configRepository->getApiKey($scopeId, $scope));
             if ($apiKey === '') {
                 return $result->setData(['skipped' => true]);
             }
         } elseif (strlen($apiKey) < self::MIN_KEY_LENGTH) {
             return $result->setData(['skipped' => true]);
         }
-        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $this->postedMode($scopeId, $scope), $scope);
+        $mode = $modeInherited
+            ? $this->configRepository->getStoredMode(self::configId($parent[1]), $parent[0])
+            : $this->postedMode($scopeId, $scope);
+        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $mode, $scope);
         $described = $this->statusMessage->describe($status);
 
         $data = [
@@ -115,6 +139,14 @@ class VerifyApiKey extends Action
         }
 
         return $result->setData($data);
+    }
+
+    /**
+     * @param int|string|null $id
+     */
+    private static function configId($id): ?int
+    {
+        return $id === null ? null : (int)$id;
     }
 
     /**

@@ -22,12 +22,15 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // only in the field id. The key is checked against the environment
         // chosen there, saved or not (TWO-27303).
         var $mode = /api_key$/.test(fieldId) ? $('#' + fieldId.replace(/api_key$/, 'mode')) : $();
-        // Its "Use Default"/"Use Website" box. Ticking it only disables the
-        // select, keeping whatever was chosen, and the save then ignores the
-        // select, so a disabled one is not a choice.
+        // The "Use Default"/"Use Website" boxes. Ticking one only disables the
+        // field, keeping whatever it holds, and the save then uses the parent
+        // scope's value instead, so the server is told and judges that value.
         var $modeInherit = $mode.length ? $('#' + $mode.attr('id') + '_inherit') : $();
-        // The environment the server-rendered verdict below was given for.
+        var $keyInherit = $('#' + fieldId + '_inherit');
+        // What the server-rendered verdict below was given for.
         var savedMode = $mode.length ? String($mode.val() || '') : '';
+        var savedModeInherited = ticked($modeInherit);
+        var savedKeyInherited = ticked($keyInherit);
 
         var $message = $panel.find('.two-api-key-verify__message');
         var $icon = $panel.find('.two-api-key-verify__icon');
@@ -59,19 +62,24 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $icon.attr('class', 'two-api-key-verify__icon api-key-status-icon api-key-' + status);
         }
 
-        function chosenMode() {
-            return $mode.length && !$mode.prop('disabled') ? String($mode.val() || '') : null;
+        function ticked($box) {
+            return $box.length > 0 && $box.prop('checked') === true;
         }
 
         function verify() {
-            var key = $.trim(String($input.val() || ''));
-            var mode = chosenMode();
+            var keyInherited = ticked($keyInherit);
+            var modeInherited = ticked($modeInherit);
+            // An inherited key is the parent's, whatever the field holds.
+            var key = keyInherited ? '' : $.trim(String($input.val() || ''));
+            var mode = $mode.length && !modeInherited ? String($mode.val() || '') : null;
             // The obscure field renders the stored key as asterisks; an
             // untouched placeholder is not a candidate.
             var typed = key.length >= MIN_KEY_LENGTH && !/^\*+$/.test(key);
-            // With no key typed, the saved key is judged in the environment
-            // chosen: the page's own verdict holds only for the saved one.
-            var stored = !typed && mode !== null && mode !== savedMode;
+            // With no key typed, the saved key is judged again whenever the
+            // choices differ from those the page's own verdict was given for.
+            var stored = !typed && (keyInherited !== savedKeyInherited
+                || modeInherited !== savedModeInherited
+                || (mode !== null && mode !== savedMode));
             if (!typed && !stored) {
                 latest++;
                 render('', '');
@@ -92,7 +100,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             if (stored) {
                 data.stored = 1;
             }
-            if (mode !== null) {
+            if (keyInherited) {
+                data.key_inherit = 1;
+            }
+            if (modeInherited) {
+                data.mode_inherit = 1;
+            } else if (mode !== null) {
                 data.mode = mode;
             }
             pending = $.ajax({
@@ -140,8 +153,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             verify();
         });
         // A verdict is for one key in one environment, so switching the
-        // environment checks the typed key, or else the saved one, again.
-        $mode.add($modeInherit).on('change', function () {
+        // environment or either box checks the typed key, or else the saved
+        // one, again.
+        $mode.add($modeInherit).add($keyInherit).on('change', function () {
             clearTimeout(timer);
             verify();
         });
