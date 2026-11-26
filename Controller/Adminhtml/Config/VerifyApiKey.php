@@ -111,16 +111,18 @@ class VerifyApiKey extends Action
             $apiKey = trim($keyInherited
                 ? $this->configRepository->getApiKey(self::configId($parent[1]), $parent[0])
                 : $this->configRepository->getApiKey($scopeId, $scope));
-            if ($apiKey === '') {
-                return $result->setData(['skipped' => true]);
-            }
         } elseif (strlen($apiKey) < self::MIN_KEY_LENGTH) {
             return $result->setData(['skipped' => true]);
         }
         $mode = $modeInherited
             ? $this->configRepository->getStoredMode(self::configId($parent[1]), $parent[0])
             : $this->postedMode($scopeId, $scope);
-        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $mode, $scope);
+        // No key there means the save stops at "Enter an API key.", so the
+        // check says the key is missing rather than keep the page's verdict,
+        // which was for this scope's own key.
+        $status = $apiKey === ''
+            ? ApiKeyStatus::notConfigured()
+            : $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $mode, $scope);
         $described = $this->statusMessage->describe($status);
 
         $data = [

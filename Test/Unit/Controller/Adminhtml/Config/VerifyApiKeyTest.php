@@ -8,6 +8,7 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Model\StoreManagerInterface;
@@ -61,11 +62,19 @@ class VerifyApiKeyTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
-        // The save's own rule for the parent scope: store view 7 is on website 3.
+        // The save's own rule for the parent scope: store view 7 is on website 3,
+        // and any other store id is unknown, as the store manager reports it.
         $store = $this->createMock(StoreInterface::class);
         $store->method('getWebsiteId')->willReturn('3');
         $storeManager = $this->createMock(StoreManagerInterface::class);
-        $storeManager->method('getStore')->with(7)->willReturn($store);
+        $storeManager->method('getStore')->willReturnCallback(
+            function ($id) use ($store) {
+                if ($id !== 7) {
+                    throw new NoSuchEntityException();
+                }
+                return $store;
+            }
+        );
         $credentialsSave = new CredentialsSave(
             $this->createMock(ApiKeyStatus::class),
             new ApiKeyStatusMessage($brandRegistry),
@@ -324,6 +333,7 @@ class VerifyApiKeyTest extends TestCase
         array $params,
         string $savedKey,
         ?array $expectedCall,
+        ?string $expectedStatus,
         string $description
     ): void {
         // TWO-27303: the saved key is read at the posted scope and never sent back.
@@ -339,29 +349,30 @@ class VerifyApiKeyTest extends TestCase
 
         $response = $this->invoke(['scope' => 'websites', 'scopeId' => 3] + $params);
 
-        $this->assertSame($expectedCall === null, $response['skipped'] ?? false, $description);
+        $this->assertSame($expectedStatus === null, $response['skipped'] ?? false, $description);
+        $this->assertSame($expectedStatus, $response['status'] ?? null, $description);
         $this->assertStringNotContainsString(self::VALID_LENGTH_KEY, (string)json_encode($response), $description);
     }
 
     /**
-     * @return array<string, array{0: array<string,mixed>, 1: string, 2: array<int,mixed>|null, 3: string}>
+     * @return array<string, array{0: array<string,mixed>, 1: string, 2: array<int,mixed>|null, 3: string|null, 4: string}>
      */
     public static function storedChecks(): array
     {
         $saved = self::VALID_LENGTH_KEY;
         return [
             'env switched' => [['stored' => '1', 'mode' => 'production'], $saved, [$saved, 3, 'production', 'website'],
-                'the saved key is checked against the environment chosen'],
+                'success', 'the saved key is checked against the environment chosen'],
             'unknown mode' => [['stored' => '1', 'mode' => 'development'], $saved, [$saved, 3, null, 'website'],
-                'an unknown environment checks the saved key against the saved one'],
+                'success', 'an unknown environment checks the saved key against the saved one'],
             'no stored key' => [['stored' => '1', 'mode' => 'production'], '', null,
-                'with no key saved there is nothing to check'],
+                'warning', 'with no key saved the key is missing, as the save finds, without asking Two'],
             'saved key padded' => [['stored' => '1', 'mode' => 'production'], " $saved ", [$saved, 3, 'production', 'website'],
-                'the saved key is trimmed, as the save trims it'],
+                'success', 'the saved key is trimmed, as the save trims it'],
             'not asked' => [['mode' => 'production'], $saved, null,
-                'an empty field without stored is skipped, as before'],
+                null, 'an empty field without stored is skipped, as before'],
             'typed key wins' => [['stored' => '1', 'api_key' => 'typed-key-of-ample-length', 'mode' => 'production'], $saved,
-                ['typed-key-of-ample-length', 3, 'production', 'website'], 'a typed key is checked, not the saved one'],
+                ['typed-key-of-ample-length', 3, 'production', 'website'], 'success', 'a typed key is checked, not the saved one'],
         ];
     }
 
@@ -381,6 +392,41 @@ class VerifyApiKeyTest extends TestCase
                 ['verified', 'status', 'definitive', 'merchant_id', 'merchant_short_name']
             ))
         );
+    }
+
+    /**
+     * @dataProvider unjudgeableScopes
+     * @param array<string,mixed> $params
+     * @param array<string,mixed> $expected
+     */
+    public function testAScopeWithNoKeyToJudgeIsNeverSentUpstream(
+        array $params,
+        array $expected,
+        string $description
+    ): void {
+        // TWO-27303: website 3 has a key of its own, the default scope has none.
+        $this->configRepository->method('getApiKey')->willReturnCallback(
+            function ($id, $scope) {
+                return $scope === 'website' ? self::VALID_LENGTH_KEY : '';
+            }
+        );
+        $this->apiKeyStatus->expects($this->never())->method('verifyCandidate');
+
+        $response = $this->invoke($params + ['scope' => 'websites', 'scopeId' => 3]);
+
+        $this->assertSame($expected, array_intersect_key($response, $expected), $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: array<string,mixed>, 2: string}>
+     */
+    public static function unjudgeableScopes(): array
+    {
+        $missing = ['verified' => false, 'status' => 'warning', 'message' => 'API key is missing', 'definitive' => true];
+        return [
+            'key inherited, parent has none' => [['stored' => '1', 'key_inherit' => '1', 'mode' => 'production'], $missing,
+                "the save finds no key, so this scope's own valid key must not stand"],
+        ];
     }
 
     /**

@@ -94,6 +94,10 @@ value, and the save uses the parent scope's value. `VerifyApiKey` reads that
 value from the scope `CredentialsSave::parentScope()` names, the same one the
 save reads.
 
+When the key it reads is empty, `VerifyApiKey` returns the not-configured
+verdict ("API key is missing") without asking Two, because the save then stops
+at "Enter an API key.".
+
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's
 from its website), judged by the same rule. Core deletes an inherited field's row
