@@ -433,9 +433,11 @@ class ApiKeyStatus
     }
 
     /**
+     * The verdict for a scope with no key, given without asking Two.
+     *
      * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
      */
-    private static function notConfigured(): array
+    public static function notConfigured(): array
     {
         return ['status' => self::NOT_CONFIGURED, 'code' => null, 'merchant' => null];
     }

@@ -73,6 +73,31 @@ page load, a checkout render past the verdict cache, or a judged save), a key Tw
 could not judge replaces the stored one as before. The window is short, since any
 of those seeds the slot, and is accepted rather than guessing a verdict.
 
+**The live key check uses the environment chosen on the form, saved or not**
+(TWO-27303), as the save does. `api-key-verify.js` posts the Environment
+dropdown's current value with the typed key, and checks the key again when the
+dropdown changes. It finds the dropdown by the key field's html id with
+`api_key` swapped for `mode`, so Two's section and a brand's both work.
+`VerifyApiKey` accepts only a mode the dropdown offers at that scope
+(`EnvironmentMode::isSaveAllowed()`, as the save); anything else checks against
+the saved environment.
+
+With no key typed, it posts `stored=1` whenever the environment or either "Use
+Default"/"Use Website" box differs from what the page loaded with. `VerifyApiKey`
+then checks the saved key itself, never returns it, and returns only the
+verdict, not the merchant. A half-typed key in changed choices shows no verdict
+and sends nothing.
+
+A ticked box posts `mode_inherit=1` or `key_inherit=1` instead of the field's
+value. Core's `toggleValueElements()` only disables the field, keeping its
+value, and the save uses the parent scope's value. `VerifyApiKey` reads that
+value from the scope `CredentialsSave::parentScope()` names, the same one the
+save reads.
+
+When the key it reads is empty, `VerifyApiKey` returns the not-configured
+verdict ("API key is missing") without asking Two, because the save then stops
+at "Enter an API key.". A store id the shop does not know returns `skipped`.
+
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's
 from its website), judged by the same rule. Core deletes an inherited field's row

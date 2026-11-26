@@ -17,6 +17,20 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         if (!url || !$input.length) {
             return;
         }
+        // The Environment dropdown sits in the key's own group in every
+        // section that renders this panel, so its id differs from the key's
+        // only in the field id. The key is checked against the environment
+        // chosen there, saved or not (TWO-27303).
+        var $mode = /api_key$/.test(fieldId) ? $('#' + fieldId.replace(/api_key$/, 'mode')) : $();
+        // The "Use Default"/"Use Website" boxes. Ticking one only disables the
+        // field, keeping whatever it holds, and the save then uses the parent
+        // scope's value instead, so the server is told and judges that value.
+        var $modeInherit = $mode.length ? $('#' + $mode.attr('id') + '_inherit') : $();
+        var $keyInherit = $('#' + fieldId + '_inherit');
+        // What the server-rendered verdict below was given for.
+        var savedMode = $mode.length ? String($mode.val() || '') : '';
+        var savedModeInherited = ticked($modeInherit);
+        var savedKeyInherited = ticked($keyInherit);
 
         var $message = $panel.find('.two-api-key-verify__message');
         var $icon = $panel.find('.two-api-key-verify__icon');
@@ -48,12 +62,34 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $icon.attr('class', 'two-api-key-verify__icon api-key-status-icon api-key-' + status);
         }
 
+        function ticked($box) {
+            return $box.length > 0 && $box.prop('checked') === true;
+        }
+
         function verify() {
-            var key = $.trim(String($input.val() || ''));
+            var keyInherited = ticked($keyInherit);
+            var modeInherited = ticked($modeInherit);
+            // An inherited key is the parent's, whatever the field holds.
+            var key = keyInherited ? '' : $.trim(String($input.val() || ''));
+            var mode = $mode.length && !modeInherited ? String($mode.val() || '') : null;
             // The obscure field renders the stored key as asterisks; an
-            // untouched placeholder is not a candidate.
-            if (key.length < MIN_KEY_LENGTH || /^\*+$/.test(key)) {
+            // untouched placeholder, like an empty field, keeps the saved key.
+            var keepsSaved = key === '' || /^\*+$/.test(key);
+            var typed = !keepsSaved && key.length >= MIN_KEY_LENGTH;
+            var changed = keyInherited !== savedKeyInherited
+                || modeInherited !== savedModeInherited
+                || (mode !== null && mode !== savedMode);
+            // With no key typed, the saved key is judged again whenever the
+            // choices differ from those the page's own verdict was given for.
+            var stored = keepsSaved && changed;
+            if (!typed && !stored) {
                 latest++;
+                if (changed && !keepsSaved) {
+                    // A half-typed key in other choices: no verdict holds for it.
+                    $message.text('');
+                    $icon.attr('class', 'two-api-key-verify__icon api-key-status-icon');
+                    return;
+                }
                 render('', '');
                 return;
             }
@@ -63,16 +99,28 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             if (pending) {
                 pending.abort();
             }
+            var data = {
+                form_key: $('input[name="form_key"]').first().val() || (window.FORM_KEY || ''),
+                api_key: typed ? key : '',
+                scope: String($panel.data('scope') || 'default'),
+                scopeId: parseInt($panel.data('scope-id'), 10) || 0
+            };
+            if (stored) {
+                data.stored = 1;
+            }
+            if (keyInherited) {
+                data.key_inherit = 1;
+            }
+            if (modeInherited) {
+                data.mode_inherit = 1;
+            } else if (mode !== null) {
+                data.mode = mode;
+            }
             pending = $.ajax({
                 url: url,
                 type: 'POST',
                 dataType: 'json',
-                data: {
-                    form_key: $('input[name="form_key"]').first().val() || (window.FORM_KEY || ''),
-                    api_key: key,
-                    scope: String($panel.data('scope') || 'default'),
-                    scopeId: parseInt($panel.data('scope-id'), 10) || 0
-                }
+                data: data
             }).done(function (response) {
                 // A slow answer for an earlier keystroke must not paint over
                 // the verdict for what is in the field now.
@@ -109,6 +157,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // right after pasting a key should not wait out DEBOUNCE_MS for
         // the verdict that "input" alone would already be about to show.
         $input.on('blur', function () {
+            clearTimeout(timer);
+            verify();
+        });
+        // A verdict is for one key in one environment, so switching the
+        // environment or either box checks the typed key, or else the saved
+        // one, again.
+        $mode.add($modeInherit).add($keyInherit).on('change', function () {
             clearTimeout(timer);
             verify();
         });
