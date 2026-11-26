@@ -85,7 +85,8 @@ the saved environment.
 With no key typed, it posts `stored=1` whenever the environment or either "Use
 Default"/"Use Website" box differs from what the page loaded with. `VerifyApiKey`
 then checks the saved key itself, never returns it, and returns only the
-verdict, not the merchant.
+verdict, not the merchant. A half-typed key in changed choices shows no verdict
+and sends nothing.
 
 A ticked box posts `mode_inherit=1` or `key_inherit=1` instead of the field's
 value. Core's `toggleValueElements()` only disables the field, keeping its

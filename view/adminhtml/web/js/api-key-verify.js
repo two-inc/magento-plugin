@@ -73,15 +73,23 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var key = keyInherited ? '' : $.trim(String($input.val() || ''));
             var mode = $mode.length && !modeInherited ? String($mode.val() || '') : null;
             // The obscure field renders the stored key as asterisks; an
-            // untouched placeholder is not a candidate.
-            var typed = key.length >= MIN_KEY_LENGTH && !/^\*+$/.test(key);
+            // untouched placeholder, like an empty field, keeps the saved key.
+            var keepsSaved = key === '' || /^\*+$/.test(key);
+            var typed = !keepsSaved && key.length >= MIN_KEY_LENGTH;
+            var changed = keyInherited !== savedKeyInherited
+                || modeInherited !== savedModeInherited
+                || (mode !== null && mode !== savedMode);
             // With no key typed, the saved key is judged again whenever the
             // choices differ from those the page's own verdict was given for.
-            var stored = !typed && (keyInherited !== savedKeyInherited
-                || modeInherited !== savedModeInherited
-                || (mode !== null && mode !== savedMode));
+            var stored = keepsSaved && changed;
             if (!typed && !stored) {
                 latest++;
+                if (changed && !keepsSaved) {
+                    // A half-typed key in other choices: no verdict holds for it.
+                    $message.text('');
+                    $icon.attr('class', 'two-api-key-verify__icon api-key-status-icon');
+                    return;
+                }
                 render('', '');
                 return;
             }

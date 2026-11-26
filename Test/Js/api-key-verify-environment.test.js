@@ -99,6 +99,19 @@ describe('the live API key check uses the environment chosen on the form', () =>
         );
     });
 
+    test('switching the environment with a half-typed key shows no verdict and sends nothing', () => {
+        setUp('two_general_general_api_key', 'two_general_general_mode', 'sandbox');
+        $('#two_general_general_api_key').val(KEY.slice(0, 5));
+
+        $('#two_general_general_mode').val('production').trigger('change');
+
+        expect({
+            requests: $.ajax.mock.calls.length,
+            message: $('.two-api-key-verify__message').text(),
+            icon: $('.two-api-key-verify__icon').attr('class'),
+        }).toEqual({ requests: 0, message: '', icon: 'two-api-key-verify__icon api-key-status-icon' });
+    });
+
     test('switching back to the saved environment shows the page verdict without a request', () => {
         setUp('two_general_general_api_key', 'two_general_general_mode', 'sandbox');
         $('#two_general_general_mode').val('production').trigger('change');
