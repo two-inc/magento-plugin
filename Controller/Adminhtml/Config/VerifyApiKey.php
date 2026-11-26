@@ -13,6 +13,7 @@ use Magento\Framework\Controller\Result\Json;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
 use Two\Gateway\Model\Config\AdminScope;
+use Two\Gateway\Model\Config\EnvironmentMode;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
@@ -77,7 +78,7 @@ class VerifyApiKey extends Action
             (string)$this->getRequest()->getParam('scope', 'default'),
             $this->getRequest()->getParam('scopeId', 0)
         );
-        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, null, $scope);
+        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $this->postedMode(), $scope);
         $described = $this->statusMessage->describe($status);
 
         $data = [
@@ -97,5 +98,19 @@ class VerifyApiKey extends Action
         }
 
         return $result->setData($data);
+    }
+
+    /**
+     * The environment chosen on the form, which may not be saved yet
+     * (TWO-27303). Switching environment and pasting that environment's key
+     * is one admin action, so checking against the saved environment rejects
+     * a good key. Anything but a known mode is ignored, and the saved
+     * environment applies.
+     */
+    private function postedMode(): ?string
+    {
+        $mode = $this->getRequest()->getParam('mode');
+
+        return is_string($mode) && in_array($mode, EnvironmentMode::MODES, true) ? $mode : null;
     }
 }

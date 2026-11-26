@@ -248,6 +248,43 @@ class VerifyApiKeyTest extends TestCase
     }
 
     /**
+     * @dataProvider postedModes
+     * @param array<string,mixed> $params
+     */
+    public function testTheCandidateIsVerifiedAgainstTheEnvironmentChosenOnTheForm(
+        array $params,
+        ?string $expectedMode,
+        string $description
+    ): void {
+        // TWO-27303: a null mode makes ApiKeyStatus read the saved environment.
+        $this->apiKeyStatus->expects($this->once())
+            ->method('verifyCandidate')
+            ->with(self::VALID_LENGTH_KEY, null, $expectedMode, 'default')
+            ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
+
+        $response = $this->invoke(['api_key' => self::VALID_LENGTH_KEY] + $params);
+
+        $this->assertTrue($response['verified'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: string|null, 2: string}>
+     */
+    public static function postedModes(): array
+    {
+        return [
+            'env switched, unsaved' => [['mode' => 'production'], 'production', 'the dropdown value is used, not the saved one'],
+            'env unchanged' => [['mode' => 'sandbox'], 'sandbox', 'the dropdown value is used when it matches the saved one'],
+            'staging' => [['mode' => 'staging'], 'staging', 'every stored mode is accepted'],
+            'mode missing' => [[], null, 'no dropdown value falls back to the saved environment'],
+            'mode empty' => [['mode' => ''], null, 'an empty value falls back to the saved environment'],
+            'unknown mode' => [['mode' => 'development'], null, 'an unknown value falls back to the saved environment'],
+            'not canonical' => [['mode' => 'Production'], null, 'only the stored spelling is accepted'],
+            'not a string' => [['mode' => ['production']], null, 'an array value falls back to the saved environment'],
+        ];
+    }
+
+    /**
      * @return array<string, array{0: string, 1: int, 2: int|null, 3: string, 4: string}>
      */
     public static function scopes(): array

@@ -73,6 +73,14 @@ page load, a checkout render past the verdict cache, or a judged save), a key Tw
 could not judge replaces the stored one as before. The window is short, since any
 of those seeds the slot, and is accepted rather than guessing a verdict.
 
+**The live key check uses the environment chosen on the form, saved or not**
+(TWO-27303), as the save does. `api-key-verify.js` posts the Environment
+dropdown's current value with the typed key, and checks the key again when the
+dropdown changes. It finds the dropdown by the key field's html id with `api_key`
+swapped for `mode`, so Two's section and a brand's both work. `VerifyApiKey`
+accepts only a value in `EnvironmentMode::MODES`; a missing or unknown value
+checks against the saved environment.
+
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's
 from its website), judged by the same rule. Core deletes an inherited field's row

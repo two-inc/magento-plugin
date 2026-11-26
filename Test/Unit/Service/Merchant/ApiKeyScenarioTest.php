@@ -200,7 +200,8 @@ class ApiKeyScenarioTest extends TestCase
      * saved config | merchant action | key sent | host | key that must never be sent
      *
      * Actions, with the scope names the admin passes ('default', 'websites', 'stores'):
-     * - ['button', scope, id, key]: the Verify API key button.
+     * - ['button', scope, id, key, mode?]: the Verify API key button, posting the
+     *   Environment dropdown's value when given (no mode: the dropdown was not found).
      * - ['saved', scope, id]: the admin check of the key saved or inherited there.
      * - ['store-call', store id, current store]: a storefront or order call. A
      *   null store id reads the current store (null in the admin, which reads Default).
@@ -222,8 +223,20 @@ class ApiKeyScenarioTest extends TestCase
             '3: changing the key in production, Verify button' => [
                 $productionA, ['button', 'default', 0, self::KEY_B], self::KEY_B, self::PRODUCTION, self::KEY_A,
             ],
-            '4 (records current behaviour, TWO-27303): the Verify button checks against the saved environment, not the one chosen' => [
-                $sandboxA, ['button', 'default', 0, self::KEY_P], self::KEY_P, self::SANDBOX, self::KEY_A,
+            '4 (TWO-27303): the Verify button checks against the environment chosen, before it is saved' => [
+                $sandboxA, ['button', 'default', 0, self::KEY_P, 'production'], self::KEY_P, self::PRODUCTION, self::KEY_A,
+            ],
+            '4 (TWO-27303): switching production to sandbox, Verify button' => [
+                $productionA, ['button', 'default', 0, self::KEY_S, 'sandbox'], self::KEY_S, self::SANDBOX, self::KEY_A,
+            ],
+            '4 (TWO-27303): environment unchanged, Verify button' => [
+                $sandboxA, ['button', 'default', 0, self::KEY_B, 'sandbox'], self::KEY_B, self::SANDBOX, self::KEY_A,
+            ],
+            '4 (TWO-27303): an unknown environment falls back to the saved one' => [
+                $sandboxA, ['button', 'default', 0, self::KEY_B, 'development'], self::KEY_B, self::SANDBOX, self::KEY_A,
+            ],
+            '7 (TWO-27303): Verify button at a store view uses the environment chosen over its website\'s' => [
+                $sandboxA + $websiteB, ['button', 'stores', 1, self::KEY_K, 'sandbox'], self::KEY_K, self::SANDBOX, self::KEY_B,
             ],
             '8: key saved only at website scope, used for its store' => [
                 ['websites' => [1 => ['api_key' => self::KEY_W, 'mode' => 'production']]],
@@ -267,7 +280,7 @@ class ApiKeyScenarioTest extends TestCase
         $this->wire($saved, $action[0] === 'store-call' ? $action[2] : null);
 
         match ($action[0]) {
-            'button' => $this->pressVerify($action[1], $action[2], $action[3]),
+            'button' => $this->pressVerify($action[1], $action[2], $action[3], $action[4] ?? null),
             'saved' => $this->apiKeyStatus->refresh(...AdminScope::fromScope($action[1], $action[2])),
             'store-call' => $this->adapter->execute(self::ORDER_ENDPOINT, ['gross_amount' => '100.00'], 'POST', $action[1]),
         };
@@ -423,9 +436,9 @@ class ApiKeyScenarioTest extends TestCase
         }
     }
 
-    private function pressVerify(string $scope, int $scopeId, string $key): void
+    private function pressVerify(string $scope, int $scopeId, string $key, ?string $mode): void
     {
-        $params = ['api_key' => $key, 'scope' => $scope, 'scopeId' => $scopeId];
+        $params = ['api_key' => $key, 'scope' => $scope, 'scopeId' => $scopeId, 'mode' => $mode];
         $request = $this->createMock(RequestInterface::class);
         $request->method('getParam')->willReturnCallback(
             static fn ($name, $default = null) => $params[$name] ?? $default

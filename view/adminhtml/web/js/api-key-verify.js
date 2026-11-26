@@ -17,6 +17,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         if (!url || !$input.length) {
             return;
         }
+        // The Environment dropdown sits in the key's own group in every
+        // section that renders this panel, so its id differs from the key's
+        // only in the field id. The key is checked against the environment
+        // chosen there, saved or not (TWO-27303).
+        var $mode = /api_key$/.test(fieldId) ? $('#' + fieldId.replace(/api_key$/, 'mode')) : $();
 
         var $message = $panel.find('.two-api-key-verify__message');
         var $icon = $panel.find('.two-api-key-verify__icon');
@@ -63,16 +68,20 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             if (pending) {
                 pending.abort();
             }
+            var data = {
+                form_key: $('input[name="form_key"]').first().val() || (window.FORM_KEY || ''),
+                api_key: key,
+                scope: String($panel.data('scope') || 'default'),
+                scopeId: parseInt($panel.data('scope-id'), 10) || 0
+            };
+            if ($mode.length) {
+                data.mode = String($mode.val() || '');
+            }
             pending = $.ajax({
                 url: url,
                 type: 'POST',
                 dataType: 'json',
-                data: {
-                    form_key: $('input[name="form_key"]').first().val() || (window.FORM_KEY || ''),
-                    api_key: key,
-                    scope: String($panel.data('scope') || 'default'),
-                    scopeId: parseInt($panel.data('scope-id'), 10) || 0
-                }
+                data: data
             }).done(function (response) {
                 // A slow answer for an earlier keystroke must not paint over
                 // the verdict for what is in the field now.
@@ -109,6 +118,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // right after pasting a key should not wait out DEBOUNCE_MS for
         // the verdict that "input" alone would already be about to show.
         $input.on('blur', function () {
+            clearTimeout(timer);
+            verify();
+        });
+        // A verdict is for one key in one environment, so switching the
+        // environment checks the typed key again.
+        $mode.on('change', function () {
             clearTimeout(timer);
             verify();
         });
