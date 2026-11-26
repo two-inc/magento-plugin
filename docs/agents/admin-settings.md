@@ -76,16 +76,22 @@ of those seeds the slot, and is accepted rather than guessing a verdict.
 **The live key check uses the environment chosen on the form, saved or not**
 (TWO-27303), as the save does. `api-key-verify.js` posts the Environment
 dropdown's current value with the typed key, and checks the key again when the
-dropdown changes. With no key typed and an environment other than the saved
-one chosen, it posts `stored=1` and `VerifyApiKey` checks the key saved or
-inherited at that scope instead, which it reads itself and never returns. It
-finds the dropdown by the key field's html id with `api_key` swapped for `mode`,
-so Two's section and a brand's both work. A dropdown disabled by its "Use
-Default" or "Use Website" box posts no mode, because core's
-`toggleValueElements()` only disables it, keeping the value chosen, and the save
-ignores it. Ticking the box checks again. `VerifyApiKey` accepts only a mode
-the dropdown offers at that scope (`EnvironmentMode::isSaveAllowed()`, as the
-save); anything else checks against the saved environment.
+dropdown changes. It finds the dropdown by the key field's html id with
+`api_key` swapped for `mode`, so Two's section and a brand's both work.
+`VerifyApiKey` accepts only a mode the dropdown offers at that scope
+(`EnvironmentMode::isSaveAllowed()`, as the save); anything else checks against
+the saved environment.
+
+With no key typed, it posts `stored=1` whenever the environment or either "Use
+Default"/"Use Website" box differs from what the page loaded with. `VerifyApiKey`
+then checks the saved key itself, never returns it, and returns only the
+verdict, not the merchant.
+
+A ticked box posts `mode_inherit=1` or `key_inherit=1` instead of the field's
+value. Core's `toggleValueElements()` only disables the field, keeping its
+value, and the save uses the parent scope's value. `VerifyApiKey` reads that
+value from the scope `CredentialsSave::parentScope()` names, the same one the
+save reads.
 
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's

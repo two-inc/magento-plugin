@@ -365,6 +365,24 @@ class VerifyApiKeyTest extends TestCase
         ];
     }
 
+    public function testAStoredCheckReturnsOnlyTheVerdict(): void
+    {
+        // TWO-27303: anyone allowed on the page could otherwise read any scope's merchant without its key.
+        $this->configRepository->method('getApiKey')->willReturn(self::VALID_LENGTH_KEY);
+        $this->apiKeyStatus->method('verifyCandidate')->willReturn(
+            ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => ['id' => 'abc-123', 'short_name' => 'acme']]
+        );
+
+        $response = $this->invoke(['scope' => 'websites', 'scopeId' => 3, 'stored' => '1', 'mode' => 'production']);
+
+        $this->assertSame(
+            ['verified' => true, 'status' => 'success', 'definitive' => false],
+            array_intersect_key($response, array_flip(
+                ['verified', 'status', 'definitive', 'merchant_id', 'merchant_short_name']
+            ))
+        );
+    }
+
     /**
      * @dataProvider inheritedFields
      * @param array<string,mixed> $params

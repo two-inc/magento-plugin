@@ -29,7 +29,8 @@ use Two\Gateway\Service\Merchant\CredentialsSave;
  *
  * With `stored` set and no key typed, it verifies the key saved for the scope
  * instead, so switching the environment shows whether the saved key works
- * there (TWO-27303). That key is read here and never leaves the server.
+ * there (TWO-27303). That key is read here and never leaves the server, and
+ * the response carries only the verdict, not the merchant it resolves to.
  *
  * `key_inherit` and `mode_inherit` say the field's "Use Default" box is
  * ticked. The check then uses the parent scope's key or environment, as the
@@ -131,9 +132,10 @@ class VerifyApiKey extends Action
             'definitive' => $status['status'] === ApiKeyStatus::INVALID_KEY
                 || $status['status'] === ApiKeyStatus::NOT_CONFIGURED,
         ];
-        // The merchant the candidate resolves to, so the settings page can show
-        // it straight away. Nothing is saved here; the section save does that.
-        if (isset($described['merchant_id'])) {
+        // The merchant a typed candidate resolves to, so the settings page can
+        // show it straight away. Nothing is saved here; the section save does
+        // that. A stored check carries only the verdict.
+        if (!$stored && isset($described['merchant_id'])) {
             $data['merchant_id'] = $described['merchant_id'];
             $data['merchant_short_name'] = $described['merchant_short_name'] ?? '';
         }
