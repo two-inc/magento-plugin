@@ -95,7 +95,7 @@ class VerifyApiKey extends Action
         } elseif (strlen($apiKey) < self::MIN_KEY_LENGTH) {
             return $result->setData(['skipped' => true]);
         }
-        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $this->postedMode(), $scope);
+        $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $this->postedMode($scopeId, $scope), $scope);
         $described = $this->statusMessage->describe($status);
 
         $data = [
@@ -121,13 +121,14 @@ class VerifyApiKey extends Action
      * The environment chosen on the form, which may not be saved yet
      * (TWO-27303). Switching environment and pasting that environment's key
      * is one admin action, so checking against the saved environment rejects
-     * a good key. Anything but a known mode is ignored, and the saved
-     * environment applies.
+     * a good key. Only a mode the dropdown offers at this scope, which is
+     * what the save accepts, is used; otherwise the saved environment applies.
      */
-    private function postedMode(): ?string
+    private function postedMode(?int $scopeId, string $scope): ?string
     {
         $mode = $this->getRequest()->getParam('mode');
+        $stored = $this->configRepository->getStoredMode($scopeId, $scope);
 
-        return is_string($mode) && in_array($mode, EnvironmentMode::MODES, true) ? $mode : null;
+        return EnvironmentMode::isSaveAllowed($mode, $stored) ? $mode : null;
     }
 }

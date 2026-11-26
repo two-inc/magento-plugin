@@ -33,6 +33,8 @@ class VerifyApiKeyTest extends TestCase
     {
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
         $this->configRepository = $this->createMock(ConfigRepository::class);
+        // Staging is offered only on Two's infrastructure, or where it is stored.
+        putenv('TWO_INTERNAL_ENVIRONMENTS');
     }
 
     /**
@@ -259,10 +261,12 @@ class VerifyApiKeyTest extends TestCase
      */
     public function testTheCandidateIsVerifiedAgainstTheEnvironmentChosenOnTheForm(
         array $params,
+        string $storedMode,
         ?string $expectedMode,
         string $description
     ): void {
         // TWO-27303: a null mode makes ApiKeyStatus read the saved environment.
+        $this->configRepository->method('getStoredMode')->with(null, 'default')->willReturn($storedMode);
         $this->apiKeyStatus->expects($this->once())
             ->method('verifyCandidate')
             ->with(self::VALID_LENGTH_KEY, null, $expectedMode, 'default')
@@ -274,19 +278,20 @@ class VerifyApiKeyTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: array<string,mixed>, 1: string|null, 2: string}>
+     * @return array<string, array{0: array<string,mixed>, 1: string, 2: string|null, 3: string}>
      */
     public static function postedModes(): array
     {
         return [
-            'env switched, unsaved' => [['mode' => 'production'], 'production', 'the dropdown value is used, not the saved one'],
-            'env unchanged' => [['mode' => 'sandbox'], 'sandbox', 'the dropdown value is used when it matches the saved one'],
-            'staging' => [['mode' => 'staging'], 'staging', 'every stored mode is accepted'],
-            'mode missing' => [[], null, 'no dropdown value falls back to the saved environment'],
-            'mode empty' => [['mode' => ''], null, 'an empty value falls back to the saved environment'],
-            'unknown mode' => [['mode' => 'development'], null, 'an unknown value falls back to the saved environment'],
-            'not canonical' => [['mode' => 'Production'], null, 'only the stored spelling is accepted'],
-            'not a string' => [['mode' => ['production']], null, 'an array value falls back to the saved environment'],
+            'env switched, unsaved' => [['mode' => 'production'], 'sandbox', 'production', 'the dropdown value is used, not the saved one'],
+            'env unchanged' => [['mode' => 'sandbox'], 'sandbox', 'sandbox', 'the dropdown value is used when it matches the saved one'],
+            'staging, offered' => [['mode' => 'staging'], 'staging', 'staging', 'staging is used where the dropdown offers it'],
+            'staging, not offered' => [['mode' => 'staging'], 'sandbox', null, 'a shop not offered staging never reaches its host'],
+            'mode missing' => [[], 'sandbox', null, 'no dropdown value falls back to the saved environment'],
+            'mode empty' => [['mode' => ''], 'sandbox', null, 'an empty value falls back to the saved environment'],
+            'unknown mode' => [['mode' => 'development'], 'sandbox', null, 'an unknown value falls back to the saved environment'],
+            'not canonical' => [['mode' => 'Production'], 'sandbox', null, 'only the stored spelling is accepted'],
+            'not a string' => [['mode' => ['production']], 'sandbox', null, 'an array value falls back to the saved environment'],
         ];
     }
 

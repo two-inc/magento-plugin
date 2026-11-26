@@ -83,9 +83,9 @@ finds the dropdown by the key field's html id with `api_key` swapped for `mode`,
 so Two's section and a brand's both work. A dropdown disabled by its "Use
 Default" or "Use Website" box posts no mode, because core's
 `toggleValueElements()` only disables it, keeping the value chosen, and the save
-ignores it. Ticking the box checks again. `VerifyApiKey` accepts only a value
-in `EnvironmentMode::MODES`; a missing or unknown value checks against the
-saved environment.
+ignores it. Ticking the box checks again. `VerifyApiKey` accepts only a mode
+the dropdown offers at that scope (`EnvironmentMode::isSaveAllowed()`, as the
+save); anything else checks against the saved environment.
 
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's
