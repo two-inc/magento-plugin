@@ -22,6 +22,10 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // only in the field id. The key is checked against the environment
         // chosen there, saved or not (TWO-27303).
         var $mode = /api_key$/.test(fieldId) ? $('#' + fieldId.replace(/api_key$/, 'mode')) : $();
+        // Its "Use Default"/"Use Website" box. Ticking it only disables the
+        // select, keeping whatever was chosen, and the save then ignores the
+        // select, so a disabled one is not a choice.
+        var $modeInherit = $mode.length ? $('#' + $mode.attr('id') + '_inherit') : $();
         // The environment the server-rendered verdict below was given for.
         var savedMode = $mode.length ? String($mode.val() || '') : '';
 
@@ -56,7 +60,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function chosenMode() {
-            return $mode.length ? String($mode.val() || '') : null;
+            return $mode.length && !$mode.prop('disabled') ? String($mode.val() || '') : null;
         }
 
         function verify() {
@@ -137,7 +141,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         });
         // A verdict is for one key in one environment, so switching the
         // environment checks the typed key, or else the saved one, again.
-        $mode.on('change', function () {
+        $mode.add($modeInherit).on('change', function () {
             clearTimeout(timer);
             verify();
         });

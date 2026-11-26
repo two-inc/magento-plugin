@@ -80,7 +80,10 @@ dropdown changes. With no key typed and an environment other than the saved
 one chosen, it posts `stored=1` and `VerifyApiKey` checks the key saved or
 inherited at that scope instead, which it reads itself and never returns. It
 finds the dropdown by the key field's html id with `api_key` swapped for `mode`,
-so Two's section and a brand's both work. `VerifyApiKey` accepts only a value
+so Two's section and a brand's both work. A dropdown disabled by its "Use
+Default" or "Use Website" box posts no mode, because core's
+`toggleValueElements()` only disables it, keeping the value chosen, and the save
+ignores it. Ticking the box checks again. `VerifyApiKey` accepts only a value
 in `EnvironmentMode::MODES`; a missing or unknown value checks against the
 saved environment.
 

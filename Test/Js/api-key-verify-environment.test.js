@@ -24,7 +24,10 @@ function setUp(keyFieldId, modeFieldId, modeValue) {
         .join('');
     document.body.innerHTML =
         '<input name="form_key" value="fk" />' +
-        (modeFieldId ? `<select id="${modeFieldId}">${options}</select>` : '') +
+        (modeFieldId
+            ? `<select id="${modeFieldId}">${options}</select>` +
+              `<input type="checkbox" id="${modeFieldId}_inherit" class="config-inherit" />`
+            : '') +
         `<div class="two-api-key-verify" data-verify-url="/verify" data-field-id="${keyFieldId}">` +
         `<input id="${keyFieldId}" value="" />` +
         '<span class="two-api-key-verify__icon api-key-success"></span>' +
@@ -98,6 +101,33 @@ describe('the live API key check uses the environment chosen on the form', () =>
         $('#two_general_general_mode').val('production').trigger('change');
 
         $('#two_general_general_mode').val('sandbox').trigger('change');
+
+        expect(postedModes()).toEqual(['production']);
+        expect($('.two-api-key-verify__message').text()).toBe('API key is valid');
+    });
+
+    // Core's toggleValueElements() only disables the select when "Use Website"
+    // is ticked: no change event, and the select keeps the value chosen.
+    function tickInherit() {
+        $('#two_general_general_mode').prop('disabled', true);
+        $('#two_general_general_mode_inherit').prop('checked', true).trigger('change');
+    }
+
+    test('a typed key is checked against the saved environment once the dropdown is inherited', () => {
+        setUp('two_general_general_api_key', 'two_general_general_mode', 'sandbox');
+        $('#two_general_general_api_key').val(KEY);
+        $('#two_general_general_mode').val('production').trigger('change');
+
+        tickInherit();
+
+        expect(postedModes()).toEqual(['production', undefined]);
+    });
+
+    test('ticking inherit with no key typed restores the page verdict without a request', () => {
+        setUp('two_general_general_api_key', 'two_general_general_mode', 'sandbox');
+        $('#two_general_general_mode').val('production').trigger('change');
+
+        tickInherit();
 
         expect(postedModes()).toEqual(['production']);
         expect($('.two-api-key-verify__message').text()).toBe('API key is valid');
