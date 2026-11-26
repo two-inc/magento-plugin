@@ -76,10 +76,13 @@ of those seeds the slot, and is accepted rather than guessing a verdict.
 **The live key check uses the environment chosen on the form, saved or not**
 (TWO-27303), as the save does. `api-key-verify.js` posts the Environment
 dropdown's current value with the typed key, and checks the key again when the
-dropdown changes. It finds the dropdown by the key field's html id with `api_key`
-swapped for `mode`, so Two's section and a brand's both work. `VerifyApiKey`
-accepts only a value in `EnvironmentMode::MODES`; a missing or unknown value
-checks against the saved environment.
+dropdown changes. With no key typed and an environment other than the saved
+one chosen, it posts `stored=1` and `VerifyApiKey` checks the key saved or
+inherited at that scope instead, which it reads itself and never returns. It
+finds the dropdown by the key field's html id with `api_key` swapped for `mode`,
+so Two's section and a brand's both work. `VerifyApiKey` accepts only a value
+in `EnvironmentMode::MODES`; a missing or unknown value checks against the
+saved environment.
 
 "Use Default" on either half at a website or store view is a change of that half
 to the parent scope's value (a website's from the default scope, a store view's

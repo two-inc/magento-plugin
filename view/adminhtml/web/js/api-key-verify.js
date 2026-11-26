@@ -22,6 +22,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // only in the field id. The key is checked against the environment
         // chosen there, saved or not (TWO-27303).
         var $mode = /api_key$/.test(fieldId) ? $('#' + fieldId.replace(/api_key$/, 'mode')) : $();
+        // The environment the server-rendered verdict below was given for.
+        var savedMode = $mode.length ? String($mode.val() || '') : '';
 
         var $message = $panel.find('.two-api-key-verify__message');
         var $icon = $panel.find('.two-api-key-verify__icon');
@@ -53,11 +55,20 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $icon.attr('class', 'two-api-key-verify__icon api-key-status-icon api-key-' + status);
         }
 
+        function chosenMode() {
+            return $mode.length ? String($mode.val() || '') : null;
+        }
+
         function verify() {
             var key = $.trim(String($input.val() || ''));
+            var mode = chosenMode();
             // The obscure field renders the stored key as asterisks; an
             // untouched placeholder is not a candidate.
-            if (key.length < MIN_KEY_LENGTH || /^\*+$/.test(key)) {
+            var typed = key.length >= MIN_KEY_LENGTH && !/^\*+$/.test(key);
+            // With no key typed, the saved key is judged in the environment
+            // chosen: the page's own verdict holds only for the saved one.
+            var stored = !typed && mode !== null && mode !== savedMode;
+            if (!typed && !stored) {
                 latest++;
                 render('', '');
                 return;
@@ -70,12 +81,15 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             }
             var data = {
                 form_key: $('input[name="form_key"]').first().val() || (window.FORM_KEY || ''),
-                api_key: key,
+                api_key: typed ? key : '',
                 scope: String($panel.data('scope') || 'default'),
                 scopeId: parseInt($panel.data('scope-id'), 10) || 0
             };
-            if ($mode.length) {
-                data.mode = String($mode.val() || '');
+            if (stored) {
+                data.stored = 1;
+            }
+            if (mode !== null) {
+                data.mode = mode;
             }
             pending = $.ajax({
                 url: url,
@@ -122,7 +136,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             verify();
         });
         // A verdict is for one key in one environment, so switching the
-        // environment checks the typed key again.
+        // environment checks the typed key, or else the saved one, again.
         $mode.on('change', function () {
             clearTimeout(timer);
             verify();

@@ -12,6 +12,7 @@ use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Json;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\EnvironmentMode;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -24,6 +25,10 @@ use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
  * key is wrong before the section save rather than after it. The candidate
  * is never echoed back and never cached. On success the response carries the
  * merchant id and short name the key resolves to, for display only.
+ *
+ * With `stored` set and no key typed, it verifies the key saved for the scope
+ * instead, so switching the environment shows whether the saved key works
+ * there (TWO-27303). That key is read here and never leaves the server.
  */
 class VerifyApiKey extends Action
 {
@@ -50,16 +55,23 @@ class VerifyApiKey extends Action
      */
     private $statusMessage;
 
+    /**
+     * @var ConfigRepository
+     */
+    private $configRepository;
+
     public function __construct(
         Action\Context $context,
         JsonFactory $resultJsonFactory,
         ApiKeyStatus $apiKeyStatus,
-        ApiKeyStatusMessage $statusMessage
+        ApiKeyStatusMessage $statusMessage,
+        ConfigRepository $configRepository
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
         $this->apiKeyStatus = $apiKeyStatus;
         $this->statusMessage = $statusMessage;
+        $this->configRepository = $configRepository;
     }
 
     /**
@@ -69,15 +81,20 @@ class VerifyApiKey extends Action
     {
         $result = $this->resultJsonFactory->create();
 
-        $apiKey = trim((string)$this->getRequest()->getParam('api_key', ''));
-        if (strlen($apiKey) < self::MIN_KEY_LENGTH) {
-            return $result->setData(['skipped' => true]);
-        }
-
         [$scopeId, $scope] = AdminScope::fromScope(
             (string)$this->getRequest()->getParam('scope', 'default'),
             $this->getRequest()->getParam('scopeId', 0)
         );
+        $apiKey = trim((string)$this->getRequest()->getParam('api_key', ''));
+        if ($apiKey === '' && $this->getRequest()->getParam('stored')) {
+            // The key saved or inherited at this scope, as the save judges it.
+            $apiKey = trim($this->configRepository->getApiKey($scopeId, $scope));
+            if ($apiKey === '') {
+                return $result->setData(['skipped' => true]);
+            }
+        } elseif (strlen($apiKey) < self::MIN_KEY_LENGTH) {
+            return $result->setData(['skipped' => true]);
+        }
         $status = $this->apiKeyStatus->verifyCandidate($apiKey, $scopeId, $this->postedMode(), $scope);
         $described = $this->statusMessage->describe($status);
 

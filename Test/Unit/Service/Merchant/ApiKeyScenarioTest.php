@@ -87,6 +87,9 @@ class ApiKeyScenarioTest extends TestCase
     /** @var CredentialsSave */
     private $credentialsSave;
 
+    /** @var Repository */
+    private $repository;
+
     /**
      * saved config | admin save [scope, id, key, mode] | verification [key, host]
      * | saved config afterwards | store 1's next order call [key, host]
@@ -202,6 +205,8 @@ class ApiKeyScenarioTest extends TestCase
      * Actions, with the scope names the admin passes ('default', 'websites', 'stores'):
      * - ['button', scope, id, key, mode?]: the Verify API key button, posting the
      *   Environment dropdown's value when given (no mode: the dropdown was not found).
+     * - ['env-switch', scope, id, mode]: switching the Environment dropdown with no
+     *   key typed, which checks the saved key in the environment chosen.
      * - ['saved', scope, id]: the admin check of the key saved or inherited there.
      * - ['store-call', store id, current store]: a storefront or order call. A
      *   null store id reads the current store (null in the admin, which reads Default).
@@ -234,6 +239,15 @@ class ApiKeyScenarioTest extends TestCase
             ],
             '4 (TWO-27303): an unknown environment falls back to the saved one' => [
                 $sandboxA, ['button', 'default', 0, self::KEY_B, 'development'], self::KEY_B, self::SANDBOX, self::KEY_A,
+            ],
+            '4 (TWO-27303): switching environment with no key typed checks the saved key there' => [
+                $sandboxA, ['env-switch', 'default', 0, 'production'], self::KEY_A, self::PRODUCTION, null,
+            ],
+            '4 (TWO-27303): switching environment at a website checks the key it inherits' => [
+                $sandboxA, ['env-switch', 'websites', 1, 'production'], self::KEY_A, self::PRODUCTION, null,
+            ],
+            '7 (TWO-27303): switching environment at a store view checks its website\'s key' => [
+                $sandboxA + $websiteB, ['env-switch', 'stores', 1, 'sandbox'], self::KEY_B, self::SANDBOX, self::KEY_A,
             ],
             '7 (TWO-27303): Verify button at a store view uses the environment chosen over its website\'s' => [
                 $sandboxA + $websiteB, ['button', 'stores', 1, self::KEY_K, 'sandbox'], self::KEY_K, self::SANDBOX, self::KEY_B,
@@ -281,6 +295,7 @@ class ApiKeyScenarioTest extends TestCase
 
         match ($action[0]) {
             'button' => $this->pressVerify($action[1], $action[2], $action[3], $action[4] ?? null),
+            'env-switch' => $this->pressVerify($action[1], $action[2], '', $action[3], true),
             'saved' => $this->apiKeyStatus->refresh(...AdminScope::fromScope($action[1], $action[2])),
             'store-call' => $this->adapter->execute(self::ORDER_ENDPOINT, ['gross_amount' => '100.00'], 'POST', $action[1]),
         };
@@ -436,9 +451,9 @@ class ApiKeyScenarioTest extends TestCase
         }
     }
 
-    private function pressVerify(string $scope, int $scopeId, string $key, ?string $mode): void
+    private function pressVerify(string $scope, int $scopeId, string $key, ?string $mode, bool $stored = false): void
     {
-        $params = ['api_key' => $key, 'scope' => $scope, 'scopeId' => $scopeId, 'mode' => $mode];
+        $params = ['api_key' => $key, 'scope' => $scope, 'scopeId' => $scopeId, 'mode' => $mode, 'stored' => $stored ? '1' : null];
         $request = $this->createMock(RequestInterface::class);
         $request->method('getParam')->willReturnCallback(
             static fn ($name, $default = null) => $params[$name] ?? $default
@@ -446,7 +461,7 @@ class ApiKeyScenarioTest extends TestCase
         $context = $this->createMock(ActionContext::class);
         $context->method('getRequest')->willReturn($request);
 
-        (new VerifyApiKey($context, new JsonFactory(), $this->apiKeyStatus, $this->statusMessage))->execute();
+        (new VerifyApiKey($context, new JsonFactory(), $this->apiKeyStatus, $this->statusMessage, $this->repository))->execute();
     }
 
     /**
@@ -463,7 +478,7 @@ class ApiKeyScenarioTest extends TestCase
         $registrar->method('getPaths')->willReturn(['Two_Gateway' => self::moduleRoot()]);
         $brand = new DescriptorBackedBrandRegistry(new ActiveBrandResolver(new Loader($registrar)));
 
-        $repository = new Repository(
+        $repository = $this->repository = new Repository(
             $this->config,
             $this->encryptor(),
             $this->createMock(UrlInterface::class),

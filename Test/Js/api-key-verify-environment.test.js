@@ -76,12 +76,30 @@ describe('the live API key check uses the environment chosen on the form', () =>
         expect(postedModes()).toEqual(['sandbox', 'production']);
     });
 
-    test('switching the environment with no typed key sends nothing', () => {
+    test.each([
+        { field: '', description: 'an empty field' },
+        { field: '********', description: 'the saved-key placeholder' },
+    ])('switching the environment with $description re-checks the saved key there', ({ field, description }) => {
         setUp('two_general_general_api_key', 'two_general_general_mode', 'sandbox');
-        $('#two_general_general_api_key').val('********');
+        $('#two_general_general_api_key').val(field);
 
         $('#two_general_general_mode').val('production').trigger('change');
 
-        expect(postedModes()).toEqual([]);
+        const posted = $.ajax.mock.calls.map(([request]) => ({
+            api_key: request.data.api_key, stored: request.data.stored, mode: request.data.mode,
+        }));
+        expect({ description, posted }).toEqual(
+            { description, posted: [{ api_key: '', stored: 1, mode: 'production' }] }
+        );
+    });
+
+    test('switching back to the saved environment shows the page verdict without a request', () => {
+        setUp('two_general_general_api_key', 'two_general_general_mode', 'sandbox');
+        $('#two_general_general_mode').val('production').trigger('change');
+
+        $('#two_general_general_mode').val('sandbox').trigger('change');
+
+        expect(postedModes()).toEqual(['production']);
+        expect($('.two-api-key-verify__message').text()).toBe('API key is valid');
     });
 });

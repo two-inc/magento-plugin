@@ -8,6 +8,7 @@ use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\JsonFactory;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Controller\Adminhtml\Config\VerifyApiKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
@@ -25,9 +26,13 @@ class VerifyApiKeyTest extends TestCase
     /** @var ApiKeyStatus|\PHPUnit\Framework\MockObject\MockObject */
     private $apiKeyStatus;
 
+    /** @var ConfigRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $configRepository;
+
     protected function setUp(): void
     {
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $this->configRepository = $this->createMock(ConfigRepository::class);
     }
 
     /**
@@ -52,7 +57,8 @@ class VerifyApiKeyTest extends TestCase
             $context,
             new JsonFactory(),
             $this->apiKeyStatus,
-            new ApiKeyStatusMessage($brandRegistry)
+            new ApiKeyStatusMessage($brandRegistry),
+            $this->configRepository
         );
 
         return (array)$controller->execute()->getData();
@@ -281,6 +287,55 @@ class VerifyApiKeyTest extends TestCase
             'unknown mode' => [['mode' => 'development'], null, 'an unknown value falls back to the saved environment'],
             'not canonical' => [['mode' => 'Production'], null, 'only the stored spelling is accepted'],
             'not a string' => [['mode' => ['production']], null, 'an array value falls back to the saved environment'],
+        ];
+    }
+
+    /**
+     * @dataProvider storedChecks
+     * @param array<string,mixed> $params
+     */
+    public function testWithNoKeyTypedTheSavedKeyIsCheckedInTheChosenEnvironment(
+        array $params,
+        string $savedKey,
+        ?array $expectedCall,
+        string $description
+    ): void {
+        // TWO-27303: the saved key is read at the posted scope and never sent back.
+        $this->configRepository->method('getApiKey')->with(3, 'website')->willReturn($savedKey);
+        if ($expectedCall === null) {
+            $this->apiKeyStatus->expects($this->never())->method('verifyCandidate');
+        } else {
+            $this->apiKeyStatus->expects($this->once())
+                ->method('verifyCandidate')
+                ->with(...$expectedCall)
+                ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => ['id' => 'abc-123']]);
+        }
+
+        $response = $this->invoke(['scope' => 'websites', 'scopeId' => 3] + $params);
+
+        $this->assertSame($expectedCall === null, $response['skipped'] ?? false, $description);
+        $this->assertStringNotContainsString(self::VALID_LENGTH_KEY, (string)json_encode($response), $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: string, 2: array<int,mixed>|null, 3: string}>
+     */
+    public static function storedChecks(): array
+    {
+        $saved = self::VALID_LENGTH_KEY;
+        return [
+            'env switched' => [['stored' => '1', 'mode' => 'production'], $saved, [$saved, 3, 'production', 'website'],
+                'the saved key is checked against the environment chosen'],
+            'unknown mode' => [['stored' => '1', 'mode' => 'development'], $saved, [$saved, 3, null, 'website'],
+                'an unknown environment checks the saved key against the saved one'],
+            'no stored key' => [['stored' => '1', 'mode' => 'production'], '', null,
+                'with no key saved there is nothing to check'],
+            'saved key padded' => [['stored' => '1', 'mode' => 'production'], " $saved ", [$saved, 3, 'production', 'website'],
+                'the saved key is trimmed, as the save trims it'],
+            'not asked' => [['mode' => 'production'], $saved, null,
+                'an empty field without stored is skipped, as before'],
+            'typed key wins' => [['stored' => '1', 'api_key' => 'typed-key-of-ample-length', 'mode' => 'production'], $saved,
+                ['typed-key-of-ample-length', 3, 'production', 'website'], 'a typed key is checked, not the saved one'],
         ];
     }
 
